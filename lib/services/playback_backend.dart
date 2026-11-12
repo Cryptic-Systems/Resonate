@@ -30,6 +30,12 @@ abstract interface class PlaybackBackend {
   Future<void> setShuffleMode(bool enabled);
 }
 
+/// Optional capability for explicit ownership of Android audio-focus requests.
+/// Disabling requests is safe only after another playback owner has taken over.
+abstract interface class PlaybackAudioFocusBackend {
+  Future<void> setAudioFocusHandling(bool enabled);
+}
+
 /// Optional playback-rate capability. Backends without native speed support
 /// remain valid, but the provider-facing session must report it as unsupported.
 abstract interface class PlaybackSpeedBackend {
