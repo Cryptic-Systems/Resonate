@@ -435,7 +435,7 @@ object DspEngineRegistry {
 
     private fun defaultCenters(count: Int): DoubleArray =
         DoubleArray(count) { index ->
-            20.0 * kotlin.math.pow(1000.0.pow(index.toDouble() / (count - 1).coerceAtLeast(1)))
+            20.0 * 1000.0.pow(index.toDouble() / (count - 1).coerceAtLeast(1))
         }
 
     private fun applyStickyToHandle(handle: Long, deckId: String): Boolean {
