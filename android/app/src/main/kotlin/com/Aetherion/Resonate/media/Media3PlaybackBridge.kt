@@ -336,7 +336,7 @@ class Media3PlaybackBridge(
                     val deck = call.argument<String>("deck")
                     val centers = call.argument<List<Number>>("centersHz")?.map { it.toDouble() }
                     val gains = call.argument<List<Number>>("gainsDb")?.map { it.toDouble() }
-                    if (deck !in setOf("active", "standby") ||
+                    if (deck == null || deck !in setOf("active", "standby") ||
                         centers.isNullOrEmpty() || gains.isNullOrEmpty() ||
                         centers.size != gains.size || centers.size > 31 ||
                         centers.any { !it.isFinite() || it !in 20.0..20000.0 } ||
@@ -360,7 +360,7 @@ class Media3PlaybackBridge(
                 }
                 "clearDeckEqOverlay" -> {
                     val deck = call.argument<String>("deck")
-                    if (deck !in setOf("active", "standby")) {
+                    if (deck == null || deck !in setOf("active", "standby")) {
                         result.error("INVALID_DECK_EQ_OVERLAY", "deck must be active or standby.", null)
                         return
                     }
