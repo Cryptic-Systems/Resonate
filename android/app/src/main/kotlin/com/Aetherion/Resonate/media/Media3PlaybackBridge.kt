@@ -332,6 +332,41 @@ class Media3PlaybackBridge(
                         null,
                     )
                 }
+                "setDeckEqOverlay" -> {
+                    val deck = call.argument<String>("deck")
+                    val centers = call.argument<List<Number>>("centersHz")?.map { it.toDouble() }
+                    val gains = call.argument<List<Number>>("gainsDb")?.map { it.toDouble() }
+                    if (deck !in setOf("active", "standby") ||
+                        centers.isNullOrEmpty() || gains.isNullOrEmpty() ||
+                        centers.size != gains.size || centers.size > 31 ||
+                        centers.any { !it.isFinite() || it !in 20.0..20000.0 } ||
+                        gains.any { !it.isFinite() || it !in -12.0..12.0 }
+                    ) {
+                        result.error(
+                            "INVALID_DECK_EQ_OVERLAY",
+                            "A valid active/standby deck and 1–31 EQ bands are required; frequency must be 20–20000 Hz and gain -12–12 dB.",
+                            null,
+                        )
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDeckEqOverlay(
+                        deck!!,
+                        centers.toDoubleArray(),
+                        gains.toDoubleArray(),
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_DSP_UNAVAILABLE", "The deck EQ overlay could not be applied.", null)
+                }
+                "clearDeckEqOverlay" -> {
+                    val deck = call.argument<String>("deck")
+                    if (deck !in setOf("active", "standby")) {
+                        result.error("INVALID_DECK_EQ_OVERLAY", "deck must be active or standby.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.clearDeckEqOverlay(deck!!) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_DSP_UNAVAILABLE", "The deck EQ overlay could not be cleared.", null)
+                }
                 "setVolume" -> {
                     val volume = call.argument<Number>("value")?.toFloat()
                     if (volume == null || !volume.isFinite()) {
