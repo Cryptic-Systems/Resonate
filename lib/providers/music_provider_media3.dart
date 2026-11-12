@@ -169,6 +169,7 @@ extension MusicProviderMedia3 on MusicProvider {
     final session = _media3ProviderSession;
     if (session == null) return;
     final oldSongId = currentSong?.id;
+    final previousPosition = currentPosition;
     final resolvedIndex = Media3MusicProviderAdapter.resolveCurrentQueueIndex(
       _queue,
       mediaId: state.mediaId,
@@ -194,6 +195,10 @@ extension MusicProviderMedia3 on MusicProvider {
       _lastCompletionSongId = null;
     }
     currentPosition = state.position;
+    if (!state.isCompleted &&
+        state.position + const Duration(seconds: 1) < previousPosition) {
+      _lastCompletionSongId = null;
+    }
     currentDuration = state.duration ?? currentSong?.duration;
     // Buffering does not clear the user's play intent. isPlaying is strictly
     // the reconciled native state, not an optimistic command flag.
