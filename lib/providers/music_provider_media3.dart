@@ -218,7 +218,10 @@ extension MusicProviderMedia3 on MusicProvider {
     _publishServiceState(positionOnly: true);
     notifyListeners();
     _armEndOfTrackWatchdog();
-    if (!state.isPlaying && !state.isBuffering && !state.isCompleted) {
+    if (!state.isPlaying &&
+        state.playWhenReady &&
+        !state.isBuffering &&
+        !state.isCompleted) {
       _recoverMedia3ProviderPlayback();
     }
   }
@@ -251,6 +254,7 @@ extension MusicProviderMedia3 on MusicProvider {
     if (session == null ||
         !_media3ProviderSessionActive ||
         !_userWantsPlaying ||
+        !(_media3ShadowState?.playWhenReady ?? false) ||
         _focusLostAt != null ||
         _loadingSource ||
         _transportInFlight ||
