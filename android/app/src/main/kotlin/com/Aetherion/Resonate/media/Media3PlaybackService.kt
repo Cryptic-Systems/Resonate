@@ -14,6 +14,7 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.ExoPlayer
 import com.aetherion.resonate.dsp.DspEngineSinkHook
+import com.aetherion.resonate.dsp.DspEngineRegistry
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import kotlin.math.cos
@@ -34,6 +35,7 @@ class Media3PlaybackService : MediaSessionService() {
     private var fadeGeneration = 0
     private val crossfadeClock = Media3CrossfadeClock()
     private var crossfadeStatus = "idle"
+    private var activeDeckId = "A"
 
     // All Media3 output gain changes pass through one policy. Future leveling,
     // preamp, sleep fade and focus-duck factors belong in this composition point.
@@ -94,6 +96,12 @@ class Media3PlaybackService : MediaSessionService() {
     }
 
     /** Apply track leveling, DSP preamp, sleep fade and focus ducking together. */
+    fun setDeckEqOverlay(deckRole: String, centersHz: DoubleArray, gainsDb: DoubleArray): Boolean =
+        DspEngineRegistry.setTemporaryEqOverlay(deckRole, centersHz, gainsDb)
+
+    fun clearDeckEqOverlay(deckRole: String): Boolean =
+        DspEngineRegistry.clearTemporaryEqOverlay(deckRole)
+
     fun setGainFactors(
         trackLevel: Float,
         preamp: Float,
@@ -108,8 +116,10 @@ class Media3PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        activePlayer = newPlayer(handleAudioFocus = true)
-        standbyPlayer = newPlayer(handleAudioFocus = false).apply {
+        activePlayer = newPlayer(handleAudioFocus = true, deckId = "A")
+        standbyPlayer = newPlayer(handleAudioFocus = false, deckId = "B")
+        activeDeckId = "A"
+        DspEngineRegistry.setActiveDeck(activeDeckId).apply {
             addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     if (crossfadeStatus == "preparing") {
@@ -132,7 +142,7 @@ class Media3PlaybackService : MediaSessionService() {
         applyDeckVolumes()
     }
 
-    private fun newPlayer(handleAudioFocus: Boolean) = ExoPlayer.Builder(
+    private fun newPlayer(handleAudioFocus: Boolean, deckId: String) = ExoPlayer.Builder(
         this,
         object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
@@ -140,7 +150,7 @@ class Media3PlaybackService : MediaSessionService() {
                 enableFloatOutput: Boolean,
                 enableAudioOutputPlaybackParams: Boolean,
             ): AudioSink = DefaultAudioSink.Builder(context)
-                .setAudioProcessors(DspEngineSinkHook.createProcessors())
+                .setAudioProcessors(DspEngineSinkHook.createProcessors(deckId))
                 .setEnableFloatOutput(enableFloatOutput)
                 .setEnableAudioTrackPlaybackParams(enableAudioOutputPlaybackParams)
                 .build()
@@ -215,7 +225,7 @@ class Media3PlaybackService : MediaSessionService() {
             crossfadeStatus = "incoming_not_ready"
             return false
         }
-        cancelCrossfade()
+        cancelCrossfade(clearOverlays = false)
         crossfadeClock.start(durationMs, android.os.SystemClock.elapsedRealtime())
         val generation = ++fadeGeneration
         crossfadeStatus = "fading"
@@ -235,6 +245,9 @@ class Media3PlaybackService : MediaSessionService() {
                     val oldPlayer = activePlayer
                     activePlayer = standbyPlayer
                     standbyPlayer = oldPlayer
+                    activeDeckId = if (activeDeckId == "A") "B" else "A"
+                    DspEngineRegistry.setActiveDeck(activeDeckId)
+                    DspEngineRegistry.clearAllTemporaryEqOverlays()
                     // The promoted deck keeps its transition rate. Reset the
                     // now-standby deck so the next preload starts from the new
                     // active rate rather than a stale outgoing correction.
@@ -294,8 +307,9 @@ class Media3PlaybackService : MediaSessionService() {
         return true
     }
 
-    fun cancelCrossfade(): Boolean {
+    fun cancelCrossfade(clearOverlays: Boolean = true): Boolean {
         fadeGeneration++
+        if (clearOverlays) DspEngineRegistry.clearAllTemporaryEqOverlays()
         fadeRunnable?.let(mainHandler::removeCallbacks)
         fadeRunnable = null
         crossfadeClock.reset()
