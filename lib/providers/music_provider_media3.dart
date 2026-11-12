@@ -72,7 +72,7 @@ extension MusicProviderMedia3 on MusicProvider {
         trackLevel: _trackLevelingScale,
         preamp: _eqPreampScale,
         sleepFade: _sleepFadeScale,
-        focusDuck: _isDucked ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel) : 1.0,
+        focusDuck: _isDucked ? (_audioFocusLevel == 1 ? 0.18 : MusicProvider._duckLevel) : 1.0,
       );
       if (resume && _resumeSongId == selected.id && _resumePositionMs > 0) {
         final durationMs = selected.duration.inMilliseconds;
