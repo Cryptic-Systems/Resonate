@@ -1275,6 +1275,14 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _duckForInterruption() async {
+    if (await _isCommunicationActive()) {
+      // Calls/VoIP must never be treated as a soft-duck request. Pause both
+      // decks and invalidate any pending automatic resume instead.
+      _focusResumeGeneration++;
+      _focusLostAt = DateTime.now();
+      await this.pause(source: 'system');
+      return;
+    }
     _unduckPendingAfterCrossfade = false;
     if (_crossfadeInProgress || _automaticCrossfadeInFlight) {
       // Let the crossfade own volumes; mark ducked so we restore after.
