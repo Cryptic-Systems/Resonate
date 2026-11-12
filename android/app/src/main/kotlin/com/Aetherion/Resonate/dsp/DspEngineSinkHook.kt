@@ -25,8 +25,12 @@ object DspEngineSinkHook {
      */
     private const val ENABLE_NATIVE_LIVE_DSP = true
 
+    /** Legacy just_audio reflection hook remains separate from Media3 deck slots. */
     @JvmStatic
-    fun createProcessors(deckId: String = "A"): Array<AudioProcessor> {
+    fun createProcessors(): Array<AudioProcessor> = createProcessors("legacy")
+
+    @JvmStatic
+    fun createProcessors(deckId: String): Array<AudioProcessor> {
         return try {
             val allow = ENABLE_NATIVE_LIVE_DSP && DspSessionGate.isNativeAllowed()
             val proc = DspEngineAudioProcessor(deckId)
