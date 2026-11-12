@@ -979,7 +979,7 @@ class MusicProvider extends ChangeNotifier {
           await ResonateDiagnostics.record('playback_volume_unstick', {
             'reason': mutedWhilePlaying ? 'muted' : 'not_playing',
             'volume': audioPlayer.volume,
-            'playing': audioPlayer.playing,
+            'playing': activePlaying,
             'songId': currentSong?.id,
           });
         } catch (_) {}
@@ -1882,7 +1882,11 @@ class MusicProvider extends ChangeNotifier {
   int? resumePositionFor(String songId) => _resumeStore.positionFor(songId);
 
   void _maybeStartAutomaticCrossfade(Duration position) {
-    if (!effectiveCrossfadeEnabled || !audioPlayer.playing) return;
+    final media3Session = _media3ProviderSessionActive
+        ? _media3ProviderSession
+        : null;
+    final activePlaying = media3Session?.isPlaying ?? audioPlayer.playing;
+    if (!effectiveCrossfadeEnabled || !activePlaying) return;
     if (_userTransportPending) return;
     // Never arm auto-crossfade while the user is driving transport or loading.
     if (_transportInFlight || _loadingSource) return;
@@ -1894,7 +1898,7 @@ class MusicProvider extends ChangeNotifier {
     // Only the active engine's loaded-source duration is trustworthy for
     // crossfade timing. currentDuration may be metadata or belong to the prior
     // source after a background/route transition, so never use it to arm a fade.
-    final duration = audioPlayer.duration;
+    final duration = media3Session?.duration ?? audioPlayer.duration;
     if (duration == null || duration <= Duration.zero) {
       final songId = currentSong?.id;
       if (songId != null && _lastCrossfadeDurationUnavailableSongId != songId) {
@@ -1911,12 +1915,18 @@ class MusicProvider extends ChangeNotifier {
       return;
     }
     _lastCrossfadeDurationUnavailableSongId = null;
-    final remaining = duration - position;
+    final activePosition = media3Session?.position ?? position;
+    final remaining = duration - activePosition;
     if (remaining <= Duration.zero) return;
 
     // Repeat-one + crossfade: dual-engine A→B self-handoff (same song).
     // Soft single-engine loop is the fallback if the idle engine load times out.
     if (_repeatMode == PlaybackRepeatMode.one) {
+      if (_media3ProviderSessionActive) {
+        // Media3's native REPEAT_MODE_ONE performs a gapless same-item loop.
+        // Do not run the legacy dual-player self-handoff after provider cutover.
+        return;
+      }
       if (!effectiveCrossfadeEnabled ||
           _repeatSelfHandoffInFlight ||
           _transportInFlight ||
