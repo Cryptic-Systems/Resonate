@@ -531,7 +531,7 @@ extension MusicProviderDjHandoff on MusicProvider {
         final stretch = plan.stretch;
         final activeSpeed = stretch?.speedOutgoing ?? 1.0;
         final standbySpeed = stretch?.speedIncoming ?? 1.0;
-        _lastDjIncomingBeatMs = analysisB.beatGrid.beatMs;
+        _lastDjIncomingBeatMs = const <int>[];
         _lastDjIncomingBpm = plan.bpmB;
         _djStretchSpeedOut = activeSpeed;
         _djStretchSpeedIn = standbySpeed;
