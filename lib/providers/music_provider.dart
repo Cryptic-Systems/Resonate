@@ -990,18 +990,46 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
-  /// Claim media focus before any intentional play. Safe to call often.
-  Future<void> _claimAudioFocus({String reason = 'play'}) async {
+  /// Android call/communication mode takes precedence over media playback.
+  /// This check must happen before setActive(true), otherwise Resonate can
+  /// steal focus from the call or another communication app.
+  Future<bool> _isCommunicationActive() async {
+    try {
+      return await _systemVolumeChannel.invokeMethod<bool>(
+            'isCommunicationActive',
+          ) ??
+          false;
+    } catch (e) {
+      debugPrint('isCommunicationActive check failed: $e');
+      return false;
+    }
+  }
+
+  /// Claim media focus only when Android is not in a call/communication mode.
+  Future<bool> _claimAudioFocus({String reason = 'play'}) async {
+    if (await _isCommunicationActive()) {
+      unawaited(ResonateDiagnostics.record('audio_focus_blocked_communication', {
+        'reason': reason,
+        'songId': currentSong?.id,
+        'userWantsPlaying': _userWantsPlaying,
+      }));
+      return false;
+    }
     try {
       final session = await AudioSession.instance;
+      // Recheck immediately before requesting focus to close the race between
+      // the initial policy check and asynchronous AudioSession initialization.
+      if (await _isCommunicationActive()) return false;
       await session.setActive(true);
       unawaited(ResonateDiagnostics.record('audio_focus_claim', {
         'reason': reason,
         'songId': currentSong?.id,
         'userWantsPlaying': _userWantsPlaying,
       }));
+      return true;
     } catch (e) {
       debugPrint('claimAudioFocus ($reason): $e');
+      return true;
     }
   }
 
@@ -2644,6 +2672,12 @@ class MusicProvider extends ChangeNotifier {
     }
     final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
     if (song.filePath.trim().isEmpty) return false;
+    if (!await _claimAudioFocus(reason: 'play_song_internal')) {
+      _userWantsPlaying = false;
+      isPlaying = false;
+      _loadingSource = false;
+      return false;
+    }
 
     // Clear any leftover DJ stretch / muted-engine state before a normal play.
     try {
@@ -2659,7 +2693,6 @@ class MusicProvider extends ChangeNotifier {
 
     _loadingSource = true;
     _userWantsPlaying = true;
-    await _claimAudioFocus(reason: 'play_song_internal');
 
     Future<void> step(String name, [Map<String, Object?> extra = const {}]) async {
       await ResonateDiagnostics.record('playback_play_step', {
@@ -2761,13 +2794,6 @@ class MusicProvider extends ChangeNotifier {
       currentPosition = Duration.zero;
       notifyListeners();
       _publishServiceState();
-
-      try {
-        final session = await AudioSession.instance;
-        await session.setActive(true);
-      } catch (e) {
-        debugPrint('AudioSession setActive (pre-source) failed: $e');
-      }
 
       final loopMode = (!effectiveCrossfadeEnabled)
           ? switch (_repeatMode) {
@@ -2872,10 +2898,13 @@ class MusicProvider extends ChangeNotifier {
       // Effects after source is up — never block play on effects failure/slowness.
       unawaited(_enableEffects(target, targetEq, targetLoud));
 
-      try {
-        final session = await AudioSession.instance;
-        await session.setActive(true);
-      } catch (_) {}
+      if (await _isCommunicationActive()) {
+        _userWantsPlaying = false;
+        isPlaying = false;
+        _loadingSource = false;
+        await step('play_blocked_communication');
+        return false;
+      }
 
       await step('play_loop_start', {'processingState': target.processingState.name});
 
