@@ -2124,10 +2124,10 @@ class MusicProvider extends ChangeNotifier {
       } catch (_) {}
       await incoming.setVolume(0.0);
 
-      try {
-        final session = await AudioSession.instance;
-        await session.setActive(true);
-      } catch (_) {}
+      if (!await _claimAudioFocus(reason: 'repeat_self_native_handoff')) {
+        _userWantsPlaying = false;
+        return false;
+      }
 
       try {
         await incoming.play();
