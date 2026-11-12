@@ -29,6 +29,8 @@ import '../services/library_visibility_store.dart';
 import '../services/audio_effects_bridge.dart';
 import '../services/dj_sfx_rack.dart';
 import '../services/playback_engine_session.dart';
+import '../services/media3_provider_state_bridge.dart';
+import '../services/media3_music_provider_adapter.dart';
 import '../services/playback_backend.dart';
 import '../services/audio_effects_controller.dart';
 import '../services/loudness_service.dart';
@@ -63,6 +65,7 @@ import '../modes/services/podcast_session_bridge.dart';
 
 part 'music_provider_crossfade.dart';
 part 'music_provider_transport.dart';
+part 'music_provider_media3.dart';
 part 'music_provider_dj_handoff.dart';
 part 'music_provider_audio_effects_lifecycle.dart';
 
@@ -97,7 +100,9 @@ class MusicProvider extends ChangeNotifier {
   Media3ProviderState? _media3ShadowState;
   Media3ProviderState? get media3ShadowState => _media3ShadowState;
   bool _media3ProviderSessionPrepared = false;
+  bool _media3ProviderSessionActive = false;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
+  bool get media3ProviderSessionActive => _media3ProviderSessionActive;
   final PodcastSessionBridge _podcastSession = PodcastSessionBridge();
   final AudiobookSessionBridge _audiobookSession = AudiobookSessionBridge();
   ModeProvider? _modes;
@@ -731,11 +736,8 @@ class MusicProvider extends ChangeNotifier {
     await _media3StateSub?.cancel();
     _media3StateSub = session.stateStream.listen((state) {
       if (_disposed) return;
-      // Observe the exact state source paired with Media3 commands, but keep
-      // it shadow-only while EnginePair owns production transport. Applying
-      // this snapshot to public provider fields before the command/recovery
-      // handoff would make the UI report Media3's idle state during legacy audio.
       _media3ShadowState = state;
+      if (_media3ProviderSessionActive) _acceptMedia3ProviderState(state);
     }, onError: (Object error) {
       debugPrint('Media3 provider state stream error: $error');
     });
@@ -750,12 +752,30 @@ class MusicProvider extends ChangeNotifier {
     }, onError: (Object error) {
       debugPrint('Media3 audio session stream error: $error');
     });
+    // Commit the handoff only after the session has the provider queue,
+    // repeat/shuffle/volume policy, and both observation subscriptions.
+    // Media3 becomes the sole transport and recovery owner from this point.
+    await session.setAudioFocusHandling(true);
+    try {
+      await _engines.stopAll();
+    } catch (_) {
+      try { await _playerA.stop(); } catch (_) {}
+      try { await _playerB.stop(); } catch (_) {}
+    }
+    try {
+      final audioSession = await AudioSession.instance;
+      await audioSession.setActive(false);
+    } catch (_) {}
     _media3ProviderSessionPrepared = true;
-    unawaited(ResonateDiagnostics.record('media3_provider_session_prepared', {
+    _media3ProviderSessionActive = true;
+    final initialState = _media3ShadowState;
+    if (initialState != null) _acceptMedia3ProviderState(initialState);
+    unawaited(ResonateDiagnostics.record('media3_provider_session_handoff_enabled', {
       'queueLength': _queue.length,
       'queueIndex': _queueIndex,
-      'focusEnabled': false,
-      'transportAuthority': 'legacy_engine_pair',
+      'focusEnabled': true,
+      'transportAuthority': 'media3_provider_session',
+      'legacyEnginesStopped': true,
     }));
   }
 
@@ -857,6 +877,10 @@ class MusicProvider extends ChangeNotifier {
 
   /// If UI says playing but engine volume is near zero outside a crossfade, unstick.
   void _maybeRecoverSilentPlayback() {
+    if (_media3ProviderSessionActive) {
+      _recoverMedia3ProviderPlayback();
+      return;
+    }
     _forceClearStuckTransition(reason: 'silent_recover_probe');
     if (_crossfadeInProgress ||
         _automaticCrossfadeInFlight ||
@@ -2745,6 +2769,15 @@ class MusicProvider extends ChangeNotifier {
     }
     final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
     if (song.filePath.trim().isEmpty) return false;
+    if (_media3ProviderSessionActive) {
+      return _playSongOnMedia3ProviderSession(
+        song,
+        queue: queue,
+        startIndex: startIndex,
+        resume: resume,
+        intentToken: intentToken,
+      );
+    }
     if (!await _claimAudioFocus(reason: 'play_song_internal')) {
       _userWantsPlaying = false;
       isPlaying = false;
