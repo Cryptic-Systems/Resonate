@@ -234,6 +234,44 @@ class Media3PlaybackClient {
     });
   }
 
+  /// Applies a temporary EQ curve to one logical deck. The native DSP
+  /// registry composes this overlay with the persistent Resonate EQ curve.
+  Future<void> setDeckEqOverlay({
+    required String deck,
+    required List<double> centersHz,
+    required List<double> gainsDb,
+  }) async {
+    if (deck != 'active' && deck != 'standby') {
+      throw ArgumentError.value(deck, 'deck', 'Must be active or standby.');
+    }
+    if (centersHz.isEmpty || centersHz.length != gainsDb.length ||
+        centersHz.length > 31) {
+      throw ArgumentError('EQ overlay requires 1–31 matching frequency/gain bands.');
+    }
+    for (var i = 0; i < centersHz.length; i++) {
+      final frequency = centersHz[i];
+      final gain = gainsDb[i];
+      if (!frequency.isFinite || frequency < 20.0 || frequency > 20000.0) {
+        throw ArgumentError.value(frequency, 'centersHz[$i]', 'Must be 20–20000 Hz.');
+      }
+      if (!gain.isFinite || gain < -12.0 || gain > 12.0) {
+        throw ArgumentError.value(gain, 'gainsDb[$i]', 'Must be -12–12 dB.');
+      }
+    }
+    await _invokeAccepted('setDeckEqOverlay', <String, Object>{
+      'deck': deck,
+      'centersHz': centersHz,
+      'gainsDb': gainsDb,
+    });
+  }
+
+  Future<void> clearDeckEqOverlay({required String deck}) async {
+    if (deck != 'active' && deck != 'standby') {
+      throw ArgumentError.value(deck, 'deck', 'Must be active or standby.');
+    }
+    await _invokeAccepted('clearDeckEqOverlay', <String, Object>{'deck': deck});
+  }
+
   Future<void> setVolume(double volume) async {
     if (!volume.isFinite) {
       throw ArgumentError.value(volume, 'volume', 'Must be finite.');
