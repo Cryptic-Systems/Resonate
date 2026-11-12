@@ -750,7 +750,7 @@ class MusicProvider extends ChangeNotifier {
     _media3StateSub = session.stateStream.listen((state) {
       if (_disposed) return;
       _media3ShadowState = state;
-      if (_media3ProviderSessionActive) _acceptMedia3ProviderState(state);
+      if (_media3ProviderSessionActive) this._acceptMedia3ProviderState(state);
     }, onError: (Object error) {
       debugPrint('Media3 provider state stream error: $error');
     });
@@ -793,9 +793,9 @@ class MusicProvider extends ChangeNotifier {
     _media3ProviderSessionActive = true;
     final initialState = _media3ShadowState;
     if (initialState != null) {
-      _acceptMedia3ProviderState(initialState);
+      this._acceptMedia3ProviderState(initialState);
     } else {
-      _reconcileMedia3ProviderSession();
+      this._reconcileMedia3ProviderSession();
     }
     unawaited(ResonateDiagnostics.record('media3_provider_session_handoff_enabled', {
       'queueLength': _queue.length,
@@ -918,7 +918,7 @@ class MusicProvider extends ChangeNotifier {
   /// If UI says playing but engine volume is near zero outside a crossfade, unstick.
   void _maybeRecoverSilentPlayback() {
     if (_media3ProviderSessionActive) {
-      _recoverMedia3ProviderPlayback();
+      this._recoverMedia3ProviderPlayback();
       return;
     }
     _forceClearStuckTransition(reason: 'silent_recover_probe');
@@ -2935,7 +2935,7 @@ class MusicProvider extends ChangeNotifier {
     final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
     if (song.filePath.trim().isEmpty) return false;
     if (_media3ProviderSessionActive) {
-      return _playSongOnMedia3ProviderSession(
+      return this._playSongOnMedia3ProviderSession(
         song,
         queue: queue,
         startIndex: startIndex,
@@ -3338,20 +3338,20 @@ class MusicProvider extends ChangeNotifier {
     });
   }
 
-  Future<bool> enqueueSongs(List<Song> songs) async { await _visibility.load(); final additions = songs.where((s) => _visibility.isVisible(s.id) && s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList(); if (additions.isEmpty) return false; if (effectiveShuffleEnabled && additions.length > 1) additions.shuffle(math.Random()); _queue.addAll(additions); await _persistQueue(); await _syncMedia3ProviderQueue(); notifyListeners(); return true; }
+  Future<bool> enqueueSongs(List<Song> songs) async { await _visibility.load(); final additions = songs.where((s) => _visibility.isVisible(s.id) && s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList(); if (additions.isEmpty) return false; if (effectiveShuffleEnabled && additions.length > 1) additions.shuffle(math.Random()); _queue.addAll(additions); await _persistQueue(); await this._syncMedia3ProviderQueue(); notifyListeners(); return true; }
   Future<bool> addToQueue(Song song) => enqueueSongs([song]);
-  Future<bool> playNext(Song song) async { await _visibility.load(); if (!_visibility.isVisible(song.id) || song.filePath.trim().isEmpty || currentSong?.id == song.id || _queue.any((q) => q.id == song.id)) return false; final insertAt = (_queueIndex + 1).clamp(0, _queue.length).toInt(); _queue.insert(insertAt, song); await _persistQueue(); await _syncMedia3ProviderQueue(); notifyListeners(); return true; }
+  Future<bool> playNext(Song song) async { await _visibility.load(); if (!_visibility.isVisible(song.id) || song.filePath.trim().isEmpty || currentSong?.id == song.id || _queue.any((q) => q.id == song.id)) return false; final insertAt = (_queueIndex + 1).clamp(0, _queue.length).toInt(); _queue.insert(insertAt, song); await _persistQueue(); await this._syncMedia3ProviderQueue(); notifyListeners(); return true; }
   Future<bool> removeFromQueue(int index) async {
     if (index < 0 || index >= _queue.length || index == _queueIndex) return false;
     _queue.removeAt(index);
     if (index < _queueIndex) _queueIndex -= 1;
     await _persistQueue();
-    await _syncMedia3ProviderQueue();
+    await this._syncMedia3ProviderQueue();
     notifyListeners();
     return true;
   }
-  Future<bool> reorderQueue(int oldIndex, int newIndex) async { if (oldIndex <= _queueIndex || oldIndex >= _queue.length) return false; if (newIndex > oldIndex) newIndex--; newIndex = newIndex.clamp(_queueIndex + 1, _queue.length - 1).toInt(); final item = _queue.removeAt(oldIndex); _queue.insert(newIndex, item); await _persistQueue(); await _syncMedia3ProviderQueue(); notifyListeners(); return true; }
-  void clearUpcomingQueue() { if (_queueIndex >= _queue.length - 1) return; _queue = [..._queue.take(_queueIndex + 1)]; unawaited(_persistQueue()); unawaited(_syncMedia3ProviderQueue()); notifyListeners(); }
+  Future<bool> reorderQueue(int oldIndex, int newIndex) async { if (oldIndex <= _queueIndex || oldIndex >= _queue.length) return false; if (newIndex > oldIndex) newIndex--; newIndex = newIndex.clamp(_queueIndex + 1, _queue.length - 1).toInt(); final item = _queue.removeAt(oldIndex); _queue.insert(newIndex, item); await _persistQueue(); await this._syncMedia3ProviderQueue(); notifyListeners(); return true; }
+  void clearUpcomingQueue() { if (_queueIndex >= _queue.length - 1) return; _queue = [..._queue.take(_queueIndex + 1)]; unawaited(_persistQueue()); unawaited(this._syncMedia3ProviderQueue()); notifyListeners(); }
 
   Future<void> _loadSingle(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud, Song song, {bool start = true}) async {
     await player.setLoopMode(LoopMode.off);
