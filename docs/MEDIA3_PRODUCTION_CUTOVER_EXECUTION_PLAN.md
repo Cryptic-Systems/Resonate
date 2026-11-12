@@ -301,3 +301,35 @@ Merge only after all gates pass and the target branch is confirmed. Follow branc
 8. After stabilization, execute P1 work in `RESONATE_COMPLETE_AUDIT_AND_ECOSYSTEM_ROADMAP.md`.
 
 **Status note:** This plan does not claim the migration has been built, tested, or merged. It defines the work and evidence required to do so safely.
+
+
+## 15. Live repository snapshot — 2026-11-12
+
+This section records the repository state checked while preparing this plan. Refresh it before any integration because branch and CI state can change.
+
+| Item | Observed state |
+|---|---|
+| Target branch | `Resonate-True-Apk` |
+| Migration PR | [#219](https://github.com/Cryptic-Systems/Resonate/pull/219) |
+| PR state | Open, draft, not merged |
+| PR base | `media3-playback-observation-contract` |
+| PR head | `media3-remove-just-audio-cutover` at `46e33ba6b93f02745d3491a9cc22d9c7df9df094` |
+| PR scope | 170 commits, 31 changed files relative to its current PR base |
+| Observed workflow | One `Resonate CI` run for the head, run #1365, completed successfully |
+| Combined commit status API | Returned no individual status entries in this check |
+
+### Important integration finding
+
+A direct comparison of `media3-remove-just-audio-cutover` against `Resonate-True-Apk` reported divergent history: 345 commits ahead and 5 behind. The compare also included files that are not part of PR #219's own changed-file list. **Do not retarget or merge PR #219 directly into `Resonate-True-Apk` without first reconciling the branch ancestry and reviewing the complete target-relative diff.**
+
+The PR's isolated Media3 session/runtime/adapter work and Kotlin queue/crossfade additions are useful progress. However, at the reviewed head:
+- The production `MusicProvider` still constructs `EnginePair` and exposes the legacy `AudioPlayer` instances.
+- The provider still imports `just_audio`; the PR head's `pubspec.yaml` also still contains `just_audio` as a transitional dependency.
+- The PR's changed-file list does not include `lib/providers/music_provider.dart` relative to its PR base. The target-relative comparison shows only a small provider change associated with the observation boundary; it does not establish complete production provider injection.
+- Crossfade and DJ orchestration in the production provider still consumes outgoing/incoming legacy player objects. The Media3 session needs an explicit per-deck transition/effects contract before those paths can be safely transferred.
+
+Therefore, the successful workflow run is evidence that the PR head passed that workflow—not evidence that production playback has cut over, that the legacy engine is removed, or that device behavior is correct.
+
+### Next integration action
+
+Create or use a dedicated integration branch **from the current `Resonate-True-Apk` tip**, then port/reconcile the Media3 work in controlled slices. First wire a testable session boundary into production provider construction and observations; then move transport/queue; then focus/audio-session/DSP; then crossfade/DJ and media controls; finally remove legacy engine references and dependency. At every slice, preserve a known-good build and run the relevant tests. Do not import unrelated branch history simply to make the old PR mergeable.
