@@ -529,7 +529,7 @@ This first slice does **not** activate Media3 transport, does not start a second
 
 ### Immediate next implementation steps
 
-1. Add a deterministic provider contract test with a fake `PlaybackEngineSession` proving startup, queue/index transfer, repeat/shuffle/volume mirroring, focus-disabled preparation, audio-session subscription, and disposal.
+1. ~~Add a deterministic provider contract test with a fake `PlaybackEngineSession` proving startup, queue/index transfer, repeat/shuffle/volume mirroring, focus-disabled preparation, audio-session subscription, and disposal.~~ Landed in `test/providers/music_provider_media3_session_test.dart`; it covers queue/index mirroring, mode/volume mirroring, focus-disabled preparation, empty-queue handling, audio-session forwarding, startup failure, and disposal. Exact-head CI is the validation gate.
 2. Move canonical state projection and transport command serialization onto the injected session; keep the switch disabled until every provider recovery/watchdog path is session-aware.
 3. Migrate queue mutation, completion/history, repeat/shuffle, and media controls.
 4. Move crossfade/DJ and DSP/effect ownership to the same Media3 session.
