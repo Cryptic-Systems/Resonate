@@ -739,7 +739,13 @@ class MusicProvider extends ChangeNotifier {
       PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
     });
     await session.setShuffleMode(_shuffleEnabled);
-    await session.setVolume(_volume.clamp(0.0, 1.0).toDouble());
+    await session.setVolume(1.0);
+    await session.setGainFactors(
+      trackLevel: _trackLevelingScale,
+      preamp: _eqPreampScale,
+      sleepFade: _sleepFadeScale,
+      focusDuck: _isDucked ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel) : 1.0,
+    );
     await _media3StateSub?.cancel();
     _media3StateSub = session.stateStream.listen((state) {
       if (_disposed) return;
@@ -1352,6 +1358,21 @@ class MusicProvider extends ChangeNotifier {
 
   /// Apply current master gain (preamp × sleep fade × duck) to the active engine.
   Future<void> _applyActiveMasterVolume() async {
+    if (_media3ProviderSessionActive) {
+      try {
+        await _media3ProviderSession!.setGainFactors(
+          trackLevel: _trackLevelingScale,
+          preamp: _eqPreampScale,
+          sleepFade: _sleepFadeScale,
+          focusDuck: _isDucked
+              ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel)
+              : 1.0,
+        );
+      } catch (error) {
+        debugPrint('Media3 gain-factor update failed: $error');
+      }
+      return;
+    }
     try {
       await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
     } catch (_) {}
@@ -3556,11 +3577,7 @@ class MusicProvider extends ChangeNotifier {
       await _systemVolumeChannel.invokeMethod('setSystemVolume', {'value': _volume});
       // Keep EQ preamp + sleep-fade digital attenuation; system volume is separate.
       if (!_transitionLive) {
-        if (_media3ProviderSessionActive) {
-          await _media3ProviderSession!.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
-        } else {
-          await _applyActiveMasterVolume();
-        }
+        await _applyActiveMasterVolume();
       }
     } catch (_) {}
     notifyListeners();
