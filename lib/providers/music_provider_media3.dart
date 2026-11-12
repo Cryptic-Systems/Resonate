@@ -119,6 +119,13 @@ extension MusicProviderMedia3 on MusicProvider {
     _crossfadeInProgress = true;
     _transitionArmedAt = DateTime.now();
     try {
+      // A preload can still be decoding when the end-window trigger arrives.
+      // Wait for the in-flight session command rather than racing a second
+      // standby replacement against it.
+      for (var wait = 0; _crossfadePreloadInFlight && wait < 80; wait++) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        if (!stillOwnsTransition()) return;
+      }
       var preparation = _media3DjTransitionPreparation;
       if (_preloadedNextSongId != nextSong.id || preparation == null) {
         await _preloadNextForMedia3Crossfade();
@@ -130,17 +137,23 @@ extension MusicProviderMedia3 on MusicProvider {
       }
 
       final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
-      final durationMs = (djActive
+      final configuredDurationMs = (djActive
               ? (_crossfadeDurationMs + _lastDjCrossfadeBiasMs).clamp(500, 6500)
               : _crossfadeDurationMs.clamp(500, 12000))
           .toInt();
       final remainingMs = session.duration == null
           ? null
           : session.duration!.inMilliseconds - session.position.inMilliseconds;
-      if (remainingMs == null || remainingMs < 250 ||
-          remainingMs > durationMs + 4500) {
+      if (remainingMs == null || remainingMs < 1200 ||
+          remainingMs > configuredDurationMs + 4500) {
         throw StateError('Media3 crossfade trigger is outside the validated end window.');
       }
+      // Never let the outgoing deck reach ENDED before the native fade can
+      // promote the prepared deck. Keep the small tail guard used by the
+      // previous provider-owned crossfade implementation.
+      final durationMs = remainingMs < configuredDurationMs
+          ? (remainingMs - 150).clamp(500, configuredDurationMs).toInt()
+          : configuredDurationMs;
 
       await session.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
       if (!stillOwnsTransition()) return;
@@ -158,17 +171,42 @@ extension MusicProviderMedia3 on MusicProvider {
         'incomingSongId': nextSong.id,
         'queueIndex': nextIndex,
         'durationMs': durationMs,
+        'remainingMs': remainingMs,
         'incomingStartMs': preparation?.incomingStartPosition.inMilliseconds ?? 0,
         'activeSpeed': preparation?.activeSpeed ?? 1.0,
         'standbySpeed': preparation?.standbySpeed ?? 1.0,
       });
+      // Subscribe before issuing the command so a fast native handoff cannot
+      // be missed by the provider's completion observer.
+      final promoted = session.stateStream.firstWhere(
+        (state) =>
+            state.currentSong?.id == nextSong.id &&
+            state.queueIndex == nextIndex &&
+            state.isPlaying,
+      );
       await session.crossfade(duration: Duration(milliseconds: durationMs));
-      // The native equal-power clock owns both deck gains and the atomic
-      // MediaSession/player promotion. Wait for that canonical state change;
-      // do not infer completion from elapsed wall-clock time.
-      await session.stateStream.firstWhere(
-        (state) => state.currentSong?.id == nextSong.id && state.isPlaying,
-      ).timeout(Duration(milliseconds: durationMs + 8000));
+
+      var elapsedMs = 0;
+      var lastTick = DateTime.now();
+      while (session.currentSong?.id != nextSong.id ||
+          session.queueIndex != nextIndex) {
+        await Future<void>.delayed(const Duration(milliseconds: 36));
+        final now = DateTime.now();
+        if (session.isPlaying) {
+          elapsedMs += now.difference(lastTick).inMilliseconds;
+        }
+        lastTick = now;
+        if (!stillOwnsTransition()) return;
+        if (_djSfxEngaged) {
+          await _tickDjClubFxSweep(
+            (elapsedMs / durationMs).clamp(0.0, 1.0).toDouble(),
+          );
+        }
+        if (elapsedMs > durationMs + 8000) {
+          throw TimeoutException('Media3 native crossfade did not promote the incoming deck.');
+        }
+      }
+      await promoted;
       if (!stillOwnsTransition()) return;
 
       await session.setDeckPlaybackSpeeds(
