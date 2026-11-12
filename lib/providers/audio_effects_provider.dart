@@ -5,11 +5,13 @@ import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/dsp_settings.dart';
 import '../services/audio_effects_bridge.dart';
+import '../services/playback_engine_session.dart';
 
 class AudioEffectsProvider extends ChangeNotifier {
   final AudioPlayer? player;
   final List<AudioPlayer> sessionPlayers;
   final AndroidLoudnessEnhancer? loudnessEnhancer;
+  final PlaybackEngineSession? playbackSession;
   double reverb = 0.0;
   double bassBoost = 0.0;
   double virtualizer = 0.0;
@@ -18,12 +20,15 @@ class AudioEffectsProvider extends ChangeNotifier {
 
   final List<StreamSubscription<int?>> _sessionSubscriptions = [];
   final Map<AudioPlayer, int> _sessionIdsByPlayer = {};
+  StreamSubscription<int?>? _media3SessionSubscription;
+  int? _media3SessionId;
   Future<void> _nativeApplyQueue = Future<void>.value();
 
   AudioEffectsProvider({
     this.player,
     List<AudioPlayer>? sessionPlayers,
     this.loudnessEnhancer,
+    this.playbackSession,
   }) : sessionPlayers = sessionPlayers ??
             (player == null ? const <AudioPlayer>[] : <AudioPlayer>[player]) {
     // A/B players own independent Android sessions. Track both so an incoming
@@ -37,8 +42,7 @@ class AudioEffectsProvider extends ChangeNotifier {
         sessionPlayer.androidAudioSessionIdStream.listen((id) {
           final previousId = _sessionIdsByPlayer.remove(sessionPlayer);
           if (id == null || id <= 0) {
-            if (previousId != null &&
-                !_sessionIdsByPlayer.values.contains(previousId)) {
+            if (previousId != null && !_isSessionTracked(previousId)) {
               unawaited(_detachNativeSession(previousId));
             }
             return;
@@ -47,9 +51,8 @@ class AudioEffectsProvider extends ChangeNotifier {
             _sessionIdsByPlayer[sessionPlayer] = id;
             return;
           }
-          if (previousId != null &&
-              !_sessionIdsByPlayer.values.contains(previousId)) {
-            unawaited(AudioEffectsBridge.detachFromSession(previousId));
+          if (previousId != null && !_isSessionTracked(previousId)) {
+            unawaited(_detachNativeSession(previousId));
           }
           _sessionIdsByPlayer[sessionPlayer] = id;
           // Reattach after the platform recreates this player's audio session.
@@ -59,7 +62,37 @@ class AudioEffectsProvider extends ChangeNotifier {
         }),
       );
     }
+    // Media3 exposes the active deck's session as a stream. Its first event
+    // carries the current snapshot, and subsequent events include deck
+    // handoffs. Keep this opt-in so legacy construction remains unchanged.
+    if (playbackSession != null) {
+      _media3SessionSubscription =
+          playbackSession!.audioSessionIdStream.listen(
+        _onMedia3SessionId,
+        onError: (Object error) {
+          debugPrint('Media3 audio-effects session stream failed: $error');
+        },
+      );
+    }
     _load();
+  }
+
+  bool _isSessionTracked(int sessionId) =>
+      _media3SessionId == sessionId ||
+      _sessionIdsByPlayer.values.contains(sessionId);
+
+  void _onMedia3SessionId(int? rawId) {
+    final nextId = rawId != null && rawId > 0 ? rawId : null;
+    final previousId = _media3SessionId;
+    if (previousId == nextId) return;
+    _media3SessionId = nextId;
+    if (previousId != null && !_isSessionTracked(previousId)) {
+      unawaited(_detachNativeSession(previousId));
+    }
+    if (nextId != null) {
+      // Rebind native auxiliary effects after an active-deck handoff.
+      unawaited(_applyNative(sessionIdOverride: nextId));
+    }
   }
 
   Future<void> setEffectsEnabled(bool value) async {
@@ -131,6 +164,7 @@ class AudioEffectsProvider extends ChangeNotifier {
         ? <int>{sessionIdOverride}
         : <int>{
             ..._sessionIdsByPlayer.values,
+            if (_media3SessionId != null) _media3SessionId!,
             if ((player?.androidAudioSessionId ?? 0) > 0)
               player!.androidAudioSessionId!,
           };
@@ -236,6 +270,9 @@ class AudioEffectsProvider extends ChangeNotifier {
       unawaited(subscription.cancel());
     }
     _sessionSubscriptions.clear();
+    unawaited(_media3SessionSubscription?.cancel());
+    _media3SessionSubscription = null;
+    _media3SessionId = null;
     _sessionIdsByPlayer.clear();
     AudioEffectsBridge.release();
     super.dispose();
