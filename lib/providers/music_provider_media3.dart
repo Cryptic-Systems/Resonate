@@ -4,6 +4,18 @@ part of 'music_provider.dart';
 /// Every method here reads and writes the same session; just_audio is not a
 /// fallback once the handoff has been committed.
 extension MusicProviderMedia3 on MusicProvider {
+  Future<void> _syncMedia3ProviderQueue() async {
+    final session = _media3ProviderSession;
+    if (session == null || !_media3ProviderSessionActive) return;
+    await session.synchronizeQueue(_queue);
+    await session.setShuffleMode(_shuffleEnabled);
+    await session.setRepeatMode(switch (_repeatMode) {
+      PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
+      PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
+      PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
+    });
+  }
+
   Future<bool> _playSongOnMedia3ProviderSession(
     Song song, {
     List<Song>? queue,
