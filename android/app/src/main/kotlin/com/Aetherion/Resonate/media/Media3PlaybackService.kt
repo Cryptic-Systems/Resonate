@@ -145,13 +145,24 @@ class Media3PlaybackService : MediaSessionService() {
         standbyPlayer = newPlayer(handleAudioFocus = false, deckId = "B").apply {
             addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (crossfadeStatus == "preparing") {
+                    if (crossfadeStatus == "preparing" || crossfadeStatus == "waiting_ready") {
                         crossfadeStatus = when (playbackState) {
                             Player.STATE_READY -> "ready"
                             Player.STATE_IDLE -> "preparing"
                             Player.STATE_BUFFERING -> "preparing"
                             Player.STATE_ENDED -> "incoming_ended"
                             else -> crossfadeStatus
+                        }
+                        if (playbackState == Player.STATE_READY) {
+                            val pendingDuration = pendingCrossfadeDurationMs
+                            if (pendingDuration != null) {
+                                pendingCrossfadeDurationMs = null
+                                if (activePlayer.isPlaying) {
+                                    beginCrossfade(pendingDuration)
+                                } else {
+                                    crossfadeStatus = "ready"
+                                }
+                            }
                         }
                     }
                 }
@@ -252,12 +263,31 @@ class Media3PlaybackService : MediaSessionService() {
      */
     fun startCrossfade(durationMs: Long): Boolean {
         if (durationMs !in 250L..15000L) return false
-        if (!activePlayer.isPlaying || standbyPlayer.mediaItemCount == 0 ||
-            standbyPlayer.playbackState != Player.STATE_READY
-        ) {
+        if (!activePlayer.isPlaying || standbyPlayer.mediaItemCount == 0) {
             crossfadeStatus = "incoming_not_ready"
             return false
         }
+        if (standbyPlayer.playbackState != Player.STATE_READY) {
+            if (standbyPlayer.playbackState != Player.STATE_BUFFERING &&
+                standbyPlayer.playbackState != Player.STATE_IDLE
+            ) {
+                crossfadeStatus = "incoming_not_ready"
+                return false
+            }
+            pendingCrossfadeDurationMs = durationMs
+            crossfadeStatus = "waiting_ready"
+            return true
+        }
+        return beginCrossfade(durationMs)
+    }
+
+    /** Start the native equal-power ramp only after standby is actually ready. */
+    private fun beginCrossfade(durationMs: Long): Boolean {
+        if (durationMs !in 250L..15000L || !activePlayer.isPlaying ||
+            standbyPlayer.mediaItemCount == 0 ||
+            standbyPlayer.playbackState != Player.STATE_READY
+        ) return false
+        pendingCrossfadeDurationMs = null
         cancelCrossfade(clearOverlays = false, resetStandbySpeed = false)
         crossfadeClock.start(durationMs, android.os.SystemClock.elapsedRealtime())
         val generation = ++fadeGeneration
@@ -311,6 +341,12 @@ class Media3PlaybackService : MediaSessionService() {
      * pauses the standby deck so neither audio nor fade progress advances silently.
      */
     fun pauseCrossfade(): Boolean {
+        if (crossfadeStatus == "waiting_ready") {
+            pendingCrossfadeDurationMs = null
+            standbyPlayer.pause()
+            crossfadeStatus = "ready"
+            return true
+        }
         if (crossfadeStatus != "fading") return false
         if (!crossfadeClock.pause(android.os.SystemClock.elapsedRealtime())) return false
         fadeRunnable?.let(mainHandler::removeCallbacks)
@@ -333,6 +369,7 @@ class Media3PlaybackService : MediaSessionService() {
      */
     fun clearPreload(): Boolean {
         if (!::activePlayer.isInitialized || !::standbyPlayer.isInitialized) return false
+        pendingCrossfadeDurationMs = null
         cancelCrossfade()
         standbyPlayer.pause()
         standbyPlayer.clearMediaItems()
@@ -344,6 +381,7 @@ class Media3PlaybackService : MediaSessionService() {
         clearOverlays: Boolean = true,
         resetStandbySpeed: Boolean = true,
     ): Boolean {
+        pendingCrossfadeDurationMs = null
         fadeGeneration++
         if (clearOverlays) DspEngineRegistry.clearAllTemporaryEqOverlays()
         fadeRunnable?.let(mainHandler::removeCallbacks)
