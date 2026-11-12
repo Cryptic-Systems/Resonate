@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:resonate/models/song.dart';
 import 'package:resonate/providers/music_provider.dart';
 import 'package:resonate/services/playback_backend.dart';
@@ -85,6 +86,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences.setMockInitialValues(<String, Object>{});
 
   group('MusicProvider Media3 session preparation', () {
     test('requires an explicitly injected session', () async {
