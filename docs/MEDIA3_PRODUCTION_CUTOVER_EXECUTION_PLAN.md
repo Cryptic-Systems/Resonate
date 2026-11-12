@@ -496,7 +496,7 @@ A temporary EQ overlay is stored per physical deck and applied only to processor
 
 The Flutter contract now exposes `setDeckEqOverlay` and `clearDeckEqOverlay` through the typed client, adapter, serialized runtime, and provider-facing `PlaybackEngineSession`. Native service commands route the request to the currently active or standby physical deck.
 
-The Media3 service clears temporary overlays on explicit cancellation/queue invalidation and after deck promotion. The generic crossfade-start reset preserves overlays so DJ transition curves can remain active during the fade.
+The Media3 service clears temporary overlays on explicit cancellation/queue invalidation and after deck promotion. The generic crossfade-start reset preserves overlays so DJ transition curves can remain active during the fade. The same reset now preserves an independently corrected standby playback rate when the fade starts; explicit cancellation still resets the standby deck to the active baseline. This closes a second DJ transition hazard where the crossfade-start cleanup previously erased the incoming tempo correction.
 
 ### Automated coverage added
 
