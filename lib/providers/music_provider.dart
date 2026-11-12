@@ -28,6 +28,7 @@ import '../services/resonate_diagnostics.dart';
 import '../services/library_visibility_store.dart';
 import '../services/audio_effects_bridge.dart';
 import '../services/dj_sfx_rack.dart';
+import '../services/playback_engine_session.dart';
 import '../services/audio_effects_controller.dart';
 import '../services/loudness_service.dart';
 import '../services/playback_coordinator.dart';
@@ -238,6 +239,20 @@ class MusicProvider extends ChangeNotifier {
   bool get _djSfxEngaged => _djHandoff.sfxEngaged;
   set _djSfxEngaged(bool value) => _djHandoff.sfxEngaged = value;
   final DjSfxRack _djSfxRack = DjSfxRack();
+  // Optional migration seam for Media3's per-deck DJ EQ overlays. This is
+  // deliberately not wired by default: attach only when a Media3 session is
+  // the authoritative playback session. It does not migrate transport,
+  // audio focus, notifications, or the remaining legacy DJ effects.
+  PlaybackEngineSession? _djSfxMedia3OverlaySession;
+
+  /// Opts DJ transition EQ into Media3's active/standby deck overlays.
+  ///
+  /// Passing null keeps the existing AndroidEqualizer implementation. The
+  /// rack retains the session captured at engage time so a later detach or
+  /// replacement cannot strand an overlay on the previous session.
+  void attachMedia3DjOverlaySession(PlaybackEngineSession? session) {
+    _djSfxMedia3OverlaySession = session;
+  }
   DjAnalysisService? _djAnalysis;
   final DjEngine _djEngine = const DjEngine();
   final DjAutopilotPlanner _djAutopilotPlanner = const DjAutopilotPlanner();
@@ -3144,6 +3159,7 @@ class MusicProvider extends ChangeNotifier {
               sections: sections,
               transitionKind: transitionKind,
               aggressiveness: _djPolicy.aggressiveness,
+              playbackSession: _djSfxMedia3OverlaySession,
             );
             if (_djSfxRack.engaged && _djSfxActive) {
               _djSfxEngaged = true;
@@ -3174,6 +3190,7 @@ class MusicProvider extends ChangeNotifier {
           sections: sections,
           transitionKind: transitionKind,
           aggressiveness: _djPolicy.aggressiveness,
+          playbackSession: _djSfxMedia3OverlaySession,
         );
         _djSfxEngaged = true;
         await ResonateDiagnostics.record('dj_transition_sfx', {
