@@ -320,6 +320,42 @@ void main() {
       expect(calls[5].arguments, {'positionMs': 17000});
     });
 
+    test('forwards temporary deck EQ overlays and clear commands', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('test.resonate/deck-eq-overlay');
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return true;
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final adapter = Media3MusicProviderAdapter(
+        client: Media3PlaybackClient(methodChannel: channel),
+      );
+      await adapter.setDeckEqOverlay(
+        deck: 'active',
+        centersHz: <double>[100, 1000],
+        gainsDb: <double>[-3, 3],
+      );
+      await adapter.clearDeckEqOverlay(deck: 'standby');
+
+      expect(calls.map((call) => call.method), [
+        'setDeckEqOverlay',
+        'clearDeckEqOverlay',
+      ]);
+      expect(calls.first.arguments, {
+        'deck': 'active',
+        'centersHz': <double>[100, 1000],
+        'gainsDb': <double>[-3, 3],
+      });
+      expect(calls.last.arguments, {'deck': 'standby'});
+    });
+
     test('rejected partial gain update does not poison later updates', () async {
       TestWidgetsFlutterBinding.ensureInitialized();
       const channel = MethodChannel('test.resonate/gain-transaction');
