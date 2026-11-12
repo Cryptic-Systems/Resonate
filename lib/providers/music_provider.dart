@@ -29,6 +29,7 @@ import '../services/library_visibility_store.dart';
 import '../services/audio_effects_bridge.dart';
 import '../services/dj_sfx_rack.dart';
 import '../services/playback_engine_session.dart';
+import '../services/playback_backend.dart';
 import '../services/audio_effects_controller.dart';
 import '../services/loudness_service.dart';
 import '../services/playback_coordinator.dart';
@@ -3513,6 +3514,10 @@ class MusicProvider extends ChangeNotifier {
     _sessionASub = null;
     _sessionBSub?.cancel();
     _sessionBSub = null;
+    _media3AudioSessionSub?.cancel();
+    _media3AudioSessionSub = null;
+    final media3Session = _media3ProviderSession;
+    if (media3Session != null) unawaited(media3Session.dispose());
     unawaited(_engines.dispose());
     super.dispose();
   }
