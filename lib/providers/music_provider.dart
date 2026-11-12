@@ -3602,6 +3602,25 @@ class MusicProvider extends ChangeNotifier {
     _repeatSelfHandoffInFlight = false;
     _repeatSelfTargetSongId = null;
     unawaited(_restoreDjTransitionSfx());
+    if (_media3ProviderSessionActive && _media3ProviderSession != null) {
+      final session = _media3ProviderSession!;
+      unawaited(() async {
+        try {
+          await session.cancelCrossfade();
+          await session.setDeckPlaybackSpeeds(
+            activeSpeed: 1.0,
+            standbySpeed: 1.0,
+          );
+        } catch (error) {
+          await ResonateDiagnostics.record('media3_crossfade_cancel_failed', {
+            'reason': 'manual_transport_preemption',
+            'error': error.toString(),
+          });
+        }
+      }());
+      _preloadedNextSongId = null;
+      _media3DjTransitionPreparation = null;
+    }
     unawaited(() async {
       try {
         final idle = inactivePlayer;
@@ -3652,6 +3671,10 @@ class MusicProvider extends ChangeNotifier {
     // before releasing the flags so all stale continuations fail their guards.
     final invalidatedGeneration = _automaticTransitionGeneration;
     _automaticTransitionGeneration++;
+    if (_media3ProviderSessionActive && _media3ProviderSession != null) {
+      unawaited(_media3ProviderSession!.cancelCrossfade());
+      _media3DjTransitionPreparation = null;
+    }
     _preloadedNextSongId = null;
     _crossfadePreloadInFlight = false;
     unawaited(ResonateDiagnostics.record('stuck_transition_cleared', {
