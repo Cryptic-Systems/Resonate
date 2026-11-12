@@ -481,8 +481,19 @@ class Media3PlaybackRuntime {
 
   /// Prepares the incoming song on the Media3 standby deck without disturbing
   /// the current deck. Only a backend with native dual-deck support may do this.
-  Future<void> preloadNext(Song song, {int? queueIndex}) async {
+  Future<void> preloadNext(
+    Song song, {
+    int? queueIndex,
+    Duration startPosition = Duration.zero,
+  }) async {
     _ensureAlive();
+    if (startPosition.isNegative) {
+      throw ArgumentError.value(
+        startPosition,
+        'startPosition',
+        'Must not be negative.',
+      );
+    }
     if (_backend is! PlaybackCrossfadeBackend) {
       throw UnsupportedError('This playback backend does not support native crossfade.');
     }
@@ -508,10 +519,14 @@ class Media3PlaybackRuntime {
           song,
           queue: _queue,
           startIndex: resolvedIndex,
+          startPosition: startPosition,
         );
         return;
       }
-      await (_backend as PlaybackCrossfadeBackend).preloadNext(song);
+      await (_backend as PlaybackCrossfadeBackend).preloadNext(
+        song,
+        startPosition: startPosition,
+      );
     });
   }
 
