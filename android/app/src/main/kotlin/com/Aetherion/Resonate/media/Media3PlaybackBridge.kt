@@ -340,7 +340,8 @@ class Media3PlaybackBridge(
                         centers.isNullOrEmpty() || gains.isNullOrEmpty() ||
                         centers.size != gains.size || centers.size > 31 ||
                         centers.any { !it.isFinite() || it !in 20.0..20000.0 } ||
-                        gains.any { !it.isFinite() || it !in -12.0..12.0 }
+                        gains.any { !it.isFinite() || it !in -12.0..12.0 } ||
+                        centers.zipWithNext().any { it.first >= it.second }
                     ) {
                         result.error(
                             "INVALID_DECK_EQ_OVERLAY",
