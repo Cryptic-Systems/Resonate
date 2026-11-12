@@ -368,6 +368,16 @@ class Media3PlaybackBridge(
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_DSP_UNAVAILABLE", "The deck EQ overlay could not be cleared.", null)
                 }
+                "setAudioFocusHandling" -> {
+                    val enabled = call.argument<Boolean>("enabled")
+                    if (enabled == null) {
+                        result.error("INVALID_AUDIO_FOCUS_POLICY", "An enabled boolean is required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setAudioFocusHandling(enabled) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_FOCUS_UNAVAILABLE", "Media3 audio-focus policy is unavailable.", null)
+                }
                 "setVolume" -> {
                     val volume = call.argument<Number>("value")?.toFloat()
                     if (volume == null || !volume.isFinite()) {
