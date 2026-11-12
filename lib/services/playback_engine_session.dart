@@ -1,6 +1,7 @@
 import '../models/song.dart';
 import 'playback_backend.dart';
 import 'playback_observation_source.dart';
+import 'media3_provider_state_bridge.dart';
 
 /// A complete provider-facing playback session.
 ///
@@ -10,6 +11,9 @@ import 'playback_observation_source.dart';
 /// for production until the full Resonate playback responsibilities have parity.
 abstract interface class PlaybackEngineSession
     implements PlaybackObservationSource {
+  /// Immutable, reconciled snapshots from the same backend that receives this
+  /// session's commands. Consumers must not combine this with another player.
+  Stream<Media3ProviderState> get stateStream;
   Future<void> start();
   List<Song> get queue;
 
