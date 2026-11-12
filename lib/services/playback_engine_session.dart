@@ -55,6 +55,10 @@ abstract interface class PlaybackEngineSession
   });
   Future<void> clearDeckEqOverlay({required String deck});
   Future<void> setVolume(double value);
+
+  /// Enables or disables focus requests from this session's active Media3 deck.
+  /// Disable only after another playback owner has explicitly taken over focus.
+  Future<void> setAudioFocusHandling(bool enabled);
   Future<void> setGainFactors({
     double? trackLevel,
     double? preamp,
