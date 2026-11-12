@@ -198,15 +198,6 @@ extension MusicProviderMedia3 on MusicProvider {
     // Buffering does not clear the user's play intent. isPlaying is strictly
     // the reconciled native state, not an optimistic command flag.
     isPlaying = state.isPlaying;
-    if (!state.isPlaying &&
-        !state.isBuffering &&
-        !state.isCompleted &&
-        !state.playWhenReady &&
-        !_loadingSource &&
-        !_transportInFlight &&
-        !_completionAdvanceInProgress) {
-      _userWantsPlaying = false;
-    }
     if (state.isCompleted) {
       final completedId = currentSong?.id;
       if (completedId != null && completedId != _lastCompletionSongId) {
@@ -253,6 +244,7 @@ extension MusicProviderMedia3 on MusicProvider {
     if (session == null ||
         !_media3ProviderSessionActive ||
         !_userWantsPlaying ||
+        _focusLostAt != null ||
         _loadingSource ||
         _transportInFlight ||
         _completionAdvanceInProgress ||
