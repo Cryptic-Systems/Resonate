@@ -104,7 +104,7 @@ void main() {
       provider.dispose();
     });
 
-    test('mirrors provider queue and settings without taking playback focus', () async {
+    test('mirrors provider queue and settings before enabling the session handoff', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
 
@@ -131,8 +131,9 @@ void main() {
       expect(session.repeatModeSet, PlaybackQueueRepeatMode.all);
       expect(session.shuffleModeSet, isTrue);
       expect(session.volumeSet, 1.0);
-      expect(session.focusHandling, isFalse,
-          reason: 'The legacy EnginePair remains the playback owner in shadow preparation.');
+      expect(session.focusHandling, isTrue,
+          reason: 'Media3 owns audio focus after the provider handoff is committed.');
+      expect(provider.media3ProviderSessionActive, isTrue);
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
