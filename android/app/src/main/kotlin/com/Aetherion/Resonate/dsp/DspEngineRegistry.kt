@@ -14,7 +14,12 @@ import java.util.concurrent.ConcurrentHashMap
 object DspEngineRegistry {
     private const val TAG = "DspEngineRegistry"
 
-    private val handles = ConcurrentHashMap<Int, Long>()
+    private data class RegisteredEngine(val handle: Long, val deckId: String)
+    private data class EqOverlay(val centersHz: DoubleArray, val gainsDb: DoubleArray)
+
+    private val handles = ConcurrentHashMap<Int, RegisteredEngine>()
+    private val temporaryEqOverlays = mutableMapOf<String, EqOverlay>()
+    private var activeDeckId: String = "A"
 
     /** Small native seam so registry inheritance can be tested without loading JNI in JVM tests. */
     internal interface NativeDspApi {
@@ -70,19 +75,19 @@ object DspEngineRegistry {
 
     @JvmStatic
     @Synchronized
-    fun register(processorId: Int, handle: Long): Boolean {
-        if (handle == 0L) return false
+    fun register(processorId: Int, handle: Long, deckId: String = "A"): Boolean {
+        if (handle == 0L || deckId !in setOf("A", "B")) return false
 
         // Configure the new engine before publishing it to the live registry.
         // If JNI configuration fails, the caller still owns the handle and can
         // destroy it safely; the registry never exposes a partially configured
         // engine to A/B-wide setting updates.
-        if (!applyStickyToHandle(handle)) {
+        if (!applyStickyToHandle(handle, deckId)) {
             Log.w(TAG, "reject id=$processorId handle=$handle: sticky configuration failed")
             return false
         }
 
-        handles[processorId] = handle
+        handles[processorId] = RegisteredEngine(handle, deckId)
         Log.i(TAG, "register id=$processorId handle=$handle active=${handles.size}")
         return true
     }
@@ -91,21 +96,23 @@ object DspEngineRegistry {
     internal fun resetForTests() {
         handles.clear()
         stickyState = StickyState()
+        temporaryEqOverlays.clear()
+        activeDeckId = "A"
         nativeApi = jniApi
     }
 
     @JvmStatic
     @Synchronized
     fun unregister(processorId: Int) {
-        val h = handles.remove(processorId)
-        Log.i(TAG, "unregister id=$processorId handle=$h active=${handles.size}")
+        val engine = handles.remove(processorId)
+        Log.i(TAG, "unregister id=$processorId handle=${engine?.handle} active=${handles.size}")
     }
 
     @JvmStatic
     fun activeCount(): Int = handles.size
 
     @JvmStatic
-    fun snapshotHandles(): List<Long> = handles.values.filter { it != 0L }.toList()
+    fun snapshotHandles(): List<Long> = handles.values.map { it.handle }.filter { it != 0L }
 
     /** Phone-speaker delivery: HPF + virtual bass + tighter limiter. */
     @JvmStatic
@@ -316,19 +323,143 @@ object DspEngineRegistry {
         Log.i(TAG, "applyEqBandsAll bands=${gainsDb.size} eqEnabled=$enabled effective=$effectiveEqEnabled targets=${list.size}")
     }
 
-    private fun applyStickyToHandle(handle: Long): Boolean {
+
+    /**
+     * The active/standby labels are logical roles. The service updates this
+     * mapping when its two ExoPlayers exchange roles after a completed fade.
+     */
+    @JvmStatic
+    @Synchronized
+    fun setActiveDeck(deckId: String): Boolean {
+        if (deckId !in setOf("A", "B")) return false
+        activeDeckId = deckId
+        return true
+    }
+
+    @JvmStatic
+    @Synchronized
+    fun setTemporaryEqOverlay(
+        deckRole: String,
+        centersHz: DoubleArray,
+        gainsDb: DoubleArray,
+    ): Boolean {
+        if (deckRole !in setOf("active", "standby") ||
+            centersHz.isEmpty() || centersHz.size != gainsDb.size ||
+            centersHz.size > 31 ||
+            centersHz.any { !it.isFinite() || it !in 20.0..20000.0 } ||
+            gainsDb.any { !it.isFinite() || it !in -12.0..12.0 }
+        ) return false
+
+        val deckId = if (deckRole == "active") activeDeckId else if (activeDeckId == "A") "B" else "A"
+        val overlay = EqOverlay(centersHz.copyOf(), gainsDb.copyOf())
+        temporaryEqOverlays[deckId] = overlay
+        val state = stickyState
+        for (engine in handles.values.filter { it.deckId == deckId }) {
+            try {
+                applyEqForEngine(engine.handle, deckId, state)
+            } catch (t: Throwable) {
+                Log.w(TAG, "setTemporaryEqOverlay failed deck=$deckRole handle=${engine.handle}", t)
+                return false
+            }
+        }
+        return true
+    }
+
+    @JvmStatic
+    @Synchronized
+    fun clearTemporaryEqOverlay(deckRole: String): Boolean {
+        if (deckRole !in setOf("active", "standby")) return false
+        val deckId = if (deckRole == "active") activeDeckId else if (activeDeckId == "A") "B" else "A"
+        temporaryEqOverlays.remove(deckId)
+        val state = stickyState
+        for (engine in handles.values.filter { it.deckId == deckId }) {
+            try {
+                val gains = state.gainsDb
+                if (gains != null && gains.isNotEmpty()) {
+                    nativeApi.setEqBands(engine.handle, state.centersHz, gains, true)
+                } else {
+                    // Restore a neutral 31-band curve when there is no saved
+                    // user curve, rather than leaving the last DJ filter active.
+                    val centers = defaultCenters(31)
+                    nativeApi.setEqBands(engine.handle, centers, DoubleArray(31), true)
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "clearTemporaryEqOverlay failed deck=$deckRole handle=${engine.handle}", t)
+                return false
+            }
+        }
+        return true
+    }
+
+    @JvmStatic
+    @Synchronized
+    fun clearAllTemporaryEqOverlays() {
+        clearTemporaryEqOverlay("active")
+        clearTemporaryEqOverlay("standby")
+    }
+
+    private fun applyEqForEngine(handle: Long, deckId: String, state: StickyState) {
+        val base = state.gainsDb
+        val overlay = temporaryEqOverlays[deckId]
+        if (overlay == null) {
+            if (base != null && base.isNotEmpty()) {
+                nativeApi.setEqBands(handle, state.centersHz, base, true)
+            }
+            return
+        }
+        if (base.isNullOrEmpty()) {
+            nativeApi.setEqBands(handle, overlay.centersHz, overlay.gainsDb, true)
+            return
+        }
+        val centers = state.centersHz?.takeIf { it.size >= base.size }?.copyOf(base.size)
+            ?: defaultCenters(base.size)
+        val combined = DoubleArray(base.size) { index ->
+            (base[index] + interpolateDb(overlay, centers[index])).coerceIn(-24.0, 24.0)
+        }
+        nativeApi.setEqBands(handle, centers, combined, true)
+    }
+
+    private fun interpolateDb(overlay: EqOverlay, frequencyHz: Double): Double {
+        val pairs = overlay.centersHz.indices
+            .map { overlay.centersHz[it] to overlay.gainsDb[it] }
+            .sortedBy { it.first }
+        if (frequencyHz <= pairs.first().first) return pairs.first().second
+        if (frequencyHz >= pairs.last().first) return pairs.last().second
+        for (index in 0 until pairs.lastIndex) {
+            val (lowHz, lowDb) = pairs[index]
+            val (highHz, highDb) = pairs[index + 1]
+            if (frequencyHz in lowHz..highHz) {
+                val fraction = (kotlin.math.ln(frequencyHz) - kotlin.math.ln(lowHz)) /
+                    (kotlin.math.ln(highHz) - kotlin.math.ln(lowHz))
+                return lowDb + (highDb - lowDb) * fraction
+            }
+        }
+        return 0.0
+    }
+
+    private fun defaultCenters(count: Int): DoubleArray =
+        DoubleArray(count) { index ->
+            20.0 * kotlin.math.pow(1000.0, index.toDouble() / (count - 1).coerceAtLeast(1))
+        }
+
+    private fun applyStickyToHandle(handle: Long, deckId: String): Boolean {
         val state = stickyState
         try {
             nativeApi.setVolume(handle, state.linearGain)
             nativeApi.setProcessingEnabled(handle, state.dspEnabled)
             val gains = state.gainsDb
             if (gains != null && gains.isNotEmpty()) {
-                nativeApi.setEqBands(handle, state.centersHz, gains, state.eqEnabled && state.dspEnabled)
+                applyEqForEngine(handle, deckId, state)
             } else {
-                // With no curve yet, this legacy gate must follow the DSP
-                // master—not the separate EQ-band preference. Otherwise a
-                // newly registered engine can undo master-off during setup.
-                nativeApi.setEnabled(handle, state.eqEnabled && state.dspEnabled)
+                // With no persistent curve, a deck-local overlay can still
+                // provide its own EQ curve. Otherwise keep the native EQ gate
+                // enabled and leave the processor's flat default untouched.
+                val overlay = temporaryEqOverlays[deckId]
+                if (overlay != null) {
+                    nativeApi.setEqBands(handle, overlay.centersHz, overlay.gainsDb, true)
+                } else {
+                    nativeApi.setEnabled(handle, state.eqEnabled && state.dspEnabled)
+                }
             }
             nativeApi.setSpeakerMode(handle, state.speakerMode)
             nativeApi.setVirtualBass(handle, state.virtualBass)
