@@ -32,9 +32,44 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   double? volumeSet;
   bool? focusHandling;
   bool disposed = false;
+  Song? currentSongValue;
+  int? queueIndexValue;
+  bool playingValue = false;
+  bool readyValue = true;
+  bool completedValue = false;
+  Duration positionValue = Duration.zero;
+  Duration? durationValue;
 
   @override
   Stream<int?> get audioSessionIdStream => audioSessions.stream;
+  @override
+  Song? get currentSong => currentSongValue;
+  @override
+  int? get queueIndex => queueIndexValue;
+  @override
+  bool get isPlaying => playingValue;
+  @override
+  Duration get position => positionValue;
+  @override
+  Duration get bufferedPosition => positionValue;
+  @override
+  Duration? get duration => durationValue;
+  @override
+  bool get isBuffering => false;
+  @override
+  bool get isCompleted => completedValue;
+  @override
+  bool get isReady => readyValue;
+  @override
+  bool get hasError => false;
+  @override
+  String? get error => null;
+  @override
+  double get volume => volumeSet ?? 1.0;
+  @override
+  PlaybackQueueRepeatMode get repeatMode => repeatModeSet ?? PlaybackQueueRepeatMode.off;
+  @override
+  bool get shuffleModeEnabled => shuffleModeSet ?? false;
 
   @override
   Stream<Media3ProviderState> get stateStream => states.stream;
@@ -52,8 +87,27 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
     queue = List<Song>.of(songs);
     loadedIndex = startIndex;
+    currentSongValue = songs.isEmpty ? null : songs[startIndex];
+    queueIndexValue = songs.isEmpty ? null : startIndex;
+    durationValue = currentSongValue?.duration;
+    positionValue = Duration.zero;
     calls.add('loadQueue');
   }
+
+  @override
+  Future<void> play() async { playingValue = true; completedValue = false; calls.add('play'); }
+  @override
+  Future<void> pause() async { playingValue = false; calls.add('pause'); }
+  @override
+  Future<void> stop() async { playingValue = false; calls.add('stop'); }
+  @override
+  Future<void> seek(Duration position) async { positionValue = position; calls.add('seek:${position.inMilliseconds}'); }
+  @override
+  Future<void> next() async { if (queueIndexValue != null && queueIndexValue! < queue.length - 1) { queueIndexValue = queueIndexValue! + 1; currentSongValue = queue[queueIndexValue!]; } calls.add('next'); }
+  @override
+  Future<void> previous() async { if (queueIndexValue != null && queueIndexValue! > 0) { queueIndexValue = queueIndexValue! - 1; currentSongValue = queue[queueIndexValue!]; } calls.add('previous'); }
+  @override
+  Future<void> synchronizeQueue(List<Song> songs) async { queue = List<Song>.of(songs); calls.add('synchronizeQueue'); }
 
   @override
   Future<void> clearQueue() async {
