@@ -364,7 +364,9 @@ class Media3PlaybackService : MediaSessionService() {
     fun pauseCrossfade(): Boolean {
         if (crossfadeStatus == "waiting_ready" || crossfadeStatus == "ready") {
             standbyPlayer.pause()
-            crossfadeStatus = "ready"
+            // Keep waiting_ready while preparation is incomplete. The standby
+            // readiness listener must remain armed so it can finish the
+            // deferred transition after a pause/resume cycle.
             return true
         }
         if (crossfadeStatus != "fading") return false
