@@ -447,7 +447,8 @@ class Media3PlaybackRuntime {
     }
     for (var i = 0; i < centersHz.length; i++) {
       if (!centersHz[i].isFinite || centersHz[i] < 20.0 || centersHz[i] > 20000.0 ||
-          !gainsDb[i].isFinite || gainsDb[i] < -12.0 || gainsDb[i] > 12.0) {
+          !gainsDb[i].isFinite || gainsDb[i] < -12.0 || gainsDb[i] > 12.0 ||
+          (i > 0 && centersHz[i] <= centersHz[i - 1])) {
         throw ArgumentError('EQ overlay contains an invalid frequency or gain at band $i.');
       }
     }
