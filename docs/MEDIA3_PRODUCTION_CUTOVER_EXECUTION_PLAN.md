@@ -428,7 +428,7 @@ The next isolated backend slice adds a non-zero incoming-deck start position to 
 
 ### Validation state
 
-- Latest PR head: fec2eee3fb912ca45e32ca309de57104b24cabe7.
+- Code-change CI head: fec2eee3fb912ca45e32ca309de57104b24cabe7; current branch head is c8ba7ea80d058aa7b6b82cc318b5286c1e24122e (documentation-only follow-up).
 - CI run #1377 (run ID 43207645630) was created for PR #220 and was in progress when this section was recorded.
 - No local Flutter/Kotlin test command or physical-device DJ audition was run in this work session. Do not treat the feature as validated until CI completes and a device test confirms that a planned non-zero phrase offset is audible and survives deck promotion.
 - The production MusicProvider remains unchanged; this is backend capability plumbing, not a production cutover or DJ call-site switch.
