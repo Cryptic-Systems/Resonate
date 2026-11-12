@@ -223,6 +223,10 @@ class Media3ProviderSession implements PlaybackEngineSession {
       _runtime.clearDeckEqOverlay(deck: deck);
 
   @override
+  Future<void> setAudioFocusHandling(bool enabled) =>
+      _runtime.setAudioFocusHandling(enabled);
+
+  @override
   Future<void> setVolume(double value) => _runtime.setVolume(value);
   @override
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) =>
