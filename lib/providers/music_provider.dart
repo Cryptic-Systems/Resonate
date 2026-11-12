@@ -669,7 +669,7 @@ class MusicProvider extends ChangeNotifier {
       loudnessB: _loudnessB,
     );
     _sessionASub = _playerA.androidAudioSessionIdStream.listen((id) {
-      if (_disposed) return;
+      if (_disposed || _media3ProviderSessionActive) return;
       try {
         if (id != null && id > 0 && _activeIsA) onAndroidSession?.call(id);
       } catch (e) {
@@ -677,7 +677,7 @@ class MusicProvider extends ChangeNotifier {
       }
     }, onError: (e) => debugPrint('sessionA stream error: $e'));
     _sessionBSub = _playerB.androidAudioSessionIdStream.listen((id) {
-      if (_disposed) return;
+      if (_disposed || _media3ProviderSessionActive) return;
       try {
         if (id != null && id > 0 && !_activeIsA) onAndroidSession?.call(id);
       } catch (e) {
@@ -817,7 +817,13 @@ class MusicProvider extends ChangeNotifier {
     if (enabled) {
       _queueStore.shuffleUpcoming();
     }
-    await _persistPlaybackModes(); await _persistQueue(); notifyListeners();
+    await _persistPlaybackModes();
+    await _persistQueue();
+    if (_media3ProviderSessionActive) {
+      await _media3ProviderSession!.setShuffleMode(enabled);
+      await _media3ProviderSession!.synchronizeQueue(_queue);
+    }
+    notifyListeners();
   }
 
   Future<void> setRepeatMode(PlaybackRepeatMode mode) async {
@@ -832,6 +838,13 @@ class MusicProvider extends ChangeNotifier {
     // that stale operation can commit or fall back to replaying the old track.
     if (transitionActive) _cancelAutomaticPlaybackWork();
     _repeatMode = mode;
+    if (_media3ProviderSessionActive) {
+      await _media3ProviderSession!.setRepeatMode(switch (mode) {
+        PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
+        PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
+        PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
+      });
+    }
     await _persistPlaybackModes();
     unawaited(_synchronizeModePlaybackBoundary());
     notifyListeners();
@@ -1550,7 +1563,7 @@ class MusicProvider extends ChangeNotifier {
     _playerStreamBinder.cancel(); _currentIndexSubscription?.cancel(); _volumeSubscription?.cancel();
     final player = audioPlayer;
     _playerStreamBinder.bindPlayerState(player.playerStateStream, (state) {
-      if (_disposed) return;
+      if (_disposed || _media3ProviderSessionActive) return;
       final completed = state.processingState == ProcessingState.completed;
       final loading = state.processingState == ProcessingState.loading ||
           state.processingState == ProcessingState.buffering;
@@ -1660,7 +1673,7 @@ class MusicProvider extends ChangeNotifier {
     });
     _currentIndexSubscription?.cancel();
     _currentIndexSubscription = player.currentIndexStream.listen((index) {
-      if (_disposed) return;
+      if (_disposed || _media3ProviderSessionActive) return;
       if (index == null || _crossfadeEnabled || _crossfadeInProgress) return;
       if (!_gaplessWindow.active || _transportInFlight) return;
       if (index < 0 || index >= _gaplessWindow.songIds.length) return;
@@ -1687,7 +1700,7 @@ class MusicProvider extends ChangeNotifier {
     });
 
     _playerStreamBinder.bindPosition(player.positionStream, (position) {
-      if (_disposed) return;
+      if (_disposed || _media3ProviderSessionActive) return;
       if (currentPosition != position) {
         currentPosition = position;
       _forceClearStuckTransition(reason: 'position_tick');
@@ -1702,7 +1715,7 @@ class MusicProvider extends ChangeNotifier {
       _maybeStartAutomaticCrossfade(position);
       _armEndOfTrackWatchdog();
     });
-    _playerStreamBinder.bindDuration(player.durationStream, (duration) { if (_disposed) return; if (duration != null && currentDuration != duration) { currentDuration = duration; notifyListeners(); _publishServiceState(); } });
+    _playerStreamBinder.bindDuration(player.durationStream, (duration) { if (_disposed || _media3ProviderSessionActive) return; if (duration != null && currentDuration != duration) { currentDuration = duration; notifyListeners(); _publishServiceState(); } });
     // App volume is sourced from Android STREAM_MUSIC. Do not mirror the player's
     // internal gain into _volume or it will overwrite the system-volume value.
   }
@@ -3531,7 +3544,11 @@ class MusicProvider extends ChangeNotifier {
       await _systemVolumeChannel.invokeMethod('setSystemVolume', {'value': _volume});
       // Keep EQ preamp + sleep-fade digital attenuation; system volume is separate.
       if (!_transitionLive) {
-        await _applyActiveMasterVolume();
+        if (_media3ProviderSessionActive) {
+          await _media3ProviderSession!.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
+        } else {
+          await _applyActiveMasterVolume();
+        }
       }
     } catch (_) {}
     notifyListeners();
