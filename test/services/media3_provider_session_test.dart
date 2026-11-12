@@ -223,7 +223,6 @@ void main() {
       );
 
       expect(backend.lastDeckSpeeds, (1.08, 0.94));
-      expect(backend.lastPreloadStartPosition, const Duration(milliseconds: 7600));
       expect(backend.calls, ['deckSpeeds']);
       expect(
         () => session.setDeckPlaybackSpeeds(
@@ -468,6 +467,7 @@ void main() {
         queueIndex: 1,
         startPosition: const Duration(milliseconds: 7600),
       );
+      expect(backend.lastPreloadStartPosition, const Duration(milliseconds: 7600));
       await session.crossfade(duration: const Duration(milliseconds: 1200));
       await session.cancelCrossfade();
       await session.stop();
