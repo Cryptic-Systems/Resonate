@@ -189,6 +189,14 @@ void main() {
         ),
         throwsArgumentError,
       );
+      await expectLater(
+        client.setDeckEqOverlay(
+          deck: 'active',
+          centersHz: <double>[1000, 100],
+          gainsDb: <double>[1, 0],
+        ),
+        throwsArgumentError,
+      );
     });
 
     test('sends a validated playback speed to native Media3', () async {
