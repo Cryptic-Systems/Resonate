@@ -55,6 +55,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, 
   Song? preloadedSong;
   List<Song>? preloadedQueue;
   int? preloadedQueueIndex;
+  Duration? preloadedStartPosition;
   Duration? crossfadeDuration;
   int cancelCrossfadeCalls = 0;
   Completer<void>? loadGate;
@@ -128,10 +129,16 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, 
   @override
   Future<void> setShuffleMode(bool enabled) async { lastShuffleMode = enabled; }
   @override
-  Future<void> preloadNext(Song song, {List<Song>? queue, int? startIndex}) async {
+  Future<void> preloadNext(
+    Song song, {
+    List<Song>? queue,
+    int? startIndex,
+    Duration startPosition = Duration.zero,
+  }) async {
     preloadedSong = song;
     preloadedQueue = queue;
     preloadedQueueIndex = startIndex;
+    preloadedStartPosition = startPosition;
   }
   @override
   Future<void> crossfade({required Duration duration}) async { crossfadeDuration = duration; }
@@ -587,13 +594,29 @@ void main() {
 
     test('forwards native preload, crossfade and cancellation to dual-deck backend', () async {
       final incoming = makeSong('incoming');
-      await runtime.preloadNext(incoming);
+      await runtime.preloadNext(
+        incoming,
+        startPosition: const Duration(milliseconds: 9200),
+      );
       await runtime.crossfade(duration: const Duration(seconds: 4));
       await runtime.cancelCrossfade();
 
       expect(backend.preloadedSong?.id, 'incoming');
+      expect(backend.preloadedStartPosition, const Duration(milliseconds: 9200));
       expect(backend.crossfadeDuration, const Duration(seconds: 4));
       expect(backend.cancelCrossfadeCalls, 1);
+    });
+
+    test('rejects a negative phrase-alignment position before backend preload', () async {
+      final incoming = makeSong('incoming');
+      await expectLater(
+        runtime.preloadNext(
+          incoming,
+          startPosition: const Duration(milliseconds: -1),
+        ),
+        throwsArgumentError,
+      );
+      expect(backend.preloadedSong, isNull);
     });
 
     test('preloads the full queue at the incoming occurrence for seamless handoff', () async {
