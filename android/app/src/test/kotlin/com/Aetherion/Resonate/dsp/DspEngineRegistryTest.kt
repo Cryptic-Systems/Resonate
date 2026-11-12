@@ -281,4 +281,113 @@ class DspEngineRegistryTest {
         assertTrue(fake.calls.contains("crossover:3003:200.0"))
     }
 
+    @Test
+    fun temporary_eq_overlay_targets_only_the_requested_logical_deck() {
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        assertTrue(DspEngineRegistry.register(2, 2002L, "B"))
+        DspEngineRegistry.setActiveDeck("A")
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(100.0, 1000.0, 10000.0),
+            doubleArrayOf(-6.0, 0.0, 6.0),
+        ))
+
+        assertTrue(fake.calls.any { it.startsWith("eq:1001:") })
+        assertFalse(fake.calls.any { it.startsWith("eq:2002:") })
+    }
+
+    @Test
+    fun standby_overlay_targets_the_inactive_physical_deck_and_role_follows_promotion() {
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        assertTrue(DspEngineRegistry.register(2, 2002L, "B"))
+        DspEngineRegistry.setActiveDeck("A")
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.setTemporaryEqOverlay(
+            "standby",
+            doubleArrayOf(80.0, 8000.0),
+            doubleArrayOf(-4.0, 4.0),
+        ))
+        assertTrue(fake.calls.any { it.startsWith("eq:2002:") })
+        assertFalse(fake.calls.any { it.startsWith("eq:1001:") })
+
+        DspEngineRegistry.setActiveDeck("B")
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(80.0, 8000.0),
+            doubleArrayOf(3.0, -3.0),
+        ))
+        assertTrue(fake.calls.any { it.startsWith("eq:2002:") })
+        assertFalse(fake.calls.any { it.startsWith("eq:1001:") })
+    }
+
+    @Test
+    fun temporary_overlay_composes_with_persistent_eq_and_clear_restores_base_curve() {
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        DspEngineRegistry.setActiveDeck("A")
+        DspEngineRegistry.applyEqBandsAll(
+            doubleArrayOf(100.0, 1000.0, 10000.0),
+            doubleArrayOf(1.0, 2.0, 3.0),
+            true,
+        )
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(100.0, 1000.0, 10000.0),
+            doubleArrayOf(-2.0, 0.0, 2.0),
+        ))
+        assertTrue(fake.calls.contains("eq:1001:-1.0,2.0,5.0:true"))
+
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.clearTemporaryEqOverlay("active"))
+        assertTrue(fake.calls.contains("eq:1001:1.0,2.0,3.0:true"))
+    }
+
+    @Test
+    fun persistent_eq_updates_retain_active_deck_overlay() {
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        DspEngineRegistry.setActiveDeck("A")
+        assertTrue(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(100.0, 1000.0, 10000.0),
+            doubleArrayOf(1.0, 2.0, 3.0),
+        ))
+        fake.calls.clear()
+
+        DspEngineRegistry.applyEqBandsAll(
+            doubleArrayOf(100.0, 1000.0, 10000.0),
+            doubleArrayOf(4.0, 5.0, 6.0),
+            true,
+        )
+        assertTrue(fake.calls.contains("eq:1001:5.0,7.0,9.0:true"))
+    }
+
+    @Test
+    fun overlay_rejects_malformed_or_out_of_range_curves() {
+        assertFalse(DspEngineRegistry.setTemporaryEqOverlay(
+            "unknown",
+            doubleArrayOf(100.0),
+            doubleArrayOf(1.0),
+        ))
+        assertFalse(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(100.0, 200.0),
+            doubleArrayOf(1.0),
+        ))
+        assertFalse(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(10.0),
+            doubleArrayOf(1.0),
+        ))
+        assertFalse(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(100.0),
+            doubleArrayOf(13.0),
+        ))
+    }
+
 }
