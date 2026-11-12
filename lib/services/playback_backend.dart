@@ -59,6 +59,7 @@ abstract interface class PlaybackCrossfadeBackend {
     Song song, {
     List<Song>? queue,
     int? startIndex,
+    Duration startPosition = Duration.zero,
   });
   Future<void> crossfade({required Duration duration});
   Future<void> cancelCrossfade();
