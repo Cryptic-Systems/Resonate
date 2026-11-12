@@ -282,6 +282,13 @@ class DspEngineRegistryTest {
     }
 
     @Test
+    fun legacy_just_audio_reflection_hook_keeps_its_no_argument_entrypoint() {
+        val hook = Class.forName("com.aetherion.resonate.dsp.DspEngineSinkHook")
+        val method = hook.getMethod("createProcessors")
+        assertEquals(0, method.parameterCount)
+    }
+
+    @Test
     fun temporary_eq_overlay_targets_only_the_requested_logical_deck() {
         assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
         assertTrue(DspEngineRegistry.register(2, 2002L, "B"))
