@@ -49,13 +49,14 @@ PlaybackSnapshot _snapshot({
       error: null,
     );
 
-class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackDeckSpeedBackend, PlaybackPlaylistSyncBackend {
+class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackDeckSpeedBackend, PlaybackPlaylistSyncBackend, PlaybackAudioFocusBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   final List<String> calls = <String>[];
   int currentStateCalls = 0;
   Completer<void>? stateGate;
   double? lastSpeed;
+  bool? lastAudioFocusHandling;
   (double, double)? lastDeckSpeeds;
   Duration? lastPreloadStartPosition;
   PlaybackSnapshot value = _snapshot();
@@ -115,6 +116,11 @@ class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpe
   }) async {
     lastDeckSpeeds = (activeSpeed, standbySpeed);
     calls.add('deckSpeeds');
+  }
+  @override
+  Future<void> setAudioFocusHandling(bool enabled) async {
+    lastAudioFocusHandling = enabled;
+    calls.add('audioFocus:$enabled');
   }
   @override
   Future<void> setVolume(double value) async => calls.add('volume');
@@ -232,6 +238,16 @@ void main() {
         throwsArgumentError,
       );
       expect(backend.calls, ['deckSpeeds']);
+    });
+
+    test('exposes audio-focus ownership through the canonical session', () async {
+      final PlaybackEngineSession engine = session;
+      await engine.start();
+
+      await engine.setAudioFocusHandling(false);
+
+      expect(backend.lastAudioFocusHandling, isFalse);
+      expect(backend.calls, ['audioFocus:false']);
     });
 
     test('implements one contract for commands and observations', () async {
