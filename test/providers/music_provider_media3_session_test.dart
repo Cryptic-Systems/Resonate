@@ -19,6 +19,34 @@ Song _song(String id) => Song(
       dateAdded: DateTime.utc(2026, 1, 1),
     );
 
+
+Media3ProviderState _state({
+  required Song song,
+  required int queueIndex,
+  bool playing = false,
+  bool buffering = false,
+  bool completed = false,
+  bool playWhenReady = false,
+  Duration position = Duration.zero,
+}) => Media3ProviderState(
+      currentSong: song,
+      queueIndex: queueIndex,
+      isPlaying: playing,
+      position: position,
+      bufferedPosition: position,
+      isBuffering: buffering,
+      isCompleted: completed,
+      duration: song.duration,
+      connected: true,
+      isReady: true,
+      playWhenReady: playWhenReady,
+      mediaId: song.id,
+      queueLength: queueIndex + 1,
+      volume: 1.0,
+      hasError: false,
+      error: null,
+    );
+
 class _FakePlaybackSession implements PlaybackEngineSession {
   final StreamController<int?> audioSessions =
       StreamController<int?>.broadcast();
@@ -230,6 +258,82 @@ void main() {
       expect(provider.currentSong?.id, 'one');
       await provider.stop();
       expect(session.calls, contains('stop'));
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('uses canonical Media3 state for recovery without overriding an external pause', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final song = _song('one');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
+
+      final playCallsBeforeRecovery =
+          session.calls.where((call) => call == 'play').length;
+      session.playingValue = false;
+      session.states.add(_state(
+        song: song,
+        queueIndex: 0,
+        position: const Duration(seconds: 42),
+        playWhenReady: true,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      expect(provider.currentPosition, const Duration(seconds: 42));
+      expect(
+        session.calls.where((call) => call == 'play').length,
+        greaterThan(playCallsBeforeRecovery),
+        reason: 'A stopped deck with native playWhenReady intent is recoverable.',
+      );
+      expect(session.playingValue, isTrue);
+
+      final playCallsAfterRecovery =
+          session.calls.where((call) => call == 'play').length;
+      session.playingValue = false;
+      session.states.add(_state(
+        song: song,
+        queueIndex: 0,
+        position: const Duration(seconds: 42),
+        playWhenReady: false,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(
+        session.calls.where((call) => call == 'play').length,
+        playCallsAfterRecovery,
+        reason: 'A native pause must not be undone by the recovery watchdog.',
+      );
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('advances completion through the canonical Media3 session', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final song = _song('only-track');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
+
+      session.playingValue = false;
+      session.completedValue = true;
+      session.positionValue = song.duration;
+      session.states.add(_state(
+        song: song,
+        queueIndex: 0,
+        completed: true,
+        position: song.duration,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      expect(session.calls, contains('stop'));
+      expect(provider.isPlaying, isFalse);
+      expect(provider.media3ProviderSessionActive, isTrue);
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
