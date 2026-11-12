@@ -415,14 +415,15 @@ object DspEngineRegistry {
             }
             return
         }
-        if (base.isNullOrEmpty()) {
+        if (base == null || base.isEmpty()) {
             nativeApi.setEqBands(handle, overlay.centersHz, overlay.gainsDb, true)
             return
         }
-        val centers = state.centersHz?.takeIf { it.size >= base.size }?.copyOf(base.size)
-            ?: defaultCenters(base.size)
-        val combined = DoubleArray(base.size) { index ->
-            (base[index] + interpolateDb(overlay, centers[index])).coerceIn(-24.0, 24.0)
+        val persistentGains = base
+        val centers = state.centersHz?.takeIf { it.size >= persistentGains.size }?.copyOf(persistentGains.size)
+            ?: defaultCenters(persistentGains.size)
+        val combined = DoubleArray(persistentGains.size) { index ->
+            (persistentGains[index] + interpolateDb(overlay, centers[index])).coerceIn(-24.0, 24.0)
         }
         nativeApi.setEqBands(handle, centers, combined, true)
     }
