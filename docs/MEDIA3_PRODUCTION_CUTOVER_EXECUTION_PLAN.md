@@ -393,7 +393,7 @@ A production-based integration slice has now been ported to `media3-cutover-inte
 | PR contents | 22 files; isolated runtime/backend/session contracts, native service/bridge, queue reconciliation, and tests |
 | Production provider | Unchanged; still uses `EnginePair` / `just_audio` |
 | Dependency retirement | Not attempted |
-| CI | No workflow run or status was visible at the time this section was written; do not treat the port as validated |
+| CI | PR #220 run #1380 (`43210239662`) passed all 15 substantive workflow steps for head `031d0aa26b7eee4541ab1bd0b78b9f121f5faf82`; CI only, not device acceptance |
 
 The integration slice includes:
 - Engine-neutral `PlaybackBackend`, `PlaybackObservationSource`, `PlaybackSnapshot`, and `PlaybackEngineSession` contracts.
@@ -405,9 +405,9 @@ The existing production baseline already contains the Android Media3 dependency 
 
 ### Gate before the next slice
 
-1. Obtain CI results for draft PR #220 on the exact head commit.
-2. Resolve any analyzer, Kotlin, JVM test, or Android build failures before provider work.
-3. Review queue occurrence mapping, service startup/reconnect, crossfade cancellation, active audio-session changes, and DSP gain composition against the report-derived acceptance cases in section 16.
+1. CI for the isolated foundation is green on the exact head recorded above; retain the device-acceptance gate.
+2. Review queue occurrence mapping, service startup/reconnect, crossfade cancellation, active audio-session changes, and DSP gain composition against the report-derived acceptance cases in section 16.
+3. Close DJ per-deck effects, focus/route ownership, and MediaSession ownership gaps before provider transport can switch.
 4. Only then introduce an injectable session ownership seam in `MusicProvider`; do not switch the production authority in that same change.
 5. Keep PR #220 draft and do not merge until provider integration and device acceptance are complete.
 
@@ -439,3 +439,43 @@ The next isolated backend slice adds a non-zero incoming-deck start position to 
 2. Add an integration-level test that supplies a non-zero DJ phrase offset and proves the native standby deck starts at that exact position before crossfade.
 3. Verify seek offset is retained through standby readiness, crossfade start, deck swap, cancellation, and recovery; ensure the offset is not applied twice.
 4. Continue with per-deck DJ SFX/effects parity and the single-owner audio-focus/MediaSession design before provider cutover.
+
+
+## 19. DJ transition parity audit — 2026-11-12
+
+### Phrase-aligned preload is now wired end to end
+
+The current integration branch exposes `startPosition` on `PlaybackEngineSession.preloadNext`. The value is validated and serialized through the runtime, adapter, typed client and platform channel as `positionMs`. The Kotlin bridge validates the value and forwards it to `Media3PlaybackService.preloadNext`, which calls ExoPlayer `setMediaItems(items, startIndex, startPositionMs)`.
+
+Coverage currently exists at multiple Dart boundaries:
+- Provider-session forwarding verifies a non-zero 7,600 ms position reaches the backend contract.
+- Adapter queue-filtering coverage verifies a non-zero 18,450 ms phrase position survives playable-index remapping.
+- Client channel coverage verifies `positionMs=18450` and rejects a negative offset.
+
+This proves the software forwarding path in unit tests; it does **not** yet prove on-device audible phrase alignment, readiness retention, or correct position after promotion. The required device check remains: prepare a non-zero offset, confirm the standby deck's actual position before fade, promote it, and verify no second seek is applied.
+
+### DJ SFX/effects parity is not yet implemented
+
+Inspection of `lib/services/dj_sfx_rack.dart` shows the transition rack currently has several different effect ownership models:
+
+| Effect family | Current production mechanism | Media3 migration requirement |
+|---|---|---|
+| Filter open/close | Separate outgoing/incoming `AndroidEqualizer` instances; per-band gain envelopes | Per-deck DSP overlay with independent reset/restore |
+| Reverb / virtualizer / bass | `AudioEffectsBridge` calls to shared Android effect state | Decide whether these are intentionally master-bus effects or need deck-local processing; do not pretend global effects are per-deck |
+| One-shot samples / track echo | Additional `just_audio` player | Explicit auxiliary sample/FX playback owner, gain policy, focus and lifecycle behavior |
+| Brake / scratch / stutter / repeat | Direct seek and speed mutations on the outgoing `AudioPlayer` | Engine-neutral outgoing-deck command surface with cancellation and restoration guarantees |
+
+The Media3 native DSP registry currently indexes processors by generated processor ID and applies persistent settings to all registered handles. It does not identify a processor as the active or standby deck and exposes no temporary per-deck EQ overlay. The current service's processor factory is invoked independently for each ExoPlayer, but the deck identity is not passed into the DSP processor/registry.
+
+**Do not port the old A/B AndroidEqualizer writes by broadcasting them to every Media3 DSP handle.** That would make filter automation affect both decks identically and could overwrite persistent user EQ state. A safe implementation needs:
+1. An explicit deck role assigned at processor creation (active/standby), retained through registration and deck promotion.
+2. A per-deck temporary EQ/filter overlay kept separate from the sticky persistent EQ curve.
+3. Atomic overlay updates and explicit clear/restore semantics on completion, cancellation, source replacement, player recreation, and DSP fail-open.
+4. A typed Flutter/session contract for the transition rack; no direct access to `AudioPlayer` or guessed processor ordering.
+5. Tests proving an outgoing-only overlay leaves standby unchanged, an incoming-only overlay leaves active unchanged, persistent EQ changes compose correctly with overlays, and promotion does not transfer stale temporary state.
+
+The existing global reverb/virtualizer/bass effects also need an explicit master-bus versus per-deck decision. Until that is made, preserve current production behavior and keep the Media3 backend isolated.
+
+### Next implementation slice
+
+Implement the deck-role and temporary-EQ-overlay seam in the native DSP layer first, with JVM tests around registry routing and sticky-state composition. Then add the typed Media3 transition-effects command and Dart contract tests. Do not change the production `DjSfxRack` call sites or switch `MusicProvider` until that contract passes CI and a physical-device A/B transition test.
