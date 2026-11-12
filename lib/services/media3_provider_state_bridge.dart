@@ -7,9 +7,8 @@ import 'media3_playback_runtime.dart';
 /// MusicProvider and its UI consumers need.
 ///
 /// This is intentionally a state-only bridge: it never creates a player, issues
-/// commands, or optimistically changes playback state. The production provider
-/// can subscribe to this projection while transport ownership is migrated in
-/// separate, testable steps.
+/// commands, or optimistically changes playback state. MusicProvider consumes
+/// this projection as canonical state after its session handoff.
 class Media3ProviderStateBridge {
   Media3ProviderStateBridge(this._runtime);
 
