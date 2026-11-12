@@ -193,14 +193,21 @@ class DjSfxRack {
     final generation = ++_engageGen;
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
+    // Media3's session contract currently supports deck-scoped EQ overlays,
+    // not the legacy global reverb/virtualizer, sample-player, or track-seek
+    // effects. Restrict this path to effects that can be owned by both decks.
     final requested = preset ??
-        _pickPhraseAwarePreset(
-          energyScore: score,
-          transitionKind: transitionKind,
-          sections: sections,
-          positionMs: outgoing?.position.inMilliseconds ?? 0,
-          aggressiveness: aggressiveness,
-        );
+        (playbackSession != null
+            ? (transitionKind == DjTransitionKind.outroIntro
+                ? DjSfxPreset.filterClose
+                : DjSfxPreset.filterOpen)
+            : _pickPhraseAwarePreset(
+                energyScore: score,
+                transitionKind: transitionKind,
+                sections: sections,
+                positionMs: outgoing?.position.inMilliseconds ?? 0,
+                aggressiveness: aggressiveness,
+              ));
 
     // Repeat/repeat-restart seek the *outgoing player* several times during
     // the crossfade. That can rewind audible music while the fade clock keeps
@@ -214,7 +221,17 @@ class DjSfxRack {
             : (score >= 0.75 ? DjSfxPreset.whoosh : DjSfxPreset.echo),
       _ => requested,
     };
-    activePreset = _applyUsageFairness(preferred, aggressiveness: aggressiveness);
+    final sessionSafePreset = playbackSession == null
+        ? preferred
+        : (preferred == DjSfxPreset.filterOpen ||
+                preferred == DjSfxPreset.filterClose
+            ? preferred
+            : (transitionKind == DjTransitionKind.outroIntro
+                ? DjSfxPreset.filterClose
+                : DjSfxPreset.filterOpen));
+    activePreset = playbackSession == null
+        ? _applyUsageFairness(sessionSafePreset, aggressiveness: aggressiveness)
+        : sessionSafePreset;
     _usageCounts[activePreset!] = (_usageCounts[activePreset!] ?? 0) + 1;
     engaged = true;
     _eqTouched = false;
@@ -235,14 +252,16 @@ class DjSfxRack {
         _savedEqGainsB = await _snapshotEq(equalizerB);
         if (generation != _engageGen || !engaged) return;
       }
-      await AudioEffectsBridge.setBassBoost(0.0);
-      if (generation != _engageGen || !engaged) return;
-      await _applyFxAt(
-        0.0,
-        score,
-        isCurrent: () => generation == _engageGen && engaged,
-      );
-      if (generation != _engageGen || !engaged) return;
+      if (playbackSession == null) {
+        await AudioEffectsBridge.setBassBoost(0.0);
+        if (generation != _engageGen || !engaged) return;
+        await _applyFxAt(
+          0.0,
+          score,
+          isCurrent: () => generation == _engageGen && engaged,
+        );
+        if (generation != _engageGen || !engaged) return;
+      }
       if (_usesEq(activePreset!)) {
         // Mark EQ as touched before the first await so restore can recover even
         // if cancellation arrives between applying the two engine equalizers.
@@ -306,11 +325,13 @@ class DjSfxRack {
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
     if (outgoing != null) _outgoing = outgoing;
     try {
-      await _applyFxAt(t, score, isCurrent: isCurrent);
+      final session = playbackSession ?? _playbackSession;
+      if (session == null) {
+        await _applyFxAt(t, score, isCurrent: isCurrent);
+      }
       if (!isCurrent() || activePreset == null) return;
       if (_usesEq(activePreset!)) {
         _eqTouched = true;
-        final session = playbackSession ?? _playbackSession;
         if (session != null) {
           await _applyDeckEqAt(session, 'active', t, isCurrent: isCurrent);
           if (!isCurrent()) return;
@@ -354,7 +375,8 @@ class DjSfxRack {
       return;
     }
     try {
-      final out = _outgoing;
+      final session = playbackSession ?? _playbackSession;
+      final out = session == null ? _outgoing : null;
       if (out != null) {
         try {
           await out.setSpeed(_savedOutgoingSpeed.clamp(0.5, 1.5));
@@ -365,16 +387,17 @@ class DjSfxRack {
         }
       }
       await _stopOneshot();
-      final prefs = await SharedPreferences.getInstance();
-      final effectsEnabled = prefs.getBool('effects_enabled') ?? true;
-      final reverb = prefs.getDouble('reverb') ?? 0.0;
-      final virt = prefs.getDouble('virtualizer') ?? 0.0;
-      final bass = prefs.getDouble('bassBoost') ?? 0.0;
-      await AudioEffectsBridge.setBassBoost(effectsEnabled ? bass : 0.0);
-      await AudioEffectsBridge.setReverb(effectsEnabled ? reverb : 0.0);
-      await AudioEffectsBridge.setVirtualizer(effectsEnabled ? virt : 0.0);
+      if (session == null) {
+        final prefs = await SharedPreferences.getInstance();
+        final effectsEnabled = prefs.getBool('effects_enabled') ?? true;
+        final reverb = prefs.getDouble('reverb') ?? 0.0;
+        final virt = prefs.getDouble('virtualizer') ?? 0.0;
+        final bass = prefs.getDouble('bassBoost') ?? 0.0;
+        await AudioEffectsBridge.setBassBoost(effectsEnabled ? bass : 0.0);
+        await AudioEffectsBridge.setReverb(effectsEnabled ? reverb : 0.0);
+        await AudioEffectsBridge.setVirtualizer(effectsEnabled ? virt : 0.0);
+      }
       if (_eqTouched) {
-        final session = playbackSession ?? _playbackSession;
         if (session != null) {
           await session.clearDeckEqOverlay(deck: 'active');
           await session.clearDeckEqOverlay(deck: 'standby');
