@@ -432,6 +432,48 @@ class Media3PlaybackRuntime {
         ));
   }
 
+  Future<void> setDeckEqOverlay({
+    required String deck,
+    required List<double> centersHz,
+    required List<double> gainsDb,
+  }) {
+    _ensureAlive();
+    if (deck != 'active' && deck != 'standby') {
+      throw ArgumentError.value(deck, 'deck', 'Must be active or standby.');
+    }
+    if (centersHz.isEmpty || centersHz.length != gainsDb.length ||
+        centersHz.length > 31) {
+      throw ArgumentError('EQ overlay requires 1–31 matching frequency/gain bands.');
+    }
+    for (var i = 0; i < centersHz.length; i++) {
+      if (!centersHz[i].isFinite || centersHz[i] < 20.0 || centersHz[i] > 20000.0 ||
+          !gainsDb[i].isFinite || gainsDb[i] < -12.0 || gainsDb[i] > 12.0) {
+        throw ArgumentError('EQ overlay contains an invalid frequency or gain at band $i.');
+      }
+    }
+    final backend = _backend;
+    if (backend is! PlaybackDeckEqOverlayBackend) {
+      throw UnsupportedError('The active playback backend does not support per-deck EQ overlays.');
+    }
+    return _run(() => backend.setDeckEqOverlay(
+          deck: deck,
+          centersHz: List<double>.unmodifiable(centersHz),
+          gainsDb: List<double>.unmodifiable(gainsDb),
+        ));
+  }
+
+  Future<void> clearDeckEqOverlay({required String deck}) {
+    _ensureAlive();
+    if (deck != 'active' && deck != 'standby') {
+      throw ArgumentError.value(deck, 'deck', 'Must be active or standby.');
+    }
+    final backend = _backend;
+    if (backend is! PlaybackDeckEqOverlayBackend) {
+      throw UnsupportedError('The active playback backend does not support per-deck EQ overlays.');
+    }
+    return _run(() => backend.clearDeckEqOverlay(deck: deck));
+  }
+
   Future<void> setVolume(double value) {
     _ensureAlive();
     if (!value.isFinite) {
