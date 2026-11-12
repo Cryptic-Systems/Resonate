@@ -597,5 +597,5 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
     }
   }
 
-  Future<void> setQueue(List<Song> songs, {int startIndex = 0}) async { if (songs.isEmpty) { await _finishHistoryEvent(); _queue = <Song>[]; _queueIndex = 0; await _persistQueue(); notifyListeners(); return; } final index = startIndex.clamp(0, songs.length - 1).toInt(); await this.playSong(songs[index], queue: songs, startIndex: index); }
+  Future<void> setQueue(List<Song> songs, {int startIndex = 0}) async { if (songs.isEmpty) { await _finishHistoryEvent(); _queue = <Song>[]; _queueIndex = 0; if (_media3ProviderSessionActive) { await _media3ProviderSession!.clearQueue(); await _media3ProviderSession!.stop(); } await _persistQueue(); notifyListeners(); return; } final index = startIndex.clamp(0, songs.length - 1).toInt(); await this.playSong(songs[index], queue: songs, startIndex: index); }
 }
