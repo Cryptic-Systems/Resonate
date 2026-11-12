@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio_effects_bridge.dart';
+import 'playback_engine_session.dart';
 import '../dj_engine/core/dj_types.dart';
 import '../dj_engine/core/dj_policy.dart';
 
@@ -54,6 +55,7 @@ class DjSfxRack {
   bool _eqTouched = false;
   double _savedOutgoingSpeed = 1.0;
   AudioPlayer? _outgoing;
+  PlaybackEngineSession? _playbackSession;
   AudioPlayer? _oneshot;
   int _oneshotGen = 0;
   double _oneshotBaseVolume = 0.0;
@@ -177,11 +179,17 @@ class DjSfxRack {
     List<DjSection> sections = const <DjSection>[],
     DjTransitionKind? transitionKind,
     DjAggressiveness aggressiveness = DjAggressiveness.balanced,
+    PlaybackEngineSession? playbackSession,
   }) async {
     // Do not let two transition effects mutate the same player/EQ at once.
     if (engaged || _eqTouched) {
-      await restore(equalizerA: equalizerA, equalizerB: equalizerB);
+      await restore(
+        equalizerA: equalizerA,
+        equalizerB: equalizerB,
+        playbackSession: _playbackSession,
+      );
     }
+    _playbackSession = playbackSession;
     final generation = ++_engageGen;
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
@@ -221,10 +229,12 @@ class DjSfxRack {
     } catch (_) {}
 
     try {
-      _savedEqGainsA = await _snapshotEq(equalizerA);
-      if (generation != _engageGen || !engaged) return;
-      _savedEqGainsB = await _snapshotEq(equalizerB);
-      if (generation != _engageGen || !engaged) return;
+      if (playbackSession == null) {
+        _savedEqGainsA = await _snapshotEq(equalizerA);
+        if (generation != _engageGen || !engaged) return;
+        _savedEqGainsB = await _snapshotEq(equalizerB);
+        if (generation != _engageGen || !engaged) return;
+      }
       await AudioEffectsBridge.setBassBoost(0.0);
       if (generation != _engageGen || !engaged) return;
       await _applyFxAt(
@@ -237,17 +247,33 @@ class DjSfxRack {
         // Mark EQ as touched before the first await so restore can recover even
         // if cancellation arrives between applying the two engine equalizers.
         _eqTouched = true;
-        await _applyEqAt(
-          equalizerA,
-          0.0,
-          isCurrent: () => generation == _engageGen && engaged,
-        );
-        if (generation != _engageGen || !engaged) return;
-        await _applyEqAt(
-          equalizerB,
-          0.0,
-          isCurrent: () => generation == _engageGen && engaged,
-        );
+        if (playbackSession != null) {
+          await _applyDeckEqAt(
+            playbackSession,
+            'active',
+            0.0,
+            isCurrent: () => generation == _engageGen && engaged,
+          );
+          if (generation != _engageGen || !engaged) return;
+          await _applyDeckEqAt(
+            playbackSession,
+            'standby',
+            0.0,
+            isCurrent: () => generation == _engageGen && engaged,
+          );
+        } else {
+          await _applyEqAt(
+            equalizerA,
+            0.0,
+            isCurrent: () => generation == _engageGen && engaged,
+          );
+          if (generation != _engageGen || !engaged) return;
+          await _applyEqAt(
+            equalizerB,
+            0.0,
+            isCurrent: () => generation == _engageGen && engaged,
+          );
+        }
         if (generation != _engageGen || !engaged) return;
       }
       // Fire one-shot early so it sits over the outgoing fade.
@@ -271,6 +297,7 @@ class DjSfxRack {
     AndroidEqualizer? equalizerB,
     double energyScore = 0.5,
     AudioPlayer? outgoing,
+    PlaybackEngineSession? playbackSession,
   }) async {
     if (!engaged || activePreset == null) return;
     final generation = _engageGen;
@@ -283,9 +310,16 @@ class DjSfxRack {
       if (!isCurrent() || activePreset == null) return;
       if (_usesEq(activePreset!)) {
         _eqTouched = true;
-        await _applyEqAt(equalizerA, t, isCurrent: isCurrent);
-        if (!isCurrent()) return;
-        await _applyEqAt(equalizerB, t, isCurrent: isCurrent);
+        final session = playbackSession ?? _playbackSession;
+        if (session != null) {
+          await _applyDeckEqAt(session, 'active', t, isCurrent: isCurrent);
+          if (!isCurrent()) return;
+          await _applyDeckEqAt(session, 'standby', t, isCurrent: isCurrent);
+        } else {
+          await _applyEqAt(equalizerA, t, isCurrent: isCurrent);
+          if (!isCurrent()) return;
+          await _applyEqAt(equalizerB, t, isCurrent: isCurrent);
+        }
         if (!isCurrent()) return;
       }
       // Duck oneshot under the incoming rise so samples fade with the blend.
@@ -305,6 +339,7 @@ class DjSfxRack {
   Future<void> restore({
     AndroidEqualizer? equalizerA,
     AndroidEqualizer? equalizerB,
+    PlaybackEngineSession? playbackSession,
   }) async {
     ++_delayedSfxGen;
     ++_trackFxGen;
@@ -339,8 +374,14 @@ class DjSfxRack {
       await AudioEffectsBridge.setReverb(effectsEnabled ? reverb : 0.0);
       await AudioEffectsBridge.setVirtualizer(effectsEnabled ? virt : 0.0);
       if (_eqTouched) {
-        await _restoreEq(equalizerA, _savedEqGainsA);
-        await _restoreEq(equalizerB, _savedEqGainsB);
+        final session = playbackSession ?? _playbackSession;
+        if (session != null) {
+          await session.clearDeckEqOverlay(deck: 'active');
+          await session.clearDeckEqOverlay(deck: 'standby');
+        } else {
+          await _restoreEq(equalizerA, _savedEqGainsA);
+          await _restoreEq(equalizerB, _savedEqGainsB);
+        }
       }
     } catch (e) {
       debugPrint('DjSfxRack.restore: $e');
@@ -351,6 +392,7 @@ class DjSfxRack {
       _savedEqGainsA = null;
       _savedEqGainsB = null;
       _outgoing = null;
+      _playbackSession = null;
       _savedOutgoingSpeed = 1.0;
       _beatMs = const <int>[];
       _phraseAnchors = const <int>[];
@@ -370,6 +412,7 @@ class DjSfxRack {
     List<DjSection> sections = const <DjSection>[],
     DjTransitionKind? transitionKind,
     DjAggressiveness aggressiveness = DjAggressiveness.balanced,
+    PlaybackEngineSession? playbackSession,
   }) async {
     final gen = ++_delayedSfxGen;
     try {
@@ -387,6 +430,7 @@ class DjSfxRack {
         sections: sections,
         transitionKind: transitionKind,
         aggressiveness: aggressiveness,
+        playbackSession: playbackSession,
       );
     } catch (e) {
       debugPrint('DjSfxRack.engageDelayed: $e');
@@ -831,6 +875,42 @@ class DjSfxRack {
       if (!current() || activePreset == null) return;
       await eq.setEnabled(true);
     } catch (_) {}
+  }
+
+  /// Applies the same transition filter to a logical Media3 deck. The
+  /// native DSP registry composes this temporary response with the saved EQ,
+  /// so this path never snapshots or overwrites persistent equalizer gains.
+  Future<void> _applyDeckEqAt(
+    PlaybackEngineSession session,
+    String deck,
+    double t, {
+    bool Function()? isCurrent,
+  }) async {
+    bool current() => isCurrent?.call() ?? true;
+    if (!current() || activePreset == null) return;
+    final n = 31;
+    final x = t.clamp(0.0, 1.0);
+    final env = _envelope(t);
+    final centers = List<double>.generate(
+      n,
+      (i) => 20.0 * math.pow(1000.0, i / (n - 1)).toDouble(),
+      growable: false,
+    );
+    final gains = List<double>.generate(n, (i) {
+      final fraction = i / (n - 1);
+      final gain = switch (activePreset!) {
+        DjSfxPreset.filterOpen => -6.0 * (1.0 - x) * fraction,
+        DjSfxPreset.filterClose => -5.5 * (1.0 - x) * (1.0 - fraction),
+        _ => 0.0,
+      };
+      return (gain * env).clamp(-12.0, 12.0).toDouble();
+    }, growable: false);
+    if (!current()) return;
+    await session.setDeckEqOverlay(
+      deck: deck,
+      centersHz: centers,
+      gainsDb: gains,
+    );
   }
 
   Future<void> _restoreEq(
