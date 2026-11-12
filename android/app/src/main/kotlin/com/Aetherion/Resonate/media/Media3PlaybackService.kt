@@ -142,36 +142,7 @@ class Media3PlaybackService : MediaSessionService() {
         super.onCreate()
         instance = this
         activePlayer = newPlayer(handleAudioFocus = media3AudioFocusEnabled, deckId = "A")
-        standbyPlayer = newPlayer(handleAudioFocus = false, deckId = "B").apply {
-            addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (crossfadeStatus == "preparing" || crossfadeStatus == "waiting_ready") {
-                        crossfadeStatus = when (playbackState) {
-                            Player.STATE_READY -> "ready"
-                            Player.STATE_IDLE -> "preparing"
-                            Player.STATE_BUFFERING -> "preparing"
-                            Player.STATE_ENDED -> "incoming_ended"
-                            else -> crossfadeStatus
-                        }
-                        if (playbackState == Player.STATE_READY) {
-                            val pendingDuration = pendingCrossfadeDurationMs
-                            if (pendingDuration != null) {
-                                pendingCrossfadeDurationMs = null
-                                if (activePlayer.isPlaying) {
-                                    beginCrossfade(pendingDuration)
-                                } else {
-                                    crossfadeStatus = "ready"
-                                }
-                            }
-                        }
-                    }
-                }
-
-                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                    crossfadeStatus = "incoming_error"
-                }
-            })
-        }
+        standbyPlayer = newPlayer(handleAudioFocus = false, deckId = "B")
         activeDeckId = "A"
         DspEngineRegistry.setActiveDeck(activeDeckId)
         mediaSession = MediaSession.Builder(this, activePlayer).build()
@@ -196,6 +167,38 @@ class Media3PlaybackService : MediaSessionService() {
         setAudioAttributes(audioAttributes(), handleAudioFocus)
         repeatMode = Player.REPEAT_MODE_OFF
         addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                // The standby deck identity changes after promotion. Attach
+                // readiness handling to both physical players so later preloads
+                // receive the same deferred-start behavior.
+                if (!::standbyPlayer.isInitialized || deck !== standbyPlayer ||
+                    (crossfadeStatus != "preparing" && crossfadeStatus != "waiting_ready")
+                ) return
+                crossfadeStatus = when (playbackState) {
+                    Player.STATE_READY -> "ready"
+                    Player.STATE_IDLE, Player.STATE_BUFFERING -> "preparing"
+                    Player.STATE_ENDED -> "incoming_ended"
+                    else -> crossfadeStatus
+                }
+                if (playbackState == Player.STATE_READY) {
+                    val pendingDuration = pendingCrossfadeDurationMs
+                    if (pendingDuration != null) {
+                        pendingCrossfadeDurationMs = null
+                        if (activePlayer.isPlaying) {
+                            beginCrossfade(pendingDuration)
+                        } else {
+                            crossfadeStatus = "ready"
+                        }
+                    }
+                }
+            }
+
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                if (::standbyPlayer.isInitialized && deck === standbyPlayer) {
+                    crossfadeStatus = "incoming_error"
+                }
+            }
+
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 // MediaSession/headset commands can bypass the Flutter bridge.
                 // Never allow a deck to continue output in call/VoIP mode.
