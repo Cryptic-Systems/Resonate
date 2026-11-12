@@ -26,22 +26,22 @@ object DspEngineSinkHook {
     private const val ENABLE_NATIVE_LIVE_DSP = true
 
     @JvmStatic
-    fun createProcessors(): Array<AudioProcessor> {
+    fun createProcessors(deckId: String = "A"): Array<AudioProcessor> {
         return try {
             val allow = ENABLE_NATIVE_LIVE_DSP && DspSessionGate.isNativeAllowed()
-            val proc = DspEngineAudioProcessor()
+            val proc = DspEngineAudioProcessor(deckId)
             proc.setNativeProcessEnabled(allow)
             val active = DspEngineRegistry.activeCount()
             if (allow) {
                 Log.i(
                     TAG,
-                    "Injected 1 host AudioProcessor(s) native=ON " +
+                    "Injected 1 host AudioProcessor(s) native=ON deck=$deckId " +
                         "(session ok; registry_active=$active — dual A/B uses 2 injects)"
                 )
             } else {
                 Log.i(
                     TAG,
-                    "Injected 1 host AudioProcessor(s) pass-through " +
+                    "Injected 1 host AudioProcessor(s) pass-through deck=$deckId " +
                         "(ENABLE=$ENABLE_NATIVE_LIVE_DSP gate_tripped=${DspSessionGate.isTripped()})"
                 )
             }
