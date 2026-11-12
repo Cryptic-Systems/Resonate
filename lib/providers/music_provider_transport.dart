@@ -363,15 +363,26 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
     _cancelAutomaticPlaybackWork();
     return _serializePlayback(() async {
       try {
+        if (await _isCommunicationActive()) {
+          _userWantsPlaying = false;
+          isPlaying = false;
+          await ResonateDiagnostics.record('playback_blocked_communication', {
+            'source': source,
+            'songId': currentSong?.id,
+          });
+          _publishServiceState();
+          notifyListeners();
+          return;
+        }
+        if (source != 'system' &&
+            !await _claimAudioFocus(reason: 'resume_$source')) {
+          _userWantsPlaying = false;
+          isPlaying = false;
+          return;
+        }
         _userWantsPlaying = true;
         _isDucked = false;
         if (audioPlayer.audioSource != null) {
-          try {
-            if (source != 'system') {
-              final session = await AudioSession.instance;
-              await session.setActive(true);
-            }
-          } catch (_) {}
           // If we are sitting on a completed source, seek to zero first.
           if (audioPlayer.processingState == ProcessingState.completed) {
             try {
