@@ -456,7 +456,8 @@ class Media3PlaybackRuntime {
     if (backend is! PlaybackDeckEqOverlayBackend) {
       throw UnsupportedError('The active playback backend does not support per-deck EQ overlays.');
     }
-    return _run(() => backend.setDeckEqOverlay(
+    final eqBackend = backend as PlaybackDeckEqOverlayBackend;
+    return _run(() => eqBackend.setDeckEqOverlay(
           deck: deck,
           centersHz: List<double>.unmodifiable(centersHz),
           gainsDb: List<double>.unmodifiable(gainsDb),
@@ -472,7 +473,8 @@ class Media3PlaybackRuntime {
     if (backend is! PlaybackDeckEqOverlayBackend) {
       throw UnsupportedError('The active playback backend does not support per-deck EQ overlays.');
     }
-    return _run(() => backend.clearDeckEqOverlay(deck: deck));
+    final eqBackend = backend as PlaybackDeckEqOverlayBackend;
+    return _run(() => eqBackend.clearDeckEqOverlay(deck: deck));
   }
 
   Future<void> setVolume(double value) {
