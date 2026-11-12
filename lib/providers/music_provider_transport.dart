@@ -67,7 +67,7 @@ Future<void> pause({String source = 'normal_player'}) {
         if (_media3ProviderSessionActive) {
           final session = _media3ProviderSession!;
           await session.pause();
-          _reconcileMedia3ProviderSession();
+          this._reconcileMedia3ProviderSession();
           isPlaying = session.isPlaying;
           _isDucked = false;
           _persistResumePosition(force: true);
@@ -218,7 +218,7 @@ Future<void> nextSong({String source = 'normal_player'}) {
               if (!_playbackIntentGate.isCurrent(intentToken)) break;
               await session.next();
             }
-            _reconcileMedia3ProviderSession();
+            this._reconcileMedia3ProviderSession();
             isPlaying = session.isPlaying;
             currentPosition = session.position;
             currentDuration = session.duration ?? currentSong?.duration;
@@ -290,7 +290,7 @@ Future<void> previousSong({String source = 'normal_player'}) {
           if (_media3ProviderSessionActive) {
             final session = _media3ProviderSession!;
             await session.previous();
-            _reconcileMedia3ProviderSession();
+            this._reconcileMedia3ProviderSession();
             isPlaying = session.isPlaying;
             currentPosition = session.position;
             currentDuration = session.duration ?? currentSong?.duration;
@@ -438,7 +438,7 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
           } else {
             await session.play();
           }
-          _reconcileMedia3ProviderSession();
+          this._reconcileMedia3ProviderSession();
           isPlaying = session.isPlaying;
           currentPosition = session.position;
           currentDuration = session.duration ?? currentSong?.duration;
