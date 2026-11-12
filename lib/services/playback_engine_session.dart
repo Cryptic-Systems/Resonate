@@ -3,12 +3,13 @@ import 'playback_backend.dart';
 import 'playback_observation_source.dart';
 import 'media3_provider_state_bridge.dart';
 
-/// A complete provider-facing playback session.
+/// A provider-facing playback session.
 ///
-/// Observations and commands belong to the same session so a future engine
-/// cutover cannot accidentally read state from Media3 while sending transport
-/// commands to just_audio (or vice versa). Implementations must not be selected
-/// for production until the full Resonate playback responsibilities have parity.
+/// Observations and commands belong to the same session so the provider cannot
+/// read state from Media3 while sending transport commands to just_audio (or
+/// vice versa). Production selection requires parity for the responsibilities
+/// routed through this contract; remaining feature-specific cutover gates are
+/// tracked separately in the Media3 execution plan.
 abstract interface class PlaybackEngineSession
     implements PlaybackObservationSource {
   /// Immutable, reconciled snapshots from the same backend that receives this
