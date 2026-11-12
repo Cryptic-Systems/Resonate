@@ -510,3 +510,27 @@ The Media3 service clears temporary overlays on explicit cancellation/queue inva
 This is a backend capability foundation, **not yet a production DJ rack migration**. The existing production `DjSfxRack` still uses legacy `AndroidEqualizer` and `AudioEffectsBridge` paths. Its filter automation must be translated into frequency-response overlays and routed through the new session API only after the complete effect lifecycle (start, update, cancel, restore, source replacement, and promotion) is integrated and tested. Reverb, virtualizer, sample playback, scratch/brake speed and seek automation remain separate parity items.
 
 No production `MusicProvider` call site has been switched, no legacy player/effect path has been removed, and no physical-device audition has been performed by this change. CI must pass on the exact head, followed by a two-deck device test confirming audible isolation, persistent EQ composition, cancellation restoration, and correct logical roles after promotion.
+
+## 17. Provider cutover execution — started 2026-11-12
+
+The current PR #220 head passed CI run #1433 before this provider integration slice. The provider work is being done on `media3-cutover-integration`, still targeting `Resonate-True-Apk`.
+
+### First provider boundary landed
+
+- `MusicProvider` now accepts an optional provider-owned `PlaybackEngineSession`.
+- `prepareMedia3ProviderSession()` starts that single session and mirrors the current provider queue, repeat mode, shuffle mode, and user volume into it.
+- The preparation path explicitly disables Media3 focus requests because the legacy `EnginePair` remains the production owner at this stage.
+- The Media3 audio-session ID stream is attached to the provider's existing Android-session callback so DSP/session consumers can be migrated without reading a second player directly.
+- Provider disposal cancels the session-ID subscription and disposes the injected session.
+
+### Deliberate safety boundary
+
+This first slice does **not** activate Media3 transport, does not start a second audible player, and is not wired into the app composition root yet. It establishes one provider-owned session boundary and a deterministic queue/settings handoff. The next slice must move canonical state observation and serialized transport onto that same session before any production activation. Crossfade/DJ and all DSP/session-bound effects must then be migrated to it before the legacy EnginePair can be retired.
+
+### Immediate next implementation steps
+
+1. Add a deterministic provider contract test with a fake `PlaybackEngineSession` proving startup, queue/index transfer, repeat/shuffle/volume mirroring, focus-disabled preparation, audio-session subscription, and disposal.
+2. Move canonical state projection and transport command serialization onto the injected session; keep the switch disabled until every provider recovery/watchdog path is session-aware.
+3. Migrate queue mutation, completion/history, repeat/shuffle, and media controls.
+4. Move crossfade/DJ and DSP/effect ownership to the same Media3 session.
+5. Wire the completed provider session in `main.dart` only after the above parity gates pass.
