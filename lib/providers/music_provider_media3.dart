@@ -28,8 +28,9 @@ extension MusicProviderMedia3 on MusicProvider {
         .toList(growable: false);
     if (normalized.isEmpty) return false;
     final selectedIndex = normalized.indexWhere((item) => item.id == song.id);
-    final resolvedIndex =
-        selectedIndex >= 0 ? selectedIndex : startIndex.clamp(0, normalized.length - 1);
+    final resolvedIndex = selectedIndex >= 0
+        ? selectedIndex
+        : startIndex.clamp(0, normalized.length - 1).toInt();
     final selected = normalized[resolvedIndex];
     final nextQueue = effectiveShuffleEnabled && normalized.length > 1
         ? <Song>[
@@ -55,7 +56,9 @@ extension MusicProviderMedia3 on MusicProvider {
       await session.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
       if (resume && _resumeSongId == selected.id && _resumePositionMs > 0) {
         final durationMs = selected.duration.inMilliseconds;
-        final safeMs = _resumePositionMs.clamp(0, durationMs > 0 ? durationMs : _resumePositionMs);
+        final safeMs = _resumePositionMs
+            .clamp(0, durationMs > 0 ? durationMs : _resumePositionMs)
+            .toInt();
         await session.seek(Duration(milliseconds: safeMs));
       } else {
         await session.seek(Duration.zero);
@@ -170,6 +173,9 @@ extension MusicProviderMedia3 on MusicProvider {
     }
     _publishServiceState(positionOnly: true);
     notifyListeners();
+    if (!state.isPlaying && !state.isBuffering && !state.isCompleted) {
+      _recoverMedia3ProviderPlayback();
+    }
   }
 
   Future<void> _handleMedia3ProviderCompletion(String completedSongId) async {
