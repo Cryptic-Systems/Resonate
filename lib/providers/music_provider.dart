@@ -821,10 +821,9 @@ class MusicProvider extends ChangeNotifier {
       }
       _lastSilentRecoverAt = now;
       unawaited(() async {
-        try {
-          final session = await AudioSession.instance;
-          await session.setActive(true);
-        } catch (_) {}
+        if (!await _claimAudioFocus(
+          reason: mutedWhilePlaying ? 'silent_watchdog_muted' : 'silent_watchdog_stopped',
+        )) return;
         await _recoverDjEngineState(reason: mutedWhilePlaying
             ? 'silent_watchdog'
             : 'silent_watchdog_not_playing');
@@ -977,7 +976,7 @@ class MusicProvider extends ChangeNotifier {
       if (!_userWantsPlaying) return;
       // Do not fight an active sleep-timer fade-out.
       if (_sleepFadeScale < 0.999) return;
-      await _claimAudioFocus(reason: 'ensure_audible');
+      if (!await _claimAudioFocus(reason: 'ensure_audible')) return;
       final vol = (_eqPreampScale * _sleepFadeScale).clamp(0.05, 1.0);
       if (audioPlayer.volume < vol * 0.85) {
         await audioPlayer.setVolume(vol);
@@ -1154,14 +1153,8 @@ class MusicProvider extends ChangeNotifier {
     } catch (_) {}
     if (_disposed || !_userWantsPlaying) return;
     if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
-    try {
-      final session = await AudioSession.instance;
-      if (_disposed) return;
-      try {
-        await session.setActive(true);
-      } catch (_) {}
-      if (_disposed) return;
-    } catch (_) {}
+    if (!await _claimAudioFocus(reason: 'audio_route_changed')) return;
+    if (_disposed) return;
     if (_disposed) return;
     for (final delayMs in <int>[200, 700, 1600, 3200]) {
       await Future<void>.delayed(Duration(milliseconds: delayMs));
@@ -1278,6 +1271,7 @@ class MusicProvider extends ChangeNotifier {
     if (await _isCommunicationActive()) {
       // Calls/VoIP must never be treated as a soft-duck request. Pause both
       // decks and invalidate any pending automatic resume instead.
+      _userWantsPlaying = false;
       _focusResumeGeneration++;
       _focusLostAt = DateTime.now();
       await this.pause(source: 'system');
@@ -1505,10 +1499,7 @@ class MusicProvider extends ChangeNotifier {
           unawaited(() async {
             // Do not re-claim focus mid-crossfade — it can reset OEM volume/routing mid-ramp.
             if (_transitionLive) return;
-            try {
-              final session = await AudioSession.instance;
-              await session.setActive(true);
-            } catch (_) {}
+            if (!await _claimAudioFocus(reason: 'player_stream_recovery')) return;
             try {
               await player.seek(player.position);
             } catch (_) {}
