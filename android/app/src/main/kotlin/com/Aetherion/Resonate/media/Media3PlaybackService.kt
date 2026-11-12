@@ -177,9 +177,13 @@ class Media3PlaybackService : MediaSessionService() {
         .build()
 
     /** Prepares the inactive deck without disturbing current playback. */
-    fun preloadNext(items: List<MediaItem>, startIndex: Int): Boolean {
+    fun preloadNext(
+        items: List<MediaItem>,
+        startIndex: Int,
+        startPositionMs: Long = 0L,
+    ): Boolean {
         if (!::standbyPlayer.isInitialized || items.isEmpty() ||
-            startIndex !in items.indices ||
+            startIndex !in items.indices || startPositionMs < 0L ||
             items.any { it.localConfiguration?.uri == null }
         ) return false
         cancelCrossfade()
@@ -193,7 +197,7 @@ class Media3PlaybackService : MediaSessionService() {
         // Start from the active deck's baseline; DJ analysis may then apply an
         // independent standby correction through setDeckPlaybackSpeeds().
         standbyPlayer.playbackParameters = activePlayer.playbackParameters
-        standbyPlayer.setMediaItems(items, startIndex, 0L)
+        standbyPlayer.setMediaItems(items, startIndex, startPositionMs)
         standbyPlayer.prepare()
         crossfadeStatus = "preparing"
         return true
