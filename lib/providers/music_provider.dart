@@ -771,6 +771,20 @@ class MusicProvider extends ChangeNotifier {
     await session.setAudioFocusHandling(true);
     try { await _playerA.stop(); } catch (_) {}
     try { await _playerB.stop(); } catch (_) {}
+    if (_playerA.playing || _playerB.playing) {
+      await session.setAudioFocusHandling(false);
+      throw StateError(
+        'Cannot hand off to Media3 while a legacy playback deck is still active.',
+      );
+    }
+    _crossfadeInProgress = false;
+    _automaticCrossfadeInFlight = false;
+    _repeatSelfHandoffInFlight = false;
+    _completionObservedDuringCrossfade = false;
+    _crossfadePreloadInFlight = false;
+    _preloadedNextSongId = null;
+    _endOfTrackWatchdog?.cancel();
+    _endOfTrackWatchdog = null;
     try {
       final audioSession = await AudioSession.instance;
       await audioSession.setActive(false);
