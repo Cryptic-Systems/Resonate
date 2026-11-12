@@ -772,7 +772,11 @@ class MusicProvider extends ChangeNotifier {
     _media3ProviderSessionPrepared = true;
     _media3ProviderSessionActive = true;
     final initialState = _media3ShadowState;
-    if (initialState != null) _acceptMedia3ProviderState(initialState);
+    if (initialState != null) {
+      _acceptMedia3ProviderState(initialState);
+    } else {
+      _reconcileMedia3ProviderSession();
+    }
     unawaited(ResonateDiagnostics.record('media3_provider_session_handoff_enabled', {
       'queueLength': _queue.length,
       'queueIndex': _queueIndex,
