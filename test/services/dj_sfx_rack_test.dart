@@ -40,7 +40,32 @@ void main() {
     });
   });
 
-  group('DjSfxRack usage fairness', () {
+  group('DjSfxRack Media3 deck overlays', () {\n    test('routes transition EQ through both Media3 decks and clears on restore', () async {
+      final rack = DjSfxRack(random: _SequenceRandom());
+      final session = _RecordingDeckOverlaySession();
+
+      await rack.engage(
+        energyScore: 0.5,
+        preset: DjSfxPreset.filterOpen,
+        playbackSession: session,
+      );
+      expect(session.setCalls.map((call) => call.deck), ['active', 'standby']);
+      expect(session.setCalls.first.centersHz, hasLength(31));
+      expect(
+        session.setCalls.first.centersHz,
+        orderedEquals(session.setCalls.first.centersHz.toList()..sort()),
+      );
+
+      await rack.tick(0.5, playbackSession: session);
+      expect(session.setCalls.last.deck, 'standby');
+      expect(session.setCalls.last.gainsDb.first, closeTo(0.0, 1e-9));
+      expect(session.setCalls.last.gainsDb.last, closeTo(-3.0, 1e-9));
+
+      await rack.restore(playbackSession: session);
+      expect(session.clearCalls, ['active', 'standby']);
+    });
+
+  });\n\n  group('DjSfxRack usage fairness', () {
     test('rotates after two uses and exhausts the eligible pool fairly', () async {
       final rack = DjSfxRack(random: _SequenceRandom());
       final counts = <DjSfxPreset, int>{};
@@ -110,4 +135,37 @@ class _SequenceRandom implements Random {
   bool nextBool() => nextInt(2) == 0;
   @override
   double nextDouble() => nextInt(1000) / 1000;
+}
+
+class _DeckOverlayCall {
+  _DeckOverlayCall(this.deck, this.centersHz, this.gainsDb);
+  final String deck;
+  final List<double> centersHz;
+  final List<double> gainsDb;
+}
+
+class _RecordingDeckOverlaySession implements PlaybackEngineSession {
+  final List<_DeckOverlayCall> setCalls = <_DeckOverlayCall>[];
+  final List<String> clearCalls = <String>[];
+
+  @override
+  Future<void> setDeckEqOverlay({
+    required String deck,
+    required List<double> centersHz,
+    required List<double> gainsDb,
+  }) async {
+    setCalls.add(_DeckOverlayCall(
+      deck,
+      List<double>.from(centersHz),
+      List<double>.from(gainsDb),
+    ));
+  }
+
+  @override
+  Future<void> clearDeckEqOverlay({required String deck}) async {
+    clearCalls.add(deck);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
