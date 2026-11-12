@@ -45,6 +45,16 @@ abstract interface class PlaybackDeckSpeedBackend {
   });
 }
 
+/// Optional capability for DJ transition filters that target one deck only.
+abstract interface class PlaybackDeckEqOverlayBackend {
+  Future<void> setDeckEqOverlay({
+    required String deck,
+    required List<double> centersHz,
+    required List<double> gainsDb,
+  });
+  Future<void> clearDeckEqOverlay({required String deck});
+}
+
 /// Optional capability for reconciling queue edits without resetting the active player.
 /// Backends that do not implement this retain their existing full-load fallback.
 abstract interface class PlaybackPlaylistSyncBackend {
