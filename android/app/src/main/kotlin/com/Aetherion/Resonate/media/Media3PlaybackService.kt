@@ -59,9 +59,7 @@ class Media3PlaybackService : MediaSessionService() {
     fun isCommunicationActive(): Boolean {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
         val mode = audioManager.mode
-        return mode == android.media.AudioManager.MODE_IN_CALL ||
-            mode == android.media.AudioManager.MODE_IN_COMMUNICATION ||
-            mode == android.media.AudioManager.MODE_RINGTONE
+        return AudioCommunicationGuard.isActive(mode)
     }
 
     /** Enables/disables ExoPlayer focus requests for the active deck only. */
