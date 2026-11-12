@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * when a processor is demoted so a failed engine cannot leak across a sink
  * lifecycle.
  */
-class DspEngineAudioProcessor : BaseAudioProcessor() {
+class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProcessor() {
 
     internal interface NativeDspApi {
         fun create(sampleRate: Double, channels: Int): Long
@@ -118,7 +118,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
             }
 
             engineHandle = h
-            if (!DspEngineRegistry.register(processorId, h)) {
+            if (!DspEngineRegistry.register(processorId, h, deckId)) {
                 Log.w(TAG, "id=$processorId registry rejected handle=$h — pass-through")
                 try {
                     nativeApi.destroy(h)
