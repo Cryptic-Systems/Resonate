@@ -218,11 +218,19 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
     Song song, {
     List<Song>? queue,
     int? startIndex,
+    Duration startPosition = Duration.zero,
   }) async {
+    if (startPosition.isNegative) {
+      throw ArgumentError.value(
+        startPosition,
+        'startPosition',
+        'Must not be negative.',
+      );
+    }
     final item = Media3QueueItem.fromSong(song);
     final songs = queue;
     if (songs == null || songs.isEmpty) {
-      await _client.preloadNext(item);
+      await _client.preloadNext(item, startPosition: startPosition);
       return;
     }
     if (startIndex == null || startIndex < 0 || startIndex >= songs.length) {
@@ -241,6 +249,7 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
       item,
       queue: playable.map(Media3QueueItem.fromSong).toList(growable: false),
       startIndex: nativeStartIndex,
+      startPosition: startPosition,
     );
   }
 
