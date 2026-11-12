@@ -221,6 +221,7 @@ extension MusicProviderMedia3 on MusicProvider {
     }
     _publishServiceState(positionOnly: true);
     notifyListeners();
+    _armEndOfTrackWatchdog();
     if (!state.isPlaying && !state.isBuffering && !state.isCompleted) {
       _recoverMedia3ProviderPlayback();
     }
