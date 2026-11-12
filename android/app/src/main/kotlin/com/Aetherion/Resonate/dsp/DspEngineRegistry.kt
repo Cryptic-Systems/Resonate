@@ -2,6 +2,7 @@ package com.aetherion.resonate.dsp
 
 import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.pow
 
 /**
  * Live native engine handles for dual-player (A/B) sinks.
@@ -214,21 +215,21 @@ object DspEngineRegistry {
         // intentionally always on. No caller can bypass EQ/DSP at runtime.
         stickyState = stickyState.copy(dspEnabled = true, eqEnabled = true)
         val state = stickyState
-        val list = snapshotHandles()
-        for (h in list) {
+        val engines = handles.values.toList()
+        for (engine in engines) {
             try {
-                nativeApi.setProcessingEnabled(h, true)
+                nativeApi.setProcessingEnabled(engine.handle, true)
                 val gains = state.gainsDb
-                if (gains != null && gains.isNotEmpty()) {
-                    nativeApi.setEqBands(h, state.centersHz, gains, true)
+                if (gains != null && gains.isNotEmpty() || temporaryEqOverlays.containsKey(engine.deckId)) {
+                    applyEqForEngine(engine.handle, engine.deckId, state)
                 } else {
-                    nativeApi.setEnabled(h, true)
+                    nativeApi.setEnabled(engine.handle, true)
                 }
             } catch (t: Throwable) {
-                Log.w(TAG, "applyEnabledAll failed handle=$h", t)
+                Log.w(TAG, "applyEnabledAll failed handle=${engine.handle}", t)
             }
         }
-        Log.i(TAG, "applyEnabledAll forced-on (requested=$enabled) targets=${list.size}")
+        Log.i(TAG, "applyEnabledAll forced-on (requested=$enabled) targets=${engines.size}")
     }
 
     /** True preamp (v0.4) — separate from DVC/volume. */
@@ -307,20 +308,15 @@ object DspEngineRegistry {
         )
         val state = stickyState
         val effectiveEqEnabled = true
-        val list = snapshotHandles()
-        for (h in list) {
+        val engines = handles.values.toList()
+        for (engine in engines) {
             try {
-                nativeApi.setEqBands(
-                    h,
-                    state.centersHz,
-                    state.gainsDb ?: gainsDb,
-                    effectiveEqEnabled,
-                )
+                applyEqForEngine(engine.handle, engine.deckId, state)
             } catch (t: Throwable) {
-                Log.w(TAG, "setEqBands failed handle=$h", t)
+                Log.w(TAG, "setEqBands failed handle=${engine.handle}", t)
             }
         }
-        Log.i(TAG, "applyEqBandsAll bands=${gainsDb.size} eqEnabled=$enabled effective=$effectiveEqEnabled targets=${list.size}")
+        Log.i(TAG, "applyEqBandsAll bands=${gainsDb.size} eqEnabled=$enabled effective=$effectiveEqEnabled targets=${engines.size}")
     }
 
 
@@ -439,7 +435,7 @@ object DspEngineRegistry {
 
     private fun defaultCenters(count: Int): DoubleArray =
         DoubleArray(count) { index ->
-            20.0 * kotlin.math.pow(1000.0, index.toDouble() / (count - 1).coerceAtLeast(1))
+            20.0 * kotlin.math.pow(1000.0.pow(index.toDouble() / (count - 1).coerceAtLeast(1)))
         }
 
     private fun applyStickyToHandle(handle: Long, deckId: String): Boolean {
