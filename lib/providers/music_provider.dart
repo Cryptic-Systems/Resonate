@@ -1855,10 +1855,10 @@ class MusicProvider extends ChangeNotifier {
         await incoming.seek(Duration.zero);
       } catch (_) {}
       await incoming.setVolume(0.0);
-      try {
-        final session = await AudioSession.instance;
-        await session.setActive(true);
-      } catch (_) {}
+      if (!await _claimAudioFocus(reason: 'repeat_self_handoff')) {
+        await _abortRepeatSelfEngine(incoming);
+        return false;
+      }
       try {
         incoming.play();
       } catch (_) {}
@@ -2527,10 +2527,10 @@ class MusicProvider extends ChangeNotifier {
         if (ok) {
           // Guarantee an audible start after auto-advance (no user gesture).
           if (!audioPlayer.playing && _userWantsPlaying) {
-            try {
-              final session = await AudioSession.instance;
-              await session.setActive(true);
-            } catch (_) {}
+            if (!await _claimAudioFocus(reason: 'completion_auto_advance')) {
+              _userWantsPlaying = false;
+              return;
+            }
             try {
               await audioPlayer.seek(Duration.zero);
             } catch (_) {}
@@ -2951,11 +2951,11 @@ class MusicProvider extends ChangeNotifier {
       if (!target.playing) {
         final kickSongId = selectedSong.id;
         unawaited(Future<void>.delayed(const Duration(milliseconds: 200), () async {
-          if (!_userWantsPlaying || currentSong?.id != kickSongId) return;
-          try {
-            final session = await AudioSession.instance;
-            await session.setActive(true);
-          } catch (_) {}
+          if (!_userWantsPlaying ||
+              currentSong?.id != kickSongId ||
+              !await _claimAudioFocus(reason: 'deferred_play_kick')) {
+            return;
+          }
           try {
             await target.seek(Duration.zero);
           } catch (_) {}
