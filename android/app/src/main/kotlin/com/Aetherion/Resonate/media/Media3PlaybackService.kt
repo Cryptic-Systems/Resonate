@@ -117,9 +117,7 @@ class Media3PlaybackService : MediaSessionService() {
         super.onCreate()
         instance = this
         activePlayer = newPlayer(handleAudioFocus = true, deckId = "A")
-        standbyPlayer = newPlayer(handleAudioFocus = false, deckId = "B")
-        activeDeckId = "A"
-        DspEngineRegistry.setActiveDeck(activeDeckId).apply {
+        standbyPlayer = newPlayer(handleAudioFocus = false, deckId = "B").apply {
             addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     if (crossfadeStatus == "preparing") {
@@ -138,6 +136,8 @@ class Media3PlaybackService : MediaSessionService() {
                 }
             })
         }
+        activeDeckId = "A"
+        DspEngineRegistry.setActiveDeck(activeDeckId)
         mediaSession = MediaSession.Builder(this, activePlayer).build()
         applyDeckVolumes()
     }
