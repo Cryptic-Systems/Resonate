@@ -48,6 +48,12 @@ abstract interface class PlaybackEngineSession
     required double activeSpeed,
     required double standbySpeed,
   });
+  Future<void> setDeckEqOverlay({
+    required String deck,
+    required List<double> centersHz,
+    required List<double> gainsDb,
+  });
+  Future<void> clearDeckEqOverlay({required String deck});
   Future<void> setVolume(double value);
   Future<void> setGainFactors({
     double? trackLevel,
