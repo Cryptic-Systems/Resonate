@@ -182,13 +182,14 @@ class Media3PlaybackService : MediaSessionService() {
                 }
                 if (playbackState == Player.STATE_READY) {
                     val pendingDuration = pendingCrossfadeDurationMs
-                    if (pendingDuration != null) {
+                    if (pendingDuration != null && activePlayer.isPlaying) {
                         pendingCrossfadeDurationMs = null
-                        if (activePlayer.isPlaying) {
-                            beginCrossfade(pendingDuration)
-                        } else {
-                            crossfadeStatus = "ready"
-                        }
+                        beginCrossfade(pendingDuration)
+                    } else {
+                        // Keep the pending duration while the active deck is
+                        // paused. Its isPlaying listener will resume the
+                        // deferred start after focus/transport resumes.
+                        crossfadeStatus = "ready"
                     }
                 }
             }
@@ -208,14 +209,24 @@ class Media3PlaybackService : MediaSessionService() {
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                // ExoPlayer can pause the active deck on audio-focus loss or
-                // buffering without a Flutter transport command. Freeze the
-                // crossfade clock and standby deck in that case too, then
-                // resume the same ramp when the active deck starts again.
-                if (!::activePlayer.isInitialized ||
-                    deck !== activePlayer ||
-                    crossfadeStatus != "fading"
-                ) return
+                if (!::activePlayer.isInitialized || deck !== activePlayer) return
+                // A fade requested while the standby deck is preparing waits
+                // for both decks to be runnable. Preserve that request across
+                // transient focus/buffering pauses and start it on resume.
+                if (crossfadeStatus == "waiting_ready" || crossfadeStatus == "ready") {
+                    val pendingDuration = pendingCrossfadeDurationMs
+                    if (isPlaying && pendingDuration != null &&
+                        ::standbyPlayer.isInitialized &&
+                        standbyPlayer.playbackState == Player.STATE_READY
+                    ) {
+                        pendingCrossfadeDurationMs = null
+                        beginCrossfade(pendingDuration)
+                    }
+                    return
+                }
+                if (crossfadeStatus != "fading") return
+                // Freeze the native equal-power clock when the active deck
+                // pauses, then resume the exact ramp position on playback.
                 if (isPlaying) {
                     resumeCrossfade()
                 } else {
@@ -266,19 +277,26 @@ class Media3PlaybackService : MediaSessionService() {
      */
     fun startCrossfade(durationMs: Long): Boolean {
         if (durationMs !in 250L..15000L) return false
-        if (!activePlayer.isPlaying || standbyPlayer.mediaItemCount == 0) {
+        if (standbyPlayer.mediaItemCount == 0) {
             crossfadeStatus = "incoming_not_ready"
             return false
         }
-        if (standbyPlayer.playbackState != Player.STATE_READY) {
-            if (standbyPlayer.playbackState != Player.STATE_BUFFERING &&
+        if (!activePlayer.isPlaying ||
+            standbyPlayer.playbackState != Player.STATE_READY
+        ) {
+            if (standbyPlayer.playbackState != Player.STATE_READY &&
+                standbyPlayer.playbackState != Player.STATE_BUFFERING &&
                 standbyPlayer.playbackState != Player.STATE_IDLE
             ) {
                 crossfadeStatus = "incoming_not_ready"
                 return false
             }
             pendingCrossfadeDurationMs = durationMs
-            crossfadeStatus = "waiting_ready"
+            crossfadeStatus = if (standbyPlayer.playbackState == Player.STATE_READY) {
+                "ready"
+            } else {
+                "waiting_ready"
+            }
             return true
         }
         return beginCrossfade(durationMs)
@@ -344,8 +362,7 @@ class Media3PlaybackService : MediaSessionService() {
      * pauses the standby deck so neither audio nor fade progress advances silently.
      */
     fun pauseCrossfade(): Boolean {
-        if (crossfadeStatus == "waiting_ready") {
-            pendingCrossfadeDurationMs = null
+        if (crossfadeStatus == "waiting_ready" || crossfadeStatus == "ready") {
             standbyPlayer.pause()
             crossfadeStatus = "ready"
             return true
