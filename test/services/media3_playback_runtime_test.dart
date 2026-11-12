@@ -40,7 +40,7 @@ PlaybackSnapshot snapshot({
       error: null,
     );
 
-class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackDeckEqOverlayBackend {
+class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   PlaybackSnapshot value = snapshot();
@@ -50,6 +50,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, 
   Duration? lastSeek;
   double? lastVolume;
   double? lastSpeed;
+  bool? lastAudioFocusHandling;
   bool? lastShuffleMode;
   Map<String, double?> lastGainFactors = const {};
   Song? preloadedSong;
@@ -125,6 +126,11 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, 
   }
   @override
   Future<void> clearDeckEqOverlay({required String deck}) async { deckEqCalls.add('clear:$deck'); }
+  @override
+  Future<void> setAudioFocusHandling(bool enabled) async {
+    lastAudioFocusHandling = enabled;
+    commandOrder.add('audioFocus:$enabled');
+  }
   @override
   Future<void> setVolume(double value) async { lastVolume = value; }
   @override
@@ -437,6 +443,15 @@ void main() {
       expect(() => runtime.setVolume(double.infinity), throwsArgumentError);
       expect(backend.commandOrder, isEmpty);
       expect(backend.lastGainFactors, isEmpty);
+    });
+
+    test('serializes explicit audio-focus ownership changes', () async {
+      final disable = runtime.setAudioFocusHandling(false);
+      final enable = runtime.setAudioFocusHandling(true);
+      await Future.wait<void>([disable, enable]);
+
+      expect(backend.lastAudioFocusHandling, isTrue);
+      expect(backend.commandOrder, ['audioFocus:false', 'audioFocus:true']);
     });
 
     test('validates and serializes playback speed at the runtime boundary', () async {
