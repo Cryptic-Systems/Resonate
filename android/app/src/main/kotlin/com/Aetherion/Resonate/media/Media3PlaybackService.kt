@@ -21,10 +21,9 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Isolated Media3 playback owner for the migration branch.
- *
- * A second deck is used only by the Engine Lab crossfade experiment. Production
- * MusicProvider and just_audio remain unchanged.
+ * Media3 playback service with active/standby decks. The provider owns the
+ * production handoff while this service owns native transport, MediaSession,
+ * DSP and equal-power crossfade execution.
  */
 class Media3PlaybackService : MediaSessionService() {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -35,6 +34,7 @@ class Media3PlaybackService : MediaSessionService() {
     private var fadeGeneration = 0
     private val crossfadeClock = Media3CrossfadeClock()
     private var crossfadeStatus = "idle"
+    private var pendingCrossfadeDurationMs: Long? = null
     private var activeDeckId = "A"
     // ExoPlayer focus handling is opt-in at the migration boundary. The legacy
     // audio_session owner remains untouched until an explicit provider cutover.
