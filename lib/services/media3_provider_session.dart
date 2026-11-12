@@ -29,6 +29,9 @@ class Media3ProviderSession implements PlaybackEngineSession {
 
   Stream<Media3ProviderState> get states => _bridge.states;
 
+  @override
+  Stream<Media3ProviderState> get stateStream => states;
+
   /// Follows the active Media3 deck so DSP and visualizers can rebind when a
   /// crossfade swaps the active player and its Android audio session.
   @override
