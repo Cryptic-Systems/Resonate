@@ -159,12 +159,18 @@ void main() {
         song(id: 'missing', filePath: '  '),
         song(id: 'third', filePath: '/music/third.mp3'),
       ];
-      await adapter.preloadNext(queue[2], queue: queue, startIndex: 2);
+      await adapter.preloadNext(
+        queue[2],
+        queue: queue,
+        startIndex: 2,
+        startPosition: const Duration(milliseconds: 18450),
+      );
 
       expect(calls, hasLength(1));
       expect(calls.single.method, 'preloadNext');
       final args = calls.single.arguments as Map<Object?, Object?>;
       expect(args['startIndex'], 1);
+      expect(args['positionMs'], 18450);
       final items = args['items'] as List<Object?>;
       expect(items, hasLength(2));
       expect((items[1] as Map<Object?, Object?>)['id'], 'third');
