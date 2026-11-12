@@ -60,6 +60,11 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   double? volumeSet;
   bool? focusHandling;
   Map<String, double?>? gainFactors;
+  Song? preloadedSong;
+  int? preloadedIndex;
+  Duration? preloadedStartPosition;
+  Duration? crossfadeDuration;
+  (double, double)? deckSpeeds;
   bool disposed = false;
   Song? currentSongValue;
   int? queueIndexValue;
@@ -167,6 +172,54 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   Future<void> setVolume(double value) async {
     volumeSet = value;
     calls.add('volume:$value');
+  }
+
+  @override
+  Future<void> setDeckPlaybackSpeeds({
+    required double activeSpeed,
+    required double standbySpeed,
+  }) async {
+    deckSpeeds = (activeSpeed, standbySpeed);
+    calls.add('deckSpeeds:${activeSpeed}:${standbySpeed}');
+  }
+
+  @override
+  Future<void> preloadNext(
+    Song song, {
+    int? queueIndex,
+    Duration startPosition = Duration.zero,
+  }) async {
+    preloadedSong = song;
+    preloadedIndex = queueIndex;
+    preloadedStartPosition = startPosition;
+    calls.add('preloadNext:${song.id}:${queueIndex}:${startPosition.inMilliseconds}');
+  }
+
+  @override
+  Future<void> crossfade({required Duration duration}) async {
+    crossfadeDuration = duration;
+    calls.add('crossfade:${duration.inMilliseconds}');
+    final index = preloadedIndex;
+    if (index != null && index >= 0 && index < queue.length) {
+      currentSongValue = queue[index];
+      queueIndexValue = index;
+      positionValue = preloadedStartPosition ?? Duration.zero;
+      playingValue = true;
+      completedValue = false;
+      durationValue = currentSongValue?.duration;
+      states.add(_state(
+        song: currentSongValue!,
+        queueIndex: index,
+        playing: true,
+        position: positionValue,
+        playWhenReady: true,
+      ));
+    }
+  }
+
+  @override
+  Future<void> cancelCrossfade() async {
+    calls.add('cancelCrossfade');
   }
 
   @override
@@ -334,6 +387,42 @@ void main() {
 
       expect(session.calls, contains('stop'));
       expect(provider.isPlaying, isFalse);
+      expect(provider.media3ProviderSessionActive, isTrue);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('runs automatic crossfade and DJ deck commands through the Media3 session', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('fade-out');
+      final second = _song('fade-in');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(
+        first,
+        queue: <Song>[first, second],
+      ), isTrue);
+      await provider.setCrossfadeDuration(500);
+
+      session.positionValue = const Duration(seconds: 178);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 180));
+
+      expect(session.preloadedSong?.id, 'fade-in');
+      expect(session.preloadedIndex, 1);
+      expect(session.crossfadeDuration, isNotNull);
+      expect(session.calls, contains('crossfade:500'));
+      expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+      expect(provider.currentSong?.id, 'fade-in');
       expect(provider.media3ProviderSessionActive, isTrue);
 
       provider.dispose();
