@@ -1014,6 +1014,16 @@ class MusicProvider extends ChangeNotifier {
   /// without this, Audiobook's LoopMode.one can leak into Normal mode.
   Future<void> _synchronizeModePlaybackBoundary() async {
     final generation = ++_modeBoundaryGeneration;
+    if (_media3ProviderSessionActive) {
+      final session = _media3ProviderSession!;
+      await session.setRepeatMode(switch (_repeatMode) {
+        PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
+        PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
+        PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
+      });
+      await session.setShuffleMode(_shuffleEnabled && _modeShuffleAllowed);
+      return;
+    }
     // A policy update must never pause an engine after a new handoff has
     // started. Re-check ownership after each await, not only at method exit.
     if (_crossfadeInProgress ||
