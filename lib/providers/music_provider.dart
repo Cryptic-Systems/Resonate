@@ -101,6 +101,7 @@ class MusicProvider extends ChangeNotifier {
   Media3ProviderState? get media3ShadowState => _media3ShadowState;
   Future<void>? _playbackSettingsLoad;
   Future<void>? _queueRestore;
+  Future<void>? _media3HandoffFuture;
   bool _media3ProviderSessionPrepared = false;
   bool _media3ProviderSessionActive = false;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
@@ -713,7 +714,12 @@ class MusicProvider extends ChangeNotifier {
   /// transport/focus handoff after both legacy decks have stopped. The app
   /// composition root invokes this after provider restoration. A failed start
   /// leaves the legacy engine authoritative.
-  Future<void> prepareMedia3ProviderSession() async {
+  Future<void> prepareMedia3ProviderSession() {
+    if (_media3ProviderSessionActive) return Future<void>.value();
+    return _media3HandoffFuture ??= _prepareMedia3ProviderSession();
+  }
+
+  Future<void> _prepareMedia3ProviderSession() async {
     final session = _media3ProviderSession;
     if (session == null) {
       throw StateError('No Media3ProviderSession was supplied to MusicProvider.');
@@ -2931,6 +2937,13 @@ class MusicProvider extends ChangeNotifier {
     }
     final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
     if (song.filePath.trim().isEmpty) return false;
+    if (_media3ProviderSession != null && !_media3ProviderSessionActive) {
+      try {
+        await prepareMedia3ProviderSession();
+      } catch (error) {
+        debugPrint('Media3 provider handoff unavailable; retaining legacy path: $error');
+      }
+    }
     if (_media3ProviderSessionActive) {
       return this._playSongOnMedia3ProviderSession(
         song,
