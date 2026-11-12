@@ -99,6 +99,8 @@ class MusicProvider extends ChangeNotifier {
   StreamSubscription<Media3ProviderState>? _media3StateSub;
   Media3ProviderState? _media3ShadowState;
   Media3ProviderState? get media3ShadowState => _media3ShadowState;
+  Future<void>? _playbackSettingsLoad;
+  Future<void>? _queueRestore;
   bool _media3ProviderSessionPrepared = false;
   bool _media3ProviderSessionActive = false;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
@@ -699,9 +701,11 @@ class MusicProvider extends ChangeNotifier {
     }
     _bindActivePlayerStreams();
     unawaited(_configureAudioSession());
-    unawaited(_loadPlaybackSettings());
+    _playbackSettingsLoad = _loadPlaybackSettings();
+    unawaited(_playbackSettingsLoad);
     _systemVolumePollTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => unawaited(_syncSystemVolume()));
-    unawaited(_restoreQueue());
+    _queueRestore = _restoreQueue();
+    unawaited(_queueRestore);
   }
 
   /// Connects the provider's single candidate Media3 session and mirrors the
@@ -717,6 +721,9 @@ class MusicProvider extends ChangeNotifier {
     if (session == null) {
       throw StateError('No Media3ProviderSession was supplied to MusicProvider.');
     }
+    if (_disposed) throw StateError('MusicProvider is disposed.');
+    await _playbackSettingsLoad;
+    await _queueRestore;
     if (_disposed) throw StateError('MusicProvider is disposed.');
     await session.start();
     // The legacy engine remains the current owner during this migration stage.
