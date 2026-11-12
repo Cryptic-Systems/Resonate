@@ -29,6 +29,7 @@ import 'navigation/shell_nav.dart';
 import 'widgets/ask_resonate/ask_resonate_controller.dart';
 import 'screens/home_screen.dart';
 import 'services/audio_service_handler.dart';
+import 'services/media3_provider_session.dart';
 import 'services/playback_diagnostics_observer.dart';
 import 'services/resonate_diagnostics.dart';
 
@@ -283,7 +284,23 @@ class ResonateApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ShellNav()),
         ChangeNotifierProvider(create: (_) => AskResonateController()),
         ChangeNotifierProvider(
-          create: (_) => MusicProvider(audioHandler: audioHandler),
+          create: (_) {
+            final provider = MusicProvider(
+              audioHandler: audioHandler,
+              media3ProviderSession: Media3ProviderSession(),
+            );
+            // Startup restoration completes before the provider mirrors its
+            // queue and commits the Media3 transport/state handoff. A failed
+            // native startup is surfaced in diagnostics and leaves the
+            // existing player available rather than creating two active decks.
+            unawaited(provider.prepareMedia3ProviderSession().catchError(
+              (Object error, StackTrace stack) {
+                debugPrint('Media3 provider handoff failed: $error');
+                debugPrint('$stack');
+              },
+            ));
+            return provider;
+          },
         ),
         ChangeNotifierProvider(
           create: (context) =>
