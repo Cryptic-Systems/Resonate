@@ -40,7 +40,9 @@ class PlaybackAuthority extends ChangeNotifier {
   String get lastCommand => _lastCommand;
   PlaybackEvent? get lastEvent => _lastEvent;
 
-  String engineLabel(MusicProvider music) => _engineLabelFor(music.audioPlayer);
+  String engineLabel(MusicProvider music) => music.media3ProviderSessionActive
+      ? 'Media3'
+      : _engineLabelFor(music.audioPlayer);
 
   Future<void> userPause(MusicProvider music) => music.pause();
   Future<void> userStop(MusicProvider music) => music.stop();
