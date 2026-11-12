@@ -485,6 +485,20 @@ class Media3PlaybackRuntime {
     return _run(() => _backend.setVolume(value.clamp(0.0, 1.0).toDouble()));
   }
 
+  /// Changes focus-request ownership only on backends that expose the
+  /// explicit audio-focus capability. The command shares the runtime lane.
+  Future<void> setAudioFocusHandling(bool enabled) {
+    _ensureAlive();
+    final backend = _backend;
+    if (backend is! PlaybackAudioFocusBackend) {
+      throw UnsupportedError(
+        'The active playback backend does not support audio-focus ownership.',
+      );
+    }
+    final focusBackend = backend as PlaybackAudioFocusBackend;
+    return _run(() => focusBackend.setAudioFocusHandling(enabled));
+  }
+
   Future<void> setGainFactors({
     double? trackLevel,
     double? preamp,
