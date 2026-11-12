@@ -45,8 +45,9 @@ void main() {
   });
 
   Future<void> settleProvider(AudioEffectsProvider provider) async {
-    // Flush the provider's serialized native queue after stream callbacks.
-    await provider.setEffectsEnabled(provider.effectsEnabled);
+    // Let the stream callback's queued native work settle without issuing a
+    // second settings mutation (which would itself trigger another attach).
+    await Future<void>.delayed(const Duration(milliseconds: 20));
   }
 
   test('Media3 active-session handoff detaches old and attaches new ID',
