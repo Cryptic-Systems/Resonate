@@ -1,47 +1,345 @@
 package com.Aetherion.Resonate.media
 
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackParameters
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.ExoPlayer
+import com.aetherion.resonate.dsp.DspEngineSinkHook
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Isolated Media3 playback owner for the migration branch.
  *
- * This service is intentionally not wired into MusicProvider yet. The existing
- * just_audio engine remains authoritative until Media3 parity is demonstrated.
+ * A second deck is used only by the Engine Lab crossfade experiment. Production
+ * MusicProvider and just_audio remain unchanged.
  */
 class Media3PlaybackService : MediaSessionService() {
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var mediaSession: MediaSession? = null
+    private lateinit var activePlayer: ExoPlayer
+    private lateinit var standbyPlayer: ExoPlayer
+    private var fadeRunnable: Runnable? = null
+    private var fadeGeneration = 0
+    private val crossfadeClock = Media3CrossfadeClock()
+    private var crossfadeStatus = "idle"
+
+    // All Media3 output gain changes pass through one policy. Future leveling,
+    // preamp, sleep fade and focus-duck factors belong in this composition point.
+    private val gainPolicy = Media3GainPolicy()
+
+    private fun applyDeckVolumes() {
+        if (::activePlayer.isInitialized) activePlayer.volume = gainPolicy.activeVolume()
+        if (::standbyPlayer.isInitialized) standbyPlayer.volume = gainPolicy.standbyVolume()
+    }
+
+    /** Current deck session for session-bound DSP/effects attachment. */
+    fun activeAudioSessionId(): Int =
+        if (::activePlayer.isInitialized) activePlayer.audioSessionId else 0
+
+    fun setMasterVolume(value: Float): Boolean {
+        if (!gainPolicy.setMasterVolume(value)) return false
+        applyDeckVolumes()
+        return true
+    }
+
+    /**
+     * Keep transport policy identical on both decks. A prepared standby deck
+     * can become active after crossfade, so updates must not leave it stale.
+     */
+    fun setRepeatMode(mode: Int): Boolean {
+        if (mode != Player.REPEAT_MODE_OFF &&
+            mode != Player.REPEAT_MODE_ONE &&
+            mode != Player.REPEAT_MODE_ALL
+        ) return false
+        activePlayer.repeatMode = mode
+        standbyPlayer.repeatMode = mode
+        return true
+    }
+
+    fun setPlaybackSpeed(speed: Float): Boolean {
+        if (!speed.isFinite() || speed !in 0.5f..2.0f) return false
+        return setDeckPlaybackSpeeds(active = speed, standby = speed)
+    }
+
+    /**
+     * DJ transitions may need different rates on outgoing and incoming decks.
+     * Keep the two values explicit so a standby correction never changes the
+     * active deck or gets silently overwritten by a shared speed update.
+     */
+    fun setDeckPlaybackSpeeds(active: Float, standby: Float): Boolean {
+        if (!active.isFinite() || active !in 0.5f..2.0f ||
+            !standby.isFinite() || standby !in 0.5f..2.0f
+        ) return false
+        activePlayer.playbackParameters = PlaybackParameters(active)
+        standbyPlayer.playbackParameters = PlaybackParameters(standby)
+        return true
+    }
+
+    fun setShuffleMode(enabled: Boolean): Boolean {
+        activePlayer.shuffleModeEnabled = enabled
+        standbyPlayer.shuffleModeEnabled = enabled
+        return true
+    }
+
+    /** Apply track leveling, DSP preamp, sleep fade and focus ducking together. */
+    fun setGainFactors(
+        trackLevel: Float,
+        preamp: Float,
+        sleepFade: Float,
+        focusDuck: Float,
+    ): Boolean {
+        if (!gainPolicy.setGainFactors(trackLevel, preamp, sleepFade, focusDuck)) return false
+        applyDeckVolumes()
+        return true
+    }
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
+        activePlayer = newPlayer(handleAudioFocus = true)
+        standbyPlayer = newPlayer(handleAudioFocus = false).apply {
+            addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (crossfadeStatus == "preparing") {
+                        crossfadeStatus = when (playbackState) {
+                            Player.STATE_READY -> "ready"
+                            Player.STATE_IDLE -> "preparing"
+                            Player.STATE_BUFFERING -> "preparing"
+                            Player.STATE_ENDED -> "incoming_ended"
+                            else -> crossfadeStatus
+                        }
+                    }
+                }
 
-        val player = ExoPlayer.Builder(this).build().apply {
-            setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                /* handleAudioFocus = */ true,
-            )
-            repeatMode = Player.REPEAT_MODE_OFF
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    crossfadeStatus = "incoming_error"
+                }
+            })
         }
+        mediaSession = MediaSession.Builder(this, activePlayer).build()
+        applyDeckVolumes()
+    }
 
-        mediaSession = MediaSession.Builder(this, player).build()
+    private fun newPlayer(handleAudioFocus: Boolean) = ExoPlayer.Builder(
+        this,
+        object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioOutputPlaybackParams: Boolean,
+            ): AudioSink = DefaultAudioSink.Builder(context)
+                .setAudioProcessors(DspEngineSinkHook.createProcessors())
+                .setEnableFloatOutput(enableFloatOutput)
+                .setEnableAudioTrackPlaybackParams(enableAudioOutputPlaybackParams)
+                .build()
+        },
+    ).build().apply {
+        val deck = this
+        setAudioAttributes(audioAttributes(), handleAudioFocus)
+        repeatMode = Player.REPEAT_MODE_OFF
+        addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                // ExoPlayer can pause the active deck on audio-focus loss or
+                // buffering without a Flutter transport command. Freeze the
+                // crossfade clock and standby deck in that case too, then
+                // resume the same ramp when the active deck starts again.
+                if (!::activePlayer.isInitialized ||
+                    deck !== activePlayer ||
+                    crossfadeStatus != "fading"
+                ) return
+                if (isPlaying) {
+                    resumeCrossfade()
+                } else {
+                    pauseCrossfade()
+                }
+            }
+        })
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
         mediaSession
 
-    override fun onDestroy() {
-        mediaSession?.run {
-            player.release()
-            release()
+    private fun audioAttributes() = AudioAttributes.Builder()
+        .setUsage(C.USAGE_MEDIA)
+        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+        .build()
+
+    /** Prepares the inactive deck without disturbing current playback. */
+    fun preloadNext(items: List<MediaItem>, startIndex: Int): Boolean {
+        if (!::standbyPlayer.isInitialized || items.isEmpty() ||
+            startIndex !in items.indices ||
+            items.any { it.localConfiguration?.uri == null }
+        ) return false
+        cancelCrossfade()
+        gainPolicy.setCrossfadeGains(active = 1f, standby = 0f)
+        applyDeckVolumes()
+        // Keep the complete queue and transport policy on the standby deck.
+        // After the deck swap, next/previous/repeat continue to work without
+        // reconstructing the playlist mid-playback or reloading the incoming track.
+        standbyPlayer.repeatMode = activePlayer.repeatMode
+        standbyPlayer.shuffleModeEnabled = activePlayer.shuffleModeEnabled
+        // Start from the active deck's baseline; DJ analysis may then apply an
+        // independent standby correction through setDeckPlaybackSpeeds().
+        standbyPlayer.playbackParameters = activePlayer.playbackParameters
+        standbyPlayer.setMediaItems(items, startIndex, 0L)
+        standbyPlayer.prepare()
+        crossfadeStatus = "preparing"
+        return true
+    }
+
+    /**
+     * Starts a cancellable gain ramp. Equal-power curves avoid the large perceived
+     * dip of a linear crossfade. Calls are main-thread serialized by the bridge.
+     */
+    fun startCrossfade(durationMs: Long): Boolean {
+        if (durationMs !in 250L..15000L) return false
+        if (!activePlayer.isPlaying || standbyPlayer.mediaItemCount == 0 ||
+            standbyPlayer.playbackState != Player.STATE_READY
+        ) {
+            crossfadeStatus = "incoming_not_ready"
+            return false
         }
+        cancelCrossfade()
+        crossfadeClock.start(durationMs, android.os.SystemClock.elapsedRealtime())
+        val generation = ++fadeGeneration
+        crossfadeStatus = "fading"
+        gainPolicy.resetDecks()
+        applyDeckVolumes()
+        standbyPlayer.play()
+        val task = object : Runnable {
+            override fun run() {
+                if (generation != fadeGeneration || isDestroyed) return
+                val progress = crossfadeClock.progress(android.os.SystemClock.elapsedRealtime())
+                gainPolicy.setCrossfadeGains(
+                    active = cos(progress * Math.PI.toFloat() / 2f),
+                    standby = sin(progress * Math.PI.toFloat() / 2f),
+                )
+                applyDeckVolumes()
+                if (progress >= 1f) {
+                    val oldPlayer = activePlayer
+                    activePlayer = standbyPlayer
+                    standbyPlayer = oldPlayer
+                    // The promoted deck keeps its transition rate. Reset the
+                    // now-standby deck so the next preload starts from the new
+                    // active rate rather than a stale outgoing correction.
+                    standbyPlayer.playbackParameters = activePlayer.playbackParameters
+                    oldPlayer.setAudioAttributes(audioAttributes(), false)
+                    activePlayer.setAudioAttributes(audioAttributes(), true)
+                    mediaSession?.setPlayer(activePlayer)
+                    gainPolicy.resetDecks()
+                    applyDeckVolumes()
+                    standbyPlayer.pause()
+                    standbyPlayer.clearMediaItems()
+                    crossfadeStatus = "completed"
+                    fadeRunnable = null
+                    crossfadeClock.reset()
+                } else {
+                    mainHandler.postDelayed(this, 32L)
+                }
+            }
+        }
+        fadeRunnable = task
+        mainHandler.post(task)
+        return true
+    }
+
+    /**
+     * Freeze an in-flight transition when transport pauses. The active deck is
+     * paused by the MediaSession command; this method freezes the ramp clock and
+     * pauses the standby deck so neither audio nor fade progress advances silently.
+     */
+    fun pauseCrossfade(): Boolean {
+        if (crossfadeStatus != "fading") return false
+        if (!crossfadeClock.pause(android.os.SystemClock.elapsedRealtime())) return false
+        fadeRunnable?.let(mainHandler::removeCallbacks)
+        standbyPlayer.pause()
+        return true
+    }
+
+    /** Resume both decks from the exact gain-ramp position at which they paused. */
+    fun resumeCrossfade(): Boolean {
+        if (crossfadeStatus != "fading" || fadeRunnable == null) return false
+        if (!crossfadeClock.resume(android.os.SystemClock.elapsedRealtime())) return false
+        standbyPlayer.play()
+        mainHandler.post(fadeRunnable!!)
+        return true
+    }
+
+    /**
+     * Invalidates the standby deck when the active source or queue is replaced.
+     * Without this, a later crossfade could promote a track from an obsolete queue.
+     */
+    fun clearPreload(): Boolean {
+        if (!::activePlayer.isInitialized || !::standbyPlayer.isInitialized) return false
+        cancelCrossfade()
+        standbyPlayer.pause()
+        standbyPlayer.clearMediaItems()
+        crossfadeStatus = "idle"
+        return true
+    }
+
+    fun cancelCrossfade(): Boolean {
+        fadeGeneration++
+        fadeRunnable?.let(mainHandler::removeCallbacks)
+        fadeRunnable = null
+        crossfadeClock.reset()
+        if (::activePlayer.isInitialized && ::standbyPlayer.isInitialized) {
+            // Cancellation preserves the current deck; the incoming deck is silenced
+            // and paused so a second request cannot leave two audible players.
+            gainPolicy.resetDecks()
+            applyDeckVolumes()
+            standbyPlayer.pause()
+            standbyPlayer.playbackParameters = activePlayer.playbackParameters
+        }
+        if (crossfadeStatus == "fading" || crossfadeStatus == "preparing" || crossfadeStatus == "ready") {
+            crossfadeStatus = "cancelled"
+        }
+        if (::activePlayer.isInitialized) {
+            gainPolicy.resetDecks()
+            applyDeckVolumes()
+        }
+        return true
+    }
+
+    fun crossfadeState(): Map<String, Any?> = mapOf(
+        "status" to crossfadeStatus,
+        "activeMediaId" to activePlayer.currentMediaItem?.mediaId,
+        "incomingReady" to (standbyPlayer.playbackState == Player.STATE_READY),
+        "activePositionMs" to activePlayer.currentPosition.coerceAtLeast(0L),
+        "incomingPositionMs" to standbyPlayer.currentPosition.coerceAtLeast(0L),
+        "activeVolume" to activePlayer.volume,
+        "incomingVolume" to standbyPlayer.volume,
+    )
+
+    private var isDestroyed = false
+
+    override fun onDestroy() {
+        isDestroyed = true
+        cancelCrossfade()
+        mainHandler.removeCallbacksAndMessages(null)
+        mediaSession?.release()
         mediaSession = null
+        if (::activePlayer.isInitialized) activePlayer.release()
+        if (::standbyPlayer.isInitialized) standbyPlayer.release()
+        if (instance === this) instance = null
         super.onDestroy()
+    }
+
+    companion object {
+        @Volatile
+        var instance: Media3PlaybackService? = null
+            private set
     }
 }
