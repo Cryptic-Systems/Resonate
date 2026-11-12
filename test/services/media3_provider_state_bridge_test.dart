@@ -1,0 +1,210 @@
+import 'dart:async';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:resonate/models/song.dart';
+import 'package:resonate/services/media3_playback_runtime.dart';
+import 'package:resonate/services/media3_provider_state_bridge.dart';
+import 'package:resonate/services/playback_backend.dart';
+import 'package:resonate/services/playback_snapshot.dart';
+
+Song _song(String id) => Song(
+      id: id,
+      title: id,
+      artist: 'Artist',
+      album: 'Album',
+      filePath: '/music/$id.mp3',
+      duration: const Duration(minutes: 3),
+      dateAdded: DateTime.utc(2026, 1, 1),
+    );
+
+PlaybackSnapshot _snapshot({
+  String? mediaId,
+  int index = 0,
+  bool playing = false,
+  int? audioSessionId,
+  String repeatMode = 'off',
+  bool shuffleModeEnabled = false,
+  Duration bufferedPosition = Duration.zero,
+  bool buffering = false,
+  bool completed = false,
+}) =>
+    PlaybackSnapshot(
+      connected: true,
+      isPlaying: playing,
+      isReady: true,
+      playWhenReady: playing,
+      position: const Duration(seconds: 18),
+      bufferedPosition: bufferedPosition,
+      isBuffering: buffering,
+      isCompleted: completed,
+      duration: const Duration(minutes: 3),
+      mediaId: mediaId,
+      title: mediaId,
+      artist: 'Artist',
+      album: 'Album',
+      currentQueueIndex: index,
+      queueLength: 1,
+      volume: 1,
+      audioSessionId: audioSessionId,
+      repeatMode: repeatMode,
+      shuffleModeEnabled: shuffleModeEnabled,
+      hasError: false,
+      error: null,
+    );
+
+class _Backend implements PlaybackBackend {
+  final StreamController<PlaybackSnapshot> controller =
+      StreamController<PlaybackSnapshot>.broadcast();
+  PlaybackSnapshot value = _snapshot();
+
+  @override
+  Stream<PlaybackSnapshot> get states => controller.stream;
+  @override
+  Future<PlaybackSnapshot> currentState() async => value;
+  @override
+  Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
+    value = _snapshot(
+      mediaId: songs[startIndex].id,
+      index: startIndex,
+      audioSessionId: value.audioSessionId,
+    );
+  }
+
+  @override
+  Future<void> clearQueue() async {
+    value = _snapshot(mediaId: null, index: -1);
+  }
+  @override
+  Future<void> play() async {}
+  @override
+  Future<void> pause() async {}
+  @override
+  Future<void> stop() async {}
+  @override
+  Future<void> seek(Duration position) async {}
+  @override
+  Future<void> next() async {}
+  @override
+  Future<void> previous() async {}
+  @override
+  Future<void> setVolume(double value) async {}
+  @override
+  Future<void> setGainFactors({
+    double? trackLevel,
+    double? preamp,
+    double? sleepFade,
+    double? focusDuck,
+  }) async {}
+  @override
+  Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) async {}
+  @override
+  Future<void> setShuffleMode(bool enabled) async {}
+}
+
+void main() {
+  group('Media3ProviderStateBridge', () {
+    late _Backend backend;
+    late Media3PlaybackRuntime runtime;
+    late Media3ProviderStateBridge bridge;
+
+    setUp(() async {
+      backend = _Backend();
+      runtime = Media3PlaybackRuntime(backend);
+      await runtime.connect();
+      bridge = Media3ProviderStateBridge(runtime);
+    });
+
+    tearDown(() async {
+      await bridge.dispose();
+      await runtime.dispose();
+      await backend.controller.close();
+    });
+
+    test('projects reconciled Media3 state without optimistic changes', () async {
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      await runtime.loadQueue([_song('track-1')]);
+      await bridge.start();
+
+      expect(bridge.current.currentSong?.id, 'track-1');
+      expect(bridge.current.queueIndex, 0);
+      expect(bridge.current.isPlaying, isFalse);
+      expect(bridge.current.position, const Duration(seconds: 18));
+      expect(bridge.current.connected, isTrue);
+      expect(bridge.current.isReady, isTrue);
+      expect(bridge.current.playWhenReady, isFalse);
+      expect(bridge.current.mediaId, 'track-1');
+      expect(bridge.current.queueLength, 1);
+      expect(bridge.current.volume, 1.0);
+      expect(bridge.current.duration, const Duration(minutes: 3));
+      expect(bridge.current.audioSessionId, 37);
+      expect(bridge.current.repeatMode, 'off');
+      expect(bridge.current.shuffleModeEnabled, isFalse);
+    });
+
+    test('forwards later native state updates including deck session changes', () async {
+      await runtime.loadQueue([_song('track-1')]);
+      await bridge.start();
+
+      final nextState = bridge.states.first;
+      backend.controller.add(_snapshot(
+        mediaId: 'track-1',
+        playing: true,
+        audioSessionId: 42,
+        repeatMode: 'one',
+        shuffleModeEnabled: true,
+      ));
+
+      final projected = await nextState;
+      expect(projected.currentSong?.id, 'track-1');
+      expect(projected.isPlaying, isTrue);
+      expect(projected.position, const Duration(seconds: 18));
+      expect(projected.isReady, isTrue);
+      expect(projected.playWhenReady, isTrue);
+      expect(projected.mediaId, 'track-1');
+      expect(projected.queueLength, 1);
+      expect(projected.audioSessionId, 42);
+      expect(projected.repeatMode, 'one');
+      expect(projected.shuffleModeEnabled, isTrue);
+    });
+
+    test('projects buffering, buffered position, and completion state', () async {
+      await runtime.loadQueue([_song('track-1')]);
+      final bufferingUpdate = runtime.states.first;
+      backend.value = _snapshot(
+        mediaId: 'track-1',
+        bufferedPosition: const Duration(seconds: 52),
+        buffering: true,
+      );
+      backend.controller.add(backend.value);
+      await bufferingUpdate;
+      await bridge.start();
+
+      expect(bridge.current.isBuffering, isTrue);
+      expect(bridge.current.isCompleted, isFalse);
+      expect(bridge.current.bufferedPosition, const Duration(seconds: 52));
+
+      final completedState = bridge.states.first;
+      backend.controller.add(_snapshot(
+        mediaId: 'track-1',
+        bufferedPosition: const Duration(minutes: 3),
+        completed: true,
+      ));
+      final projected = await completedState;
+      expect(projected.isBuffering, isFalse);
+      expect(projected.isCompleted, isTrue);
+      expect(projected.bufferedPosition, const Duration(minutes: 3));
+    });
+
+    test('start is idempotent and disposal stops projection', () async {
+      await bridge.start();
+      await bridge.start();
+
+      final first = bridge.states.first;
+      backend.controller.add(_snapshot(mediaId: 'track-1', playing: true));
+      expect((await first).isPlaying, isTrue);
+
+      await bridge.dispose();
+      await expectLater(bridge.start(), throwsStateError);
+    });
+  });
+}
