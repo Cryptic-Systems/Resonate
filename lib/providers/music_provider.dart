@@ -979,7 +979,7 @@ class MusicProvider extends ChangeNotifier {
           await ResonateDiagnostics.record('playback_volume_unstick', {
             'reason': mutedWhilePlaying ? 'muted' : 'not_playing',
             'volume': audioPlayer.volume,
-            'playing': activePlaying,
+            'playing': audioPlayer.playing,
             'songId': currentSong?.id,
           });
         } catch (_) {}
