@@ -44,6 +44,8 @@ extension MusicProviderMedia3 on MusicProvider {
 
     _loadingSource = true;
     _userWantsPlaying = true;
+    _queue = nextQueue;
+    _queueIndex = nextIndex;
     try {
       await session.setAudioFocusHandling(true);
       await session.loadQueue(nextQueue, startIndex: nextIndex);
@@ -67,10 +69,9 @@ extension MusicProviderMedia3 on MusicProvider {
       await session.play();
 
       final previousId = currentSong?.id;
-      _queue = nextQueue;
-      _queueIndex = nextIndex;
-      currentSong = selected;
-      currentDuration = session.duration ?? selected.duration;
+      _reconcileMedia3ProviderSession();
+      currentSong ??= selected;
+      currentDuration ??= session.duration ?? selected.duration;
       currentPosition = session.position;
       isPlaying = session.isPlaying;
       _lastCompletionSongId = null;
@@ -119,6 +120,30 @@ extension MusicProviderMedia3 on MusicProvider {
     } finally {
       _loadingSource = false;
     }
+  }
+
+  void _reconcileMedia3ProviderSession() {
+    final session = _media3ProviderSession;
+    if (session == null || !_media3ProviderSessionActive) return;
+    final nativeSong = session.currentSong;
+    final nativeIndex = Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+      _queue,
+      mediaId: nativeSong?.id,
+      playableIndex: session.queueIndex ?? -1,
+    );
+    if (nativeIndex != null) {
+      _queueIndex = nativeIndex;
+      currentSong = _queue[nativeIndex];
+    } else if (nativeSong != null) {
+      final matches = _queue.where((song) => song.id == nativeSong.id);
+      if (matches.length == 1) {
+        currentSong = matches.first;
+        _queueIndex = _queue.indexOf(matches.first);
+      }
+    }
+    currentPosition = session.position;
+    currentDuration = session.duration ?? currentSong?.duration;
+    isPlaying = session.isPlaying;
   }
 
   void _acceptMedia3ProviderState(Media3ProviderState state) {
@@ -210,6 +235,7 @@ extension MusicProviderMedia3 on MusicProvider {
         _recentlyUserPaused ||
         session.isCompleted ||
         session.isBuffering ||
+        !session.isReady ||
         session.isPlaying) {
       return;
     }
