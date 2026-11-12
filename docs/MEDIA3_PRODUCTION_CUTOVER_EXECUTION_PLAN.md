@@ -333,3 +333,48 @@ Therefore, the successful workflow run is evidence that the PR head passed that 
 ### Next integration action
 
 Create or use a dedicated integration branch **from the current `Resonate-True-Apk` tip**, then port/reconcile the Media3 work in controlled slices. First wire a testable session boundary into production provider construction and observations; then move transport/queue; then focus/audio-session/DSP; then crossfade/DJ and media controls; finally remove legacy engine references and dependency. At every slice, preserve a known-good build and run the relevant tests. Do not import unrelated branch history simply to make the old PR mergeable.
+
+
+## 16. Release diagnostics review — 2026-11-12
+
+Source: user-supplied Resonate Android release diagnostics, report version 5, session `1792939478018408_android`, created 2026-11-12. The report contains 4,000 events spanning 2026-11-10 20:06 through 2026-11-12 13:49. This is runtime evidence from the currently installed release build, not a Media3 migration build or a controlled laboratory test.
+
+### Observed healthy behavior
+
+| Signal | Report evidence | Migration implication |
+|---|---|---|
+| Crashes/errors | 0 crashes; `topErrors` empty | No crash-driven emergency patch is justified by this report. |
+| Playback start | 21 begin → source-start → source-done → play-loop-start → play-loop-end sequences; 21 handoffs report `playing=true`; no play timeouts | Preserve the successful start/handoff contract and compare Media3 against it. |
+| Intent consistency | 0 `wantPlay` mismatches; 0 stops while upcoming songs remain | Keep desired-play intent and queue progression explicit in the canonical session state. |
+| Crossfade | 6 transitions committed; each pre-fade check reports outgoing volume 1.0, incoming volume 0.0, and outgoing delta 0.0; all six final active decks are playing at volume 1.0 | The earlier suspected pre-fade dip is not reproduced in these six captured transitions. Retain as a regression scenario, not a confirmed current defect. |
+| DJ | 5 V2 executions and 5 V2 handoffs prepared; 10 applied, 1 skipped, 0 failures; health hint says handoffs OK | Do not prioritize a speculative incoming-deck stall fix. Preserve planner/executor and manual-override semantics in the migration. |
+| Completion | 5 completion detections; 4 recovered by continuing the committed track; the one separately logged queue-advance attempt advanced successfully with 0 failed tracks | Test Media3 completion callbacks against both crossfade-committed and ordinary completion paths. |
+
+The 21 observed source preparations took 517–1,970 ms from `set_source_start` to `set_source_done` (median approximately 738 ms). These are measurements from this diagnostic session and should be treated as a baseline for same-device comparisons, not as a universal performance target.
+
+### Areas to investigate, not confirmed defects
+
+1. **Audio focus and route lifecycle.** Fourteen `audio_focus_pause` records all show `userWantsPlaying=false` and `preservedIntent=false`; the report does not establish that these were unexpected focus losses. Ten route-change records are present: nine while the app reports playback not wanted/not playing, and one while playback is wanted/playing. That playing route change is followed by one successful recovery record (`playing=true`, volume 1.0). Add structured focus-change reason/type, focus request result, route identity, and resume-decision reason to the migration acceptance telemetry.
+2. **Diagnostics coverage.** The report contains zero playback checkpoints and zero player snapshots. It therefore cannot independently prove continuous player state between handoffs or diagnose an intermittent silent-output report. Add bounded, privacy-safe checkpoints around focus, route, deck activation, MediaSession state, and recovery. Avoid logging personal media metadata.
+3. **Intelligence workload.** There are 1,651 `intelligence_recommendations_generated` events, with hourly concentrations of 396 and 275 in two observed hours. This may reflect intended Autopilot reevaluation; the report alone cannot establish CPU/battery impact or a bug. Profile recommendation generation and add reason/trigger, duration, cache-hit, and result-change telemetry before changing its cadence.
+4. **DJ metadata coverage.** There are 133 `no_tags` outcomes, plus one risk-based fallback and one BPM-delta skip. These are not counted as DJ failures. Preserve safe fallback behavior and separately measure metadata availability so missing tags are not mistaken for engine failures.
+
+### Updated migration priorities from this report
+
+- **P0 — maintain single ownership:** the report supports retaining the legacy production path until Media3 can reproduce the observed queue, handoff, crossfade, completion, focus, and route behavior under one authority. Do not swap transport alone.
+- **P0 — add parity tests:** use the six successful crossfades, 21 successful handoffs, five completion detections, and route/focus cases above as regression scenarios. Include repeat-all and the committed-track completion recovery path.
+- **P1 — observability parity:** Media3 diagnostics must expose canonical desired-play intent, active deck/session ID, queue occurrence/revision, actual playing/processing state, focus decision, route, preload state, and transition phase. Add checkpoints/snapshots because this report currently has none.
+- **P1 — performance measurement:** compare source preparation and preload readiness on the same device/build/route; profile the Autopilot recommendation bursts before tuning them.
+- **Not currently evidenced as defects:** pre-fade volume dip, DJ incoming-deck stall, playback timeout, queue stop with upcoming items, player desired-state mismatch, or crash.
+
+### Acceptance additions
+
+- [ ] Reproduce six representative crossfades and verify outgoing remains at intended gain until fade start, incoming is silent before fade, and active deck ends playing at unity gain.
+- [ ] Exercise at least 20 deck handoffs and verify every handoff resolves to the intended queue occurrence and correct active audio-session ID.
+- [ ] Test completion while a crossfade is in flight; ensure the committed incoming track is not skipped or advanced twice.
+- [ ] Test normal completion, repeat-all, and empty/end-of-queue behavior independently.
+- [ ] Test explicit pause, transient focus loss, permanent focus loss, ducking, focus regain, route change while paused, and route change while playing. Assert user intent is never overridden.
+- [ ] Capture player checkpoints/snapshots and focus/route decision reasons without exposing media titles or personal library content.
+- [ ] Compare source preparation/preload latency and recommendation CPU/battery cost on the same physical device and release configuration.
+
+**Interpretation limit:** these diagnostics describe the existing release build only. They do not prove Media3 parity, audio quality, absence of brief audible gaps, OS-level focus correctness, battery impact, or behavior on other devices. No migration code or device test is validated by this report alone.
