@@ -343,18 +343,25 @@ object DspEngineRegistry {
             centersHz.isEmpty() || centersHz.size != gainsDb.size ||
             centersHz.size > 31 ||
             centersHz.any { !it.isFinite() || it !in 20.0..20000.0 } ||
-            gainsDb.any { !it.isFinite() || it !in -12.0..12.0 }
+            gainsDb.any { !it.isFinite() || it !in -12.0..12.0 } ||
+            centersHz.asList().zipWithNext().any { it.first >= it.second }
         ) return false
 
         val deckId = if (deckRole == "active") activeDeckId else if (activeDeckId == "A") "B" else "A"
-        val overlay = EqOverlay(centersHz.copyOf(), gainsDb.copyOf())
-        temporaryEqOverlays[deckId] = overlay
+        val previous = temporaryEqOverlays[deckId]
+        temporaryEqOverlays[deckId] = EqOverlay(centersHz.copyOf(), gainsDb.copyOf())
         val state = stickyState
-        for (engine in handles.values.filter { it.deckId == deckId }) {
+        val engines = handles.values.filter { it.deckId == deckId }
+        for (engine in engines) {
             try {
                 applyEqForEngine(engine.handle, deckId, state)
             } catch (t: Throwable) {
                 Log.w(TAG, "setTemporaryEqOverlay failed deck=$deckRole handle=${engine.handle}", t)
+                if (previous == null) temporaryEqOverlays.remove(deckId)
+                else temporaryEqOverlays[deckId] = previous
+                engines.forEach { registered ->
+                    runCatching { applyEqForEngine(registered.handle, deckId, state) }
+                }
                 return false
             }
         }
@@ -366,9 +373,10 @@ object DspEngineRegistry {
     fun clearTemporaryEqOverlay(deckRole: String): Boolean {
         if (deckRole !in setOf("active", "standby")) return false
         val deckId = if (deckRole == "active") activeDeckId else if (activeDeckId == "A") "B" else "A"
-        temporaryEqOverlays.remove(deckId)
+        val previous = temporaryEqOverlays.remove(deckId)
         val state = stickyState
-        for (engine in handles.values.filter { it.deckId == deckId }) {
+        val engines = handles.values.filter { it.deckId == deckId }
+        for (engine in engines) {
             try {
                 val gains = state.gainsDb
                 if (gains != null && gains.isNotEmpty()) {
@@ -381,6 +389,10 @@ object DspEngineRegistry {
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, "clearTemporaryEqOverlay failed deck=$deckRole handle=${engine.handle}", t)
+                if (previous != null) temporaryEqOverlays[deckId] = previous
+                engines.forEach { registered ->
+                    runCatching { applyEqForEngine(registered.handle, deckId, state) }
+                }
                 return false
             }
         }
