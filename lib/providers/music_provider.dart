@@ -487,7 +487,7 @@ class MusicProvider extends ChangeNotifier {
           !_repeatSelfHandoffInFlight &&
           !_transportInFlight &&
           !_loadingSource) {
-        await audioPlayer.setVolume(_effectiveCrossfadeMaster);
+        await _applyActiveMasterVolume();
       }
     } catch (_) {}
   }
@@ -1416,7 +1416,7 @@ class MusicProvider extends ChangeNotifier {
       try {
         await _media3ProviderSession!.setGainFactors(
           trackLevel: _trackLevelingScale,
-          preamp: _eqPreampScale,
+          preamp: _eqPreampUserScale,
           sleepFade: _sleepFadeScale,
           focusDuck: _isDucked
               ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel)
