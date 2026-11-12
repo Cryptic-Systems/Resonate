@@ -378,3 +378,35 @@ The 21 observed source preparations took 517–1,970 ms from `set_source_start` 
 - [ ] Compare source preparation/preload latency and recommendation CPU/battery cost on the same physical device and release configuration.
 
 **Interpretation limit:** these diagnostics describe the existing release build only. They do not prove Media3 parity, audio quality, absence of brief audible gaps, OS-level focus correctness, battery impact, or behavior on other devices. No migration code or device test is validated by this report alone.
+
+
+## 17. Integration foundation port — 2026-11-12
+
+A production-based integration slice has now been ported to `media3-cutover-integration` and opened as draft PR [#220](https://github.com/Cryptic-Systems/Resonate/pull/220).
+
+| Item | Current state |
+|---|---|
+| Base | `Resonate-True-Apk` at `9319e0c853b5ba3289737dbd9258e5bb70f32a71` |
+| Integration branch | `media3-cutover-integration` |
+| Draft PR | #220, targets `Resonate-True-Apk` |
+| Branch ancestry | 22 commits ahead, 0 behind at comparison time |
+| PR contents | 22 files; isolated runtime/backend/session contracts, native service/bridge, queue reconciliation, and tests |
+| Production provider | Unchanged; still uses `EnginePair` / `just_audio` |
+| Dependency retirement | Not attempted |
+| CI | No workflow run or status was visible at the time this section was written; do not treat the port as validated |
+
+The integration slice includes:
+- Engine-neutral `PlaybackBackend`, `PlaybackObservationSource`, `PlaybackSnapshot`, and `PlaybackEngineSession` contracts.
+- Serialized `Media3PlaybackRuntime`, `Media3ProviderStateBridge`, `Media3ProviderSession`, and `Media3MusicProviderAdapter`.
+- The expanded typed Dart client, native Media3 bridge/service, crossfade clock, gain policy, and queue reconciliation policy.
+- Adapter, client, runtime, session, state-bridge, and native queue-policy tests.
+
+The existing production baseline already contains the Android Media3 dependency declarations, service manifest entry, and MainActivity bridge registration required by this isolated backend. The port therefore does not alter those files. The older isolated client/bridge/service prototypes were upgraded in place on the integration branch; no production `MusicProvider` import or construction was changed.
+
+### Gate before the next slice
+
+1. Obtain CI results for draft PR #220 on the exact head commit.
+2. Resolve any analyzer, Kotlin, JVM test, or Android build failures before provider work.
+3. Review queue occurrence mapping, service startup/reconnect, crossfade cancellation, active audio-session changes, and DSP gain composition against the report-derived acceptance cases in section 16.
+4. Only then introduce an injectable session ownership seam in `MusicProvider`; do not switch the production authority in that same change.
+5. Keep PR #220 draft and do not merge until provider integration and device acceptance are complete.
