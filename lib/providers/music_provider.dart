@@ -93,6 +93,9 @@ class MusicProvider extends ChangeNotifier {
   /// has been migrated to this same session.
   final PlaybackEngineSession? _media3ProviderSession;
   StreamSubscription<int?>? _media3AudioSessionSub;
+  StreamSubscription<Media3ProviderState>? _media3StateSub;
+  Media3ProviderState? _media3ShadowState;
+  Media3ProviderState? get media3ShadowState => _media3ShadowState;
   bool _media3ProviderSessionPrepared = false;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
   final PodcastSessionBridge _podcastSession = PodcastSessionBridge();
@@ -725,6 +728,17 @@ class MusicProvider extends ChangeNotifier {
     });
     await session.setShuffleMode(_shuffleEnabled);
     await session.setVolume(_volume.clamp(0.0, 1.0).toDouble());
+    await _media3StateSub?.cancel();
+    _media3StateSub = session.stateStream.listen((state) {
+      if (_disposed) return;
+      // Observe the exact state source paired with Media3 commands, but keep
+      // it shadow-only while EnginePair owns production transport. Applying
+      // this snapshot to public provider fields before the command/recovery
+      // handoff would make the UI report Media3's idle state during legacy audio.
+      _media3ShadowState = state;
+    }, onError: (Object error) {
+      debugPrint('Media3 provider state stream error: $error');
+    });
     await _media3AudioSessionSub?.cancel();
     _media3AudioSessionSub = session.audioSessionIdStream.listen((id) {
       if (_disposed || id == null || id <= 0) return;
@@ -3516,6 +3530,9 @@ class MusicProvider extends ChangeNotifier {
     _sessionBSub = null;
     _media3AudioSessionSub?.cancel();
     _media3AudioSessionSub = null;
+    _media3StateSub?.cancel();
+    _media3StateSub = null;
+    _media3ShadowState = null;
     final media3Session = _media3ProviderSession;
     if (media3Session != null) unawaited(media3Session.dispose());
     unawaited(_engines.dispose());
