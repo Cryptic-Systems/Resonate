@@ -87,6 +87,13 @@ class MusicProvider extends ChangeNotifier {
   final PlaybackAuthority _authority = PlaybackAuthority.instance;
   final PlaybackIntentGate _playbackIntentGate = PlaybackIntentGate();
   final PlaybackCoordinator _playbackCoordinator = PlaybackCoordinator();
+  /// Optional provider-owned Media3 session. It is prepared as a shadow queue
+  /// first; production transport is not switched until every provider feature
+  /// has been migrated to this same session.
+  final PlaybackEngineSession? _media3ProviderSession;
+  StreamSubscription<int?>? _media3AudioSessionSub;
+  bool _media3ProviderSessionPrepared = false;
+  bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
   final PodcastSessionBridge _podcastSession = PodcastSessionBridge();
   final AudiobookSessionBridge _audiobookSession = AudiobookSessionBridge();
   ModeProvider? _modes;
@@ -641,7 +648,10 @@ class MusicProvider extends ChangeNotifier {
   static const _repeatModeKey = 'playback_repeat_mode';
   static const MethodChannel _systemVolumeChannel = MethodChannel('com.aetherion.resonate/media_store');
 
-  MusicProvider({this.audioHandler}) {
+  MusicProvider({
+    this.audioHandler,
+    PlaybackEngineSession? media3ProviderSession,
+  }) : _media3ProviderSession = media3ProviderSession {
     // Players + Android effects are constructed by [EnginePair].
     _audioEffectsController = AudioEffectsController(
       equalizerA: _equalizerA,
@@ -683,6 +693,55 @@ class MusicProvider extends ChangeNotifier {
     unawaited(_loadPlaybackSettings());
     _systemVolumePollTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => unawaited(_syncSystemVolume()));
     unawaited(_restoreQueue());
+  }
+
+  /// Connects the provider's single candidate Media3 session and mirrors the
+  /// current Resonate queue/settings without starting audio or requesting
+  /// focus. This is the first provider-cutover seam: it proves queue and
+  /// session ownership before transport is switched away from EnginePair.
+  ///
+  /// Deliberately not called automatically yet. The legacy provider remains
+  /// authoritative until crossfade, DJ, DSP, history and service controls have
+  /// all been moved onto this same session.
+  Future<void> prepareMedia3ProviderSession() async {
+    final session = _media3ProviderSession;
+    if (session == null) {
+      throw StateError('No Media3ProviderSession was supplied to MusicProvider.');
+    }
+    if (_disposed) throw StateError('MusicProvider is disposed.');
+    await session.start();
+    // The legacy engine remains the current owner during this migration stage.
+    await session.setAudioFocusHandling(false);
+    if (_queue.isEmpty) {
+      await session.clearQueue();
+    } else {
+      await session.loadQueue(_queue, startIndex: _queueIndex);
+    }
+    await session.setRepeatMode(switch (_repeatMode) {
+      PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
+      PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
+      PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
+    });
+    await session.setShuffleMode(_shuffleEnabled);
+    await session.setVolume(_volume.clamp(0.0, 1.0).toDouble());
+    await _media3AudioSessionSub?.cancel();
+    _media3AudioSessionSub = session.audioSessionIdStream.listen((id) {
+      if (_disposed || id == null || id <= 0) return;
+      try {
+        onAndroidSession?.call(id);
+      } catch (e) {
+        debugPrint('Media3 onAndroidSession callback failed: $e');
+      }
+    }, onError: (Object error) {
+      debugPrint('Media3 audio session stream error: $error');
+    });
+    _media3ProviderSessionPrepared = true;
+    unawaited(ResonateDiagnostics.record('media3_provider_session_prepared', {
+      'queueLength': _queue.length,
+      'queueIndex': _queueIndex,
+      'focusEnabled': false,
+      'transportAuthority': 'legacy_engine_pair',
+    }));
   }
 
   Future<void> _loadPlaybackSettings() async {
