@@ -299,6 +299,23 @@ class DspEngineRegistryTest {
     }
 
     @Test
+    fun media3_deck_overlay_does_not_touch_legacy_just_audio_processors() {
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        assertTrue(DspEngineRegistry.register(9, 9009L, "legacy"))
+        DspEngineRegistry.setActiveDeck("A")
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(100.0, 1000.0),
+            doubleArrayOf(-3.0, 3.0),
+        ))
+
+        assertTrue(fake.calls.any { it.startsWith("eq:1001:") })
+        assertFalse(fake.calls.any { it.startsWith("eq:9009:") })
+    }
+
+    @Test
     fun standby_overlay_targets_the_inactive_physical_deck_and_role_follows_promotion() {
         assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
         assertTrue(DspEngineRegistry.register(2, 2002L, "B"))
