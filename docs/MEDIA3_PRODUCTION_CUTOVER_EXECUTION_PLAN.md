@@ -534,3 +534,22 @@ This first slice does **not** activate Media3 transport, does not start a second
 3. Migrate queue mutation, completion/history, repeat/shuffle, and media controls.
 4. Move crossfade/DJ and DSP/effect ownership to the same Media3 session.
 5. Wire the completed provider session in `main.dart` only after the above parity gates pass.
+
+
+## 21. Provider state-source and command-lane contract — 2026-11-12
+
+### Implemented on the integration branch
+
+- `PlaybackEngineSession` now exposes an immutable `stateStream` contract alongside its transport methods and read-only observation streams. The stream and commands are guaranteed to belong to the same session/backend.
+- `Media3ProviderSession` exposes the reconciled `Media3ProviderStateBridge` snapshots through that interface. All session transport methods continue to delegate to `Media3PlaybackRuntime`, whose single command lane serializes queue replacement, play/pause/stop, seek/navigation, volume, repeat/shuffle, focus ownership, crossfade and deck-effect commands.
+- `MusicProvider.prepareMedia3ProviderSession()` now subscribes to the injected session's state stream and retains the latest snapshot as `media3ShadowState`, with lifecycle cancellation on re-prepare/disposal. It deliberately does not overwrite public provider state while the legacy EnginePair remains audible.
+
+### Safety boundary / what is not cut over
+
+This completes the session-level canonical observation contract and makes the provider observe that exact source. It does **not** make Media3 the production canonical state or route user transport to Media3 yet. The provider still contains legacy-only automatic recovery/watchdog, completion/history, gapless-window, crossfade/DJ, audio-focus and audio-service paths. Enabling Media3 state as public truth or routing only the basic transport methods now would create split ownership and allow a legacy watchdog or completion callback to restart/advance the wrong engine. Keep the production authority unchanged until those paths are migrated and parity-tested as a single unit.
+
+### Validation
+
+- The provider subscribes to the session-owned snapshot stream only after successful session startup and cancels it during re-prepare/disposal.
+- Runtime command serialization remains centralized in `Media3PlaybackRuntime._run`; no second provider-side queue or competing native command lane was introduced.
+- Exact-head CI is required after this change. No physical-device acceptance is implied.
