@@ -197,6 +197,38 @@ void main() {
       await session.states.close();
     });
 
+    test('routes play, pause, seek, next, previous and stop through the handed-off session', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      await provider.prepareMedia3ProviderSession();
+
+      expect(await provider.playSong(
+        _song('one'),
+        queue: <Song>[_song('one'), _song('two')],
+        startIndex: 0,
+      ), isTrue);
+      expect(session.calls, contains('play'));
+      expect(provider.media3ProviderSessionActive, isTrue);
+
+      await provider.pause();
+      expect(session.calls, contains('pause'));
+      await provider.seek(const Duration(seconds: 25));
+      expect(session.positionValue, const Duration(seconds: 25));
+      await provider.nextSong();
+      expect(session.calls, contains('next'));
+      expect(provider.currentSong?.id, 'two');
+      await provider.previousSong();
+      expect(session.calls, contains('previous'));
+      expect(provider.currentSong?.id, 'one');
+      await provider.stop();
+      expect(session.calls, contains('stop'));
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('clears an empty shadow queue and forwards Media3 audio-session IDs', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
