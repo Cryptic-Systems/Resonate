@@ -67,7 +67,13 @@ extension MusicProviderMedia3 on MusicProvider {
         PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
       });
       await session.setShuffleMode(_shuffleEnabled);
-      await session.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
+      await session.setVolume(1.0);
+      await session.setGainFactors(
+        trackLevel: _trackLevelingScale,
+        preamp: _eqPreampScale,
+        sleepFade: _sleepFadeScale,
+        focusDuck: _isDucked ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel) : 1.0,
+      );
       if (resume && _resumeSongId == selected.id && _resumePositionMs > 0) {
         final durationMs = selected.duration.inMilliseconds;
         final safeMs = _resumePositionMs
