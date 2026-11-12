@@ -91,9 +91,9 @@ class MusicProvider extends ChangeNotifier {
   final PlaybackAuthority _authority = PlaybackAuthority.instance;
   final PlaybackIntentGate _playbackIntentGate = PlaybackIntentGate();
   final PlaybackCoordinator _playbackCoordinator = PlaybackCoordinator();
-  /// Optional provider-owned Media3 session. It is prepared as a shadow queue
-  /// first; production transport is not switched until every provider feature
-  /// has been migrated to this same session.
+  /// Optional provider-owned Media3 session. The app composition root prepares
+  /// it after provider restoration, then hands canonical observation, transport,
+  /// recovery, and completion authority to this session.
   final PlaybackEngineSession? _media3ProviderSession;
   StreamSubscription<int?>? _media3AudioSessionSub;
   StreamSubscription<Media3ProviderState>? _media3StateSub;
@@ -708,14 +708,11 @@ class MusicProvider extends ChangeNotifier {
     unawaited(_queueRestore!);
   }
 
-  /// Connects the provider's single candidate Media3 session and mirrors the
-  /// current Resonate queue/settings without starting audio or requesting
-  /// focus. This is the first provider-cutover seam: it proves queue and
-  /// session ownership before transport is switched away from EnginePair.
-  ///
-  /// Deliberately not called automatically yet. The legacy provider remains
-  /// authoritative until crossfade, DJ, DSP, history and service controls have
-  /// all been moved onto this same session.
+  /// Starts the injected Media3 session, restores the provider queue/settings,
+  /// attaches canonical state and audio-session observers, and commits the
+  /// transport/focus handoff after both legacy decks have stopped. The app
+  /// composition root invokes this after provider restoration. A failed start
+  /// leaves the legacy engine authoritative.
   Future<void> prepareMedia3ProviderSession() async {
     final session = _media3ProviderSession;
     if (session == null) {
