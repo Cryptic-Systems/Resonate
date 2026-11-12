@@ -7,6 +7,7 @@ import 'package:resonate/models/song.dart';
 import 'package:resonate/providers/music_provider.dart';
 import 'package:resonate/services/playback_backend.dart';
 import 'package:resonate/services/playback_engine_session.dart';
+import 'package:resonate/services/media3_provider_state_bridge.dart';
 
 Song _song(String id) => Song(
       id: id,
@@ -22,6 +23,8 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   final StreamController<int?> audioSessions =
       StreamController<int?>.broadcast();
   final List<String> calls = <String>[];
+  final StreamController<Media3ProviderState> states =
+      StreamController<Media3ProviderState>.broadcast();
   List<Song> queue = <Song>[];
   int? loadedIndex;
   PlaybackQueueRepeatMode? repeatModeSet;
@@ -32,6 +35,9 @@ class _FakePlaybackSession implements PlaybackEngineSession {
 
   @override
   Stream<int?> get audioSessionIdStream => audioSessions.stream;
+
+  @override
+  Stream<Media3ProviderState> get stateStream => states.stream;
 
   @override
   Future<void> start() async => calls.add('start');
@@ -110,6 +116,8 @@ void main() {
       await provider.prepareMedia3ProviderSession();
 
       expect(provider.media3ProviderSessionPrepared, isTrue);
+      expect(provider.media3ShadowState, isNull,
+          reason: 'No Media3 snapshot has been published by the fake session.');
       expect(session.calls, [
         'start',
         'focus:false',
@@ -130,6 +138,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(session.disposed, isTrue);
       await session.audioSessions.close();
+      await session.states.close();
     });
 
     test('clears an empty shadow queue and forwards Media3 audio-session IDs', () async {
