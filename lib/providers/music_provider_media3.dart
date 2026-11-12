@@ -430,6 +430,9 @@ extension MusicProviderMedia3 on MusicProvider {
       _lastCompletionSongId = null;
     }
     currentPosition = state.position;
+    if (state.isPlaying && !_crossfadeInProgress) {
+      _maybeStartAutomaticCrossfade(state.position);
+    }
     if (!state.isCompleted &&
         state.position + const Duration(seconds: 1) < previousPosition) {
       _lastCompletionSongId = null;
