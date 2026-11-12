@@ -225,6 +225,8 @@ extension MusicProviderMedia3 on MusicProvider {
 
   Future<void> _handleMedia3ProviderCompletion(String completedSongId) async {
     if (!_media3ProviderSessionActive || _disposed) return;
+    _endOfTrackWatchdog?.cancel();
+    _endOfTrackWatchdog = null;
     final completedSong = currentSong;
     if (completedSong != null && completedSong.id == completedSongId) {
       _modes?.onPlaybackCompleted(completedSong);
