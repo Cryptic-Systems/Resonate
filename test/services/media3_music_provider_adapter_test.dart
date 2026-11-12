@@ -320,6 +320,29 @@ void main() {
       expect(calls[5].arguments, {'positionMs': 17000});
     });
 
+    test('forwards explicit audio-focus ownership policy to native Media3', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('test.resonate/audio-focus-policy');
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return true;
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final adapter = Media3MusicProviderAdapter(
+        client: Media3PlaybackClient(methodChannel: channel),
+      );
+      await adapter.setAudioFocusHandling(false);
+
+      expect(calls.map((call) => call.method), ['setAudioFocusHandling']);
+      expect(calls.single.arguments, {'enabled': false});
+    });
+
     test('forwards temporary deck EQ overlays and clear commands', () async {
       TestWidgetsFlutterBinding.ensureInitialized();
       const channel = MethodChannel('test.resonate/deck-eq-overlay');
