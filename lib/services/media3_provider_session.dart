@@ -207,6 +207,22 @@ class Media3ProviderSession implements PlaybackEngineSession {
       );
 
   @override
+  Future<void> setDeckEqOverlay({
+    required String deck,
+    required List<double> centersHz,
+    required List<double> gainsDb,
+  }) =>
+      _runtime.setDeckEqOverlay(
+        deck: deck,
+        centersHz: centersHz,
+        gainsDb: gainsDb,
+      );
+
+  @override
+  Future<void> clearDeckEqOverlay({required String deck}) =>
+      _runtime.clearDeckEqOverlay(deck: deck);
+
+  @override
   Future<void> setVolume(double value) => _runtime.setVolume(value);
   @override
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) =>
