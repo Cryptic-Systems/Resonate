@@ -479,3 +479,34 @@ The existing global reverb/virtualizer/bass effects also need an explicit master
 ### Next implementation slice
 
 Implement the deck-role and temporary-EQ-overlay seam in the native DSP layer first, with JVM tests around registry routing and sticky-state composition. Then add the typed Media3 transition-effects command and Dart contract tests. Do not change the production `DjSfxRack` call sites or switch `MusicProvider` until that contract passes CI and a physical-device A/B transition test.
+
+
+## 20. Native DJ deck-scoped EQ overlay foundation — 2026-11-12
+
+### Implemented on the isolated integration branch
+
+The Media3 DSP path now distinguishes the two physical ExoPlayer deck slots (`A` and `B`) and exposes logical `active` / `standby` roles. The service updates the registry's active-slot mapping only when the two player instances are promoted at crossfade completion.
+
+A temporary EQ overlay is stored per physical deck and applied only to processors registered for that deck. The registry composes the overlay with the persistent Resonate EQ curve:
+- When a persistent curve exists, the overlay response is interpolated in log-frequency space at the persistent curve's center frequencies and summed with the base gains, clamped to the native DSP range.
+- When no persistent curve exists, the overlay is sent as its own curve.
+- Clearing an overlay restores the persistent curve, or a neutral curve when no user curve has been set.
+- Persistent EQ changes while an overlay is active are re-composed rather than overwriting the DJ effect.
+- Overlay inputs require 1–31 strictly increasing center frequencies in 20–20,000 Hz and gains in -12 to +12 dB. Updates attempt rollback if native application fails.
+
+The Flutter contract now exposes `setDeckEqOverlay` and `clearDeckEqOverlay` through the typed client, adapter, serialized runtime, and provider-facing `PlaybackEngineSession`. Native service commands route the request to the currently active or standby physical deck.
+
+The Media3 service clears temporary overlays on explicit cancellation/queue invalidation and after deck promotion. The generic crossfade-start reset preserves overlays so DJ transition curves can remain active during the fade.
+
+### Automated coverage added
+
+- Native registry tests cover active-only isolation, standby routing, role remapping after promotion, persistent-EQ composition, base-curve restoration, persistent EQ updates during an overlay, and invalid input rejection.
+- Dart client tests cover channel payloads and input validation.
+- Adapter tests cover forwarding of set/clear commands.
+- Runtime tests cover validation and command-lane ordering.
+
+### Scope and validation limits
+
+This is a backend capability foundation, **not yet a production DJ rack migration**. The existing production `DjSfxRack` still uses legacy `AndroidEqualizer` and `AudioEffectsBridge` paths. Its filter automation must be translated into frequency-response overlays and routed through the new session API only after the complete effect lifecycle (start, update, cancel, restore, source replacement, and promotion) is integrated and tested. Reverb, virtualizer, sample playback, scratch/brake speed and seek automation remain separate parity items.
+
+No production `MusicProvider` call site has been switched, no legacy player/effect path has been removed, and no physical-device audition has been performed by this change. CI must pass on the exact head, followed by a two-deck device test confirming audible isolation, persistent EQ composition, cancellation restoration, and correct logical roles after promotion.
