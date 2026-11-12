@@ -36,6 +36,9 @@ class Media3PlaybackService : MediaSessionService() {
     private val crossfadeClock = Media3CrossfadeClock()
     private var crossfadeStatus = "idle"
     private var activeDeckId = "A"
+    // ExoPlayer focus handling is opt-in at the migration boundary. The legacy
+    // audio_session owner remains untouched until an explicit provider cutover.
+    private var media3AudioFocusEnabled = true
 
     // All Media3 output gain changes pass through one policy. Future leveling,
     // preamp, sleep fade and focus-duck factors belong in this composition point.
@@ -49,6 +52,18 @@ class Media3PlaybackService : MediaSessionService() {
     /** Current deck session for session-bound DSP/effects attachment. */
     fun activeAudioSessionId(): Int =
         if (::activePlayer.isInitialized) activePlayer.audioSessionId else 0
+
+    /** Enables/disables ExoPlayer focus requests for the active deck only. */
+    fun setAudioFocusHandling(enabled: Boolean): Boolean {
+        media3AudioFocusEnabled = enabled
+        if (::activePlayer.isInitialized) {
+            activePlayer.setAudioAttributes(audioAttributes(), enabled)
+        }
+        if (::standbyPlayer.isInitialized) {
+            standbyPlayer.setAudioAttributes(audioAttributes(), false)
+        }
+        return true
+    }
 
     fun setMasterVolume(value: Float): Boolean {
         if (!gainPolicy.setMasterVolume(value)) return false
@@ -116,7 +131,7 @@ class Media3PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        activePlayer = newPlayer(handleAudioFocus = true, deckId = "A")
+        activePlayer = newPlayer(handleAudioFocus = media3AudioFocusEnabled, deckId = "A")
         standbyPlayer = newPlayer(handleAudioFocus = false, deckId = "B").apply {
             addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
@@ -253,7 +268,7 @@ class Media3PlaybackService : MediaSessionService() {
                     // active rate rather than a stale outgoing correction.
                     standbyPlayer.playbackParameters = activePlayer.playbackParameters
                     oldPlayer.setAudioAttributes(audioAttributes(), false)
-                    activePlayer.setAudioAttributes(audioAttributes(), true)
+                    activePlayer.setAudioAttributes(audioAttributes(), media3AudioFocusEnabled)
                     mediaSession?.setPlayer(activePlayer)
                     gainPolicy.resetDecks()
                     applyDeckVolumes()
