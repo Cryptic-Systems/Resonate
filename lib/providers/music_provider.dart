@@ -263,6 +263,7 @@ class MusicProvider extends ChangeNotifier {
   // the authoritative playback session. It does not migrate transport,
   // audio focus, notifications, or the remaining legacy DJ effects.
   PlaybackEngineSession? _djSfxMedia3OverlaySession;
+  Media3DjTransitionPreparation? _media3DjTransitionPreparation;
 
   /// Opts DJ transition EQ into Media3's active/standby deck overlays.
   ///
@@ -792,6 +793,7 @@ class MusicProvider extends ChangeNotifier {
       final audioSession = await AudioSession.instance;
       await audioSession.setActive(false);
     } catch (_) {}
+    attachMedia3DjOverlaySession(session);
     _media3ProviderSessionPrepared = true;
     _media3ProviderSessionActive = true;
     final initialState = _media3ShadowState;
