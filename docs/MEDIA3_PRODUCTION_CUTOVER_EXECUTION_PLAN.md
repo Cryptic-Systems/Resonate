@@ -410,3 +410,32 @@ The existing production baseline already contains the Android Media3 dependency 
 3. Review queue occurrence mapping, service startup/reconnect, crossfade cancellation, active audio-session changes, and DSP gain composition against the report-derived acceptance cases in section 16.
 4. Only then introduce an injectable session ownership seam in `MusicProvider`; do not switch the production authority in that same change.
 5. Keep PR #220 draft and do not merge until provider integration and device acceptance are complete.
+
+
+## 18. DJ phrase-aligned preload position — 2026-11-12
+
+The next isolated backend slice adds a non-zero incoming-deck start position to the Media3 preload contract. This closes a known capability gap: the DJ execution plan can produce an incoming seekMs, while the earlier Media3 preload path always called setMediaItems(..., 0L).
+
+### Implemented on media3-cutover-integration
+
+- Added optional startPosition (default Duration.zero) to PlaybackCrossfadeBackend and PlaybackEngineSession.
+- Forwarded the position through Media3ProviderSession, Media3PlaybackRuntime, Media3MusicProviderAdapter, and Media3PlaybackClient.
+- Dart rejects negative positions before sending a native command.
+- The method-channel payload now carries positionMs; the Kotlin bridge defaults missing values to zero and rejects negative values.
+- Media3PlaybackService.preloadNext now applies the requested position with ExoPlayer setMediaItems(items, startIndex, startPositionMs).
+- Added forwarding/default-validation coverage in client, adapter, runtime, and provider-session tests.
+- Ported the existing native Media3CrossfadeClockTest and Media3GainPolicyTest into the production-based integration branch.
+
+### Validation state
+
+- Latest PR head: fec2eee3fb912ca45e32ca309de57104b24cabe7.
+- CI run #1377 (run ID 43207645630) was created for PR #220 and was in progress when this section was recorded.
+- No local Flutter/Kotlin test command or physical-device DJ audition was run in this work session. Do not treat the feature as validated until CI completes and a device test confirms that a planned non-zero phrase offset is audible and survives deck promotion.
+- The production MusicProvider remains unchanged; this is backend capability plumbing, not a production cutover or DJ call-site switch.
+
+### Next checks
+
+1. Resolve any CI failure before extending the DJ executor.
+2. Add an integration-level test that supplies a non-zero DJ phrase offset and proves the native standby deck starts at that exact position before crossfade.
+3. Verify seek offset is retained through standby readiness, crossfade start, deck swap, cancellation, and recovery; ensure the offset is not applied twice.
+4. Continue with per-deck DJ SFX/effects parity and the single-owner audio-focus/MediaSession design before provider cutover.
