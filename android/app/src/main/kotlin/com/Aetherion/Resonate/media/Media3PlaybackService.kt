@@ -225,7 +225,7 @@ class Media3PlaybackService : MediaSessionService() {
             crossfadeStatus = "incoming_not_ready"
             return false
         }
-        cancelCrossfade(clearOverlays = false)
+        cancelCrossfade(clearOverlays = false, resetStandbySpeed = false)
         crossfadeClock.start(durationMs, android.os.SystemClock.elapsedRealtime())
         val generation = ++fadeGeneration
         crossfadeStatus = "fading"
@@ -307,7 +307,10 @@ class Media3PlaybackService : MediaSessionService() {
         return true
     }
 
-    fun cancelCrossfade(clearOverlays: Boolean = true): Boolean {
+    fun cancelCrossfade(
+        clearOverlays: Boolean = true,
+        resetStandbySpeed: Boolean = true,
+    ): Boolean {
         fadeGeneration++
         if (clearOverlays) DspEngineRegistry.clearAllTemporaryEqOverlays()
         fadeRunnable?.let(mainHandler::removeCallbacks)
@@ -319,7 +322,9 @@ class Media3PlaybackService : MediaSessionService() {
             gainPolicy.resetDecks()
             applyDeckVolumes()
             standbyPlayer.pause()
-            standbyPlayer.playbackParameters = activePlayer.playbackParameters
+            if (resetStandbySpeed) {
+                standbyPlayer.playbackParameters = activePlayer.playbackParameters
+            }
         }
         if (crossfadeStatus == "fading" || crossfadeStatus == "preparing" || crossfadeStatus == "ready") {
             crossfadeStatus = "cancelled"
