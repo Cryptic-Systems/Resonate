@@ -257,6 +257,9 @@ class Media3PlaybackClient {
       if (!gain.isFinite || gain < -12.0 || gain > 12.0) {
         throw ArgumentError.value(gain, 'gainsDb[$i]', 'Must be -12–12 dB.');
       }
+      if (i > 0 && frequency <= centersHz[i - 1]) {
+        throw ArgumentError.value(frequency, 'centersHz[$i]', 'Frequencies must be strictly increasing.');
+      }
     }
     await _invokeAccepted('setDeckEqOverlay', <String, Object>{
       'deck': deck,
