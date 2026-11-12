@@ -317,8 +317,8 @@ void main() {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
       final song = _song('only-track');
-      await provider.setRepeatMode(PlaybackRepeatMode.off);
       await provider.prepareMedia3ProviderSession();
+      await provider.setRepeatMode(PlaybackRepeatMode.off);
       expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
 
       session.playingValue = false;
