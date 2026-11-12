@@ -31,6 +31,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   bool? shuffleModeSet;
   double? volumeSet;
   bool? focusHandling;
+  Map<String, double?>? gainFactors;
   bool disposed = false;
   Song? currentSongValue;
   int? queueIndexValue;
@@ -129,6 +130,12 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   }
 
   @override
+  Future<void> setGainFactors({double? trackLevel, double? preamp, double? sleepFade, double? focusDuck}) async {
+    gainFactors = <String, double?>{'trackLevel': trackLevel, 'preamp': preamp, 'sleepFade': sleepFade, 'focusDuck': focusDuck};
+    calls.add('gainFactors');
+  }
+
+  @override
   Future<void> setVolume(double value) async {
     volumeSet = value;
     calls.add('volume:$value');
@@ -179,6 +186,7 @@ void main() {
         'repeat:all',
         'shuffle:true',
         'volume:1.0',
+        'gainFactors',
         'focus:true',
       ]);
       expect(session.queue.map((song) => song.id).toList(), expectedQueue);
