@@ -40,7 +40,7 @@ PlaybackSnapshot snapshot({
       error: null,
     );
 
-class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend {
+class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackDeckEqOverlayBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   PlaybackSnapshot value = snapshot();
@@ -58,6 +58,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, 
   Duration? preloadedStartPosition;
   Duration? crossfadeDuration;
   int cancelCrossfadeCalls = 0;
+  final List<String> deckEqCalls = <String>[];
   Completer<void>? loadGate;
   Completer<PlaybackSnapshot>? stateGate;
   Completer<void>? stateReadStarted;
@@ -119,6 +120,12 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, 
   @override
   Future<void> setPlaybackSpeed(double speed) async { lastSpeed = speed; commandOrder.add('speed'); }
   @override
+  Future<void> setDeckEqOverlay({required String deck, required List<double> centersHz, required List<double> gainsDb}) async {
+    deckEqCalls.add('set:$deck:${centersHz.join(',')}:${gainsDb.join(',')}');
+  }
+  @override
+  Future<void> clearDeckEqOverlay({required String deck}) async { deckEqCalls.add('clear:$deck'); }
+  @override
   Future<void> setVolume(double value) async { lastVolume = value; }
   @override
   Future<void> setGainFactors({double? trackLevel, double? preamp, double? sleepFade, double? focusDuck}) async {
@@ -165,6 +172,29 @@ void main() {
     tearDown(() async {
       await runtime.dispose();
       await backend.controller.close();
+    });
+
+    test('validates and serializes deck EQ overlay commands', () async {
+      final set = runtime.setDeckEqOverlay(
+        deck: 'standby',
+        centersHz: <double>[80, 1000, 12000],
+        gainsDb: <double>[-6, 0, 6],
+      );
+      final clear = runtime.clearDeckEqOverlay(deck: 'standby');
+      await Future.wait<void>([set, clear]);
+
+      expect(backend.deckEqCalls, [
+        'set:standby:80.0,1000.0,12000.0:-6.0,0.0,6.0',
+        'clear:standby',
+      ]);
+      await expectLater(
+        runtime.setDeckEqOverlay(
+          deck: 'active',
+          centersHz: <double>[1000, 100],
+          gainsDb: <double>[1, 0],
+        ),
+        throwsArgumentError,
+      );
     });
 
     test('does not let a delayed initial snapshot overwrite a newer stream event', () async {
