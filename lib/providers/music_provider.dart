@@ -3427,7 +3427,9 @@ class MusicProvider extends ChangeNotifier {
     }
     int posMs = 0;
     try {
-      posMs = audioPlayer.position.inMilliseconds;
+      posMs = _media3ProviderSessionActive
+          ? (_media3ProviderSession?.position.inMilliseconds ?? currentPosition.inMilliseconds)
+          : audioPlayer.position.inMilliseconds;
     } catch (_) {}
     var best = ideal;
     var bestDist = 1 << 30;
@@ -3450,6 +3452,10 @@ class MusicProvider extends ChangeNotifier {
     DjTrackProfile? outgoingProfile,
   }) async {
     if (!_djSfxActive) return;
+    final media3Session = _media3ProviderSessionActive
+        ? _media3ProviderSession
+        : null;
+    final outgoingPlayer = media3Session == null ? audioPlayer : null;
     try {
       final profile = outgoingProfile;
       final beatMs = profile?.beatGrid.beatMs ?? const <int>[];
@@ -3466,13 +3472,13 @@ class MusicProvider extends ChangeNotifier {
               energyScore: energyScore,
               equalizerA: _equalizerA,
               equalizerB: _equalizerB,
-              outgoing: audioPlayer,
+              outgoing: outgoingPlayer,
               outgoingUri: currentSong?.filePath,
               beatMs: beatMs,
               sections: sections,
               transitionKind: transitionKind,
               aggressiveness: _djPolicy.aggressiveness,
-              playbackSession: _djSfxMedia3OverlaySession,
+              playbackSession: media3Session ?? _djSfxMedia3OverlaySession,
             );
             if (_djSfxRack.engaged && _djSfxActive) {
               _djSfxEngaged = true;
@@ -3497,13 +3503,13 @@ class MusicProvider extends ChangeNotifier {
           energyScore: energyScore,
           equalizerA: _equalizerA,
           equalizerB: _equalizerB,
-          outgoing: audioPlayer,
+          outgoing: outgoingPlayer,
           outgoingUri: currentSong?.filePath,
           beatMs: beatMs,
           sections: sections,
           transitionKind: transitionKind,
           aggressiveness: _djPolicy.aggressiveness,
-          playbackSession: _djSfxMedia3OverlaySession,
+          playbackSession: media3Session ?? _djSfxMedia3OverlaySession,
         );
         _djSfxEngaged = true;
         await ResonateDiagnostics.record('dj_transition_sfx', {
@@ -3525,7 +3531,10 @@ class MusicProvider extends ChangeNotifier {
       equalizerA: _equalizerA,
       equalizerB: _equalizerB,
       energyScore: _lastDjEnergyScore,
-      outgoing: audioPlayer,
+      outgoing: _media3ProviderSessionActive ? null : audioPlayer,
+      playbackSession: _media3ProviderSessionActive
+          ? _media3ProviderSession
+          : _djSfxMedia3OverlaySession,
     );
   }
 
@@ -3540,6 +3549,9 @@ class MusicProvider extends ChangeNotifier {
             equalizerA: _equalizerA,
             equalizerB: _equalizerB,
             energyScore: _lastDjEnergyScore,
+            playbackSession: _media3ProviderSessionActive
+                ? _media3ProviderSession
+                : _djSfxMedia3OverlaySession,
           );
         } catch (_) {}
         await Future<void>.delayed(const Duration(milliseconds: 70));
@@ -3548,6 +3560,9 @@ class MusicProvider extends ChangeNotifier {
       await _djSfxRack.restore(
         equalizerA: _equalizerA,
         equalizerB: _equalizerB,
+        playbackSession: _media3ProviderSessionActive
+            ? _media3ProviderSession
+            : _djSfxMedia3OverlaySession,
       );
       _djSfxEngaged = false;
       await ResonateDiagnostics.record('dj_transition_sfx', {
