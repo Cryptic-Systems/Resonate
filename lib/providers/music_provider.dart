@@ -756,12 +756,8 @@ class MusicProvider extends ChangeNotifier {
     // repeat/shuffle/volume policy, and both observation subscriptions.
     // Media3 becomes the sole transport and recovery owner from this point.
     await session.setAudioFocusHandling(true);
-    try {
-      await _engines.stopAll();
-    } catch (_) {
-      try { await _playerA.stop(); } catch (_) {}
-      try { await _playerB.stop(); } catch (_) {}
-    }
+    try { await _playerA.stop(); } catch (_) {}
+    try { await _playerB.stop(); } catch (_) {}
     try {
       final audioSession = await AudioSession.instance;
       await audioSession.setActive(false);
