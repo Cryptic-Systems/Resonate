@@ -187,8 +187,8 @@ void main() {
         'set:standby:80.0,1000.0,12000.0:-6.0,0.0,6.0',
         'clear:standby',
       ]);
-      await expectLater(
-        runtime.setDeckEqOverlay(
+      expect(
+        () => runtime.setDeckEqOverlay(
           deck: 'active',
           centersHz: <double>[1000, 100],
           gainsDb: <double>[1, 0],
