@@ -38,7 +38,9 @@ class Media3PlaybackService : MediaSessionService() {
     private var activeDeckId = "A"
     // ExoPlayer focus handling is opt-in at the migration boundary. The legacy
     // audio_session owner remains untouched until an explicit provider cutover.
-    private var media3AudioFocusEnabled = true
+    // Focus is acquired only after an explicit play request. Creating or
+    // connecting the service must never interrupt another app.
+    private var media3AudioFocusEnabled = false
 
     // All Media3 output gain changes pass through one policy. Future leveling,
     // preamp, sleep fade and focus-duck factors belong in this composition point.
@@ -53,8 +55,18 @@ class Media3PlaybackService : MediaSessionService() {
     fun activeAudioSessionId(): Int =
         if (::activePlayer.isInitialized) activePlayer.audioSessionId else 0
 
+    /** True while Android is in a phone, VoIP, or ringing communication mode. */
+    fun isCommunicationActive(): Boolean {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        val mode = audioManager.mode
+        return mode == android.media.AudioManager.MODE_IN_CALL ||
+            mode == android.media.AudioManager.MODE_IN_COMMUNICATION ||
+            mode == android.media.AudioManager.MODE_RINGTONE
+    }
+
     /** Enables/disables ExoPlayer focus requests for the active deck only. */
     fun setAudioFocusHandling(enabled: Boolean): Boolean {
+        if (enabled && isCommunicationActive()) return false
         media3AudioFocusEnabled = enabled
         if (::activePlayer.isInitialized) {
             activePlayer.setAudioAttributes(audioAttributes(), enabled)
@@ -175,6 +187,14 @@ class Media3PlaybackService : MediaSessionService() {
         setAudioAttributes(audioAttributes(), handleAudioFocus)
         repeatMode = Player.REPEAT_MODE_OFF
         addListener(object : Player.Listener {
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                // MediaSession/headset commands can bypass the Flutter bridge.
+                // Never allow a deck to continue output in call/VoIP mode.
+                if (playWhenReady && isCommunicationActive()) {
+                    deck.pause()
+                }
+            }
+
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 // ExoPlayer can pause the active deck on audio-focus loss or
                 // buffering without a Flutter transport command. Freeze the
