@@ -3691,7 +3691,9 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Stream<Duration?> get durationStream => audioPlayer.durationStream;
+  Stream<Duration?> get durationStream => _media3ProviderSessionActive
+      ? _media3ProviderSession!.durationStream
+      : audioPlayer.durationStream;
   @override
   void dispose() {
     if (_disposed) return;
