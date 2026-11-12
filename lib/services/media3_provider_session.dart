@@ -10,9 +10,10 @@ import 'playback_engine_session.dart';
 /// Composition root for the Media3 provider migration.
 ///
 /// It owns one serialized runtime and one provider-facing state projection.
-/// MusicProvider can adopt this session behind its existing compatibility
-/// boundary without constructing multiple clients or listening to native
-/// snapshots independently. It is not wired into production MusicProvider yet.
+/// MusicProvider adopts this session behind its compatibility boundary without
+/// constructing multiple clients or listening to native snapshots independently.
+/// The app composition root injects it and commits the provider handoff after
+/// settings and queue restoration.
 class Media3ProviderSession implements PlaybackEngineSession {
   Media3ProviderSession({PlaybackBackend? backend})
       : _runtime = Media3PlaybackRuntime(
