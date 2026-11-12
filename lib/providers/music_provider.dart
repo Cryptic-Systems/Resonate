@@ -2557,14 +2557,20 @@ class MusicProvider extends ChangeNotifier {
         if (currentSong != null) {
           _resumeStore.clearSong(currentSong!.id);
         }
-        try {
-          await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0));
-        } catch (_) {}
-        await audioPlayer.seek(Duration.zero);
-        try {
-          audioPlayer.play();
-        } catch (_) {}
-        isPlaying = true;
+        if (_media3ProviderSessionActive) {
+          final session = _media3ProviderSession!;
+          await session.seek(Duration.zero);
+          await session.play();
+          currentPosition = session.position;
+          isPlaying = session.isPlaying;
+        } else {
+          try {
+            await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0));
+          } catch (_) {}
+          await audioPlayer.seek(Duration.zero);
+          try { audioPlayer.play(); } catch (_) {}
+          isPlaying = true;
+        }
         _userWantsPlaying = true;
         await _startHistoryEvent(currentSong!);
         _publishServiceState();
@@ -2620,18 +2626,23 @@ class MusicProvider extends ChangeNotifier {
 
         if (ok) {
           // Guarantee an audible start after auto-advance (no user gesture).
-          if (!audioPlayer.playing && _userWantsPlaying) {
-            if (!await _claimAudioFocus(reason: 'completion_auto_advance')) {
-              _userWantsPlaying = false;
-              return;
+          final sessionPlaying = _media3ProviderSessionActive
+              ? (_media3ProviderSession?.isPlaying ?? false)
+              : audioPlayer.playing;
+          if (!sessionPlaying && _userWantsPlaying) {
+            if (_media3ProviderSessionActive) {
+              await _media3ProviderSession!.setAudioFocusHandling(true);
+              await _media3ProviderSession!.play();
+              isPlaying = _media3ProviderSession!.isPlaying;
+            } else {
+              if (!await _claimAudioFocus(reason: 'completion_auto_advance')) {
+                _userWantsPlaying = false;
+                return;
+              }
+              try { await audioPlayer.seek(Duration.zero); } catch (_) {}
+              try { audioPlayer.play(); } catch (_) {}
+              isPlaying = audioPlayer.playing || _userWantsPlaying;
             }
-            try {
-              await audioPlayer.seek(Duration.zero);
-            } catch (_) {}
-            try {
-              audioPlayer.play();
-            } catch (_) {}
-            isPlaying = audioPlayer.playing || _userWantsPlaying;
             _publishServiceState();
             notifyListeners();
           }
@@ -2667,6 +2678,9 @@ class MusicProvider extends ChangeNotifier {
       isPlaying = false;
       _userWantsPlaying = false;
       currentPosition = currentDuration ?? currentPosition;
+      if (_media3ProviderSessionActive) {
+        await _media3ProviderSession!.stop();
+      }
       await _persistQueue();
       _publishServiceState();
       notifyListeners();
