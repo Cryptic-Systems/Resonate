@@ -58,13 +58,55 @@ void main() {
         orderedEquals(session.setCalls.first.centersHz.toList()..sort()),
       );
 
-      await rack.tick(0.5, playbackSession: session);
+      await rack.tick(0.5);
       expect(session.setCalls.last.deck, 'standby');
       expect(session.setCalls.last.gainsDb.first, closeTo(0.0, 1e-9));
       expect(session.setCalls.last.gainsDb.last, closeTo(-3.0, 1e-9));
 
-      await rack.restore(playbackSession: session);
+      await rack.restore();
       expect(session.clearCalls, ['active', 'standby']);
+    });
+
+    test('retains the engaged Media3 session for tick and restore', () async {
+      final rack = DjSfxRack(random: _SequenceRandom());
+      final session = _RecordingDeckOverlaySession();
+
+      await rack.engage(
+        energyScore: 0.5,
+        preset: DjSfxPreset.filterClose,
+        playbackSession: session,
+      );
+      final callsAfterEngage = session.setCalls.length;
+
+      await rack.tick(0.4);
+      expect(session.setCalls.length, callsAfterEngage + 2);
+      expect(session.setCalls.last.deck, 'standby');
+
+      await rack.restore();
+      expect(session.clearCalls, ['active', 'standby']);
+    });
+
+    test('restores the previous session before engaging a replacement session', () async {
+      final rack = DjSfxRack(random: _SequenceRandom());
+      final previous = _RecordingDeckOverlaySession();
+      final replacement = _RecordingDeckOverlaySession();
+
+      await rack.engage(
+        energyScore: 0.5,
+        preset: DjSfxPreset.filterOpen,
+        playbackSession: previous,
+      );
+      await rack.engage(
+        energyScore: 0.5,
+        preset: DjSfxPreset.filterClose,
+        playbackSession: replacement,
+      );
+
+      expect(previous.clearCalls, ['active', 'standby']);
+      expect(replacement.setCalls.map((call) => call.deck), ['active', 'standby']);
+
+      await rack.restore();
+      expect(replacement.clearCalls, ['active', 'standby']);
     });
 
   });
