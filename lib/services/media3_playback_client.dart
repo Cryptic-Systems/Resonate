@@ -278,7 +278,15 @@ class Media3PlaybackClient {
     Media3QueueItem item, {
     List<Media3QueueItem>? queue,
     int startIndex = 0,
+    Duration startPosition = Duration.zero,
   }) async {
+    if (startPosition.isNegative) {
+      throw ArgumentError.value(
+        startPosition,
+        'startPosition',
+        'Must not be negative.',
+      );
+    }
     final items = queue ?? <Media3QueueItem>[item];
     if (items.isEmpty) {
       throw ArgumentError.value(items.length, 'queue', 'Queue must not be empty.');
@@ -295,6 +303,7 @@ class Media3PlaybackClient {
         'item': item.toMap(),
         'items': items.map((entry) => entry.toMap()).toList(growable: false),
         'startIndex': startIndex,
+        'positionMs': startPosition.inMilliseconds,
       },
     );
   }
