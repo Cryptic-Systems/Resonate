@@ -1,0 +1,76 @@
+import '../models/song.dart';
+import 'playback_snapshot.dart';
+
+/// The transport/state contract a playback engine must provide to Resonate.
+///
+/// This contract is engine-neutral. DSP, audio-session routing, leveling,
+/// focus ducking, and crossfade must be integrated into the chosen backend's
+/// runtime before MusicProvider switches production playback authority.
+abstract interface class PlaybackBackend {
+  Stream<PlaybackSnapshot> get states;
+
+  Future<void> loadQueue(List<Song> songs, {int startIndex = 0});
+  Future<void> clearQueue();
+  Future<PlaybackSnapshot> currentState();
+
+  Future<void> play();
+  Future<void> pause();
+  Future<void> stop();
+  Future<void> seek(Duration position);
+  Future<void> next();
+  Future<void> previous();
+  Future<void> setVolume(double value);
+  Future<void> setGainFactors({
+    double? trackLevel,
+    double? preamp,
+    double? sleepFade,
+    double? focusDuck,
+  });
+  Future<void> setRepeatMode(PlaybackQueueRepeatMode mode);
+  Future<void> setShuffleMode(bool enabled);
+}
+
+/// Optional playback-rate capability. Backends without native speed support
+/// remain valid, but the provider-facing session must report it as unsupported.
+abstract interface class PlaybackSpeedBackend {
+  Future<void> setPlaybackSpeed(double speed);
+}
+
+/// Optional capability for DJ transitions that require independent rates on
+/// the outgoing and prepared incoming Media3 decks.
+abstract interface class PlaybackDeckSpeedBackend {
+  Future<void> setDeckPlaybackSpeeds({
+    required double activeSpeed,
+    required double standbySpeed,
+  });
+}
+
+/// Optional capability for reconciling queue edits without resetting the active player.
+/// Backends that do not implement this retain their existing full-load fallback.
+abstract interface class PlaybackPlaylistSyncBackend {
+  Future<void> synchronizeQueue(List<Song> songs);
+}
+
+/// Optional crossfade capability for engines that own two synchronized decks.
+/// A backend without this capability must not emulate a crossfade by starting a
+/// second independent playback authority.
+abstract interface class PlaybackCrossfadeBackend {
+  Future<void> preloadNext(
+    Song song, {
+    List<Song>? queue,
+    int? startIndex,
+  });
+  Future<void> crossfade({required Duration duration});
+  Future<void> cancelCrossfade();
+}
+
+/// Repeat behavior shared by backend implementations.
+enum PlaybackQueueRepeatMode {
+  off('off'),
+  one('one'),
+  all('all');
+
+  const PlaybackQueueRepeatMode(this.nativeValue);
+
+  final String nativeValue;
+}
