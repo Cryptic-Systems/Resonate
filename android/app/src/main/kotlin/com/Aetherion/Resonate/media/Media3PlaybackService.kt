@@ -400,7 +400,9 @@ class Media3PlaybackService : MediaSessionService() {
                 standbyPlayer.playbackParameters = activePlayer.playbackParameters
             }
         }
-        if (crossfadeStatus == "fading" || crossfadeStatus == "preparing" || crossfadeStatus == "ready") {
+        if (crossfadeStatus == "fading" || crossfadeStatus == "preparing" ||
+            crossfadeStatus == "waiting_ready" || crossfadeStatus == "ready"
+        ) {
             crossfadeStatus = "cancelled"
         }
         if (::activePlayer.isInitialized) {
