@@ -307,14 +307,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     ),
                   ),
                   const SizedBox(height: 8),
-                  StreamBuilder<PlayerState>(
-                    stream: music.audioPlayer.playerStateStream,
-                    initialData: music.audioPlayer.playerState,
-                    builder: (_, snapshot) {
-                      final state =
-                          snapshot.data ?? music.audioPlayer.playerState;
-                      final playing = state.playing &&
-                          state.processingState != ProcessingState.completed;
+                  Builder(
+                    builder: (_) {
+                      final playing = music.isPlaying;
                       final currentMs = music.currentPosition.inMilliseconds;
 
                       return Row(
