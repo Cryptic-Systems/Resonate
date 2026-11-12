@@ -8,7 +8,7 @@ extension MusicProviderMedia3 on MusicProvider {
     final session = _media3ProviderSession;
     if (session == null || !_media3ProviderSessionActive ||
         !effectiveCrossfadeEnabled || _crossfadePreloadInFlight ||
-        !canCrossfadeNext) return;
+        (!canCrossfadeNext && !_crossfadeInProgress)) return;
     final next = _crossfadeTargetSong;
     final nextIndex = _crossfadeTargetIndex;
     final outgoing = currentSong;
