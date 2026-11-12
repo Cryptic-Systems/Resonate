@@ -702,10 +702,10 @@ class MusicProvider extends ChangeNotifier {
     _bindActivePlayerStreams();
     unawaited(_configureAudioSession());
     _playbackSettingsLoad = _loadPlaybackSettings();
-    unawaited(_playbackSettingsLoad);
+    unawaited(_playbackSettingsLoad!);
     _systemVolumePollTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => unawaited(_syncSystemVolume()));
     _queueRestore = _restoreQueue();
-    unawaited(_queueRestore);
+    unawaited(_queueRestore!);
   }
 
   /// Connects the provider's single candidate Media3 session and mirrors the
