@@ -1,0 +1,623 @@
+import 'dart:async';
+
+import '../models/song.dart';
+import 'media3_music_provider_adapter.dart';
+import 'playback_backend.dart';
+import 'playback_snapshot.dart';
+
+/// Provider-facing Media3 runtime: one backend, one queue, one reconciled state.
+///
+/// This is deliberately isolated from MusicProvider while the remaining DSP,
+/// focus, and crossfade responsibilities are migrated. It is not enabled in
+/// production until that cutover is complete.
+class Media3PlaybackRuntime {
+  Media3PlaybackRuntime(this._backend);
+
+  final PlaybackBackend _backend;
+  final StreamController<Media3RuntimeState> _states =
+      StreamController<Media3RuntimeState>.broadcast();
+
+  StreamSubscription<PlaybackSnapshot>? _subscription;
+  List<Song> _queue = const <Song>[];
+  Media3RuntimeState _current = const Media3RuntimeState.empty();
+  bool _disposed = false;
+  int _snapshotRevision = 0;
+  bool _queueLoadInProgress = false;
+  PlaybackSnapshot? _pendingQueueSnapshot;
+  Future<void> _connectTail = Future<void>.value();
+  Future<void> _commandTail = Future<void>.value();
+
+  Stream<Media3RuntimeState> get states => _states.stream;
+  Media3RuntimeState get current => _current;
+  List<Song> get queue => List<Song>.unmodifiable(_queue);
+
+  /// Starts listening before reading the initial state so a fast native state
+  /// update cannot be missed between the snapshot request and subscription.
+  Future<void> connect() {
+    _ensureAlive();
+    // Session startup can be requested by multiple owners at once. Serialize
+    // reconnects so two callers cannot both pass the cancellation await and
+    // leave duplicate native-state subscriptions behind.
+    final result = _connectTail.then((_) {
+      _ensureAlive();
+      return _connectOnce();
+    });
+    _connectTail = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return result;
+  }
+
+  Future<void> _connectOnce() async {
+    await _subscription?.cancel();
+    _ensureAlive();
+    _subscription = _backend.states.listen((snapshot) {
+      if (_disposed) return;
+      _snapshotRevision++;
+      if (_queueLoadInProgress) {
+        // Do not publish a native event against the old queue while a new
+        // queue is being installed. The latest event is reconciled once the
+        // backend has either accepted or rejected the replacement.
+        _pendingQueueSnapshot = snapshot;
+        return;
+      }
+      _acceptSnapshot(snapshot);
+    });
+    final revisionBeforeRead = _snapshotRevision;
+    try {
+      final initial = await _backend.currentState();
+      // Disposal may happen while the native snapshot request is in flight.
+      // Never publish late state after the runtime has closed its stream.
+      if (_disposed) return;
+      // A stream event received while the snapshot request was in flight is
+      // newer than that request's result. Never let the delayed read roll state
+      // backwards after reconnecting to the native service.
+      if (_snapshotRevision == revisionBeforeRead) {
+        _acceptSnapshot(initial);
+      }
+    } catch (_) {
+      // A not-yet-connected native service will publish its first valid state
+      // through the stream. Keep the runtime alive for that connection.
+    }
+  }
+
+  Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
+    _ensureAlive();
+    if (songs.isEmpty) throw ArgumentError.value(songs, 'songs', 'Queue must not be empty.');
+    if (startIndex < 0 || startIndex >= songs.length) {
+      throw ArgumentError.value(startIndex, 'startIndex', 'Must identify an item in the queue.');
+    }
+    if (songs[startIndex].filePath.trim().isEmpty) {
+      throw ArgumentError.value(startIndex, 'startIndex', 'Selected track is not playable.');
+    }
+
+    // Match live queue synchronization: discard unplayable neighbours before
+    // sending the playlist to Media3, while preserving the selected track.
+    final playable = songs
+        .where((song) => song.filePath.trim().isNotEmpty)
+        .toList(growable: false);
+    if (playable.isEmpty) {
+      throw ArgumentError.value(songs, 'songs', 'Queue contains no playable tracks.');
+    }
+    // Count playable entries before the requested occurrence. Identity lookup
+    // alone is ambiguous when the same Song instance appears more than once.
+    final playableStartIndex = songs
+        .take(startIndex)
+        .where((song) => song.filePath.trim().isNotEmpty)
+        .length;
+    if (playableStartIndex < 0) {
+      throw ArgumentError.value(startIndex, 'startIndex', 'Selected track is not playable.');
+    }
+
+    final nextQueue = List<Song>.unmodifiable(playable);
+    await _run(() => _loadQueueWithinLane(
+          nextQueue,
+          startIndex: playableStartIndex,
+        ));
+  }
+
+  /// Installs a queue while the caller owns the serialized command lane.
+  /// Keeping this separate lets queue synchronization treat replacement,
+  /// position restoration, and play intent as one indivisible operation.
+  Future<void> _loadQueueWithinLane(
+    List<Song> nextQueue, {
+    required int startIndex,
+  }) async {
+      // Buffer native snapshots while queue identity is changing. Publishing
+      // them immediately would reconcile a new native index against the old
+      // Dart queue and briefly expose the wrong current song.
+      _queueLoadInProgress = true;
+      _pendingQueueSnapshot = null;
+      try {
+        await _backend.loadQueue(nextQueue, startIndex: startIndex);
+        // Disposal can race a slow native queue load. Do not commit queue
+        // identity or publish post-disposal state when that load eventually
+        // completes.
+        _ensureAlive();
+      } catch (_) {
+        _queueLoadInProgress = false;
+        final pending = _pendingQueueSnapshot;
+        _pendingQueueSnapshot = null;
+        if (pending != null) {
+          // A failed replacement never commits its queue identity. Reconcile a
+          // buffered native event only if it can still identify an item in the
+          // previously committed queue; otherwise it may describe a partial
+          // native replacement and must not erase the last known-good state.
+          final pendingIndex =
+              Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+            _queue,
+            mediaId: pending.mediaId,
+            playableIndex: pending.currentQueueIndex,
+          );
+          if (pendingIndex != null) _acceptSnapshot(pending);
+        }
+        rethrow;
+      }
+
+      // Commit queue identity only after the backend accepted the queue.
+      _queue = nextQueue;
+      _queueLoadInProgress = false;
+      final pending = _pendingQueueSnapshot;
+      _pendingQueueSnapshot = null;
+      if (pending != null) {
+        final pendingIndex =
+            Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          _queue,
+          mediaId: pending.mediaId,
+          playableIndex: pending.currentQueueIndex,
+        );
+        // Drop an outgoing-queue snapshot rather than briefly clearing or
+        // misidentifying the newly selected track. A fresh state read below
+        // or the next native event will publish the accepted queue's state.
+        if (pendingIndex != null) _acceptSnapshot(pending);
+      }
+
+      final revisionBeforeRead = _snapshotRevision;
+      try {
+        final loadedState = await _backend.currentState();
+        if (_snapshotRevision == revisionBeforeRead) {
+          _acceptSnapshot(loadedState);
+        }
+      } catch (_) {
+        // The native event stream remains authoritative if a snapshot read is
+        // temporarily unavailable after a successful queue load.
+      }
+  }
+
+  /// Reconciles a live queue edit without changing the selected track when it
+  /// still exists. The native queue is replaced at the current position and
+  /// playback intent is restored after the new queue is accepted. This also
+  /// invalidates any prepared crossfade deck so it cannot promote a stale item.
+  Future<void> synchronizeQueue(List<Song> songs) async {
+    _ensureAlive();
+    if (songs.isEmpty) {
+      await clearQueue();
+      return;
+    }
+
+    final playable = songs
+        .where((song) => song.filePath.trim().isNotEmpty)
+        .toList(growable: false);
+    if (playable.isEmpty) {
+      throw ArgumentError.value(
+        songs,
+        'songs',
+        'Queue contains no playable tracks.',
+      );
+    }
+
+    // Resolve the previous state only after earlier transport commands finish.
+    // The queue replacement, optional seek, and play/pause restoration then
+    // remain in the same command lane, so a concurrent seek or pause cannot
+    // be overwritten by a stale snapshot captured before synchronization.
+    await _run(() async {
+      // Queue observers can report the same list repeatedly. A full native
+      // replacement here would cancel a valid preload, reload the current
+      // item, and briefly rebuffer playback despite there being no edit.
+      if (_sameQueue(_queue, playable)) return;
+
+      final previousSong = _current.currentSong;
+      final previousIndex = _current.currentQueueIndex ?? 0;
+      final previousPosition = _current.position;
+      final wasPlaying = _current.isPlaying;
+      var nextIndex = -1;
+
+      if (previousSong != null) {
+        if (previousIndex >= 0 &&
+            previousIndex < playable.length &&
+            _sameTrack(playable[previousIndex], previousSong)) {
+          nextIndex = previousIndex;
+        } else {
+          for (var i = 0; i < playable.length; i++) {
+            if (_sameTrack(playable[i], previousSong)) {
+              nextIndex = i;
+              break;
+            }
+          }
+        }
+      }
+      if (nextIndex < 0) {
+        nextIndex = previousIndex.clamp(0, playable.length - 1).toInt();
+      }
+      // A removed current track must not transfer its old timestamp to the
+      // fallback track. Only preserve position when the same track remains.
+      final preservePosition = previousSong != null &&
+          _sameTrack(playable[nextIndex], previousSong);
+
+      if (_backend is PlaybackPlaylistSyncBackend) {
+        await _synchronizeQueueInPlace(playable);
+        return;
+      }
+
+      if (_backend is PlaybackCrossfadeBackend) {
+        await (_backend as PlaybackCrossfadeBackend).cancelCrossfade();
+      }
+      await _loadQueueWithinLane(playable, startIndex: nextIndex);
+      if (preservePosition) {
+        await _backend.seek(previousPosition);
+      }
+      if (wasPlaying) {
+        await _backend.play();
+      } else {
+        await _backend.pause();
+      }
+    });
+  }
+
+  /// Reconciles the native playlist without replacing the active player. The
+  /// backend owns the in-place edit and invalidates any stale standby preload.
+  Future<void> _synchronizeQueueInPlace(List<Song> nextQueue) async {
+    final backend = _backend as PlaybackPlaylistSyncBackend;
+    _queueLoadInProgress = true;
+    _pendingQueueSnapshot = null;
+    try {
+      await backend.synchronizeQueue(nextQueue);
+      _ensureAlive();
+    } catch (_) {
+      _queueLoadInProgress = false;
+      final pending = _pendingQueueSnapshot;
+      _pendingQueueSnapshot = null;
+      if (pending != null) {
+        final pendingIndex = Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          _queue,
+          mediaId: pending.mediaId,
+          playableIndex: pending.currentQueueIndex,
+        );
+        if (pendingIndex != null) _acceptSnapshot(pending);
+      }
+      rethrow;
+    }
+
+    _queue = List<Song>.unmodifiable(nextQueue);
+    _queueLoadInProgress = false;
+    final pending = _pendingQueueSnapshot;
+    _pendingQueueSnapshot = null;
+    if (pending != null) {
+      final pendingIndex = Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+        _queue,
+        mediaId: pending.mediaId,
+        playableIndex: pending.currentQueueIndex,
+      );
+      if (pendingIndex != null) _acceptSnapshot(pending);
+    }
+    final revisionBeforeRead = _snapshotRevision;
+    try {
+      final state = await _backend.currentState();
+      if (_snapshotRevision == revisionBeforeRead) _acceptSnapshot(state);
+    } catch (_) {
+      // The native state stream remains authoritative if a snapshot read fails.
+    }
+  }
+
+  bool _sameQueue(List<Song> left, List<Song> right) {
+    if (left.length != right.length) return false;
+    for (var i = 0; i < left.length; i++) {
+      final a = left[i];
+      final b = right[i];
+      if (a.id != b.id ||
+          a.filePath.trim() != b.filePath.trim() ||
+          a.title != b.title ||
+          a.artist != b.artist ||
+          a.album != b.album ||
+          a.duration != b.duration ||
+          a.dateAdded != b.dateAdded ||
+          a.albumArt != b.albumArt) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _sameTrack(Song left, Song right) =>
+      left.id == right.id && left.filePath.trim() == right.filePath.trim();
+
+  /// Clears queue identity only after the native backend accepts the clear.
+  /// A failed command preserves the last committed Dart queue and state.
+  Future<void> clearQueue() async {
+    _ensureAlive();
+    await _run(() async {
+      _queueLoadInProgress = true;
+      _pendingQueueSnapshot = null;
+      try {
+        await _backend.clearQueue();
+        _ensureAlive();
+      } catch (_) {
+        _queueLoadInProgress = false;
+        final pending = _pendingQueueSnapshot;
+        _pendingQueueSnapshot = null;
+        if (pending != null) {
+          // A rejected clear must retain the previously committed queue. Ignore
+          // snapshots that can only describe a partially-cleared native queue.
+          final pendingIndex =
+              Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+            _queue,
+            mediaId: pending.mediaId,
+            playableIndex: pending.currentQueueIndex,
+          );
+          if (pendingIndex != null) _acceptSnapshot(pending);
+        }
+        rethrow;
+      }
+      _queue = const <Song>[];
+      _queueLoadInProgress = false;
+      _pendingQueueSnapshot = null;
+      final revisionBeforeRead = _snapshotRevision;
+      try {
+        final clearedState = await _backend.currentState();
+        // A native state event delivered while the follow-up read was in
+        // flight is newer than that read. Do not let a delayed snapshot roll
+        // the reconciled state backwards after the queue has been cleared.
+        if (_snapshotRevision == revisionBeforeRead) {
+          _acceptSnapshot(clearedState);
+        }
+      } catch (_) {
+        // Native clear was accepted, so never leave a stale current song
+        // visible just because the follow-up snapshot was temporarily lost.
+        // But don't erase a newer state event that arrived during the read.
+        if (_snapshotRevision == revisionBeforeRead) {
+          _current = const Media3RuntimeState.empty();
+          if (!_states.isClosed) _states.add(_current);
+        }
+      }
+    });
+  }
+
+  Future<void> play() => _run(_backend.play);
+  Future<void> pause() => _run(_backend.pause);
+  Future<void> stop() => _run(_backend.stop);
+  Future<void> seek(Duration position) => _run(() => _backend.seek(position));
+  Future<void> next() => _run(_backend.next);
+  Future<void> previous() => _run(_backend.previous);
+  Future<void> setPlaybackSpeed(double speed) {
+    _ensureAlive();
+    if (!speed.isFinite || speed < 0.5 || speed > 2.0) {
+      throw ArgumentError.value(speed, 'speed', 'Must be finite and between 0.5 and 2.0.');
+    }
+    final backend = _backend;
+    if (backend is! PlaybackSpeedBackend) {
+      throw UnsupportedError('The active playback backend does not support speed changes.');
+    }
+    final speedBackend = backend as PlaybackSpeedBackend;
+    return _run(() => speedBackend.setPlaybackSpeed(speed));
+  }
+
+  Future<void> setDeckPlaybackSpeeds({
+    required double activeSpeed,
+    required double standbySpeed,
+  }) {
+    _ensureAlive();
+    for (final entry in <String, double>{
+      'activeSpeed': activeSpeed,
+      'standbySpeed': standbySpeed,
+    }.entries) {
+      if (!entry.value.isFinite || entry.value < 0.5 || entry.value > 2.0) {
+        throw ArgumentError.value(
+          entry.value,
+          entry.key,
+          'Must be finite and between 0.5 and 2.0.',
+        );
+      }
+    }
+    final backend = _backend;
+    if (backend is! PlaybackDeckSpeedBackend) {
+      throw UnsupportedError(
+        'The active playback backend does not support independent deck speeds.',
+      );
+    }
+    final deckSpeedBackend = backend as PlaybackDeckSpeedBackend;
+    return _run(() => deckSpeedBackend.setDeckPlaybackSpeeds(
+          activeSpeed: activeSpeed,
+          standbySpeed: standbySpeed,
+        ));
+  }
+
+  Future<void> setVolume(double value) {
+    _ensureAlive();
+    if (!value.isFinite) {
+      throw ArgumentError.value(value, 'value', 'Volume must be finite.');
+    }
+    return _run(() => _backend.setVolume(value.clamp(0.0, 1.0).toDouble()));
+  }
+
+  Future<void> setGainFactors({
+    double? trackLevel,
+    double? preamp,
+    double? sleepFade,
+    double? focusDuck,
+  }) {
+    _ensureAlive();
+    final factors = <String, double?>{
+      'trackLevel': trackLevel,
+      'preamp': preamp,
+      'sleepFade': sleepFade,
+      'focusDuck': focusDuck,
+    };
+    for (final entry in factors.entries) {
+      final value = entry.value;
+      if (value == null) continue;
+      final max = entry.key == 'preamp' ? 4.0 : 1.0;
+      if (!value.isFinite || value < 0 || value > max) {
+        throw ArgumentError.value(
+          value,
+          entry.key,
+          entry.key == 'preamp'
+              ? 'Must be finite and between 0 and 4.'
+              : 'Must be finite and between 0 and 1.',
+        );
+      }
+    }
+    return _run(() => _backend.setGainFactors(
+          trackLevel: trackLevel,
+          preamp: preamp,
+          sleepFade: sleepFade,
+          focusDuck: focusDuck,
+        ));
+  }
+  Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) =>
+      _run(() => _backend.setRepeatMode(mode));
+  Future<void> setShuffleMode(bool enabled) =>
+      _run(() => _backend.setShuffleMode(enabled));
+
+  /// Prepares the incoming song on the Media3 standby deck without disturbing
+  /// the current deck. Only a backend with native dual-deck support may do this.
+  Future<void> preloadNext(Song song, {int? queueIndex}) async {
+    _ensureAlive();
+    if (_backend is! PlaybackCrossfadeBackend) {
+      throw UnsupportedError('This playback backend does not support native crossfade.');
+    }
+
+    await _run(() async {
+      // Resolve against the queue that actually precedes this command in the
+      // serialized lane, not a stale queue captured before a pending load.
+      if (queueIndex != null) {
+        if (_queue.isEmpty ||
+            queueIndex < 0 ||
+            queueIndex >= _queue.length ||
+            !_sameTrack(_queue[queueIndex], song)) {
+          throw ArgumentError.value(
+            queueIndex,
+            'queueIndex',
+            'Must identify the incoming song in the committed queue.',
+          );
+        }
+      }
+      final resolvedIndex = queueIndex ?? _resolveIncomingQueueIndex(song);
+      if (_queue.isNotEmpty && resolvedIndex != null) {
+        await (_backend as PlaybackCrossfadeBackend).preloadNext(
+          song,
+          queue: _queue,
+          startIndex: resolvedIndex,
+        );
+        return;
+      }
+      await (_backend as PlaybackCrossfadeBackend).preloadNext(song);
+    });
+  }
+
+  int? _resolveIncomingQueueIndex(Song song) {
+    if (_queue.isEmpty) return null;
+    final currentIndex = _current.currentQueueIndex ?? -1;
+    // Prefer the next matching occurrence after the current item. This preserves
+    // queue occurrence identity when a playlist contains the same song twice.
+    for (var i = currentIndex + 1; i < _queue.length; i++) {
+      if (_sameTrack(_queue[i], song)) return i;
+    }
+    int? uniqueMatch;
+    for (var i = 0; i < _queue.length; i++) {
+      if (!_sameTrack(_queue[i], song)) continue;
+      if (uniqueMatch != null) return null;
+      uniqueMatch = i;
+    }
+    return uniqueMatch;
+  }
+
+  Future<void> crossfade({required Duration duration}) async {
+    _ensureAlive();
+    if (duration < const Duration(milliseconds: 250) ||
+        duration > const Duration(seconds: 15)) {
+      throw ArgumentError.value(duration, 'duration', 'Must be between 250 ms and 15 s.');
+    }
+    if (_backend is! PlaybackCrossfadeBackend) {
+      throw UnsupportedError('This playback backend does not support native crossfade.');
+    }
+    await _run(() => (_backend as PlaybackCrossfadeBackend).crossfade(duration: duration));
+  }
+
+  Future<void> cancelCrossfade() async {
+    _ensureAlive();
+    if (_backend is! PlaybackCrossfadeBackend) {
+      throw UnsupportedError('This playback backend does not support native crossfade.');
+    }
+    await _run(() => (_backend as PlaybackCrossfadeBackend).cancelCrossfade());
+  }
+
+  /// Serializes every command that can mutate native playback state. Rapid
+  /// UI taps, queue replacement and a crossfade request must not race each
+  /// other across the Flutter/native boundary.
+  Future<void> _run(Future<void> Function() command) {
+    _ensureAlive();
+    final result = _commandTail.then((_) {
+      _ensureAlive();
+      return command();
+    });
+    // Keep the lane usable after one failed command while still returning that
+    // failure to the caller that issued it.
+    _commandTail = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return result;
+  }
+
+  void _acceptSnapshot(PlaybackSnapshot snapshot) {
+    if (_disposed) return;
+    final index = Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+      _queue,
+      mediaId: snapshot.mediaId,
+      playableIndex: snapshot.currentQueueIndex,
+    );
+    final song = index == null ? null : _queue[index];
+    _current = Media3RuntimeState(
+      snapshot: snapshot,
+      currentSong: song,
+      currentQueueIndex: index,
+    );
+    if (!_states.isClosed) _states.add(_current);
+  }
+
+  void _ensureAlive() {
+    if (_disposed) throw StateError('Media3PlaybackRuntime is disposed.');
+  }
+
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    await _subscription?.cancel();
+    await _states.close();
+  }
+}
+
+class Media3RuntimeState {
+  const Media3RuntimeState({
+    required this.snapshot,
+    required this.currentSong,
+    required this.currentQueueIndex,
+  });
+
+  const Media3RuntimeState.empty()
+      : snapshot = null,
+        currentSong = null,
+        currentQueueIndex = null;
+
+  final PlaybackSnapshot? snapshot;
+  final Song? currentSong;
+  final int? currentQueueIndex;
+
+  bool get isPlaying => snapshot?.isPlaying ?? false;
+  Duration get position => snapshot?.position ?? Duration.zero;
+  Duration? get duration => snapshot?.duration;
+  bool get connected => snapshot?.connected ?? false;
+  bool get hasError => snapshot?.hasError ?? false;
+  String? get error => snapshot?.error;
+}
