@@ -254,6 +254,33 @@ void main() {
       expect((forwarded!.last as Map<Object?, Object?>)['id'], 'track-500');
     });
 
+    test('forwards DJ phrase-alignment position to the native preload deck', () async {
+      MethodCall? captured;
+      channel.setMockMethodCallHandler((call) async {
+        captured = call;
+        return true;
+      });
+
+      final item = Media3QueueItem(
+        id: 'incoming',
+        uri: Uri.file('/music/incoming.mp3'),
+        title: 'Incoming',
+      );
+      await client.preloadNext(
+        item,
+        startPosition: const Duration(milliseconds: 18450),
+      );
+
+      expect(captured?.method, 'preloadNext');
+      final arguments = Map<Object?, Object?>.from(captured!.arguments as Map);
+      expect(arguments['positionMs'], 18450);
+
+      await expectLater(
+        client.preloadNext(item, startPosition: const Duration(milliseconds: -1)),
+        throwsArgumentError,
+      );
+    });
+
     test('rejects a volume command when native gain policy declines it', () async {
       channel.setMockMethodCallHandler((call) async => false);
 
