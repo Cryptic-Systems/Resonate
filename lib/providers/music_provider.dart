@@ -1101,13 +1101,16 @@ class MusicProvider extends ChangeNotifier {
       // Do not fight an active sleep-timer fade-out.
       if (_sleepFadeScale < 0.999) return;
       if (!await _claimAudioFocus(reason: 'ensure_audible')) return;
+      if (_media3ProviderSessionActive) {
+        await _applyActiveMasterVolume();
+        if (_userWantsPlaying && !_media3ProviderSession!.isPlaying) {
+          await _media3ProviderSession!.play();
+        }
+        return;
+      }
       final vol = (_eqPreampScale * _sleepFadeScale).clamp(0.05, 1.0);
-      if (audioPlayer.volume < vol * 0.85) {
-        await audioPlayer.setVolume(vol);
-      }
-      if (_userWantsPlaying && !audioPlayer.playing) {
-        await audioPlayer.play();
-      }
+      if (audioPlayer.volume < vol * 0.85) await audioPlayer.setVolume(vol);
+      if (_userWantsPlaying && !audioPlayer.playing) await audioPlayer.play();
     } catch (e) {
       debugPrint('ensureAudiblePlayback: $e');
     }
@@ -1137,6 +1140,15 @@ class MusicProvider extends ChangeNotifier {
         'userWantsPlaying': _userWantsPlaying,
       }));
       return false;
+    }
+    if (_media3ProviderSessionActive) {
+      try {
+        await _media3ProviderSession!.setAudioFocusHandling(true);
+        return true;
+      } catch (error) {
+        debugPrint('Media3 focus policy ($reason): $error');
+        return false;
+      }
     }
     try {
       final session = await AudioSession.instance;
@@ -1277,6 +1289,27 @@ class MusicProvider extends ChangeNotifier {
     } catch (_) {}
     if (_disposed || !_userWantsPlaying) return;
     if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
+    if (_media3ProviderSessionActive) {
+      for (final delayMs in <int>[200, 700, 1600, 3200]) {
+        await Future<void>.delayed(Duration(milliseconds: delayMs));
+        if (_disposed || !_userWantsPlaying) return;
+        if (await _isCommunicationActive()) return;
+        try {
+          await _applyActiveMasterVolume();
+          if (!_media3ProviderSession!.isPlaying) {
+            await _media3ProviderSession!.setAudioFocusHandling(true);
+            await _media3ProviderSession!.play();
+          }
+        } catch (_) {}
+      }
+      await ResonateDiagnostics.record('audio_route_recover_done', {
+        'playing': _media3ProviderSession!.isPlaying,
+        'positionMs': _media3ProviderSession!.position.inMilliseconds,
+        'songId': currentSong?.id,
+        'engine': 'media3_provider_session',
+      });
+      return;
+    }
     if (!await _claimAudioFocus(reason: 'audio_route_changed')) return;
     if (_disposed) return;
     if (_disposed) return;
@@ -1423,6 +1456,14 @@ class MusicProvider extends ChangeNotifier {
       return;
     }
     _isDucked = true;
+    if (_media3ProviderSessionActive) {
+      await _applyActiveMasterVolume();
+      unawaited(ResonateDiagnostics.record('audio_focus_duck', {
+        'level': _audioFocusLevel == 1 ? 0.18 : _duckLevel,
+        'engine': 'media3_provider_session',
+      }));
+      return;
+    }
     final duck = _audioFocusLevel == 1 ? 0.18 : _duckLevel;
     final target = (duck * _eqPreampScale).clamp(0.05, 0.45);
     try {
@@ -1452,6 +1493,24 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _unduckAfterInterruption() async {
+    if (_media3ProviderSessionActive) {
+      if (!_isDucked) return;
+      if (_transitionLive) {
+        _unduckPendingAfterCrossfade = true;
+        return;
+      }
+      final focusGeneration = _focusInterruption.focusEventGeneration;
+      _isDucked = false;
+      await _applyActiveMasterVolume();
+      if (_focusInterruption.ownsFocusEventGeneration(focusGeneration)) {
+        unawaited(ResonateDiagnostics.record('audio_focus_unduck', {
+          'level': _effectiveCrossfadeMaster,
+          'engine': 'media3_provider_session',
+          'fadeCancelledOrIncomplete': false,
+        }));
+      }
+      return;
+    }
     if (!_isDucked && audioPlayer.volume >= _effectiveCrossfadeMaster * 0.9) {
       _unduckPendingAfterCrossfade = false;
       return;
@@ -1515,6 +1574,14 @@ class MusicProvider extends ChangeNotifier {
     // can reclaim focus from another music app that has just taken ownership.
     await Future<void>.delayed(const Duration(milliseconds: 1200));
     if (generation != _focusResumeGeneration || !_userWantsPlaying) return;
+    if (_media3ProviderSessionActive) {
+      _isDucked = false;
+      await this.resumePlayback(source: 'system');
+      if (generation == _focusResumeGeneration && _userWantsPlaying) {
+        await _applyActiveMasterVolume();
+      }
+      return;
+    }
     _isDucked = false;
     try {
       await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
