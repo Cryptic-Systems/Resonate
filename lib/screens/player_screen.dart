@@ -6,7 +6,6 @@ import 'package:share_plus/share_plus.dart';
 import '../ui/resonate_glass.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/blur_sheet.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 
 import '../models/intelligence_recommendation.dart';
