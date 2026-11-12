@@ -57,6 +57,7 @@ class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpe
   Completer<void>? stateGate;
   double? lastSpeed;
   (double, double)? lastDeckSpeeds;
+  Duration? lastPreloadStartPosition;
   PlaybackSnapshot value = _snapshot();
 
   @override
@@ -134,7 +135,11 @@ class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpe
     Song song, {
     List<Song>? queue,
     int? startIndex,
-  }) async => calls.add('preloadNext');
+    Duration startPosition = Duration.zero,
+  }) async {
+    lastPreloadStartPosition = startPosition;
+    calls.add('preloadNext');
+  }
   @override
   Future<void> crossfade({required Duration duration}) async =>
       calls.add('crossfade');
@@ -218,6 +223,7 @@ void main() {
       );
 
       expect(backend.lastDeckSpeeds, (1.08, 0.94));
+      expect(backend.lastPreloadStartPosition, const Duration(milliseconds: 7600));
       expect(backend.calls, ['deckSpeeds']);
       expect(
         () => session.setDeckPlaybackSpeeds(
@@ -457,7 +463,11 @@ void main() {
       );
       await session.setRepeatMode(PlaybackQueueRepeatMode.one);
       await session.setShuffleMode(true);
-      await session.preloadNext(queue[1], queueIndex: 1);
+      await session.preloadNext(
+        queue[1],
+        queueIndex: 1,
+        startPosition: const Duration(milliseconds: 7600),
+      );
       await session.crossfade(duration: const Duration(milliseconds: 1200));
       await session.cancelCrossfade();
       await session.stop();
