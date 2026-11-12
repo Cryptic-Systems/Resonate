@@ -125,6 +125,7 @@ void main() {
         'repeat:all',
         'shuffle:true',
         'volume:1.0',
+        'focus:true',
       ]);
       expect(session.queue.map((song) => song.id).toList(), expectedQueue);
       expect(session.loadedIndex, provider.queueIndex);
