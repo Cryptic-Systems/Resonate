@@ -70,7 +70,7 @@ extension MusicProviderMedia3 on MusicProvider {
       await session.setVolume(1.0);
       await session.setGainFactors(
         trackLevel: _trackLevelingScale,
-        preamp: _eqPreampScale,
+        preamp: _eqPreampUserScale,
         sleepFade: _sleepFadeScale,
         focusDuck: _isDucked ? (_audioFocusLevel == 1 ? 0.18 : MusicProvider._duckLevel) : 1.0,
       );
