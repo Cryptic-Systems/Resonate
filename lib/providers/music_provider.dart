@@ -2479,8 +2479,8 @@ class MusicProvider extends ChangeNotifier {
         final session = _media3ProviderSession!;
         if (currentSong?.id != expectedSongId || _queueIndex != expectedIndex) return;
         final atMedia3End = session.isCompleted ||
-            !session.isPlaying ||
-            session.position >= duration - const Duration(milliseconds: 400);
+            (!session.isPlaying &&
+                session.position >= duration - const Duration(milliseconds: 400));
         final canMedia3Advance = _queueIndex < _queue.length - 1 ||
             _repeatMode != PlaybackRepeatMode.off;
         if (atMedia3End && canMedia3Advance) {
