@@ -276,8 +276,25 @@ class Media3PlaybackBridge(
                     result.success(true)
                 }
                 "play" -> {
+                    val service = Media3PlaybackService.instance
+                    if (service?.isCommunicationActive() == true) {
+                        result.error(
+                            "PLAYBACK_BLOCKED_DURING_COMMUNICATION",
+                            "Playback is paused while a phone or communication session is active.",
+                            null,
+                        )
+                        return
+                    }
+                    if (service?.setAudioFocusHandling(true) != true) {
+                        result.error(
+                            "MEDIA3_FOCUS_UNAVAILABLE",
+                            "Media3 could not safely acquire audio focus.",
+                            null,
+                        )
+                        return
+                    }
                     connected.play()
-                    Media3PlaybackService.instance?.resumeCrossfade()
+                    service.resumeCrossfade()
                     result.success(true)
                 }
                 "pause" -> {
