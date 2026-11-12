@@ -2475,6 +2475,25 @@ class MusicProvider extends ChangeNotifier {
 
     _endOfTrackWatchdog = Timer(remaining + Duration(milliseconds: graceMs), () {
       if (currentSong == null || _completionAdvanceInProgress) return;
+      if (_media3ProviderSessionActive) {
+        final session = _media3ProviderSession!;
+        if (currentSong?.id != expectedSongId || _queueIndex != expectedIndex) return;
+        final atMedia3End = session.isCompleted ||
+            !session.isPlaying ||
+            session.position >= duration - const Duration(milliseconds: 400);
+        final canMedia3Advance = _queueIndex < _queue.length - 1 ||
+            _repeatMode != PlaybackRepeatMode.off;
+        if (atMedia3End && canMedia3Advance) {
+          unawaited(ResonateDiagnostics.record('media3_end_of_track_watchdog_fired', {
+            'songId': currentSong?.id,
+            'queueIndex': _queueIndex,
+            'isPlaying': session.isPlaying,
+            'positionMs': session.position.inMilliseconds,
+          }));
+          unawaited(onTrackEnded(currentSong!.id));
+        }
+        return;
+      }
       // Already moved on (successful crossfade or manual next).
       if (currentSong?.id != expectedSongId || _queueIndex != expectedIndex) return;
 
