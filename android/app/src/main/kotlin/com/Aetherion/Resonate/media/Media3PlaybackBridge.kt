@@ -381,9 +381,14 @@ class Media3PlaybackBridge(
                     }
                     val rawItems = call.argument<List<Map<String, Any?>>>("items")
                     val startIndex = call.argument<Number>("startIndex")?.toInt() ?: 0
+                    val startPositionMs = call.argument<Number>("positionMs")?.toLong() ?: 0L
                     val descriptors = rawItems ?: listOf(raw)
                     if (descriptors.isEmpty() || startIndex !in descriptors.indices) {
                         result.error("INVALID_QUEUE", "Incoming queue must not be empty and must have a valid start index.", null)
+                        return
+                    }
+                    if (startPositionMs < 0L) {
+                        result.error("INVALID_PRELOAD_POSITION", "Incoming start position must not be negative.", null)
                         return
                     }
                     val items = mutableListOf<MediaItem>()
@@ -415,7 +420,11 @@ class Media3PlaybackBridge(
                         result.error("INVALID_QUEUE_INDEX", "The selected queue occurrence must match the incoming item.", null)
                         return
                     }
-                    val accepted = Media3PlaybackService.instance?.preloadNext(items, startIndex) == true
+                    val accepted = Media3PlaybackService.instance?.preloadNext(
+                        items,
+                        startIndex,
+                        startPositionMs,
+                    ) == true
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_PRELOAD_FAILED", "The incoming deck could not be prepared.", null)
                 }
