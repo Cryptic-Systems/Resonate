@@ -41,7 +41,8 @@ void main() {
     });
   });
 
-  group('DjSfxRack Media3 deck overlays', () {\n    test('routes transition EQ through both Media3 decks and clears on restore', () async {
+  group('DjSfxRack Media3 deck overlays', () {
+    test('routes transition EQ through both Media3 decks and clears on restore', () async {
       final rack = DjSfxRack(random: _SequenceRandom());
       final session = _RecordingDeckOverlaySession();
 
@@ -66,7 +67,9 @@ void main() {
       expect(session.clearCalls, ['active', 'standby']);
     });
 
-  });\n\n  group('DjSfxRack usage fairness', () {
+  });
+
+  group('DjSfxRack usage fairness', () {
     test('rotates after two uses and exhausts the eligible pool fairly', () async {
       final rack = DjSfxRack(random: _SequenceRandom());
       final counts = <DjSfxPreset, int>{};
