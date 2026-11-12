@@ -58,7 +58,11 @@ abstract interface class PlaybackEngineSession
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode);
   Future<void> setShuffleMode(bool enabled);
 
-  Future<void> preloadNext(Song song, {int? queueIndex});
+  Future<void> preloadNext(
+    Song song, {
+    int? queueIndex,
+    Duration startPosition = Duration.zero,
+  });
   Future<void> crossfade({required Duration duration});
   Future<void> cancelCrossfade();
 
