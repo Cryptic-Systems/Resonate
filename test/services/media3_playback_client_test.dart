@@ -142,6 +142,55 @@ void main() {
       );
     });
 
+    test('sends and clears a validated deck EQ overlay', () async {
+      MethodCall? captured;
+      channel.setMockMethodCallHandler((call) async {
+        captured = call;
+        return true;
+      });
+
+      await client.setDeckEqOverlay(
+        deck: 'standby',
+        centersHz: <double>[80, 1000, 12000],
+        gainsDb: <double>[-6, 0, 6],
+      );
+      expect(captured?.method, 'setDeckEqOverlay');
+      expect(captured?.arguments, {
+        'deck': 'standby',
+        'centersHz': <double>[80, 1000, 12000],
+        'gainsDb': <double>[-6, 0, 6],
+      });
+
+      await client.clearDeckEqOverlay(deck: 'active');
+      expect(captured?.method, 'clearDeckEqOverlay');
+      expect(captured?.arguments, {'deck': 'active'});
+
+      await expectLater(
+        client.setDeckEqOverlay(
+          deck: 'both',
+          centersHz: <double>[100],
+          gainsDb: <double>[1],
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setDeckEqOverlay(
+          deck: 'active',
+          centersHz: <double>[100, 200],
+          gainsDb: <double>[1],
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setDeckEqOverlay(
+          deck: 'active',
+          centersHz: <double>[100],
+          gainsDb: <double>[double.nan],
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('sends a validated playback speed to native Media3', () async {
       MethodCall? captured;
       channel.setMockMethodCallHandler((call) async {
