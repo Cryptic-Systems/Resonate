@@ -571,3 +571,27 @@ The handoff sequence is transactional at the provider boundary:
 A failed Media3 startup does not mark the handoff active. The legacy engine is not stopped until the session has started and its initial queue/settings and observers are ready.
 
 **Remaining full-cutover gates:** crossfade/DJ orchestration, DSP/effect ownership across both Media3 decks, and end-to-end MediaSession/notification control parity still require dedicated migration and acceptance coverage. This handoff lands canonical observation, transport, recovery, and completion ownership; it does not by itself certify every remaining playback feature or replace device acceptance testing.
+
+
+## 22. Provider-owned Media3 crossfade and DJ orchestration — implemented on the integration branch
+
+### Crossfade execution moved to the injected session
+
+- Automatic preload now prepares the Media3 standby deck with the provider's next queue occurrence and a DJ-planned incoming phrase offset. The provider applies independent active/standby playback speeds through the same serialized session command lane.
+- The provider starts the native equal-power crossfade clock and waits for the observed incoming media ID **and queue index** to become the canonical active item. Elapsed wall-clock time alone is never treated as a successful handoff.
+- The native service defers a requested fade until the standby deck is ready. Pending starts survive transient focus/buffering pauses and resume when both decks can run; explicit cancellation clears the pending request.
+- The native service promotes the standby ExoPlayer and updates the MediaSession player at the end of the gain ramp. The provider reconciles queue index, playback state, and transition bookkeeping from the Media3 state stream.
+- Manual provider transport preempts automatic work by cancelling the native transition and resetting deck rates. If native crossfade execution fails, fallback queue loading and playback remain on the same Media3 session; the legacy EnginePair is never restarted.
+- Repeat-one uses Media3's native repeat mode rather than the retired legacy dual-player self-handoff.
+
+### DJ handoff and transition automation
+
+- The existing DJ profile/autopilot planner is reused without passing legacy AudioPlayer instances. Its incoming phrase offset, tempo correction, transition duration bias, and profile metadata are mapped to Media3 standby preload and per-deck speed commands.
+- DJ filter-open/filter-close automation is routed through the session's active/standby EQ overlays and is updated against native crossfade progress. The rack restores both overlays after promotion or cancellation.
+- The Media3 path intentionally restricts DJ SFX to deck-scoped EQ filters. Legacy global reverb/virtualizer, sample playback, scratch/brake, repeat-seek and other track-mutating effects are not invoked through the old engine during a Media3 transition; they remain separate DSP/effect parity work.
+
+### Automated validation and remaining gates
+
+The provider contract suite now exercises a complete automatic Media3 crossfade: next-item preload, queue occurrence, native crossfade command, canonical promotion, and deck-rate reset. Exact-head CI must pass Flutter analysis/tests, native DSP compile/stress tests, Android unit tests, release APK build, and APK size-budget validation.
+
+This completes the provider-owned crossfade/DJ orchestration slice, **not** the remaining effect-rack migration. Per-deck/global DSP effect ownership, full MediaSession/notification control parity, and physical-device playback acceptance remain separate gates before PR #220 is production-ready. No device audition is implied by CI.
