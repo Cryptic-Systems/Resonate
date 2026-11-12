@@ -3621,10 +3621,11 @@ class MusicProvider extends ChangeNotifier {
       _preloadedNextSongId = null;
       _media3DjTransitionPreparation = null;
     }
-    unawaited(() async {
-      try {
-        final idle = inactivePlayer;
-        final active = audioPlayer;
+    if (!_media3ProviderSessionActive) {
+      unawaited(() async {
+        try {
+          final idle = inactivePlayer;
+          final active = audioPlayer;
         try {
           await idle.pause();
         } catch (_) {}
@@ -3645,8 +3646,9 @@ class MusicProvider extends ChangeNotifier {
             await active.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
           } catch (_) {}
         }
-      } catch (_) {}
-    }());
+        } catch (_) {}
+      }());
+    }
   }
 
   bool get _recentlyUserPaused {
