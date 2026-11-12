@@ -275,6 +275,15 @@ class Media3PlaybackClient {
     await _invokeAccepted('clearDeckEqOverlay', <String, Object>{'deck': deck});
   }
 
+  /// Controls whether the Media3 active deck requests Android audio focus.
+  /// Disable only when another playback owner has explicitly taken over focus.
+  Future<void> setAudioFocusHandling(bool enabled) async {
+    await _invokeAccepted(
+      "setAudioFocusHandling",
+      <String, Object>{"enabled": enabled},
+    );
+  }
+
   Future<void> setVolume(double volume) async {
     if (!volume.isFinite) {
       throw ArgumentError.value(volume, 'volume', 'Must be finite.');
