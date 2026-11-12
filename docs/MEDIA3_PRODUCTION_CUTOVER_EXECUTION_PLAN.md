@@ -553,3 +553,21 @@ This completes the session-level canonical observation contract and makes the pr
 - The provider subscribes to the session-owned snapshot stream only after successful session startup and cancels it during re-prepare/disposal.
 - Runtime command serialization remains centralized in `Media3PlaybackRuntime._run`; no second provider-side queue or competing native command lane was introduced.
 - Exact-head CI is required after this change. No physical-device acceptance is implied.
+
+
+## 18 Canonical provider-session handoff — landed on the integration branch
+
+The provider now supports an explicit, single-authority handoff to its injected Media3ProviderSession. The app composition root supplies the session and starts the handoff after persisted playback settings and queue restoration complete.
+
+The handoff sequence is transactional at the provider boundary:
+
+1. Start the Media3 session and mirror the restored provider queue, repeat mode, shuffle mode, and volume while Media3 focus handling is disabled.
+2. Attach the Media3 state and audio-session observers before changing authority.
+3. Enable Media3 focus handling, stop both legacy EnginePair decks, and deactivate the legacy AudioSession.
+4. Publish the Media3 session as the canonical observation source. Legacy player stream callbacks are ignored after the handoff.
+5. Route play, pause, resume, seek, next, previous, stop, repeat-one completion, automatic completion advancement, queue synchronization, and silent-playback recovery through the same injected session and the provider's serialized command coordinator.
+6. Resolve native queue indices against the provider queue using media ID and playable occurrence mapping; reject ambiguous duplicate occurrences rather than silently selecting a different item.
+
+A failed Media3 startup does not mark the handoff active. The legacy engine is not stopped until the session has started and its initial queue/settings and observers are ready.
+
+**Remaining full-cutover gates:** crossfade/DJ orchestration, DSP/effect ownership across both Media3 decks, and end-to-end MediaSession/notification control parity still require dedicated migration and acceptance coverage. This handoff lands canonical observation, transport, recovery, and completion ownership; it does not by itself certify every remaining playback feature or replace device acceptance testing.
