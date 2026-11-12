@@ -229,8 +229,16 @@ class Media3ProviderSession implements PlaybackEngineSession {
       );
 
   @override
-  Future<void> preloadNext(Song song, {int? queueIndex}) =>
-      _runtime.preloadNext(song, queueIndex: queueIndex);
+  Future<void> preloadNext(
+    Song song, {
+    int? queueIndex,
+    Duration startPosition = Duration.zero,
+  }) =>
+      _runtime.preloadNext(
+        song,
+        queueIndex: queueIndex,
+        startPosition: startPosition,
+      );
   @override
   Future<void> crossfade({required Duration duration}) =>
       _runtime.crossfade(duration: duration);
