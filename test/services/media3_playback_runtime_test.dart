@@ -128,8 +128,8 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, 
   @override
   Future<void> clearDeckEqOverlay({required String deck}) async { deckEqCalls.add('clear:$deck'); }
   @override
-  Future<void> playAuxiliarySound(Uri uri, {required double volume}) async {
-    auxiliaryCalls.add('play:' + uri.toString() + ':' + volume.toString());
+  Future<void> playAuxiliarySound(Uri uri, {required double volume, Duration startPosition = Duration.zero, Duration? endPosition}) async {
+    auxiliaryCalls.add('play:' + uri.toString() + ':' + volume.toString() + ':' + startPosition.inMilliseconds.toString() + ':' + (endPosition?.inMilliseconds.toString() ?? 'end'));
   }
   @override
   Future<void> setAuxiliarySoundVolume(double volume) async {
