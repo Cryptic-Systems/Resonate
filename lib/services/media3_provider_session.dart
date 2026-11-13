@@ -227,8 +227,17 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryE
       _runtime.clearDeckEqOverlay(deck: deck);
 
   @override
-  Future<void> playAuxiliarySound(Uri uri, {required double volume}) =>
-      _runtime.playAuxiliarySound(uri, volume: volume);
+  Future<void> playAuxiliarySound(
+    Uri uri, {
+    required double volume,
+    Duration startPosition = Duration.zero,
+    Duration? endPosition,
+  }) => _runtime.playAuxiliarySound(
+        uri,
+        volume: volume,
+        startPosition: startPosition,
+        endPosition: endPosition,
+      );
 
   @override
   Future<void> setAuxiliarySoundVolume(double volume) =>
