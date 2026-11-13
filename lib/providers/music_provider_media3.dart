@@ -707,15 +707,33 @@ extension MusicProviderMedia3 on MusicProvider {
       return;
     }
     _lastSilentRecoverAt = now;
+    // Recovery is speculative work. A pause/next/previous command can arrive
+    // while communication state or audio focus is being queried, so bind this
+    // recovery to the transport epoch and revalidate immediately before play.
+    final recoveryTransportEpoch = _userTransportEpoch;
+    bool stillOwnsRecovery() =>
+        recoveryTransportEpoch == _userTransportEpoch &&
+        _media3ProviderSessionActive &&
+        identical(_media3ProviderSession, session) &&
+        !_disposed &&
+        _userWantsPlaying &&
+        !_recentlyUserPaused &&
+        (_media3ShadowState?.playWhenReady ?? false);
     unawaited(() async {
-      if (await _isCommunicationActive()) return;
       try {
+        if (!stillOwnsRecovery()) return;
+        if (await _isCommunicationActive()) return;
+        if (!stillOwnsRecovery()) return;
         await session.setAudioFocusHandling(true);
+        // This is the critical stale-work barrier: never let a watchdog that
+        // began before Pause issue play() after the user's newer command.
+        if (!stillOwnsRecovery()) return;
         await session.play();
         await ResonateDiagnostics.record('media3_provider_recovery', {
           'songId': session.currentSong?.id ?? currentSong?.id,
           'playing': session.isPlaying,
           'positionMs': session.position.inMilliseconds,
+          'transportEpoch': recoveryTransportEpoch,
         });
       } catch (error) {
         await ResonateDiagnostics.record('media3_provider_recovery_failed', {
