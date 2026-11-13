@@ -40,9 +40,14 @@ class PlaybackAuthority extends ChangeNotifier {
   String get lastCommand => _lastCommand;
   PlaybackEvent? get lastEvent => _lastEvent;
 
-  String engineLabel(MusicProvider music) => music.media3ProviderSessionActive
-      ? 'Media3'
-      : _engineLabelFor(music.audioPlayer);
+  String engineLabel(MusicProvider music) {
+    // The injected Media3 session is the selected runtime from construction;
+    // do not touch the deprecated player getter while startup is still binding.
+    if (music.media3PlaybackSession != null) {
+      return music.media3ProviderSessionActive ? 'Media3' : 'Media3 (starting)';
+    }
+    return _engineLabelFor(music.audioPlayer);
+  }
 
   Future<void> userPause(MusicProvider music) => music.pause();
   Future<void> userStop(MusicProvider music) => music.stop();
