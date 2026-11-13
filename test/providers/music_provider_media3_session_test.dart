@@ -626,6 +626,73 @@ void main() {
       await session.states.close();
     });
 
+    test('Pause after crossfade wins over a late Media3 completion callback', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('late-completion-outgoing');
+      final second = _song('late-completion-incoming');
+      final third = _song('late-completion-next');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(
+        first,
+        queue: <Song>[first, second, third],
+      ), isTrue);
+      await provider.setCrossfadeDuration(500);
+
+      session.positionValue = const Duration(seconds: 178);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 80 && provider.currentSong?.id != second.id;
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(provider.currentSong?.id, second.id);
+      expect(session.calls, contains('crossfade:500'));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      final playCallsBeforeCompletion =
+          session.calls.where((call) => call == 'play').length;
+      session.playingValue = false;
+      session.completedValue = true;
+      session.positionValue = second.duration;
+      session.states.add(_state(
+        song: second,
+        queueIndex: 1,
+        completed: true,
+        position: second.duration,
+      ));
+      // Let the completion handler reach its async diagnostic boundary, then
+      // issue Pause while that callback is suspended.
+      await Future<void>.delayed(Duration.zero);
+      await provider.pause();
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(session.playingValue, isFalse);
+      expect(provider.currentSong?.id, second.id);
+      expect(provider.queueIndex, 1);
+      expect(
+        session.calls.where((call) => call == 'play').length,
+        playCallsBeforeCompletion,
+        reason: 'A completion callback from the crossfaded track must not restart or advance after Pause.',
+      );
+      expect(
+        session.calls.where((call) => call.startsWith('loadQueue')).length,
+        1,
+        reason: 'Late completion must not load the next queue item after Pause.',
+      );
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('repeat-one hands off through the Media3 standby deck and returns to repeat-one', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);

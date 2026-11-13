@@ -2846,7 +2846,6 @@ class MusicProvider extends ChangeNotifier {
     bool ownsCompletionAdvance() =>
         !_disposed &&
         _playbackIntentGate.isCurrent(intentToken) &&
-        _userWantsPlaying &&
         !_recentlyUserPaused;
     if (_completionAdvanceInProgress || !ownsCompletionAdvance()) return;
     // Accept if this is the song that just completed (by id match).
