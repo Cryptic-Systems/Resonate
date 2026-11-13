@@ -663,3 +663,20 @@ Each automation captures the session and its current playback rate. Every seek/r
 The rack now exposes `cancelTrackAutomation()`. It increments the automation generation and clears the running gate before its first asynchronous wait, then restores the captured rate through the same serialized Media3 session. `MusicProvider._restoreDjTransitionSfx()` invokes this cancellation before its soft-release waits. This closes the race where a manual pause/seek/next or a deck-promotion cleanup could otherwise be followed by a delayed DJ seek/rate step.
 
 The test matrix now exercises brake, vinyl-stop, scratch, stutter, beat-repeat, retrigger, repeat and repeat-restart. For each preset it verifies that cancellation prevents subsequent seek/rate commands and restores the captured rate. This is still software-level coverage; physical-device audition and interruption testing remain required.
+
+## 25. MediaSession external-navigation parity hardening — implemented, pending exact-head CI and device acceptance
+
+### Direct-controller navigation safety
+
+Android MediaSession controllers can issue playlist navigation directly to the canonical ExoPlayer without entering Flutter's serialized transport lane. The active physical deck now observes canonical media-item transitions and invalidates the standby preload/crossfade state immediately. This prevents a previously prepared incoming item from being promoted after a headset, Bluetooth, notification, or Android Auto controller selects another queue item.
+
+The Flutter bridge's explicit next/previous commands also clear the preload before seeking the canonical queue. This keeps provider-initiated navigation and direct MediaSession navigation under the same stale-standby safety rule. Pause/resume continue to use the existing active-deck listener to freeze and resume an in-flight fade.
+
+### Acceptance still required on device
+
+- Use notification, lock-screen, headset/Bluetooth, and Android Auto controls for play, pause, next, previous, and seek.
+- During a prepared or active crossfade, issue next/previous from each available external surface and verify the selected item remains canonical and no stale incoming deck is promoted.
+- Select a different queue item through any supported external browse/controller surface and verify the standby preload is invalidated.
+- Confirm notification metadata, queue index, position, and provider UI converge on the same selected item after each command.
+
+This is a transport-safety hardening slice, not proof of complete Android Auto browse/search support or full device parity. Exact-head CI and physical-device acceptance remain gates.
