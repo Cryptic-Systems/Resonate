@@ -306,7 +306,9 @@ class Media3PlaybackBridge(
                     result.success(true)
                 }
                 "pause" -> {
-                    Media3PlaybackService.instance?.pauseCrossfade()
+                    // Stop both physical Media3 decks, including a standby
+                    // deck that may be preparing outside an active fade.
+                    Media3PlaybackService.instance?.pauseAllDecks()
                     Media3PlaybackService.instance?.stopAuxiliarySound()
                     connected.pause()
                     result.success(true)

@@ -339,6 +339,16 @@ class Media3PlaybackService : MediaSessionService() {
                 ) {
                     stopAuxiliarySound()
                 }
+                // MediaSession commands (notification, headset, Android Auto)
+                // bypass the Flutter bridge. A canonical pause must silence the
+                // standby deck even when it is only preparing and no fade clock
+                // is active.
+                if (deck === activePlayer && !playWhenReady &&
+                    ::standbyPlayer.isInitialized
+                ) {
+                    standbyPlayer.pause()
+                    pauseCrossfade()
+                }
                 // Never allow a deck to continue output in call/VoIP mode.
                 if (playWhenReady && isCommunicationActive()) {
                     deck.pause()
@@ -573,6 +583,20 @@ class Media3PlaybackService : MediaSessionService() {
         if (!crossfadeClock.pause(android.os.SystemClock.elapsedRealtime())) return false
         fadeRunnable?.let(mainHandler::removeCallbacks)
         standbyPlayer.pause()
+        return true
+    }
+
+    /**
+     * Hard silence barrier for a transport pause. Always pause both physical
+     * decks, not just the deck participating in a currently-running fade.
+     * This covers standby preparation and any stale standby playback state.
+     */
+    fun pauseAllDecks(): Boolean {
+        if (!::activePlayer.isInitialized || !::standbyPlayer.isInitialized) return false
+        pauseCrossfade()
+        activePlayer.pause()
+        standbyPlayer.pause()
+        stopAuxiliarySound()
         return true
     }
 
