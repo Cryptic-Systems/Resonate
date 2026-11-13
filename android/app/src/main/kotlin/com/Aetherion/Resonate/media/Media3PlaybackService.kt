@@ -35,6 +35,7 @@ class Media3PlaybackService : MediaSessionService() {
     // Short DJ samples are mixed by a service-owned player. It has no MediaSession
     // and never requests focus, so the canonical queue remains the sole transport owner.
     private var auxiliaryPlayer: ExoPlayer? = null
+    private var auxiliaryBaseVolume = 0f
     private var fadeRunnable: Runnable? = null
     private var fadeGeneration = 0
     private val crossfadeClock = Media3CrossfadeClock()
@@ -84,7 +85,8 @@ class Media3PlaybackService : MediaSessionService() {
         return try {
             player.stop()
             player.clearMediaItems()
-            player.volume = volume
+            auxiliaryBaseVolume = volume
+            player.volume = auxiliaryBaseVolume
             player.setMediaItem(MediaItem.fromUri(uri))
             player.prepare()
             player.play()
@@ -92,6 +94,15 @@ class Media3PlaybackService : MediaSessionService() {
         } catch (_: Exception) {
             false
         }
+    }
+
+    /** Updates the active sample envelope without touching the music decks. */
+    fun setAuxiliarySoundVolume(volume: Float): Boolean {
+        if (!volume.isFinite() || volume !in 0f..1f) return false
+        val player = auxiliaryPlayer ?: return false
+        auxiliaryBaseVolume = volume
+        player.volume = volume
+        return true
     }
 
     /** Stops the current sample but keeps the reusable auxiliary player alive. */
