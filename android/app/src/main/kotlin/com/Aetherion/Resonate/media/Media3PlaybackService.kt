@@ -1,6 +1,7 @@
 package com.Aetherion.Resonate.media
 
 import android.content.Context
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
@@ -13,6 +14,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.aetherion.resonate.dsp.DspEngineSinkHook
 import com.aetherion.resonate.dsp.DspEngineRegistry
 import androidx.media3.session.MediaSession
@@ -30,6 +32,9 @@ class Media3PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private lateinit var activePlayer: ExoPlayer
     private lateinit var standbyPlayer: ExoPlayer
+    // Short DJ samples are mixed by a service-owned player. It has no MediaSession
+    // and never requests focus, so the canonical queue remains the sole transport owner.
+    private var auxiliaryPlayer: ExoPlayer? = null
     private var fadeRunnable: Runnable? = null
     private var fadeGeneration = 0
     private val crossfadeClock = Media3CrossfadeClock()
@@ -52,6 +57,53 @@ class Media3PlaybackService : MediaSessionService() {
     private fun applyDeckVolumes() {
         if (::activePlayer.isInitialized) activePlayer.volume = gainPolicy.activeVolume()
         if (::standbyPlayer.isInitialized) standbyPlayer.volume = gainPolicy.standbyVolume()
+    }
+
+    /**
+     * Plays a short auxiliary sound without changing the canonical MediaSession
+     * player, queue, playback state, or focus owner.
+     */
+    fun playAuxiliarySound(uri: Uri, volume: Float): Boolean {
+        if (isDestroyed || !uri.isHierarchical ||
+            uri.scheme !in setOf("asset", "file", "content", "http", "https") ||
+            !volume.isFinite() || volume !in 0f..1f
+        ) return false
+        val player = auxiliaryPlayer ?: ExoPlayer.Builder(this)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(this))
+            .build()
+            .also { created ->
+                created.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(C.USAGE_ASSISTANCE_SONIFICATION)
+                        .setContentType(C.AUDIO_CONTENT_TYPE_SONIFICATION)
+                        .build(),
+                    false,
+                )
+                auxiliaryPlayer = created
+            }
+        return try {
+            player.stop()
+            player.clearMediaItems()
+            player.volume = volume
+            player.setMediaItem(MediaItem.fromUri(uri))
+            player.prepare()
+            player.play()
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Stops the current sample but keeps the reusable auxiliary player alive. */
+    fun stopAuxiliarySound(): Boolean {
+        val player = auxiliaryPlayer ?: return true
+        return try {
+            player.stop()
+            player.clearMediaItems()
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     /** Current deck session for session-bound DSP/effects attachment. */
@@ -504,6 +556,8 @@ class Media3PlaybackService : MediaSessionService() {
         mediaSession = null
         if (::activePlayer.isInitialized) activePlayer.release()
         if (::standbyPlayer.isInitialized) standbyPlayer.release()
+        auxiliaryPlayer?.release()
+        auxiliaryPlayer = null
         if (instance === this) instance = null
         super.onDestroy()
     }
