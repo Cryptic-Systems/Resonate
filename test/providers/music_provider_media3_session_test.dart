@@ -51,11 +51,15 @@ Media3ProviderState _state({
     );
 
 class _FakePlaybackSession implements PlaybackEngineSession {
+  _FakePlaybackSession({bool synchronousStates = false})
+      : states = StreamController<Media3ProviderState>.broadcast(
+          sync: synchronousStates,
+        );
+
   final StreamController<int?> audioSessions =
       StreamController<int?>.broadcast();
   final List<String> calls = <String>[];
-  final StreamController<Media3ProviderState> states =
-      StreamController<Media3ProviderState>.broadcast();
+  final StreamController<Media3ProviderState> states;
   List<Song> queue = <Song>[];
   int? loadedIndex;
   PlaybackQueueRepeatMode? repeatModeSet;
@@ -626,7 +630,7 @@ void main() {
     });
 
     test('Pause after crossfade wins over a late Media3 completion callback', () async {
-      final session = _FakePlaybackSession();
+      final session = _FakePlaybackSession(synchronousStates: true);
       final provider = MusicProvider(media3ProviderSession: session);
       final first = _song('late-completion-outgoing');
       final second = _song('late-completion-incoming');
@@ -666,9 +670,8 @@ void main() {
         completed: true,
         position: second.duration,
       ));
-      // Let the completion handler reach its async diagnostic boundary, then
-      // issue Pause while that callback is suspended.
-      await Future<void>.delayed(Duration.zero);
+      // The synchronous fake stream starts the handler inline. Its first
+      // diagnostic await yields, allowing Pause to supersede that completion.
       await provider.pause();
       await Future<void>.delayed(const Duration(milliseconds: 80));
 
