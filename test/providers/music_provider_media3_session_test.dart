@@ -574,14 +574,16 @@ void main() {
 
     test('pause during crossfade fallback cannot be followed by a stale play', () async {
       final session = _FakePlaybackSession()
-        ..throwOnCrossfade = true
-        ..cancelCrossfadeGate = Completer<void>();
+        ..throwOnCrossfade = true;
       final provider = MusicProvider(media3ProviderSession: session);
       final first = _song('pause-fade-out');
       final second = _song('pause-fade-in');
       await provider.prepareMedia3ProviderSession();
       expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
       await provider.setCrossfadeDuration(500);
+      // Ignore the expected cancel issued by the initial play command; only
+      // hold the cleanup belonging to the deliberately failed crossfade.
+      session.cancelCrossfadeGate = Completer<void>();
 
       session.positionValue = const Duration(seconds: 178);
       session.states.add(_state(
@@ -593,7 +595,7 @@ void main() {
       ));
 
       for (var attempt = 0;
-          attempt < 30 && !session.calls.contains('cancelCrossfade');
+          attempt < 60 && !session.calls.contains('crossfade:failed');
           attempt++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
