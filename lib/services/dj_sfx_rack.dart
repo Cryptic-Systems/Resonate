@@ -225,7 +225,8 @@ class DjSfxRack {
     };
     final sessionSafePreset = playbackSession == null
         ? preferred
-        : (_usesEq(preferred) || _isSample(preferred)
+        : (_usesEq(preferred) || _isSample(preferred) ||
+                preferred == DjSfxPreset.echo || preferred == DjSfxPreset.dryEcho
             ? preferred
             : (transitionKind == DjTransitionKind.outroIntro
                 ? DjSfxPreset.filterClose
@@ -311,6 +312,10 @@ class DjSfxRack {
         // the sample through its service-owned auxiliary player; legacy mode
         // retains the existing just_audio implementation.
         unawaited(_playOneshot(activePreset!, score));
+      }
+      if (playbackSession != null &&
+          (activePreset == DjSfxPreset.echo || activePreset == DjSfxPreset.dryEcho)) {
+        unawaited(_playTrackEchoOnSession(outgoingUri, score));
       }
       if (playbackSession == null) {
         if (_usesTrackManipulation(activePreset!)) {
@@ -523,6 +528,45 @@ class DjSfxRack {
       });
     } catch (e) {
       debugPrint('DjSfxRack oneshot $preset: $e');
+    }
+  }
+
+  Future<void> _playTrackEchoOnSession(String? rawUri, double score) async {
+    final session = _playbackSession;
+    if (session is! PlaybackAuxiliaryEffectsBackend || rawUri == null || rawUri.trim().isEmpty) return;
+    final currentMs = session.position.inMilliseconds;
+    final startMs = _musicalEchoStart(currentMs);
+    if (startMs < 0) return;
+    final durationMs = session.duration?.inMilliseconds;
+    final endMs = math.min(durationMs ?? (startMs + 900), startMs + 850);
+    if (endMs <= startMs + 80) return;
+    final trimmed = rawUri.trim();
+    final parsed = Uri.tryParse(trimmed);
+    final sourceUri = parsed != null && parsed.hasScheme ? parsed : Uri.file(trimmed);
+    final gen = ++_oneshotGen;
+    try {
+      await _stopOneshot();
+      if (gen != _oneshotGen || !engaged) return;
+      _oneshotBaseVolume = (score >= 0.85 ? 0.08 : (score >= 0.7 ? 0.10 : 0.12)).clamp(0.05, 0.14);
+      await Future<void>.delayed(const Duration(milliseconds: 220));
+      if (gen != _oneshotGen || !engaged) return;
+      await session.playAuxiliarySound(
+        sourceUri,
+        volume: _oneshotBaseVolume,
+        startPosition: Duration(milliseconds: startMs),
+        endPosition: Duration(milliseconds: endMs),
+      );
+      if (gen != _oneshotGen || !engaged) {
+        await session.stopAuxiliarySound();
+        return;
+      }
+      _auxiliaryOneShotActive = true;
+      Future<void>.delayed(const Duration(milliseconds: 1100), () async {
+        if (gen != _oneshotGen) return;
+        await _stopOneshot();
+      });
+    } catch (e) {
+      debugPrint('DjSfxRack Media3 track echo: $e');
     }
   }
 
