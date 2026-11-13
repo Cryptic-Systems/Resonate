@@ -64,6 +64,8 @@ class DjSfxRack {
   int _trackFxGen = 0;
   int _engageGen = 0;
   bool _trackActionRunning = false;
+  PlaybackEngineSession? _trackAutomationSession;
+  double _trackAutomationOriginalSpeed = 1.0;
   List<int> _beatMs = const <int>[];
   List<int> _phraseAnchors = const <int>[];
 
@@ -194,9 +196,8 @@ class DjSfxRack {
     final generation = ++_engageGen;
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
-    // Media3's session contract currently supports deck-scoped EQ overlays,
-    // not the legacy global reverb/virtualizer, sample-player, or track-seek
-    // effects. Restrict this path to effects that can be owned by both decks.
+    // Media3 session effects are restricted to capabilities implemented by
+    // its canonical service session; track automation uses serialized seek/speed.
     final requested = preset ??
         (playbackSession != null
             ? (transitionKind == DjTransitionKind.outroIntro
@@ -225,6 +226,7 @@ class DjSfxRack {
     final sessionSafePreset = playbackSession == null
         ? preferred
         : (_usesEq(preferred) || _isSample(preferred) ||
+                _usesTrackManipulation(preferred) ||
                 preferred == DjSfxPreset.echo || preferred == DjSfxPreset.dryEcho
             ? preferred
             : (transitionKind == DjTransitionKind.outroIntro
@@ -237,13 +239,12 @@ class DjSfxRack {
     engaged = true;
     _eqTouched = false;
     // Media3 owns both transition decks. Do not retain or even inspect a
-    // legacy AudioPlayer on that path: samples, echo taps and track-mutating
-    // presets remain legacy-only until an auxiliary Media3 player contract is
-    // available.
+    // legacy AudioPlayer on that path; all track operations use the captured
+    // canonical session's serialized transport/speed commands.
     _outgoing = playbackSession == null ? outgoing : null;
     _beatMs = List<int>.from(beatMs)..sort();
     _phraseAnchors = _buildPhraseAnchors(_beatMs);
-    _savedOutgoingSpeed = 1.0;
+    _savedOutgoingSpeed = playbackSession?.playbackSpeed ?? 1.0;
     if (playbackSession == null) {
       try {
         if (outgoing != null) {
@@ -316,10 +317,14 @@ class DjSfxRack {
           (activePreset == DjSfxPreset.echo || activePreset == DjSfxPreset.dryEcho)) {
         unawaited(_playTrackEchoOnSession(outgoingUri, score));
       }
-      if (playbackSession == null) {
-        if (_usesTrackManipulation(activePreset!)) {
+      if (_usesTrackManipulation(activePreset!)) {
+        if (playbackSession != null) {
+          unawaited(_runTrackManipulationOnSession(activePreset!, playbackSession));
+        } else {
           unawaited(_runTrackManipulation(activePreset!));
         }
+      }
+      if (playbackSession == null) {
         if (activePreset == DjSfxPreset.echo ||
             activePreset == DjSfxPreset.dryEcho) {
           unawaited(_playTrackEcho(outgoingUri, score));
@@ -397,6 +402,13 @@ class DjSfxRack {
     // A cancelled track action may still be unwinding an awaited seek/delay.
     // Clear the gate now; its stale finally block must not clear a newer action.
     _trackActionRunning = false;
+    final automationSession = _trackAutomationSession ?? playbackSession ?? _playbackSession;
+    _trackAutomationSession = null;
+    if (automationSession != null) {
+      try {
+        await automationSession.setPlaybackSpeed(_trackAutomationOriginalSpeed);
+      } catch (_) {}
+    }
     final hadActiveEffects = engaged || _eqTouched;
     if (!hadActiveEffects) {
       await _stopOneshot();
@@ -650,6 +662,105 @@ class DjSfxRack {
       p == DjSfxPreset.beatRepeat ||
       p == DjSfxPreset.retrigger ||
       p == DjSfxPreset.brake;
+
+  /// Performs DJ track automation through the canonical session only.
+  /// Every seek/rate step is generation-guarded; restore() invalidates the
+  /// sequence and restores the session's captured playback rate.
+  Future<void> _runTrackManipulationOnSession(
+    DjSfxPreset preset,
+    PlaybackEngineSession session,
+  ) async {
+    if (_trackActionRunning) return;
+    final gen = ++_trackFxGen;
+    final originalSpeed = session.playbackSpeed.clamp(0.5, 2.0).toDouble();
+    final current = session.position.inMilliseconds;
+    if (current < 120) return;
+    _trackActionRunning = true;
+    _trackAutomationSession = session;
+    _trackAutomationOriginalSpeed = originalSpeed;
+    bool currentAction() => gen == _trackFxGen && engaged && identical(_trackAutomationSession, session);
+    Future<void> seekTo(int milliseconds) async {
+      if (!currentAction()) return;
+      await session.seek(Duration(milliseconds: math.max(0, milliseconds)));
+    }
+    Future<void> setSpeed(double speed) async {
+      if (!currentAction()) return;
+      await session.setPlaybackSpeed(speed.clamp(0.5, 2.0).toDouble());
+    }
+    Future<void> pauseFor(int milliseconds) => Future<void>.delayed(Duration(milliseconds: milliseconds));
+    try {
+      if (preset == DjSfxPreset.repeat || preset == DjSfxPreset.repeatRestart) {
+        final anchor = _musicalPhraseAnchor(current);
+        final slice = _musicalSliceMs(anchor);
+        final repeatAnchor = math.max(0, anchor - slice);
+        for (var i = 0; i < 3; i++) {
+          if (!currentAction()) return;
+          await seekTo(repeatAnchor);
+          await setSpeed(originalSpeed);
+          await pauseFor(680);
+        }
+        if (preset == DjSfxPreset.repeatRestart && currentAction()) {
+          await seekTo(0);
+          await setSpeed(originalSpeed);
+        }
+        return;
+      }
+      if (preset == DjSfxPreset.stutter || preset == DjSfxPreset.beatRepeat) {
+        final anchor = _musicalAnchor(current);
+        final beat = _musicalSliceMs(anchor);
+        final slice = preset == DjSfxPreset.stutter ? (beat ~/ 2).clamp(120, 700) : beat.clamp(250, 1400);
+        final start = math.max(0, anchor - slice);
+        final count = preset == DjSfxPreset.stutter ? 5 : 4;
+        for (var i = 0; i < count; i++) {
+          if (!currentAction()) return;
+          await seekTo(start);
+          await setSpeed(originalSpeed);
+          await pauseFor(slice);
+        }
+        return;
+      }
+      if (preset == DjSfxPreset.retrigger) {
+        final anchor = _musicalAnchor(current);
+        final beat = _musicalSliceMs(anchor);
+        final start = math.max(0, anchor - beat);
+        for (var i = 0; i < 3; i++) {
+          if (!currentAction()) return;
+          await seekTo(start);
+          await setSpeed(originalSpeed);
+          await pauseFor(beat.clamp(250, 1400));
+        }
+        return;
+      }
+      if (preset == DjSfxPreset.brake || preset == DjSfxPreset.vinylStop) {
+        for (final multiplier in <double>[0.94, 0.82, 0.70, 0.58, 0.50]) {
+          if (!currentAction()) return;
+          await setSpeed(originalSpeed * multiplier);
+          await pauseFor(110);
+        }
+        return;
+      }
+      final center = _musicalPhraseAnchor(current);
+      const strokes = <int>[120, -100, 150, -130, 80];
+      for (final delta in strokes) {
+        if (!currentAction()) return;
+        await seekTo(center + delta);
+        await setSpeed(originalSpeed * (delta >= 0 ? 1.55 : 0.62));
+        await pauseFor(115);
+      }
+    } catch (e) {
+      debugPrint('DjSfxRack Media3 track manipulation $preset: $e');
+    } finally {
+      if (gen == _trackFxGen) {
+        if (identical(_trackAutomationSession, session)) {
+          try {
+            await session.setPlaybackSpeed(originalSpeed);
+          } catch (_) {}
+          _trackAutomationSession = null;
+        }
+        _trackActionRunning = false;
+      }
+    }
+  }
 
   /// Manipulates the actual outgoing track using just_audio controls.
   Future<void> _runTrackManipulation(DjSfxPreset preset) async {
