@@ -287,6 +287,31 @@ void main() {
       await session.states.close();
     });
 
+    test('restores the provider resume position into the new Media3 session before handoff', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      await provider.enqueueSongs(<Song>[_song('resume'), _song('next')]);
+      provider.currentPosition = const Duration(seconds: 42);
+
+      await provider.prepareMedia3ProviderSession();
+
+      expect(session.calls, contains('seek:42000'));
+      expect(session.positionValue, const Duration(seconds: 42));
+      expect(
+        session.calls.indexOf('loadQueue'),
+        lessThan(session.calls.indexOf('seek:42000')),
+      );
+      expect(
+        session.calls.indexOf('seek:42000'),
+        lessThan(session.calls.indexOf('focus:true')),
+      );
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('routes play, pause, seek, next, previous and stop through the handed-off session', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
