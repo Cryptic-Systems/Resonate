@@ -64,10 +64,16 @@ class Media3PlaybackService : MediaSessionService() {
      * Plays a short auxiliary sound without changing the canonical MediaSession
      * player, queue, playback state, or focus owner.
      */
-    fun playAuxiliarySound(uri: Uri, volume: Float): Boolean {
+    fun playAuxiliarySound(
+        uri: Uri,
+        volume: Float,
+        startPositionMs: Long = 0L,
+        endPositionMs: Long? = null,
+    ): Boolean {
         if (isDestroyed || !uri.isHierarchical ||
             uri.scheme !in setOf("asset", "file", "content", "http", "https") ||
-            !volume.isFinite() || volume !in 0f..1f
+            !volume.isFinite() || volume !in 0f..1f || startPositionMs < 0L ||
+            (endPositionMs != null && endPositionMs <= startPositionMs)
         ) return false
         val player = auxiliaryPlayer ?: ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(this))
@@ -87,7 +93,16 @@ class Media3PlaybackService : MediaSessionService() {
             player.clearMediaItems()
             auxiliaryBaseVolume = volume
             player.volume = auxiliaryBaseVolume
-            player.setMediaItem(MediaItem.fromUri(uri))
+            val item = MediaItem.Builder()
+                .setUri(uri)
+                .setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(startPositionMs)
+                        .apply { endPositionMs?.let { setEndPositionMs(it) } }
+                        .build(),
+                )
+                .build()
+            player.setMediaItem(item)
             player.prepare()
             player.play()
             true
