@@ -637,6 +637,9 @@ class Media3PlaybackRuntime {
     Duration startPosition = Duration.zero,
     Duration? endPosition,
   }) => _run(() async {
+        if (!volume.isFinite || volume < 0.0 || volume > 1.0) {
+          throw ArgumentError.value(volume, 'volume', 'Must be finite and between 0 and 1.');
+        }
         if (startPosition.isNegative ||
             (endPosition != null && (endPosition.isNegative || endPosition <= startPosition))) {
           throw ArgumentError('Auxiliary clip end must be greater than its non-negative start.');
