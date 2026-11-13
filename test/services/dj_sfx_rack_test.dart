@@ -68,7 +68,7 @@ void main() {
       expect(session.clearCalls, ['active', 'standby']);
     });
 
-    test('routes legacy-only samples and track effects to Media3-safe EQ', () async {
+    test('routes auxiliary samples and track automation through Media3 session capabilities', () async {
       final rack = DjSfxRack(random: _SequenceRandom());
       final session = _RecordingDeckOverlaySession();
       final legacyOnlyPresets = <DjSfxPreset>[
@@ -171,6 +171,42 @@ void main() {
       expect(session.seekCalls, hasLength(seekCountAtCancellation));
       expect(session.speedCalls.last, 1.25);
       await rack.restore();
+    });
+
+    test('cancels every Media3 track-manipulation preset without stale commands', () async {
+      const presets = <DjSfxPreset>[
+        DjSfxPreset.brake,
+        DjSfxPreset.vinylStop,
+        DjSfxPreset.scratch,
+        DjSfxPreset.stutter,
+        DjSfxPreset.beatRepeat,
+        DjSfxPreset.retrigger,
+        DjSfxPreset.repeat,
+        DjSfxPreset.repeatRestart,
+      ];
+
+      for (final preset in presets) {
+        final rack = DjSfxRack(random: _SequenceRandom());
+        final session = _RecordingDeckOverlaySession();
+        await rack.engage(
+          energyScore: 0.8,
+          preset: preset,
+          playbackSession: session,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 15));
+        final seeksAtCancellation = session.seekCalls.length;
+        final ratesAtCancellation = session.speedCalls.length;
+
+        await rack.cancelTrackAutomation();
+        final restoredRateCount = session.speedCalls.length;
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+
+        expect(session.seekCalls, hasLength(seeksAtCancellation), reason: '$preset issued a stale seek after cancellation');
+        expect(session.speedCalls, hasLength(restoredRateCount), reason: '$preset issued a stale rate change after cancellation');
+        expect(session.speedCalls.last, 1.25, reason: '$preset did not restore the captured playback rate');
+        expect(restoredRateCount, greaterThanOrEqualTo(ratesAtCancellation));
+        await rack.restore();
+      }
     });
 
     test('retains the engaged Media3 session for tick and restore', () async {
