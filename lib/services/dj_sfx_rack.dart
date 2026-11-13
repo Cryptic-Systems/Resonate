@@ -415,7 +415,6 @@ class DjSfxRack {
     // Cancel before any effect teardown awaits; stale track automation cannot
     // enqueue another seek/rate command behind a user's transport operation.
     await cancelTrackAutomation();
-    final automationSession = playbackSession ?? _playbackSession;
     final hadActiveEffects = engaged || _eqTouched;
     if (!hadActiveEffects) {
       await _stopOneshot();
