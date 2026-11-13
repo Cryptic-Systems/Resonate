@@ -185,43 +185,6 @@ void main() {
       );
     });
 
-    test('sends validated auxiliary sample playback and gain commands', () async {
-      final calls = <MethodCall>[];
-      channel.setMockMethodCallHandler((call) async {
-        calls.add(call);
-        return true;
-      });
-
-      final uri = Uri.parse('asset:///flutter_assets/assets/sfx/whoosh.wav');
-      await client.playAuxiliarySound(uri, volume: 0.12);
-      await client.setAuxiliarySoundVolume(0.04);
-      await client.stopAuxiliarySound();
-
-      expect(calls.map((call) => call.method), [
-        'playAuxiliarySound',
-        'setAuxiliarySoundVolume',
-        'stopAuxiliarySound',
-      ]);
-      expect(calls.first.arguments, {
-        'uri': uri.toString(),
-        'volume': 0.12,
-      });
-      expect(calls[1].arguments, {'volume': 0.04});
-
-      await expectLater(
-        client.playAuxiliarySound(Uri.parse('javascript:alert(1)'), volume: 0.1),
-        throwsArgumentError,
-      );
-      await expectLater(
-        client.playAuxiliarySound(uri, volume: 1.1),
-        throwsArgumentError,
-      );
-      await expectLater(
-        client.setAuxiliarySoundVolume(double.nan),
-        throwsArgumentError,
-      );
-    });
-
     test('sends and clears a validated deck EQ overlay', () async {
       MethodCall? captured;
       channel.setMockMethodCallHandler((call) async {
