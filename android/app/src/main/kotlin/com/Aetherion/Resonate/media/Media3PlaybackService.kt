@@ -19,8 +19,6 @@ import com.aetherion.resonate.dsp.DspEngineSinkHook
 import com.aetherion.resonate.dsp.DspEngineRegistry
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * Media3 playback service with active/standby decks. The provider owns the
@@ -493,9 +491,10 @@ class Media3PlaybackService : MediaSessionService() {
             override fun run() {
                 if (generation != fadeGeneration || isDestroyed) return
                 val progress = crossfadeClock.progress(android.os.SystemClock.elapsedRealtime())
+                val (activeGain, standbyGain) = Media3CrossfadeEnvelope.gains(progress)
                 gainPolicy.setCrossfadeGains(
-                    active = cos(progress * Math.PI.toFloat() / 2f),
-                    standby = sin(progress * Math.PI.toFloat() / 2f),
+                    active = activeGain,
+                    standby = standbyGain,
                 )
                 applyDeckVolumes()
                 if (progress >= 1f) {
