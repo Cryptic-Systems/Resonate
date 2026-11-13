@@ -185,6 +185,10 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
       _client.playAuxiliarySound(uri, volume: volume);
 
   @override
+  Future<void> setAuxiliarySoundVolume(double volume) =>
+      _client.setAuxiliarySoundVolume(volume);
+
+  @override
   Future<void> stopAuxiliarySound() => _client.stopAuxiliarySound();
 
   @override
