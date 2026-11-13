@@ -118,7 +118,7 @@ class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpe
     calls.add('deckSpeeds');
   }
   @override
-  Future<void> playAuxiliarySound(Uri uri, {required double volume}) async => calls.add('auxPlay:' + uri.toString() + ':' + volume.toString());
+  Future<void> playAuxiliarySound(Uri uri, {required double volume, Duration startPosition = Duration.zero, Duration? endPosition}) async => calls.add('auxPlay:' + uri.toString() + ':' + volume.toString() + ':' + startPosition.inMilliseconds.toString() + ':' + (endPosition?.inMilliseconds.toString() ?? 'end'));
   @override
   Future<void> setAuxiliarySoundVolume(double volume) async => calls.add('auxVolume:' + volume.toString());
   @override
@@ -254,7 +254,7 @@ void main() {
       await auxiliary.setAuxiliarySoundVolume(0.02);
       await auxiliary.stopAuxiliarySound();
       expect(backend.calls, [
-        'auxPlay:' + uri.toString() + ':0.08',
+        'auxPlay:' + uri.toString() + ':0.08:0:end',
         'auxVolume:0.02',
         'auxStop',
       ]);
