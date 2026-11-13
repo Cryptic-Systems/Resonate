@@ -40,7 +40,7 @@ PlaybackSnapshot snapshot({
       error: null,
     );
 
-class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend {
+class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   PlaybackSnapshot value = snapshot();
@@ -60,6 +60,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, 
   Duration? crossfadeDuration;
   int cancelCrossfadeCalls = 0;
   final List<String> deckEqCalls = <String>[];
+  final List<String> auxiliaryCalls = <String>[];
   Completer<void>? loadGate;
   Completer<PlaybackSnapshot>? stateGate;
   Completer<void>? stateReadStarted;
@@ -127,6 +128,16 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, 
   @override
   Future<void> clearDeckEqOverlay({required String deck}) async { deckEqCalls.add('clear:$deck'); }
   @override
+  Future<void> playAuxiliarySound(Uri uri, {required double volume}) async {
+    auxiliaryCalls.add('play:' + uri.toString() + ':' + volume.toString());
+  }
+  @override
+  Future<void> setAuxiliarySoundVolume(double volume) async {
+    auxiliaryCalls.add('volume:' + volume.toString());
+  }
+  @override
+  Future<void> stopAuxiliarySound() async { auxiliaryCalls.add('stop'); }
+  @override
   Future<void> setAudioFocusHandling(bool enabled) async {
     lastAudioFocusHandling = enabled;
     commandOrder.add('audioFocus:$enabled');
@@ -178,6 +189,21 @@ void main() {
     tearDown(() async {
       await runtime.dispose();
       await backend.controller.close();
+    });
+
+    test('serializes auxiliary sample lifecycle on the backend command lane', () async {
+      final uri = Uri.parse('asset:///flutter_assets/assets/sfx/impact.wav');
+      await Future.wait<void>([
+        runtime.playAuxiliarySound(uri, volume: 0.1),
+        runtime.setAuxiliarySoundVolume(0.03),
+        runtime.stopAuxiliarySound(),
+      ]);
+      expect(backend.auxiliaryCalls, [
+        'play:' + uri.toString() + ':0.1',
+        'volume:0.03',
+        'stop',
+      ]);
+      await expectLater(runtime.setAuxiliarySoundVolume(1.2), throwsArgumentError);
     });
 
     test('validates and serializes deck EQ overlay commands', () async {
