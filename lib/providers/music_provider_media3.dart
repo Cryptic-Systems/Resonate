@@ -758,10 +758,23 @@ extension MusicProviderMedia3 on MusicProvider {
 
   Future<void> _handleMedia3ProviderCompletion(String completedSongId) async {
     if (!_media3ProviderSessionActive || _disposed) return;
+    final completionTransportEpoch = _userTransportEpoch;
+    // A native completion from the outgoing deck is expected during a
+    // crossfade. The transition owns advancement until it either commits or
+    // performs its same-session fallback.
+    if (_crossfadeInProgress ||
+        _automaticCrossfadeInFlight ||
+        _repeatSelfHandoffInFlight) {
+      await ResonateDiagnostics.record('media3_provider_completion_ignored', {
+        'songId': completedSongId,
+        'reason': 'crossfade_owns_completion',
+      });
+      return;
+    }
     // Completion observation can be delivered asynchronously after the user
     // has already paused at the end of a track. Explicit pause intent wins;
     // never turn a late completion callback into an automatic next/play.
-    if (!_userWantsPlaying) {
+    if (!_userWantsPlaying || _recentlyUserPaused) {
       await ResonateDiagnostics.record('media3_provider_completion_ignored', {
         'songId': completedSongId,
         'reason': 'user_paused',
@@ -775,7 +788,6 @@ extension MusicProviderMedia3 on MusicProvider {
       _modes?.onPlaybackCompleted(completedSong);
     }
     currentPosition = currentDuration ?? currentPosition;
-    _userWantsPlaying = true;
     _publishServiceState();
     notifyListeners();
     await ResonateDiagnostics.record('media3_provider_completion_observed', {
@@ -784,6 +796,24 @@ extension MusicProviderMedia3 on MusicProvider {
       'queueLength': _queue.length,
       'repeatMode': _repeatMode.name,
     });
+    // A Pause/Next/Previous may arrive while the diagnostic/history boundary
+    // yields. Never let this old completion mint a fresh transport token.
+    if (_disposed ||
+        completionTransportEpoch != _userTransportEpoch ||
+        !_userWantsPlaying ||
+        _recentlyUserPaused ||
+        _crossfadeInProgress ||
+        _automaticCrossfadeInFlight ||
+        _repeatSelfHandoffInFlight ||
+        currentSong?.id != completedSongId) {
+      await ResonateDiagnostics.record('media3_provider_completion_ignored', {
+        'songId': completedSongId,
+        'reason': 'transport_changed_before_advance',
+        'completionEpoch': completionTransportEpoch,
+        'currentEpoch': _userTransportEpoch,
+      });
+      return;
+    }
     if (!_completionAdvanceInProgress) {
       await onTrackEnded(completedSongId);
     }

@@ -2817,7 +2817,12 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _advanceAfterCompletion(String completedSongId) {
-    if (_completionAdvanceInProgress) return Future<void>.value();
+    if (_completionAdvanceInProgress ||
+        !_userWantsPlaying ||
+        _recentlyUserPaused ||
+        _disposed) {
+      return Future<void>.value();
+    }
     // Already moved past this track — do not double-advance.
     if (CompletionOwnershipPolicy.shouldIgnoreStaleCompletion(
       currentSongId: currentSong?.id,
@@ -2838,7 +2843,12 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _advanceAfterCompletionInternal(String completedSongId, int intentToken) async {
-    if (_completionAdvanceInProgress) return;
+    bool ownsCompletionAdvance() =>
+        !_disposed &&
+        _playbackIntentGate.isCurrent(intentToken) &&
+        _userWantsPlaying &&
+        !_recentlyUserPaused;
+    if (_completionAdvanceInProgress || !ownsCompletionAdvance()) return;
     // Accept if this is the song that just completed (by id match).
     if (completedSongId.isEmpty) return;
     if (currentSong?.id != completedSongId &&
@@ -2846,19 +2856,20 @@ class MusicProvider extends ChangeNotifier {
       return;
     }
     _completionAdvanceInProgress = true;
-    _userWantsPlaying = true;
     final fromSongId = completedSongId;
     final fromIndex = _queueIndex;
-    await ResonateDiagnostics.record('completion_advance_attempt', {
-      'fromSongId': fromSongId,
-      'queueIndex': fromIndex,
-      'queueLength': _queue.length,
-      'repeatMode': _repeatMode.name,
-    });
     try {
+      await ResonateDiagnostics.record('completion_advance_attempt', {
+        'fromSongId': fromSongId,
+        'queueIndex': fromIndex,
+        'queueLength': _queue.length,
+        'repeatMode': _repeatMode.name,
+      });
+      if (!ownsCompletionAdvance()) return;
       _podcastSession.onCompleted(currentPosition);
-    _audiobookSession.onCompleted(currentPosition);
+      _audiobookSession.onCompleted(currentPosition);
       await _finishHistoryEvent(completed: true);
+      if (!ownsCompletionAdvance()) return;
       if (_repeatMode == PlaybackRepeatMode.one && currentSong != null) {
         // Only defer while soft-loop is *actually* running (not stuck flags).
         if (_repeatSelfHandoffInFlight) {
@@ -2880,20 +2891,29 @@ class MusicProvider extends ChangeNotifier {
         }
         if (_media3ProviderSessionActive) {
           final session = _media3ProviderSession!;
+          if (!ownsCompletionAdvance()) return;
           await session.seek(Duration.zero);
+          if (!ownsCompletionAdvance()) return;
           await session.play();
+          if (!ownsCompletionAdvance()) {
+            await session.pause();
+            return;
+          }
           currentPosition = session.position;
           isPlaying = session.isPlaying;
         } else {
           try {
             await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0));
           } catch (_) {}
+          if (!ownsCompletionAdvance()) return;
           await audioPlayer.seek(Duration.zero);
+          if (!ownsCompletionAdvance()) return;
           try { audioPlayer.play(); } catch (_) {}
           isPlaying = true;
         }
-        _userWantsPlaying = true;
+        if (!ownsCompletionAdvance()) return;
         await _startHistoryEvent(currentSong!);
+        if (!ownsCompletionAdvance()) return;
         _publishServiceState();
         notifyListeners();
         await ResonateDiagnostics.record('completion_advance_result', {
@@ -2910,6 +2930,7 @@ class MusicProvider extends ChangeNotifier {
       var scanFromIndex = fromIndex;
       var skippedFailedTracks = 0;
       for (var attempt = 0; attempt < _queue.length; attempt++) {
+        if (!ownsCompletionAdvance()) return;
         if (_queue.isEmpty) break;
         var candidateIndex = -1;
 
@@ -2937,13 +2958,14 @@ class MusicProvider extends ChangeNotifier {
 
         final candidate = _queue[candidateIndex];
         attemptedSongIds.add(candidate.id);
-        _userWantsPlaying = true;
+        if (!ownsCompletionAdvance()) return;
         final ok = await _playSongInternal(
           candidate,
           queue: _queue,
           startIndex: candidateIndex,
           playbackIntentToken: intentToken,
         );
+        if (!ownsCompletionAdvance()) return;
 
         if (ok) {
           // Guarantee an audible start after auto-advance (no user gesture).
@@ -2952,8 +2974,14 @@ class MusicProvider extends ChangeNotifier {
               : audioPlayer.playing;
           if (!sessionPlaying && _userWantsPlaying) {
             if (_media3ProviderSessionActive) {
+              if (!ownsCompletionAdvance()) return;
               await _media3ProviderSession!.setAudioFocusHandling(true);
+              if (!ownsCompletionAdvance()) return;
               await _media3ProviderSession!.play();
+              if (!ownsCompletionAdvance()) {
+                await _media3ProviderSession!.pause();
+                return;
+              }
               isPlaying = _media3ProviderSession!.isPlaying;
             } else {
               if (!await _claimAudioFocus(reason: 'completion_auto_advance')) {
@@ -2994,10 +3022,12 @@ class MusicProvider extends ChangeNotifier {
           'failedTrackCount': skippedFailedTracks,
           'queueIndex': _queueIndex,
         });
+        if (!ownsCompletionAdvance()) return;
         // _playSongInternal marks user intent false on failure; auto-advance
         // still owns the transport and may try the next distinct queue item.
         _userWantsPlaying = true;
       }
+      if (!ownsCompletionAdvance()) return;
       isPlaying = false;
       _userWantsPlaying = false;
       currentPosition = currentDuration ?? currentPosition;
