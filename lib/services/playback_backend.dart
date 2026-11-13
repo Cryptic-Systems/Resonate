@@ -66,6 +66,7 @@ abstract interface class PlaybackDeckEqOverlayBackend {
 /// canonical queue item or creates a second MediaSession/transport authority.
 abstract interface class PlaybackAuxiliaryEffectsBackend {
   Future<void> playAuxiliarySound(Uri uri, {required double volume});
+  Future<void> setAuxiliarySoundVolume(double volume);
   Future<void> stopAuxiliarySound();
 }
 
