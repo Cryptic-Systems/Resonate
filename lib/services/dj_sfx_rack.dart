@@ -377,9 +377,10 @@ class DjSfxRack {
           if (shot != null) {
             await shot.setVolume(volume);
           } else {
-            final session = playbackSession ?? _playbackSession;
-            if (session != null && session is PlaybackAuxiliaryEffectsBackend) {
-              await (session as PlaybackAuxiliaryEffectsBackend).setAuxiliarySoundVolume(volume);
+            final candidate = playbackSession ?? _playbackSession;
+            if (candidate is PlaybackAuxiliaryEffectsBackend) {
+              final auxiliary = candidate as PlaybackAuxiliaryEffectsBackend;
+              await auxiliary.setAuxiliarySoundVolume(volume);
             }
           }
         } catch (_) {}
@@ -504,9 +505,9 @@ class DjSfxRack {
     try {
       await _stopOneshot();
       if (gen != _oneshotGen || !engaged) return;
-      final session = _playbackSession;
-      if (session != null && session is PlaybackAuxiliaryEffectsBackend) {
-        final auxiliary = session as PlaybackAuxiliaryEffectsBackend;
+      final candidate = _playbackSession;
+      if (candidate is PlaybackAuxiliaryEffectsBackend) {
+        final auxiliary = candidate as PlaybackAuxiliaryEffectsBackend;
         _oneshotBaseVolume = djSfxOneShotVolumeForEnergy(score);
         final assetUri = Uri.parse('asset:///flutter_assets/$asset');
         await auxiliary.playAuxiliarySound(assetUri, volume: _oneshotBaseVolume);
@@ -542,7 +543,9 @@ class DjSfxRack {
 
   Future<void> _playTrackEchoOnSession(String? rawUri, double score) async {
     final session = _playbackSession;
-    if (session == null || session is! PlaybackAuxiliaryEffectsBackend || rawUri == null || rawUri.trim().isEmpty) return;
+    if (session == null) return;
+    if (session is! PlaybackAuxiliaryEffectsBackend) return;
+    if (rawUri == null || rawUri.trim().isEmpty) return;
     final auxiliary = session as PlaybackAuxiliaryEffectsBackend;
     final currentMs = session.position.inMilliseconds;
     final startMs = _musicalEchoStart(currentMs);
@@ -635,10 +638,11 @@ class DjSfxRack {
     _oneshotBaseVolume = 0.0;
     if (_auxiliaryOneShotActive) {
       _auxiliaryOneShotActive = false;
-      final session = _playbackSession;
-      if (session != null && session is PlaybackAuxiliaryEffectsBackend) {
+      final candidate = _playbackSession;
+      if (candidate is PlaybackAuxiliaryEffectsBackend) {
+        final auxiliary = candidate as PlaybackAuxiliaryEffectsBackend;
         try {
-          await (session as PlaybackAuxiliaryEffectsBackend).stopAuxiliarySound();
+          await auxiliary.stopAuxiliarySound();
         } catch (_) {}
       }
     }
