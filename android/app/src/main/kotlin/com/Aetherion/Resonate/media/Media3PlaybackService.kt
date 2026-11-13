@@ -292,9 +292,7 @@ class Media3PlaybackService : MediaSessionService() {
                 // through the Flutter command lane. Invalidate any preloaded
                 // incoming deck on those transitions so an old crossfade can
                 // never promote stale queue content over the user's selection.
-                if (deck === activePlayer &&
-                    reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
-                ) {
+                if (deck === activePlayer) {
                     clearPreload()
                 }
             }
