@@ -111,11 +111,11 @@ class Media3PlaybackState {
       }.contains(map['crossfadeStatus'])
           ? map['crossfadeStatus'] as String
           : 'idle',
-      crossfadeProgress: doubleValue(map['crossfadeProgress'])
+      crossfadeProgress: doubleValue(map['crossfadeProgress'], 0.0)
           .clamp(0.0, 1.0).toDouble(),
       activeDeckVolume: doubleValue(map['activeDeckVolume'])
           .clamp(0.0, 1.0).toDouble(),
-      standbyDeckVolume: doubleValue(map['standbyDeckVolume'])
+      standbyDeckVolume: doubleValue(map['standbyDeckVolume'], 0.0)
           .clamp(0.0, 1.0).toDouble(),
       repeatMode: const {'off', 'one', 'all'}.contains(map['repeatMode'])
           ? map['repeatMode'] as String
