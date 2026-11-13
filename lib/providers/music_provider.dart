@@ -740,6 +740,12 @@ class MusicProvider extends ChangeNotifier {
       await session.clearQueue();
     } else {
       await session.loadQueue(_queue, startIndex: _queueIndex);
+      // Queue restoration also restores the last useful position in Dart.
+      // Install that position on the newly-created native player before the
+      // provider commits Media3 as the sole observation/transport authority.
+      if (currentPosition > Duration.zero) {
+        await session.seek(currentPosition);
+      }
     }
     await session.setRepeatMode(switch (_repeatMode) {
       PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
