@@ -32,6 +32,7 @@ abstract interface class PlaybackEngineSession
   bool get hasError;
   String? get error;
   double get volume;
+  double get playbackSpeed;
   PlaybackQueueRepeatMode get repeatMode;
   bool get shuffleModeEnabled;
 
