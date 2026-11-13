@@ -1969,8 +1969,28 @@ class MusicProvider extends ChangeNotifier {
     // Soft single-engine loop is the fallback if the idle engine load times out.
     if (_repeatMode == PlaybackRepeatMode.one) {
       if (_media3ProviderSessionActive) {
-        // Media3's native REPEAT_MODE_ONE performs a gapless same-item loop.
-        // Do not run the legacy dual-player self-handoff after provider cutover.
+        if (!effectiveCrossfadeEnabled ||
+            _repeatSelfHandoffInFlight ||
+            _transportInFlight ||
+            _crossfadeInProgress) {
+          return;
+        }
+        if (currentSong == null) return;
+        // Repeat-one deliberately uses the standby physical deck. Keep the
+        // same queue occurrence and start the incoming copy at zero.
+        final loopMs = _crossfadeDurationMs.clamp(1600, 4000).toInt();
+        final triggerMs = (loopMs + 500).clamp(1500, 4500).toInt();
+        if (remaining > Duration(milliseconds: triggerMs) ||
+            remaining < const Duration(milliseconds: 1200)) {
+          return;
+        }
+        _repeatSelfHandoffInFlight = true;
+        _automaticCrossfadeInFlight = true;
+        _transitionArmedAt = DateTime.now();
+        unawaited(_runMedia3RepeatSelfCrossfade(
+          loopMs: loopMs,
+          remainingMs: remaining.inMilliseconds,
+        ));
         return;
       }
       if (!effectiveCrossfadeEnabled ||

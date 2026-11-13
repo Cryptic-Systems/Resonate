@@ -75,6 +75,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   bool playingValue = false;
   bool readyValue = true;
   bool completedValue = false;
+  String activeDeckIdValue = 'A';
   Duration positionValue = Duration.zero;
   Duration? durationValue;
 
@@ -203,6 +204,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   Future<void> crossfade({required Duration duration}) async {
     crossfadeDuration = duration;
     calls.add('crossfade:${duration.inMilliseconds}');
+    activeDeckIdValue = activeDeckIdValue == 'A' ? 'B' : 'A';
     final index = preloadedIndex;
     if (index != null && index >= 0 && index < queue.length) {
       currentSongValue = queue[index];
@@ -217,6 +219,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
         playing: true,
         position: positionValue,
         playWhenReady: true,
+        activeDeckId: activeDeckIdValue,
       ));
     }
   }
@@ -396,11 +399,18 @@ void main() {
       expect(provider.activeEngineLabel, 'B');
       expect(provider.isEngineA, isFalse);
 
+      session.playingValue = true;
       provider.configureDjMode(beatAlignActive: true, tempoMatchActive: true, sfxActive: true);
       provider.configureDjMode(beatAlignActive: false, tempoMatchActive: false, sfxActive: false);
       await Future<void>.delayed(const Duration(milliseconds: 40));
       expect(session.calls, contains('deckSpeeds:1.0:1.0'));
       expect(session.calls, contains('gainFactors'));
+      expect(session.gainFactors?['focusDuck'], 1.0,
+          reason: 'DJ recovery must not leave a focus duck applied without focus loss');
+      expect(session.focusHandling, isTrue,
+          reason: 'DJ toggle must not transfer audio-focus ownership');
+      expect(session.playingValue, isTrue,
+          reason: 'DJ toggle must not pause canonical Media3 playback');
       expect(session.calls, isNot(contains('pause')));
       expect(session.calls, isNot(contains('stop')));
 
@@ -548,6 +558,43 @@ void main() {
       expect(session.calls, contains('deckSpeeds:1.0:1.0'));
       expect(provider.currentSong?.id, 'fade-in');
       expect(provider.media3ProviderSessionActive, isTrue);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('repeat-one hands off through the Media3 standby deck and returns to repeat-one', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final song = _song('repeat-one-deck');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
+      await provider.setRepeatMode(PlaybackRepeatMode.one);
+      await provider.setCrossfadeDuration(500);
+
+      session.positionValue = const Duration(seconds: 178);
+      session.states.add(_state(
+        song: song,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+        activeDeckId: 'A',
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 240));
+
+      expect(session.preloadedSong?.id, song.id);
+      expect(session.preloadedIndex, 0);
+      expect(session.preloadedStartPosition, Duration.zero);
+      expect(session.calls, contains('repeat:off'));
+      expect(session.crossfadeDuration, const Duration(milliseconds: 1600));
+      expect(session.calls, contains('repeat:one'));
+      expect(session.repeatModeSet, PlaybackQueueRepeatMode.one);
+      expect(provider.activeEngineLabel, 'B');
+      expect(provider.currentSong?.id, song.id);
+      expect(provider.queueIndex, 0);
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);

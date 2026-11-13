@@ -277,6 +277,155 @@ extension MusicProviderMedia3 on MusicProvider {
     }
   }
 
+  /// Same-track repeat-one handoff on the physical standby deck. The
+  /// canonical queue occurrence remains unchanged; only the active A/B deck
+  /// changes after the native equal-power fade has completed.
+  Future<void> _runMedia3RepeatSelfCrossfade({
+    required int loopMs,
+    required int remainingMs,
+  }) async {
+    final session = _media3ProviderSession;
+    final song = currentSong;
+    final queueIndex = _queueIndex;
+    if (session == null ||
+        !_media3ProviderSessionActive ||
+        song == null ||
+        queueIndex < 0 ||
+        queueIndex >= _queue.length ||
+        !session.isPlaying) {
+      _repeatSelfHandoffInFlight = false;
+      _automaticCrossfadeInFlight = false;
+      _transitionArmedAt = null;
+      return;
+    }
+
+    final generation = ++_automaticTransitionGeneration;
+    final transportEpoch = _userTransportEpoch;
+    final outgoingDeckId = _media3ShadowState?.activeDeckId ?? 'A';
+    final durationMs = math.min(loopMs, remainingMs - 180)
+        .clamp(500, 4000)
+        .toInt();
+    bool stillOwnsTransition() =>
+        _media3ProviderSessionActive &&
+        !_disposed &&
+        generation == _automaticTransitionGeneration &&
+        transportEpoch == _userTransportEpoch &&
+        !_transportInFlight &&
+        !_userTransportPending &&
+        _userWantsPlaying &&
+        effectiveCrossfadeEnabled &&
+        _repeatMode == PlaybackRepeatMode.one;
+
+    try {
+      // Prevent the outgoing deck from repeating itself while the incoming
+      // copy is being prepared and faded in. The new active deck is restored
+      // to repeat-one immediately after promotion.
+      await session.setRepeatMode(PlaybackQueueRepeatMode.off);
+      if (!stillOwnsTransition()) return;
+
+      await session.preloadNext(
+        song,
+        queueIndex: queueIndex,
+        startPosition: Duration.zero,
+      );
+      if (!stillOwnsTransition()) {
+        await session.cancelCrossfade();
+        return;
+      }
+      _preloadedNextSongId = song.id;
+      await session.setDeckPlaybackSpeeds(
+        activeSpeed: 1.0,
+        standbySpeed: 1.0,
+      );
+      if (!stillOwnsTransition()) {
+        await session.cancelCrossfade();
+        return;
+      }
+
+      _crossfadeInProgress = true;
+      final promoted = session.stateStream.firstWhere(
+        (state) => state.activeDeckId != outgoingDeckId && state.isPlaying,
+      );
+      await ResonateDiagnostics.record('media3_repeat_self_crossfade_start', {
+        'songId': song.id,
+        'queueIndex': queueIndex,
+        'fromDeck': outgoingDeckId,
+        'durationMs': durationMs,
+        'remainingMs': remainingMs,
+      });
+      await session.crossfade(duration: Duration(milliseconds: durationMs));
+      final promotedState = await promoted.timeout(
+        Duration(milliseconds: durationMs + 6500),
+        onTimeout: () => throw TimeoutException(
+          'Media3 repeat-one standby deck was not promoted.',
+        ),
+      );
+      if (!stillOwnsTransition()) return;
+
+      await session.setDeckPlaybackSpeeds(
+        activeSpeed: 1.0,
+        standbySpeed: 1.0,
+      );
+      await session.setRepeatMode(PlaybackQueueRepeatMode.one);
+      _preloadedNextSongId = null;
+      _media3DjTransitionPreparation = null;
+      _lastCompletionSongId = null;
+      _reconcileMedia3ProviderSession();
+      _publishServiceState();
+      notifyListeners();
+      await ResonateDiagnostics.record('media3_repeat_self_crossfade_committed', {
+        'songId': song.id,
+        'queueIndex': queueIndex,
+        'fromDeck': outgoingDeckId,
+        'toDeck': promotedState.activeDeckId,
+        'positionMs': promotedState.position.inMilliseconds,
+      });
+    } catch (error) {
+      if (stillOwnsTransition()) {
+        try {
+          await session.cancelCrossfade();
+          await session.setDeckPlaybackSpeeds(
+            activeSpeed: 1.0,
+            standbySpeed: 1.0,
+          );
+          await session.setRepeatMode(PlaybackQueueRepeatMode.one);
+          await ResonateDiagnostics.record('media3_repeat_self_crossfade_fallback', {
+            'songId': song.id,
+            'queueIndex': queueIndex,
+            'error': error.toString(),
+            'fallback': 'native_repeat_one_on_current_deck',
+          });
+        } catch (recoveryError) {
+          await ResonateDiagnostics.record('media3_repeat_self_recovery_failed', {
+            'songId': song.id,
+            'error': error.toString(),
+            'recoveryError': recoveryError.toString(),
+          });
+        }
+      }
+      _preloadedNextSongId = null;
+      _media3DjTransitionPreparation = null;
+    } finally {
+      // A user may change repeat mode while the fade is in flight. Restore the
+      // provider's latest policy, never a stale captured value.
+      if (_media3ProviderSessionActive && !_disposed) {
+        try {
+          await session.setRepeatMode(switch (_repeatMode) {
+            PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
+            PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
+            PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
+          });
+        } catch (_) {}
+      }
+      if (generation == _automaticTransitionGeneration) {
+        _crossfadeInProgress = false;
+        _automaticCrossfadeInFlight = false;
+        _repeatSelfHandoffInFlight = false;
+        _transitionArmedAt = null;
+      }
+    }
+  }
+
   Future<void> _syncMedia3ProviderQueue() async {
     final session = _media3ProviderSession;
     if (session == null || !_media3ProviderSessionActive) return;
