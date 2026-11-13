@@ -774,7 +774,7 @@ extension MusicProviderMedia3 on MusicProvider {
     // Completion observation can be delivered asynchronously after the user
     // has already paused at the end of a track. Explicit pause intent wins;
     // never turn a late completion callback into an automatic next/play.
-    if (!_userWantsPlaying || _recentlyUserPaused) {
+    if (!_userWantsPlaying) {
       await ResonateDiagnostics.record('media3_provider_completion_ignored', {
         'songId': completedSongId,
         'reason': 'user_paused',
@@ -801,7 +801,6 @@ extension MusicProviderMedia3 on MusicProvider {
     if (_disposed ||
         completionTransportEpoch != _userTransportEpoch ||
         !_userWantsPlaying ||
-        _recentlyUserPaused ||
         _crossfadeInProgress ||
         _automaticCrossfadeInFlight ||
         _repeatSelfHandoffInFlight ||

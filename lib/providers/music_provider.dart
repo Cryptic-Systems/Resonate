@@ -2817,10 +2817,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _advanceAfterCompletion(String completedSongId) {
-    if (_completionAdvanceInProgress ||
-        !_userWantsPlaying ||
-        _recentlyUserPaused ||
-        _disposed) {
+    if (_completionAdvanceInProgress || !_userWantsPlaying || _disposed) {
       return Future<void>.value();
     }
     // Already moved past this track — do not double-advance.
@@ -2845,8 +2842,7 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _advanceAfterCompletionInternal(String completedSongId, int intentToken) async {
     bool ownsCompletionAdvance() =>
         !_disposed &&
-        _playbackIntentGate.isCurrent(intentToken) &&
-        !_recentlyUserPaused;
+        _playbackIntentGate.isCurrent(intentToken);
     if (_completionAdvanceInProgress || !ownsCompletionAdvance()) return;
     // Accept if this is the song that just completed (by id match).
     if (completedSongId.isEmpty) return;
