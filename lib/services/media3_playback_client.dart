@@ -291,6 +291,13 @@ class Media3PlaybackClient {
     });
   }
 
+  Future<void> setAuxiliarySoundVolume(double volume) async {
+    if (!volume.isFinite || volume < 0.0 || volume > 1.0) {
+      throw ArgumentError.value(volume, 'volume', 'Must be finite and between 0 and 1.');
+    }
+    await _invokeAccepted('setAuxiliarySoundVolume', <String, Object>{'volume': volume});
+  }
+
   Future<void> stopAuxiliarySound() => _command('stopAuxiliarySound');
 
   /// Controls whether the Media3 active deck requests Android audio focus.
