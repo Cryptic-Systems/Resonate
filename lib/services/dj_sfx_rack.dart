@@ -531,6 +531,8 @@ class DjSfxRack {
         } catch (_) {}
       }
     }
+  }
+
   bool _usesTrackManipulation(DjSfxPreset p) =>
       p == DjSfxPreset.repeat ||
       p == DjSfxPreset.repeatRestart ||
