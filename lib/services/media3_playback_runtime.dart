@@ -631,12 +631,26 @@ class Media3PlaybackRuntime {
   /// other across the Flutter/native boundary.
   /// Dispatches auxiliary sample playback on the same serialized native
   /// command lane as transport and deck effects.
-  Future<void> playAuxiliarySound(Uri uri, {required double volume}) => _run(() async {
+  Future<void> playAuxiliarySound(
+    Uri uri, {
+    required double volume,
+    Duration startPosition = Duration.zero,
+    Duration? endPosition,
+  }) => _run(() async {
+        if (startPosition.isNegative ||
+            (endPosition != null && (endPosition.isNegative || endPosition <= startPosition))) {
+          throw ArgumentError('Auxiliary clip end must be greater than its non-negative start.');
+        }
         final backend = _backend;
         if (backend is! PlaybackAuxiliaryEffectsBackend) {
           throw UnsupportedError('The playback backend has no auxiliary-effects capability.');
         }
-        await backend.playAuxiliarySound(uri, volume: volume);
+        await backend.playAuxiliarySound(
+          uri,
+          volume: volume,
+          startPosition: startPosition,
+          endPosition: endPosition,
+        );
       });
 
   Future<void> setAuxiliarySoundVolume(double volume) => _run(() async {
