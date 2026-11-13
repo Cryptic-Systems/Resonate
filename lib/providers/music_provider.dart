@@ -382,6 +382,9 @@ class MusicProvider extends ChangeNotifier {
   Timer? _systemVolumePollTimer;
   Timer? _endOfTrackWatchdog;
   String? _lastCompletionSongId;
+  String? _pendingMedia3CompletionSongId;
+  String? _pendingMedia3CompletionDeckId;
+  int? _pendingMedia3CompletionTransportEpoch;
   final PlayerStreamBinder _playerStreamBinder = PlayerStreamBinder();
   StreamSubscription<int?>? _currentIndexSubscription;
   StreamSubscription<double>? _volumeSubscription;

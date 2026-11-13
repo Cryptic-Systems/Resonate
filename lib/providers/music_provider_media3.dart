@@ -83,6 +83,7 @@ extension MusicProviderMedia3 on MusicProvider {
           transportEpoch == _userTransportEpoch) {
         _crossfadePreloadInFlight = false;
       }
+      _drainPendingMedia3Completion();
     }
   }
 
@@ -93,6 +94,7 @@ extension MusicProviderMedia3 on MusicProvider {
       _automaticCrossfadeInFlight = false;
       _crossfadeInProgress = false;
       _transitionArmedAt = null;
+      _drainPendingMedia3Completion();
       return;
     }
     final generation = _authority.beginAutomatic('media3_automatic_crossfade');
@@ -116,6 +118,7 @@ extension MusicProviderMedia3 on MusicProvider {
       _automaticCrossfadeInFlight = false;
       _crossfadeInProgress = false;
       _transitionArmedAt = null;
+      _drainPendingMedia3Completion();
       return;
     }
 
@@ -347,6 +350,7 @@ extension MusicProviderMedia3 on MusicProvider {
         _lastDjIncomingBeatMs = const <int>[];
         _lastDjIncomingBpm = null;
       }
+      _drainPendingMedia3Completion();
     }
   }
 
@@ -507,6 +511,7 @@ extension MusicProviderMedia3 on MusicProvider {
         _repeatSelfHandoffInFlight = false;
         _transitionArmedAt = null;
       }
+      _drainPendingMedia3Completion();
     }
   }
 
@@ -753,10 +758,18 @@ extension MusicProviderMedia3 on MusicProvider {
     // performs its same-session fallback.
     if (_crossfadeInProgress ||
         _automaticCrossfadeInFlight ||
-        _repeatSelfHandoffInFlight) {
-      await ResonateDiagnostics.record('media3_provider_completion_ignored', {
+        _repeatSelfHandoffInFlight ||
+        _crossfadePreloadInFlight) {
+      // Defer instead of dropping: if a transition is cancelled without
+      // promoting a new deck, the still-active completed track must advance.
+      _pendingMedia3CompletionSongId = completedSongId;
+      _pendingMedia3CompletionDeckId =
+          _media3ShadowState?.activeDeckId ?? 'A';
+      _pendingMedia3CompletionTransportEpoch = completionTransportEpoch;
+      await ResonateDiagnostics.record('media3_provider_completion_deferred', {
         'songId': completedSongId,
-        'reason': 'crossfade_owns_completion',
+        'activeDeckId': _pendingMedia3CompletionDeckId,
+        'transportEpoch': completionTransportEpoch,
       });
       return;
     }
@@ -805,6 +818,30 @@ extension MusicProviderMedia3 on MusicProvider {
     if (!_completionAdvanceInProgress) {
       await onTrackEnded(completedSongId);
     }
+  }
+
+  void _drainPendingMedia3Completion() {
+    final songId = _pendingMedia3CompletionSongId;
+    final deckId = _pendingMedia3CompletionDeckId;
+    final transportEpoch = _pendingMedia3CompletionTransportEpoch;
+    _pendingMedia3CompletionSongId = null;
+    _pendingMedia3CompletionDeckId = null;
+    _pendingMedia3CompletionTransportEpoch = null;
+    if (songId == null ||
+        deckId == null ||
+        transportEpoch == null ||
+        _disposed ||
+        !_userWantsPlaying ||
+        transportEpoch != _userTransportEpoch ||
+        currentSong?.id != songId ||
+        (_media3ShadowState?.activeDeckId ?? 'A') != deckId ||
+        _crossfadeInProgress ||
+        _automaticCrossfadeInFlight ||
+        _repeatSelfHandoffInFlight ||
+        _crossfadePreloadInFlight) {
+      return;
+    }
+    unawaited(_handleMedia3ProviderCompletion(songId));
   }
 
   void _recoverMedia3ProviderPlayback() {
