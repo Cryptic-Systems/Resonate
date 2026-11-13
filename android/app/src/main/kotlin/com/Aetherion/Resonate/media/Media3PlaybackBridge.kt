@@ -399,6 +399,16 @@ class Media3PlaybackBridge(
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_AUXILIARY_UNAVAILABLE", "The auxiliary Media3 player is unavailable.", null)
                 }
+                "setAuxiliarySoundVolume" -> {
+                    val volume = call.argument<Number>("volume")?.toFloat()
+                    if (volume == null || !volume.isFinite() || volume !in 0f..1f) {
+                        result.error("INVALID_AUXILIARY_VOLUME", "Volume must be finite and between 0 and 1.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setAuxiliarySoundVolume(volume) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_AUXILIARY_UNAVAILABLE", "The auxiliary Media3 player is unavailable.", null)
+                }
                 "stopAuxiliarySound" -> {
                     val accepted = Media3PlaybackService.instance?.stopAuxiliarySound() == true
                     if (accepted) result.success(true)
