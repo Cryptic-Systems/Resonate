@@ -18,9 +18,14 @@ extension MusicProviderAudioEffectsLifecycle on MusicProvider {
     AndroidEqualizer eq,
     AndroidLoudnessEnhancer loud,
   ) async {
-    // Preserve the existing delay and fire-and-forget behavior. The controller
-    // performs session attach and guards native effect failures.
+    // Once Media3 owns playback, its active-session observer in
+    // AudioEffectsProvider is the only permitted session-attach path. Do not
+    // reattach native effects to a stopped legacy EnginePair deck.
+    if (media3ProviderSessionActive) return;
+    // Preserve the existing delay and fire-and-forget behavior for the
+    // legacy engine, including a final authority check after the delay.
     unawaited(Future<void>.delayed(const Duration(milliseconds: 500), () async {
+      if (media3ProviderSessionActive) return;
       try {
         await _audioEffectsController.activateFor(player);
       } catch (e) {
