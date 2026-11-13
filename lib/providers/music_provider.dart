@@ -570,7 +570,10 @@ class MusicProvider extends ChangeNotifier {
       return false;
     }
     if (currentSong == null || currentSong!.filePath.trim().isEmpty) return false;
-    if (!audioPlayer.playing && !_userWantsPlaying) return false;
+    final playing = _media3ProviderSessionActive
+        ? _media3ProviderSession!.isPlaying
+        : audioPlayer.playing;
+    if (!playing && !_userWantsPlaying) return false;
     return true;
   }
 
