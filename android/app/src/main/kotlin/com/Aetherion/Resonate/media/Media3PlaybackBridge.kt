@@ -385,6 +385,25 @@ class Media3PlaybackBridge(
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_DSP_UNAVAILABLE", "The deck EQ overlay could not be cleared.", null)
                 }
+                "playAuxiliarySound" -> {
+                    val source = call.argument<String>("uri")
+                    val volume = call.argument<Number>("volume")?.toFloat()
+                    val uri = source?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+                    if (uri == null || uri.scheme !in setOf("asset", "file", "content", "http", "https") ||
+                        volume == null || !volume.isFinite() || volume !in 0f..1f
+                    ) {
+                        result.error("INVALID_AUXILIARY_SOUND", "A supported URI and volume from 0 to 1 are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.playAuxiliarySound(uri, volume) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_AUXILIARY_UNAVAILABLE", "The auxiliary Media3 player is unavailable.", null)
+                }
+                "stopAuxiliarySound" -> {
+                    val accepted = Media3PlaybackService.instance?.stopAuxiliarySound() == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_AUXILIARY_UNAVAILABLE", "The auxiliary Media3 player is unavailable.", null)
+                }
                 "setAudioFocusHandling" -> {
                     val enabled = call.argument<Boolean>("enabled")
                     if (enabled == null) {
