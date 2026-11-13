@@ -65,7 +65,12 @@ abstract interface class PlaybackDeckEqOverlayBackend {
 /// Auxiliary audio is mixed by the Media3 service and never replaces the
 /// canonical queue item or creates a second MediaSession/transport authority.
 abstract interface class PlaybackAuxiliaryEffectsBackend {
-  Future<void> playAuxiliarySound(Uri uri, {required double volume});
+  Future<void> playAuxiliarySound(
+    Uri uri, {
+    required double volume,
+    Duration startPosition = Duration.zero,
+    Duration? endPosition,
+  });
   Future<void> setAuxiliarySoundVolume(double volume);
   Future<void> stopAuxiliarySound();
 }
