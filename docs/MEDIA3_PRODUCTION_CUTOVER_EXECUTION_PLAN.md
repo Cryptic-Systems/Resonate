@@ -628,3 +628,31 @@ The DJ rack now routes sample presets through the service-owned auxiliary player
 - Native service behavior is compile-gated by Android CI; no physical-device auxiliary mixing, audio-focus, or sample asset audition is implied until that test is performed.
 
 Next effect parity slice: implement cancellable, engine-neutral active-deck seek/rate automation for brake/scratch/stutter/repeat/retrigger, with restoration guarantees across interruption, manual transport, crossfade promotion, and recovery. Do not re-enable those presets by calling legacy `AudioPlayer` methods under Media3 authority.
+
+
+## 24. Cancellable Media3 DJ track automation — implemented, pending exact-head CI and device acceptance
+
+### Session authority and behavior
+
+DJ track-mutating presets now execute through the captured `PlaybackEngineSession`, never through a legacy `AudioPlayer`, when Media3 is authoritative. The session exposes its tracked playback rate; the Media3 provider session updates that value only after the serialized backend command succeeds.
+
+The session automation path covers:
+
+- **Brake / vinyl stop:** a bounded deceleration envelope.
+- **Scratch:** phrase-relative seek strokes with alternating rate accents.
+- **Stutter / beat-repeat:** repeated beat- or half-beat slices.
+- **Retrigger:** repeated beat-aligned slice playback.
+- **Repeat / repeat-restart:** phrase-aligned repeats, with optional return to the start.
+
+The phrase-aware preset chooser is now used for Media3 transitions too. Aggressiveness policy remains in force; balanced mode continues to exclude its intentionally restricted effects, while musical mode can select the session-capable track effects.
+
+### Cancellation and restoration
+
+Each automation captures the session and its current playback rate. Every seek/rate step checks the rack generation and session identity. Restoring the rack invalidates pending steps, restores the captured playback rate, and clears the session reference. The provider's manual-transport preemption already invokes DJ SFX restoration before handing transport to the user, and crossfade/transition cleanup uses the same restore path.
+
+### Coverage and remaining acceptance
+
+- Rack tests verify Media3 preset routing, brake-rate restoration, and scratch seeks through the canonical session.
+- The Media3 session's playback-rate getter tracks successful serialized rate commands.
+- Exact-head Flutter analysis/tests and Android build are still required.
+- Physical-device acceptance must audition each effect during normal playback and crossfade, then interrupt with pause/seek/next and verify no stale seek/rate command or altered playback rate survives.
