@@ -170,6 +170,7 @@ void main() {
     });
 
     test('projects the active physical A/B deck identity', () async {
+      await bridge.start();
       final deckB = bridge.states.first;
       backend.value = _snapshot(mediaId: 'track-1', activeDeckId: 'B');
       backend.controller.add(backend.value);

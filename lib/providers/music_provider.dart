@@ -1909,7 +1909,7 @@ class MusicProvider extends ChangeNotifier {
       songId: song.id,
       positionMs: raw,
       durationMs: cap,
-      force: force,
+      force: force || _resumeSongId != song.id,
     );
     if (shouldWrite) unawaited(_resumeStore.persist());
   }
