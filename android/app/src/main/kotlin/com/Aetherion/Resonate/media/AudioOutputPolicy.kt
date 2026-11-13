@@ -9,4 +9,10 @@ package com.Aetherion.Resonate.media
 internal object AudioOutputPolicy {
     fun handlesBecomingNoisy(isCanonicalActiveDeck: Boolean): Boolean =
         isCanonicalActiveDeck
+
+    /** Only the canonical MediaSession player may request transient/permanent focus. */
+    fun handlesAudioFocus(
+        isCanonicalActiveDeck: Boolean,
+        focusHandlingEnabled: Boolean,
+    ): Boolean = isCanonicalActiveDeck && focusHandlingEnabled
 }
