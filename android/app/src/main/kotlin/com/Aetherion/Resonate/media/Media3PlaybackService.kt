@@ -148,10 +148,22 @@ class Media3PlaybackService : MediaSessionService() {
         if (enabled && isCommunicationActive()) return false
         media3AudioFocusEnabled = enabled
         if (::activePlayer.isInitialized) {
-            activePlayer.setAudioAttributes(audioAttributes(), enabled)
+            activePlayer.setAudioAttributes(
+                audioAttributes(),
+                AudioOutputPolicy.handlesAudioFocus(
+                    isCanonicalActiveDeck = true,
+                    focusHandlingEnabled = enabled,
+                ),
+            )
         }
         if (::standbyPlayer.isInitialized) {
-            standbyPlayer.setAudioAttributes(audioAttributes(), false)
+            standbyPlayer.setAudioAttributes(
+                audioAttributes(),
+                AudioOutputPolicy.handlesAudioFocus(
+                    isCanonicalActiveDeck = false,
+                    focusHandlingEnabled = enabled,
+                ),
+            )
         }
         return true
     }
@@ -245,7 +257,13 @@ class Media3PlaybackService : MediaSessionService() {
         },
     ).build().apply {
         val deck = this
-        setAudioAttributes(audioAttributes(), handleAudioFocus)
+        setAudioAttributes(
+            audioAttributes(),
+            AudioOutputPolicy.handlesAudioFocus(
+                isCanonicalActiveDeck = deckId == activeDeckId,
+                focusHandlingEnabled = handleAudioFocus,
+            ),
+        )
         // Only the canonical active deck owns the noisy-output policy. The
         // standby deck must never independently react to a route change.
         setHandleAudioBecomingNoisy(
@@ -478,9 +496,21 @@ class Media3PlaybackService : MediaSessionService() {
                     // now-standby deck so the next preload starts from the new
                     // active rate rather than a stale outgoing correction.
                     standbyPlayer.playbackParameters = activePlayer.playbackParameters
-                    oldPlayer.setAudioAttributes(audioAttributes(), false)
+                    oldPlayer.setAudioAttributes(
+                        audioAttributes(),
+                        AudioOutputPolicy.handlesAudioFocus(
+                            isCanonicalActiveDeck = false,
+                            focusHandlingEnabled = media3AudioFocusEnabled,
+                        ),
+                    )
                     oldPlayer.setHandleAudioBecomingNoisy(false)
-                    activePlayer.setAudioAttributes(audioAttributes(), media3AudioFocusEnabled)
+                    activePlayer.setAudioAttributes(
+                        audioAttributes(),
+                        AudioOutputPolicy.handlesAudioFocus(
+                            isCanonicalActiveDeck = true,
+                            focusHandlingEnabled = media3AudioFocusEnabled,
+                        ),
+                    )
                     activePlayer.setHandleAudioBecomingNoisy(
                         AudioOutputPolicy.handlesBecomingNoisy(true),
                     )
