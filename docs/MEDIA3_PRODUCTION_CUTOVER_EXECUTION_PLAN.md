@@ -627,7 +627,7 @@ The DJ rack now routes sample presets through the service-owned auxiliary player
 - Provider-session tests cover the optional capability through the canonical session.
 - Native service behavior is compile-gated by Android CI; no physical-device auxiliary mixing, audio-focus, or sample asset audition is implied until that test is performed.
 
-Next effect parity slice: implement cancellable, engine-neutral active-deck seek/rate automation for brake/scratch/stutter/repeat/retrigger, with restoration guarantees across interruption, manual transport, crossfade promotion, and recovery. Do not re-enable those presets by calling legacy `AudioPlayer` methods under Media3 authority.
+This was the initial auxiliary-effects milestone. The follow-on active-deck automation contract and supported preset routing are implemented in section 24; the remaining acceptance gate is exact-head CI plus device testing.
 
 
 ## 24. Cancellable Media3 DJ track automation — implemented, pending exact-head CI and device acceptance
@@ -656,3 +656,10 @@ Each automation captures the session and its current playback rate. Every seek/r
 - The Media3 session's playback-rate getter tracks successful serialized rate commands.
 - Exact-head Flutter analysis/tests and Android build are still required.
 - Physical-device acceptance must audition each effect during normal playback and crossfade, then interrupt with pause/seek/next and verify no stale seek/rate command or altered playback rate survives.
+
+
+### Cancellation hardening follow-up
+
+The rack now exposes `cancelTrackAutomation()`. It increments the automation generation and clears the running gate before its first asynchronous wait, then restores the captured rate through the same serialized Media3 session. `MusicProvider._restoreDjTransitionSfx()` invokes this cancellation before its soft-release waits. This closes the race where a manual pause/seek/next or a deck-promotion cleanup could otherwise be followed by a delayed DJ seek/rate step.
+
+The test matrix now exercises brake, vinyl-stop, scratch, stutter, beat-repeat, retrigger, repeat and repeat-restart. For each preset it verifies that cancellation prevents subsequent seek/rate commands and restores the captured rate. This is still software-level coverage; physical-device audition and interruption testing remain required.
