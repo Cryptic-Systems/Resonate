@@ -15,3 +15,36 @@ class AudioOutputPolicyTest {
         assertFalse(AudioOutputPolicy.handlesBecomingNoisy(isCanonicalActiveDeck = false))
     }
 }
+
+    @Test
+    fun onlyCanonicalActiveDeckMayOwnAudioFocus() {
+        assertTrue(
+            AudioOutputPolicy.handlesAudioFocus(
+                isCanonicalActiveDeck = true,
+                focusHandlingEnabled = true,
+            ),
+        )
+        assertFalse(
+            AudioOutputPolicy.handlesAudioFocus(
+                isCanonicalActiveDeck = false,
+                focusHandlingEnabled = true,
+            ),
+        )
+    }
+
+    @Test
+    fun focusRequestsRemainDisabledUntilProviderEnablesThem() {
+        assertFalse(
+            AudioOutputPolicy.handlesAudioFocus(
+                isCanonicalActiveDeck = true,
+                focusHandlingEnabled = false,
+            ),
+        )
+        assertFalse(
+            AudioOutputPolicy.handlesAudioFocus(
+                isCanonicalActiveDeck = false,
+                focusHandlingEnabled = false,
+            ),
+        )
+    }
+}
