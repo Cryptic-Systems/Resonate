@@ -151,6 +151,28 @@ void main() {
       expect(session.speedCalls.last, 1.25);
     });
 
+    test('cancels Media3 scratch steps immediately and restores playback rate', () async {
+      final rack = DjSfxRack(random: _SequenceRandom());
+      final session = _RecordingDeckOverlaySession();
+
+      await rack.engage(
+        energyScore: 0.8,
+        preset: DjSfxPreset.scratch,
+        playbackSession: session,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final seekCountAtCancellation = session.seekCalls.length;
+      expect(seekCountAtCancellation, greaterThan(0));
+
+      final cancellation = rack.cancelTrackAutomation();
+      await cancellation;
+      await Future<void>.delayed(const Duration(milliseconds: 260));
+
+      expect(session.seekCalls, hasLength(seekCountAtCancellation));
+      expect(session.speedCalls.last, 1.25);
+      await rack.restore();
+    });
+
     test('retains the engaged Media3 session for tick and restore', () async {
       final rack = DjSfxRack(random: _SequenceRandom());
       final session = _RecordingDeckOverlaySession();
