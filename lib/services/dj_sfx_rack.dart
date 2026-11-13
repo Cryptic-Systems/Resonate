@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio_effects_bridge.dart';
 import 'playback_engine_session.dart';
+import 'playback_backend.dart';
 import '../dj_engine/core/dj_types.dart';
 import '../dj_engine/core/dj_policy.dart';
 
@@ -59,6 +60,7 @@ class DjSfxRack {
   AudioPlayer? _oneshot;
   int _oneshotGen = 0;
   double _oneshotBaseVolume = 0.0;
+  bool _auxiliaryOneShotActive = false;
   int _delayedSfxGen = 0;
   int _trackFxGen = 0;
   int _engageGen = 0;
@@ -223,8 +225,7 @@ class DjSfxRack {
     };
     final sessionSafePreset = playbackSession == null
         ? preferred
-        : (preferred == DjSfxPreset.filterOpen ||
-                preferred == DjSfxPreset.filterClose
+        : (_usesEq(preferred) || _isSample(preferred)
             ? preferred
             : (transitionKind == DjTransitionKind.outroIntro
                 ? DjSfxPreset.filterClose
@@ -305,11 +306,13 @@ class DjSfxRack {
       // outgoing just_audio deck. They must never execute under Media3 session
       // authority, even if a future preset-selection change admits such a
       // preset accidentally.
+      if (_isSample(activePreset!)) {
+        // Fire one-shot early so it sits over the outgoing fade. Media3 routes
+        // the sample through its service-owned auxiliary player; legacy mode
+        // retains the existing just_audio implementation.
+        unawaited(_playOneshot(activePreset!, score));
+      }
       if (playbackSession == null) {
-        // Fire one-shot early so it sits over the outgoing fade.
-        if (_isSample(activePreset!)) {
-          unawaited(_playOneshot(activePreset!, score));
-        }
         if (_usesTrackManipulation(activePreset!)) {
           unawaited(_runTrackManipulation(activePreset!));
         }
@@ -358,13 +361,21 @@ class DjSfxRack {
       }
       // Duck oneshot under the incoming rise so samples fade with the blend.
       final shot = _oneshot;
-      if (shot != null && _oneshotBaseVolume > 0) {
+      if ((shot != null || _auxiliaryOneShotActive) && _oneshotBaseVolume > 0) {
         final progress = t.clamp(0.0, 1.6);
         final duck = progress <= 1.0
             ? (1.0 - progress * 0.85)
             : (0.15 * (1.6 - progress) / 0.6).clamp(0.0, 0.15);
+        final volume = (_oneshotBaseVolume * duck).clamp(0.0, 0.14);
         try {
-          await shot.setVolume((_oneshotBaseVolume * duck).clamp(0.0, 0.14));
+          if (shot != null) {
+            await shot.setVolume(volume);
+          } else {
+            final session = playbackSession ?? _playbackSession;
+            if (session is PlaybackAuxiliaryEffectsBackend) {
+              await session.setAuxiliarySoundVolume(volume);
+            }
+          }
         } catch (_) {}
       }
     } catch (_) {}
@@ -480,6 +491,22 @@ class DjSfxRack {
     try {
       await _stopOneshot();
       if (gen != _oneshotGen || !engaged) return;
+      final session = _playbackSession;
+      if (session is PlaybackAuxiliaryEffectsBackend) {
+        _oneshotBaseVolume = djSfxOneShotVolumeForEnergy(score);
+        final assetUri = Uri.parse('asset:///flutter_assets/$asset');
+        await session.playAuxiliarySound(assetUri, volume: _oneshotBaseVolume);
+        if (gen != _oneshotGen || !engaged) {
+          await session.stopAuxiliarySound();
+          return;
+        }
+        _auxiliaryOneShotActive = true;
+        Future<void>.delayed(const Duration(milliseconds: 900), () async {
+          if (gen != _oneshotGen) return;
+          await _stopOneshot();
+        });
+        return;
+      }
       final player = AudioPlayer();
       _oneshot = player;
       // Start quietly and let tick() duck the sample further as the
@@ -552,6 +579,15 @@ class DjSfxRack {
     final p = _oneshot;
     _oneshot = null;
     _oneshotBaseVolume = 0.0;
+    if (_auxiliaryOneShotActive) {
+      _auxiliaryOneShotActive = false;
+      final session = _playbackSession;
+      if (session is PlaybackAuxiliaryEffectsBackend) {
+        try {
+          await session.stopAuxiliarySound();
+        } catch (_) {}
+      }
+    }
     if (p == null) return;
     try {
       await p.stop();
