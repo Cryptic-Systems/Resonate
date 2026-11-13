@@ -5,7 +5,6 @@ import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/dsp_settings.dart';
@@ -32,7 +31,7 @@ class StudioBand {
   });
 }
 
-/// Hardware band exposed by AndroidEqualizer (device-dependent count).
+/// Hardware band exposed by legacy hardware equalizer (device-dependent count).
 class EqualizerBandState {
   final int index;
   final double centerFrequency;
@@ -79,13 +78,13 @@ class EqualizerPreset {
 
 /// Software 10-band equalizer model.
 ///
-/// Android's [AndroidEqualizer] only exposes as many bands as the device DSP
+/// Android's [legacy hardware equalizer] only exposes as many bands as the device DSP
 /// provides (often 5). This provider always owns a fixed 10-band studio curve
 /// and maps it onto hardware bands. Preamp is applied via
-/// [AndroidLoudnessEnhancer] when available.
+/// [legacy hardware loudness enhancer] when available.
 class EqualizerProvider extends ChangeNotifier {
-  AndroidEqualizer? _androidEqualizer;
-  AndroidLoudnessEnhancer? _loudnessEnhancer;
+  dynamic _androidEqualizer;
+  dynamic _loudnessEnhancer;
 
   final List<StudioBand> studioBands = [];
   final List<EqualizerBandState> bandStates = []; // hardware mirror
@@ -154,8 +153,8 @@ class EqualizerProvider extends ChangeNotifier {
   final ResonateDspPipeline _dspPipeline = ResonateDspPipeline();
 
   EqualizerProvider({
-    AndroidEqualizer? equalizer,
-    AndroidLoudnessEnhancer? loudnessEnhancer,
+    dynamic equalizer,
+    dynamic loudnessEnhancer,
     MusicProvider? music,
     BluetoothProvider? bluetooth,
   })  : _androidEqualizer = equalizer,
@@ -491,8 +490,8 @@ class EqualizerProvider extends ChangeNotifier {
 
   /// Re-bind when MusicProvider switches active engine (A/B).
   void attachHardware({
-    AndroidEqualizer? equalizer,
-    AndroidLoudnessEnhancer? loudnessEnhancer,
+    dynamic equalizer,
+    dynamic loudnessEnhancer,
   }) {
     _androidEqualizer = equalizer;
     _loudnessEnhancer = loudnessEnhancer;
@@ -562,7 +561,7 @@ class EqualizerProvider extends ChangeNotifier {
 
   Future<void> _initialize() async {
     try {
-      // Do NOT await AndroidEqualizer.parameters here. That completer finishes
+      // Do NOT await legacy hardware equalizer.parameters here. That completer finishes
       // at first play and then setEnabled/setGain races session attach.
       final prefs = await SharedPreferences.getInstance();
       final canonical = await DspSettings.load();

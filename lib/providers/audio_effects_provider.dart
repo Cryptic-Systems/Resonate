@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/dsp_settings.dart';
 import '../services/audio_effects_bridge.dart';
@@ -9,9 +8,8 @@ import '../services/playback_engine_session.dart';
 import '../services/media3_provider_state_bridge.dart';
 
 class AudioEffectsProvider extends ChangeNotifier {
-  final AudioPlayer? player;
-  final List<AudioPlayer> sessionPlayers;
-  final AndroidLoudnessEnhancer? loudnessEnhancer;
+  /// The single source of playback session IDs for auxiliary effects.
+  /// Media3 reports both active and standby deck sessions during crossfade.
   final PlaybackEngineSession? playbackSession;
   double reverb = 0.0;
   double bassBoost = 0.0;
@@ -19,55 +17,13 @@ class AudioEffectsProvider extends ChangeNotifier {
   double loudness = 0.0;
   bool effectsEnabled = true;
 
-  final List<StreamSubscription<int?>> _sessionSubscriptions = [];
-  final Map<AudioPlayer, int> _sessionIdsByPlayer = {};
   StreamSubscription<Media3ProviderState>? _media3SessionSubscription;
   final Set<int> _media3SessionIds = <int>{};
   Future<void> _nativeApplyQueue = Future<void>.value();
 
-  AudioEffectsProvider({
-    this.player,
-    List<AudioPlayer>? sessionPlayers,
-    this.loudnessEnhancer,
-    this.playbackSession,
-  }) : sessionPlayers = playbackSession != null
-            ? const <AudioPlayer>[]
-            : (sessionPlayers ??
-                (player == null ? const <AudioPlayer>[] : <AudioPlayer>[player])) {
-    // A/B players own independent Android sessions. Track both so an incoming
-    // crossfade engine receives the same saved auxiliary-effect profile.
-    for (final sessionPlayer in this.sessionPlayers) {
-      final currentId = sessionPlayer.androidAudioSessionId;
-      if (currentId != null && currentId > 0) {
-        _sessionIdsByPlayer[sessionPlayer] = currentId;
-      }
-      _sessionSubscriptions.add(
-        sessionPlayer.androidAudioSessionIdStream.listen((id) {
-          final previousId = _sessionIdsByPlayer.remove(sessionPlayer);
-          if (id == null || id <= 0) {
-            if (previousId != null && !_isSessionTracked(previousId)) {
-              unawaited(_detachNativeSession(previousId));
-            }
-            return;
-          }
-          if (previousId == id) {
-            _sessionIdsByPlayer[sessionPlayer] = id;
-            return;
-          }
-          if (previousId != null && !_isSessionTracked(previousId)) {
-            unawaited(_detachNativeSession(previousId));
-          }
-          _sessionIdsByPlayer[sessionPlayer] = id;
-          // Reattach after the platform recreates this player's audio session.
-          unawaited(_applyNative(sessionIdOverride: id));
-        }, onError: (Object error) {
-          debugPrint('Audio-effects session stream failed: $error');
-        }),
-      );
-    }
-    // Media3 exposes the active deck's session as a stream. Its first event
-    // carries the current snapshot, and subsequent events include deck
-    // handoffs. Keep this opt-in so legacy construction remains unchanged.
+  AudioEffectsProvider({this.playbackSession}) {
+    // Media3 exposes both physical deck sessions. Subscribe to its canonical
+    // state stream so auxiliary effects follow preload, overlap, and promotion.
     if (playbackSession != null) {
       // Both physical Media3 decks have independent Android audio sessions.
       // Attach session-bound Reverb/Virtualizer to the standby deck before it
@@ -83,8 +39,7 @@ class AudioEffectsProvider extends ChangeNotifier {
   }
 
   bool _isSessionTracked(int sessionId) =>
-      _media3SessionIds.contains(sessionId) ||
-      _sessionIdsByPlayer.values.contains(sessionId);
+      _media3SessionIds.contains(sessionId);
 
   void _onMedia3State(Media3ProviderState state) {
     final nextIds = <int>{
@@ -148,12 +103,6 @@ class AudioEffectsProvider extends ChangeNotifier {
   /// Kept as a no-op so older saved prefs cannot re-enable it.
   Future<void> setLoudness(double value) async {
     loudness = 0.0;
-    if (loudnessEnhancer != null) {
-      try {
-        await loudnessEnhancer!.setEnabled(false);
-        await loudnessEnhancer!.setTargetGain(0.0);
-      } catch (_) {}
-    }
     await _save();
     notifyListeners();
   }
@@ -177,13 +126,7 @@ class AudioEffectsProvider extends ChangeNotifier {
   Future<void> _applyNativeNow({int? sessionIdOverride}) async {
     final sessionIds = sessionIdOverride != null
         ? <int>{sessionIdOverride}
-        : playbackSession != null
-            ? <int>{..._media3SessionIds}
-            : <int>{
-                ..._sessionIdsByPlayer.values,
-                if ((player?.androidAudioSessionId ?? 0) > 0)
-                  player!.androidAudioSessionId!,
-              };
+        : <int>{..._media3SessionIds};
     if (sessionIds.isEmpty) return;
 
     final enabled = effectsEnabled;
@@ -200,15 +143,6 @@ class AudioEffectsProvider extends ChangeNotifier {
       }
     }
 
-    // LoudnessEnhancer is intentionally disabled — DSP preamp + EQ handle level.
-    if (loudnessEnhancer != null) {
-      try {
-        await loudnessEnhancer!.setEnabled(false);
-        await loudnessEnhancer!.setTargetGain(0.0);
-      } catch (e) {
-        debugPrint('Loudness disable failed: $e');
-      }
-    }
   }
 
   Future<void> _disableLegacyBassBoost() async {
@@ -222,7 +156,7 @@ class AudioEffectsProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final canonical = await DspSettings.load();
       // Restore the canonical native protection profile at startup. Registry
-      // sticky state carries these values to both A/B engines, including a
+      // sticky state carries these values to both Media3 decks, including a
       // sink created after this provider finishes loading.
       await AudioEffectsBridge.setLiveDspLimiterCeiling(
         highDb: canonical.limiterHighCeilingDb,
@@ -282,14 +216,9 @@ class AudioEffectsProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    for (final subscription in _sessionSubscriptions) {
-      unawaited(subscription.cancel());
-    }
-    _sessionSubscriptions.clear();
     unawaited(_media3SessionSubscription?.cancel());
     _media3SessionSubscription = null;
     _media3SessionIds.clear();
-    _sessionIdsByPlayer.clear();
     AudioEffectsBridge.release();
     super.dispose();
   }

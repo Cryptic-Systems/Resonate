@@ -353,8 +353,6 @@ class ResonateApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(
           create: (context) => EqualizerProvider(
-            equalizer: context.read<MusicProvider>().equalizer,
-            loudnessEnhancer: context.read<MusicProvider>().loudnessEnhancer,
             music: context.read<MusicProvider>(),
             bluetooth: context.read<BluetoothProvider>(),
           ),
@@ -366,7 +364,6 @@ class ResonateApp extends StatelessWidget {
               // DSP/session-bound effects follow the same canonical Media3
               // session as transport and state after the provider handoff.
               playbackSession: music.media3PlaybackSession,
-              loudnessEnhancer: music.loudnessEnhancer,
             );
           },
         ),

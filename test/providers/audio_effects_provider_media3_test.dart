@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:just_audio/just_audio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -81,7 +80,6 @@ void main() {
       () async {
     final session = _FakePlaybackSession();
     final provider = AudioEffectsProvider(
-      sessionPlayers: const [],
       playbackSession: session,
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -141,14 +139,9 @@ void main() {
     await session.close();
   });
 
-  test('Media3 session exclusively owns effects when legacy players are supplied', () async {
-    final legacyPlayer = AudioPlayer();
+  test('Media3 session owns effects without constructing legacy players', () async {
     final session = _FakePlaybackSession();
-    final provider = AudioEffectsProvider(
-      player: legacyPlayer,
-      sessionPlayers: <AudioPlayer>[legacyPlayer],
-      playbackSession: session,
-    );
+    final provider = AudioEffectsProvider(playbackSession: session);
     await Future<void>.delayed(const Duration(milliseconds: 20));
     calls.clear();
 
@@ -164,7 +157,6 @@ void main() {
     );
 
     provider.dispose();
-    await legacyPlayer.dispose();
     await session.close();
   });
 
@@ -172,7 +164,6 @@ void main() {
       () async {
     final session = _FakePlaybackSession();
     final provider = AudioEffectsProvider(
-      sessionPlayers: const [],
       playbackSession: session,
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -196,7 +187,6 @@ void main() {
   test('disposing provider cancels Media3 session observation', () async {
     final session = _FakePlaybackSession();
     final provider = AudioEffectsProvider(
-      sessionPlayers: const [],
       playbackSession: session,
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
