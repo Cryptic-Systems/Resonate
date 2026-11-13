@@ -103,6 +103,9 @@ extension MusicProviderMedia3 on MusicProvider {
     final nextIndex = _crossfadeTargetIndex;
     bool stillOwnsTransition() =>
         _media3ProviderSessionActive &&
+        !_disposed &&
+        _userWantsPlaying &&
+        !_recentlyUserPaused &&
         transportEpoch == _userTransportEpoch &&
         transitionGeneration == _automaticTransitionGeneration &&
         !_authority.isStale(generation) &&
@@ -233,18 +236,87 @@ extension MusicProviderMedia3 on MusicProvider {
       });
     } catch (error) {
       if (stillOwnsTransition()) {
+        var fallbackStage = 'cancel_crossfade';
         try {
           await session.cancelCrossfade();
+          if (!stillOwnsTransition()) {
+            await ResonateDiagnostics.record('media3_crossfade_fallback_aborted', {
+              'stage': fallbackStage,
+              'reason': 'transport_or_pause_took_ownership',
+              'outgoingSongId': outgoingSong.id,
+              'incomingSongId': nextSong.id,
+            });
+            return;
+          }
+
+          fallbackStage = 'reset_deck_speeds';
           await session.setDeckPlaybackSpeeds(
             activeSpeed: 1.0,
             standbySpeed: 1.0,
           );
+          if (!stillOwnsTransition()) {
+            await ResonateDiagnostics.record('media3_crossfade_fallback_aborted', {
+              'stage': fallbackStage,
+              'reason': 'transport_or_pause_took_ownership',
+              'outgoingSongId': outgoingSong.id,
+              'incomingSongId': nextSong.id,
+            });
+            return;
+          }
+
+          fallbackStage = 'restore_dj_effects';
           await _restoreDjTransitionSfx();
+          if (!stillOwnsTransition()) {
+            await ResonateDiagnostics.record('media3_crossfade_fallback_aborted', {
+              'stage': fallbackStage,
+              'reason': 'transport_or_pause_took_ownership',
+              'outgoingSongId': outgoingSong.id,
+              'incomingSongId': nextSong.id,
+            });
+            return;
+          }
+
           // Safe same-session fallback: load the selected occurrence into the
           // active Media3 deck. Never revive either legacy just_audio player.
+          fallbackStage = 'load_selected_queue';
           await session.loadQueue(_queue, startIndex: nextIndex);
+          if (!stillOwnsTransition()) {
+            await ResonateDiagnostics.record('media3_crossfade_fallback_aborted', {
+              'stage': fallbackStage,
+              'reason': 'transport_or_pause_took_ownership',
+              'outgoingSongId': outgoingSong.id,
+              'incomingSongId': nextSong.id,
+            });
+            return;
+          }
+
+          fallbackStage = 'restore_master_volume';
           await session.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
+          if (!stillOwnsTransition()) {
+            await ResonateDiagnostics.record('media3_crossfade_fallback_aborted', {
+              'stage': fallbackStage,
+              'reason': 'transport_or_pause_took_ownership',
+              'outgoingSongId': outgoingSong.id,
+              'incomingSongId': nextSong.id,
+            });
+            return;
+          }
+
+          // Final authorization check immediately before the only operation
+          // capable of restarting audible output.
+          fallbackStage = 'play';
+          if (!stillOwnsTransition()) return;
           await session.play();
+          if (!stillOwnsTransition()) {
+            await session.pause();
+            await ResonateDiagnostics.record('media3_crossfade_fallback_aborted', {
+              'stage': fallbackStage,
+              'reason': 'pause_arrived_during_play_command',
+              'outgoingSongId': outgoingSong.id,
+              'incomingSongId': nextSong.id,
+            });
+            return;
+          }
           _reconcileMedia3ProviderSession();
           await ResonateDiagnostics.record('media3_crossfade_fallback', {
             'outgoingSongId': outgoingSong.id,
@@ -257,6 +329,7 @@ extension MusicProviderMedia3 on MusicProvider {
             'outgoingSongId': outgoingSong.id,
             'incomingSongId': nextSong.id,
             'error': error.toString(),
+            'fallbackStage': fallbackStage,
             'fallbackError': fallbackError.toString(),
           });
         }
