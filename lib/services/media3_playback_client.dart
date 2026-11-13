@@ -277,7 +277,12 @@ class Media3PlaybackClient {
 
   /// Plays a short sample through the service-owned auxiliary Media3 player.
   /// The main queue, MediaSession and audio-focus owner remain unchanged.
-  Future<void> playAuxiliarySound(Uri uri, {required double volume}) async {
+  Future<void> playAuxiliarySound(
+    Uri uri, {
+    required double volume,
+    Duration startPosition = Duration.zero,
+    Duration? endPosition,
+  }) async {
     if (!uri.hasScheme ||
         !const {'asset', 'file', 'content', 'http', 'https'}.contains(uri.scheme)) {
       throw ArgumentError.value(uri, 'uri', 'A supported media URI is required.');
@@ -285,9 +290,15 @@ class Media3PlaybackClient {
     if (!volume.isFinite || volume < 0.0 || volume > 1.0) {
       throw ArgumentError.value(volume, 'volume', 'Must be finite and between 0 and 1.');
     }
+    if (startPosition.isNegative ||
+        (endPosition != null && (endPosition.isNegative || endPosition <= startPosition))) {
+      throw ArgumentError('Auxiliary clip end must be greater than its non-negative start.');
+    }
     await _invokeAccepted('playAuxiliarySound', <String, Object>{
       'uri': uri.toString(),
       'volume': volume,
+      'startPositionMs': startPosition.inMilliseconds,
+      if (endPosition != null) 'endPositionMs': endPosition.inMilliseconds,
     });
   }
 
