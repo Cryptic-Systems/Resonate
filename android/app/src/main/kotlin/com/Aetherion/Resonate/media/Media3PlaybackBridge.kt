@@ -388,14 +388,17 @@ class Media3PlaybackBridge(
                 "playAuxiliarySound" -> {
                     val source = call.argument<String>("uri")
                     val volume = call.argument<Number>("volume")?.toFloat()
-                    val uri = source?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+                    val startPositionMs = call.argument<Number>("startPositionMs")?.toLong() ?: 0L
+                    val endPositionMs = call.argument<Number>("endPositionMs")?.toLong()
+                    val uri = source?.takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
                     if (uri == null || uri.scheme !in setOf("asset", "file", "content", "http", "https") ||
-                        volume == null || !volume.isFinite() || volume !in 0f..1f
+                        volume == null || !volume.isFinite() || volume !in 0f..1f ||
+                        startPositionMs < 0L || (endPositionMs != null && endPositionMs <= startPositionMs)
                     ) {
                         result.error("INVALID_AUXILIARY_SOUND", "A supported URI and volume from 0 to 1 are required.", null)
                         return
                     }
-                    val accepted = Media3PlaybackService.instance?.playAuxiliarySound(uri, volume) == true
+                    val accepted = Media3PlaybackService.instance?.playAuxiliarySound(uri, volume, startPositionMs, endPositionMs) == true
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_AUXILIARY_UNAVAILABLE", "The auxiliary Media3 player is unavailable.", null)
                 }
