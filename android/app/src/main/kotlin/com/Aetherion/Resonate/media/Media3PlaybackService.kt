@@ -246,6 +246,11 @@ class Media3PlaybackService : MediaSessionService() {
     ).build().apply {
         val deck = this
         setAudioAttributes(audioAttributes(), handleAudioFocus)
+        // Only the canonical active deck owns the noisy-output policy. The
+        // standby deck must never independently react to a route change.
+        setHandleAudioBecomingNoisy(
+            AudioOutputPolicy.handlesBecomingNoisy(deckId == activeDeckId),
+        )
         repeatMode = Player.REPEAT_MODE_OFF
         addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -474,7 +479,11 @@ class Media3PlaybackService : MediaSessionService() {
                     // active rate rather than a stale outgoing correction.
                     standbyPlayer.playbackParameters = activePlayer.playbackParameters
                     oldPlayer.setAudioAttributes(audioAttributes(), false)
+                    oldPlayer.setHandleAudioBecomingNoisy(false)
                     activePlayer.setAudioAttributes(audioAttributes(), media3AudioFocusEnabled)
+                    activePlayer.setHandleAudioBecomingNoisy(
+                        AudioOutputPolicy.handlesBecomingNoisy(true),
+                    )
                     mediaSession?.setPlayer(activePlayer)
                     gainPolicy.resetDecks()
                     applyDeckVolumes()
