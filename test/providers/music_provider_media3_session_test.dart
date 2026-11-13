@@ -70,6 +70,8 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   Duration? crossfadeDuration;
   (double, double)? deckSpeeds;
   bool disposed = false;
+  bool throwOnCrossfade = false;
+  Completer<void>? cancelCrossfadeGate;
   Song? currentSongValue;
   int? queueIndexValue;
   bool playingValue = false;
@@ -202,6 +204,10 @@ class _FakePlaybackSession implements PlaybackEngineSession {
 
   @override
   Future<void> crossfade({required Duration duration}) async {
+    if (throwOnCrossfade) {
+      calls.add('crossfade:failed');
+      throw StateError('simulated native crossfade failure');
+    }
     crossfadeDuration = duration;
     calls.add('crossfade:${duration.inMilliseconds}');
     activeDeckIdValue = activeDeckIdValue == 'A' ? 'B' : 'A';
@@ -227,6 +233,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   @override
   Future<void> cancelCrossfade() async {
     calls.add('cancelCrossfade');
+    await cancelCrossfadeGate?.future;
   }
 
   @override
@@ -558,6 +565,54 @@ void main() {
       expect(session.calls, contains('deckSpeeds:1.0:1.0'));
       expect(provider.currentSong?.id, 'fade-in');
       expect(provider.media3ProviderSessionActive, isTrue);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('pause during crossfade fallback cannot be followed by a stale play', () async {
+      final session = _FakePlaybackSession()
+        ..throwOnCrossfade = true
+        ..cancelCrossfadeGate = Completer<void>();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('pause-fade-out');
+      final second = _song('pause-fade-in');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
+      await provider.setCrossfadeDuration(500);
+
+      session.positionValue = const Duration(seconds: 178);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+
+      for (var attempt = 0;
+          attempt < 30 && !session.calls.contains('cancelCrossfade');
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.calls, contains('crossfade:failed'));
+      expect(session.calls, contains('cancelCrossfade'));
+
+      final playCallsBeforePause =
+          session.calls.where((call) => call == 'play').length;
+      final pause = provider.pause();
+      session.cancelCrossfadeGate!.complete();
+      await pause;
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(session.playingValue, isFalse);
+      expect(
+        session.calls.where((call) => call == 'play').length,
+        playCallsBeforePause,
+        reason: 'A failed crossfade fallback must not restart after Pause.',
+      );
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
