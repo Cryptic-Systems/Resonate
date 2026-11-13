@@ -35,6 +35,9 @@ class Media3PlaybackService : MediaSessionService() {
     private val crossfadeClock = Media3CrossfadeClock()
     private var crossfadeStatus = "idle"
     private var pendingCrossfadeDurationMs: Long? = null
+    // The ramp is deliberately not started until the incoming deck reports
+    // isPlaying. ExoPlayer's play() request can precede audible output startup.
+    private var startingCrossfadeDurationMs: Long? = null
     private var activeDeckId = "A"
     // ExoPlayer focus handling is opt-in at the migration boundary. The legacy
     // audio_session owner remains untouched until an explicit provider cutover.
@@ -196,6 +199,8 @@ class Media3PlaybackService : MediaSessionService() {
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 if (::standbyPlayer.isInitialized && deck === standbyPlayer) {
+                    pendingCrossfadeDurationMs = null
+                    startingCrossfadeDurationMs = null
                     crossfadeStatus = "incoming_error"
                 }
             }
@@ -209,7 +214,30 @@ class Media3PlaybackService : MediaSessionService() {
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (!::activePlayer.isInitialized || deck !== activePlayer) return
+                if (!::activePlayer.isInitialized || !::standbyPlayer.isInitialized) return
+                if (deck === standbyPlayer) {
+                    // Do not attenuate the outgoing deck while ExoPlayer is
+                    // still starting the incoming audio output. The fade clock
+                    // begins only once the incoming deck is actually playing.
+                    if (isPlaying && crossfadeStatus == "starting") {
+                        val duration = startingCrossfadeDurationMs
+                        if (duration != null && activePlayer.isPlaying) {
+                            startCrossfadeRamp(duration, fadeGeneration)
+                        }
+                    }
+                    return
+                }
+                if (deck !== activePlayer) return
+                if (crossfadeStatus == "starting" && !isPlaying) {
+                    // If playback is interrupted while the incoming output is
+                    // starting, return to the deferred-ready state. Resume will
+                    // retry without consuming any part of the fade duration.
+                    pendingCrossfadeDurationMs = startingCrossfadeDurationMs
+                    startingCrossfadeDurationMs = null
+                    standbyPlayer.pause()
+                    crossfadeStatus = "ready"
+                    return
+                }
                 // A fade requested while the standby deck is preparing waits
                 // for both decks to be runnable. Preserve that request across
                 // transient focus/buffering pauses and start it on resume.
@@ -310,12 +338,29 @@ class Media3PlaybackService : MediaSessionService() {
         ) return false
         pendingCrossfadeDurationMs = null
         cancelCrossfade(clearOverlays = false, resetStandbySpeed = false)
-        crossfadeClock.start(durationMs, android.os.SystemClock.elapsedRealtime())
         val generation = ++fadeGeneration
-        crossfadeStatus = "fading"
+        startingCrossfadeDurationMs = durationMs
+        crossfadeStatus = "starting"
         gainPolicy.resetDecks()
         applyDeckVolumes()
         standbyPlayer.play()
+        // isPlaying may already be true for an immediately-starting local
+        // source. Handle that synchronously as well as through the listener.
+        if (standbyPlayer.isPlaying) {
+            startCrossfadeRamp(durationMs, generation)
+        }
+        return true
+    }
+
+    /** Begin the gain ramp only after both decks are producing playback. */
+    private fun startCrossfadeRamp(durationMs: Long, generation: Int) {
+        if (generation != fadeGeneration || isDestroyed ||
+            crossfadeStatus != "starting" || !activePlayer.isPlaying ||
+            !standbyPlayer.isPlaying
+        ) return
+        startingCrossfadeDurationMs = null
+        crossfadeClock.start(durationMs, android.os.SystemClock.elapsedRealtime())
+        crossfadeStatus = "fading"
         val task = object : Runnable {
             override fun run() {
                 if (generation != fadeGeneration || isDestroyed) return
@@ -353,7 +398,6 @@ class Media3PlaybackService : MediaSessionService() {
         }
         fadeRunnable = task
         mainHandler.post(task)
-        return true
     }
 
     /**
@@ -362,6 +406,13 @@ class Media3PlaybackService : MediaSessionService() {
      * pauses the standby deck so neither audio nor fade progress advances silently.
      */
     fun pauseCrossfade(): Boolean {
+        if (crossfadeStatus == "starting") {
+            pendingCrossfadeDurationMs = startingCrossfadeDurationMs
+            startingCrossfadeDurationMs = null
+            standbyPlayer.pause()
+            crossfadeStatus = "ready"
+            return true
+        }
         if (crossfadeStatus == "waiting_ready" || crossfadeStatus == "ready") {
             standbyPlayer.pause()
             // Keep waiting_ready while preparation is incomplete. The standby
@@ -404,6 +455,7 @@ class Media3PlaybackService : MediaSessionService() {
         resetStandbySpeed: Boolean = true,
     ): Boolean {
         pendingCrossfadeDurationMs = null
+        startingCrossfadeDurationMs = null
         fadeGeneration++
         if (clearOverlays) DspEngineRegistry.clearAllTemporaryEqOverlays()
         fadeRunnable?.let(mainHandler::removeCallbacks)
@@ -419,8 +471,9 @@ class Media3PlaybackService : MediaSessionService() {
                 standbyPlayer.playbackParameters = activePlayer.playbackParameters
             }
         }
-        if (crossfadeStatus == "fading" || crossfadeStatus == "preparing" ||
-            crossfadeStatus == "waiting_ready" || crossfadeStatus == "ready"
+        if (crossfadeStatus == "fading" || crossfadeStatus == "starting" ||
+            crossfadeStatus == "preparing" || crossfadeStatus == "waiting_ready" ||
+            crossfadeStatus == "ready"
         ) {
             crossfadeStatus = "cancelled"
         }
