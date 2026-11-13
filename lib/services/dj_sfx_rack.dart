@@ -235,15 +235,21 @@ class DjSfxRack {
     _usageCounts[activePreset!] = (_usageCounts[activePreset!] ?? 0) + 1;
     engaged = true;
     _eqTouched = false;
-    _outgoing = outgoing;
+    // Media3 owns both transition decks. Do not retain or even inspect a
+    // legacy AudioPlayer on that path: samples, echo taps and track-mutating
+    // presets remain legacy-only until an auxiliary Media3 player contract is
+    // available.
+    _outgoing = playbackSession == null ? outgoing : null;
     _beatMs = List<int>.from(beatMs)..sort();
     _phraseAnchors = _buildPhraseAnchors(_beatMs);
     _savedOutgoingSpeed = 1.0;
-    try {
-      if (outgoing != null) {
-        _savedOutgoingSpeed = outgoing.speed;
-      }
-    } catch (_) {}
+    if (playbackSession == null) {
+      try {
+        if (outgoing != null) {
+          _savedOutgoingSpeed = outgoing.speed;
+        }
+      } catch (_) {}
+    }
 
     try {
       if (playbackSession == null) {
@@ -295,15 +301,22 @@ class DjSfxRack {
         }
         if (generation != _engageGen || !engaged) return;
       }
-      // Fire one-shot early so it sits over the outgoing fade.
-      if (_isSample(activePreset!)) {
-        unawaited(_playOneshot(activePreset!, score));
-      }
-      if (_usesTrackManipulation(activePreset!)) {
-        unawaited(_runTrackManipulation(activePreset!));
-      }
-      if (activePreset == DjSfxPreset.echo || activePreset == DjSfxPreset.dryEcho) {
-        unawaited(_playTrackEcho(outgoingUri, score));
+      // These paths create a separate just_audio player or mutate the
+      // outgoing just_audio deck. They must never execute under Media3 session
+      // authority, even if a future preset-selection change admits such a
+      // preset accidentally.
+      if (playbackSession == null) {
+        // Fire one-shot early so it sits over the outgoing fade.
+        if (_isSample(activePreset!)) {
+          unawaited(_playOneshot(activePreset!, score));
+        }
+        if (_usesTrackManipulation(activePreset!)) {
+          unawaited(_runTrackManipulation(activePreset!));
+        }
+        if (activePreset == DjSfxPreset.echo ||
+            activePreset == DjSfxPreset.dryEcho) {
+          unawaited(_playTrackEcho(outgoingUri, score));
+        }
       }
     } catch (e) {
       debugPrint('DjSfxRack.engage: $e');
