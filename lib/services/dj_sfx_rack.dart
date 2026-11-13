@@ -211,18 +211,18 @@ class DjSfxRack {
                 aggressiveness: aggressiveness,
               ));
 
-    // Repeat/repeat-restart seek the *outgoing player* several times during
-    // the crossfade. That can rewind audible music while the fade clock keeps
-    // advancing, resembling a failed transition followed by a restart. Keep
-    // those track-mutating SFX out of automatic playback for now, including
-    // when a caller explicitly requests one. Use a non-seeking effect instead.
-    final preferred = switch (requested) {
-      DjSfxPreset.repeat || DjSfxPreset.repeatRestart =>
-        aggressiveness == DjAggressiveness.safe
-            ? DjSfxPreset.tightGlue
-            : (score >= 0.75 ? DjSfxPreset.whoosh : DjSfxPreset.echo),
-      _ => requested,
-    };
+    // Legacy repeat/repeat-restart are still kept out of automatic selection
+    // until the user has explicitly opted into track automation. Media3's
+    // serialized session path now owns and cancels those operations.
+    final preferred = playbackSession != null
+        ? requested
+        : switch (requested) {
+            DjSfxPreset.repeat || DjSfxPreset.repeatRestart =>
+              aggressiveness == DjAggressiveness.safe
+                  ? DjSfxPreset.tightGlue
+                  : (score >= 0.75 ? DjSfxPreset.whoosh : DjSfxPreset.echo),
+            _ => requested,
+          };
     final sessionSafePreset = playbackSession == null
         ? preferred
         : (_usesEq(preferred) || _isSample(preferred) ||
