@@ -10,6 +10,12 @@ internal object AudioOutputPolicy {
     fun handlesBecomingNoisy(isCanonicalActiveDeck: Boolean): Boolean =
         isCanonicalActiveDeck
 
+    /** Stop transient DJ/sample output only when the canonical deck is paused. */
+    fun shouldStopAuxiliaryAudio(
+        isCanonicalActiveDeck: Boolean,
+        playWhenReady: Boolean,
+    ): Boolean = isCanonicalActiveDeck && !playWhenReady
+
     /** Only the canonical MediaSession player may request transient/permanent focus. */
     fun handlesAudioFocus(
         isCanonicalActiveDeck: Boolean,
