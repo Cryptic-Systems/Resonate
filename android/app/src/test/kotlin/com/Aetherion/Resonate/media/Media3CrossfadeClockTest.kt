@@ -35,6 +35,16 @@ class Media3CrossfadeClockTest {
     }
 
     @Test
+    fun delayedRampStartDoesNotConsumeDurationBeforeIncomingPlayback() {
+        val clock = Media3CrossfadeClock()
+        // The service starts this clock only after the standby player reports
+        // isPlaying, not when its earlier play() request is issued.
+        clock.start(durationMs = 10_000L, nowMs = 5_000L)
+        assertEquals(0f, clock.progress(nowMs = 5_000L), 0.0001f)
+        assertEquals(0.1f, clock.progress(nowMs = 6_000L), 0.0001f)
+    }
+
+    @Test
     fun progressClampsAtCompletionAndResetClearsTheClock() {
         val clock = Media3CrossfadeClock()
         clock.start(durationMs = 500L, nowMs = 100L)
