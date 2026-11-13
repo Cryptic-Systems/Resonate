@@ -186,8 +186,7 @@ extension MusicProviderMedia3 on MusicProvider {
       promotionSubscription = session.stateStream.listen((state) {
         if (!promoted.isCompleted &&
             state.currentSong?.id == nextSong.id &&
-            state.queueIndex == nextIndex &&
-            state.isPlaying) {
+            state.queueIndex == nextIndex) {
           promoted.complete();
         }
       });
@@ -213,7 +212,12 @@ extension MusicProviderMedia3 on MusicProvider {
           throw TimeoutException('Media3 native crossfade did not promote the incoming deck.');
         }
       }
-      await promoted.future;
+      await promoted.future.timeout(
+        Duration(milliseconds: durationMs + 6500),
+        onTimeout: () => throw TimeoutException(
+          'Media3 crossfade promotion state was not observed.',
+        ),
+      );
       if (!stillOwnsTransition()) return;
 
       await session.setDeckPlaybackSpeeds(
@@ -430,8 +434,7 @@ extension MusicProviderMedia3 on MusicProvider {
       final promoted = Completer<Media3ProviderState>();
       promotionSubscription = session.stateStream.listen((state) {
         if (!promoted.isCompleted &&
-            state.activeDeckId != outgoingDeckId &&
-            state.isPlaying) {
+            state.activeDeckId != outgoingDeckId) {
           promoted.complete(state);
         }
       });
