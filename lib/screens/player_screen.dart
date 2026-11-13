@@ -98,14 +98,25 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: Center(
-                  child: Chip(
-                    avatar: Icon(
-                      music.activeEngineLabel == 'A'
-                          ? Icons.looks_one_rounded
-                          : Icons.looks_two_rounded,
-                      size: 17,
+                  child: Tooltip(
+                    message: music.media3ProviderSessionActive
+                        ? 'Media3 is the canonical playback engine'
+                        : 'Legacy Engine ${music.activeEngineLabel} is active',
+                    child: Chip(
+                      avatar: Icon(
+                        music.media3ProviderSessionActive
+                            ? Icons.graphic_eq_rounded
+                            : music.activeEngineLabel == 'A'
+                                ? Icons.looks_one_rounded
+                                : Icons.looks_two_rounded,
+                        size: 17,
+                      ),
+                      label: Text(
+                        music.media3ProviderSessionActive
+                            ? 'Media3'
+                            : 'Engine ${music.activeEngineLabel}',
+                      ),
                     ),
-                    label: Text('Engine ${music.activeEngineLabel}'),
                   ),
                 ),
               );
