@@ -439,7 +439,6 @@ class DjSfxRack {
         preset: preset,
         equalizerA: equalizerA,
         equalizerB: equalizerB,
-        outgoing: outgoing,
         outgoingUri: outgoingUri,
         beatMs: beatMs,
         sections: sections,
