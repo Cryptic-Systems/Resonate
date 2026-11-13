@@ -199,7 +199,6 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryE
   @override
   Future<void> previous() => _runtime.previous();
   @override
-  @override
   double get playbackSpeed => _playbackSpeed;
 
   @override
