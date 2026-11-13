@@ -708,3 +708,17 @@ attributes continue to own audio-focus behavior; the standby deck remains
 non-focus-owning. Transient/permanent focus-loss behavior and real wired,
 Bluetooth, call/VoIP, and process-recovery scenarios still require physical
 device acceptance. This code change is not a substitute for those tests.
+
+## 28. Canonical Media3 audio-focus ownership — 2026-11-13
+
+Audio-focus ownership is now expressed by the same deck policy as noisy-route
+handling. Only the player attached to the canonical MediaSession can request
+focus, and only after the provider explicitly enables Media3 focus handling.
+The standby deck is always configured without focus handling; ownership is
+re-evaluated when the crossfade promotes it. This preserves ExoPlayer as the
+single focus implementation for transient loss, permanent loss, ducking, and
+focus regain rather than introducing a second competing AudioManager listener.
+
+JVM tests cover active-versus-standby ownership and the disabled migration
+state. Physical validation remains required for transient/permanent focus
+loss, duck/gain, call/VoIP interruptions, and Bluetooth/wired route changes.
