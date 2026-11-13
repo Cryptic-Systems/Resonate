@@ -3587,6 +3587,10 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _restoreDjTransitionSfx() async {
     if (!_djSfxEngaged && !_djSfxActive && !_djSfxRack.engaged) return;
     try {
+      // Invalidate track seek/rate automation before the soft-release awaits.
+      // This is important for manual transport preemption and deck promotion:
+      // no stale DJ command may run after the user's/new deck's command.
+      await _djSfxRack.cancelTrackAutomation();
       // Soft release gap so SFX bridges the two songs instead of cutting at t=1.
       for (final t in <double>[1.15, 1.30, 1.45, 1.60]) {
         try {
