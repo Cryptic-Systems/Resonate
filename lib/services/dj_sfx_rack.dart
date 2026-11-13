@@ -388,25 +388,34 @@ class DjSfxRack {
     } catch (_) {}
   }
 
+  /// Immediately invalidates an in-flight Media3 track automation sequence.
+  /// The generation is advanced before the first await, so a manual transport
+  /// command queued immediately after this call cannot be followed by a stale
+  /// DJ seek/rate step. The captured playback rate is restored on the same
+  /// serialized session command lane.
+  Future<void> cancelTrackAutomation() async {
+    ++_trackFxGen;
+    _trackActionRunning = false;
+    final session = _trackAutomationSession;
+    _trackAutomationSession = null;
+    if (session == null) return;
+    try {
+      await session.setPlaybackSpeed(_trackAutomationOriginalSpeed);
+    } catch (_) {}
+  }
+
   Future<void> restore({
     AndroidEqualizer? equalizerA,
     AndroidEqualizer? equalizerB,
     PlaybackEngineSession? playbackSession,
   }) async {
     ++_delayedSfxGen;
-    ++_trackFxGen;
     ++_oneshotGen;
     ++_engageGen;
-    // A cancelled track action may still be unwinding an awaited seek/delay.
-    // Clear the gate now; its stale finally block must not clear a newer action.
-    _trackActionRunning = false;
-    final automationSession = _trackAutomationSession ?? playbackSession ?? _playbackSession;
-    _trackAutomationSession = null;
-    if (automationSession != null) {
-      try {
-        await automationSession.setPlaybackSpeed(_trackAutomationOriginalSpeed);
-      } catch (_) {}
-    }
+    // Cancel before any effect teardown awaits; stale track automation cannot
+    // enqueue another seek/rate command behind a user's transport operation.
+    await cancelTrackAutomation();
+    final automationSession = playbackSession ?? _playbackSession;
     final hadActiveEffects = engaged || _eqTouched;
     if (!hadActiveEffects) {
       await _stopOneshot();
