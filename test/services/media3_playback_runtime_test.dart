@@ -194,16 +194,17 @@ void main() {
     test('serializes auxiliary sample lifecycle on the backend command lane', () async {
       final uri = Uri.parse('asset:///flutter_assets/assets/sfx/impact.wav');
       await Future.wait<void>([
-        runtime.playAuxiliarySound(uri, volume: 0.1),
+        runtime.playAuxiliarySound(uri, volume: 0.1, startPosition: const Duration(milliseconds: 90), endPosition: const Duration(milliseconds: 600)),
         runtime.setAuxiliarySoundVolume(0.03),
         runtime.stopAuxiliarySound(),
       ]);
       expect(backend.auxiliaryCalls, [
-        'play:' + uri.toString() + ':0.1',
+        'play:' + uri.toString() + ':0.1:90:600',
         'volume:0.03',
         'stop',
       ]);
       await expectLater(runtime.setAuxiliarySoundVolume(1.2), throwsArgumentError);
+      await expectLater(runtime.playAuxiliarySound(uri, volume: double.nan), throwsArgumentError);
     });
 
     test('validates and serializes deck EQ overlay commands', () async {
