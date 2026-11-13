@@ -170,8 +170,8 @@ class DjSfxRack {
   Future<void> engage({
     required double energyScore,
     DjSfxPreset? preset,
-    AndroidEqualizer? equalizerA,
-    AndroidEqualizer? equalizerB,
+    dynamic equalizerA,
+    dynamic equalizerB,
     String? outgoingUri,
     List<int> beatMs = const <int>[],
     List<DjSection> sections = const <DjSection>[],
@@ -300,8 +300,8 @@ class DjSfxRack {
 
   Future<void> tick(
     double t, {
-    AndroidEqualizer? equalizerA,
-    AndroidEqualizer? equalizerB,
+    dynamic equalizerA,
+    dynamic equalizerB,
     double energyScore = 0.5,
     PlaybackEngineSession? playbackSession,
   }) async {
@@ -364,8 +364,8 @@ class DjSfxRack {
   }
 
   Future<void> restore({
-    AndroidEqualizer? equalizerA,
-    AndroidEqualizer? equalizerB,
+    dynamic equalizerA,
+    dynamic equalizerB,
     PlaybackEngineSession? playbackSession,
   }) async {
     ++_delayedSfxGen;
@@ -420,8 +420,8 @@ class DjSfxRack {
     required Duration delay,
     required double energyScore,
     DjSfxPreset? preset,
-    AndroidEqualizer? equalizerA,
-    AndroidEqualizer? equalizerB,
+    dynamic equalizerA,
+    dynamic equalizerB,
     String? outgoingUri,
     List<int> beatMs = const <int>[],
     List<DjSection> sections = const <DjSection>[],
@@ -838,7 +838,7 @@ class DjSfxRack {
 
   }
 
-  Future<List<double>?> _snapshotEq(AndroidEqualizer? eq) async {
+  Future<List<double>?> _snapshotEq(dynamic eq) async {
     if (eq == null) return null;
     try {
       final p = await eq.parameters;
@@ -849,7 +849,7 @@ class DjSfxRack {
   }
 
   Future<void> _applyEqAt(
-    AndroidEqualizer? eq,
+    dynamic eq,
     double t, {
     bool Function()? isCurrent,
   }) async {
@@ -924,7 +924,7 @@ class DjSfxRack {
   }
 
   Future<void> _restoreEq(
-    AndroidEqualizer? eq,
+    dynamic eq,
     List<double>? savedGains,
   ) async {
     if (eq == null) return;
