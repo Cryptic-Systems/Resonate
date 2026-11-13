@@ -595,3 +595,36 @@ A failed Media3 startup does not mark the handoff active. The legacy engine is n
 The provider contract suite now exercises a complete automatic Media3 crossfade: next-item preload, queue occurrence, native crossfade command, canonical promotion, and deck-rate reset. Exact-head CI must pass Flutter analysis/tests, native DSP compile/stress tests, Android unit tests, release APK build, and APK size-budget validation.
 
 This completes the provider-owned crossfade/DJ orchestration slice, **not** the remaining effect-rack migration. Per-deck/global DSP effect ownership, full MediaSession/notification control parity, and physical-device playback acceptance remain separate gates before PR #220 is production-ready. No device audition is implied by CI.
+
+
+## 23. Media3 auxiliary-effects playback contract — implemented, pending exact-head CI and device acceptance
+
+### Ownership model
+
+The canonical MediaSession player remains the sole owner of queue state, transport, notifications, and audio focus. Short DJ samples and clipped outgoing-track echo taps are mixed by a reusable auxiliary ExoPlayer owned by the same `Media3PlaybackService`. The auxiliary player:
+
+- Does not create a second MediaSession or publish a competing queue/playback state.
+- Does not request audio focus; the canonical active deck remains the focus owner.
+- Accepts only asset, file, content, HTTP, and HTTPS URIs, with finite 0–1 gain.
+- Supports a validated optional start/end clip range for musical echo taps.
+- Supports live gain changes so the DJ rack can duck samples as the incoming deck rises.
+- Is stopped on rack restoration and released with the service.
+
+### Flutter/session contract
+
+Added the optional `PlaybackAuxiliaryEffectsBackend` capability and exposed it through the Media3 adapter, serialized runtime command lane, and `Media3ProviderSession`. The typed client validates URI schemes, gain, and clip bounds before dispatch. Commands are:
+
+- `playAuxiliarySound(uri, volume, startPosition, endPosition)`
+- `setAuxiliarySoundVolume(volume)`
+- `stopAuxiliarySound()`
+
+The DJ rack now routes sample presets through the service-owned auxiliary player when a Media3 session is active. It also routes echo/dry-echo taps through a clipped segment of the outgoing track, preserving the phrase/beat-derived start and bounded tap duration. Both paths retain the existing gain-envelope ducking and cancellation/restore behavior. Legacy mode retains its existing `just_audio` sample/echo implementation. Track-mutating brake, scratch, stutter, repeat and retrigger effects remain intentionally gated; they still need a dedicated engine-neutral active-deck automation contract.
+
+### Automated coverage and remaining validation
+
+- Client tests cover accepted command payloads, URI/gain validation, and clip-bound validation.
+- Runtime tests cover serialized play/gain/stop dispatch and clipped-range forwarding.
+- Provider-session tests cover the optional capability through the canonical session.
+- Native service behavior is compile-gated by Android CI; no physical-device auxiliary mixing, audio-focus, or sample asset audition is implied until that test is performed.
+
+Next effect parity slice: implement cancellable, engine-neutral active-deck seek/rate automation for brake/scratch/stutter/repeat/retrigger, with restoration guarantees across interruption, manual transport, crossfade promotion, and recovery. Do not re-enable those presets by calling legacy `AudioPlayer` methods under Media3 authority.
