@@ -29,8 +29,10 @@ class AudioEffectsProvider extends ChangeNotifier {
     List<AudioPlayer>? sessionPlayers,
     this.loudnessEnhancer,
     this.playbackSession,
-  }) : sessionPlayers = sessionPlayers ??
-            (player == null ? const <AudioPlayer>[] : <AudioPlayer>[player]) {
+  }) : sessionPlayers = playbackSession != null
+            ? const <AudioPlayer>[]
+            : (sessionPlayers ??
+                (player == null ? const <AudioPlayer>[] : <AudioPlayer>[player])) {
     // A/B players own independent Android sessions. Track both so an incoming
     // crossfade engine receives the same saved auxiliary-effect profile.
     for (final sessionPlayer in this.sessionPlayers) {
@@ -162,12 +164,15 @@ class AudioEffectsProvider extends ChangeNotifier {
   Future<void> _applyNativeNow({int? sessionIdOverride}) async {
     final sessionIds = sessionIdOverride != null
         ? <int>{sessionIdOverride}
-        : <int>{
-            ..._sessionIdsByPlayer.values,
-            if (_media3SessionId != null) _media3SessionId!,
-            if ((player?.androidAudioSessionId ?? 0) > 0)
-              player!.androidAudioSessionId!,
-          };
+        : playbackSession != null
+            ? <int>{
+                if (_media3SessionId != null) _media3SessionId!,
+              }
+            : <int>{
+                ..._sessionIdsByPlayer.values,
+                if ((player?.androidAudioSessionId ?? 0) > 0)
+                  player!.androidAudioSessionId!,
+              };
     if (sessionIds.isEmpty) return;
 
     final enabled = effectsEnabled;
