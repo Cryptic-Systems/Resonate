@@ -49,7 +49,7 @@ PlaybackSnapshot _snapshot({
       error: null,
     );
 
-class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackDeckSpeedBackend, PlaybackPlaylistSyncBackend, PlaybackAudioFocusBackend {
+class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackDeckSpeedBackend, PlaybackPlaylistSyncBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   final List<String> calls = <String>[];
@@ -117,6 +117,12 @@ class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpe
     lastDeckSpeeds = (activeSpeed, standbySpeed);
     calls.add('deckSpeeds');
   }
+  @override
+  Future<void> playAuxiliarySound(Uri uri, {required double volume}) async => calls.add('auxPlay:' + uri.toString() + ':' + volume.toString());
+  @override
+  Future<void> setAuxiliarySoundVolume(double volume) async => calls.add('auxVolume:' + volume.toString());
+  @override
+  Future<void> stopAuxiliarySound() async => calls.add('auxStop');
   @override
   Future<void> setAudioFocusHandling(bool enabled) async {
     lastAudioFocusHandling = enabled;
@@ -238,6 +244,20 @@ void main() {
         throwsArgumentError,
       );
       expect(backend.calls, ['deckSpeeds']);
+    });
+
+    test('exposes auxiliary sample playback through the canonical session', () async {
+      await session.start();
+      final auxiliary = session as PlaybackAuxiliaryEffectsBackend;
+      final uri = Uri.parse('asset:///flutter_assets/assets/sfx/airhorn.wav');
+      await auxiliary.playAuxiliarySound(uri, volume: 0.08);
+      await auxiliary.setAuxiliarySoundVolume(0.02);
+      await auxiliary.stopAuxiliarySound();
+      expect(backend.calls, [
+        'auxPlay:' + uri.toString() + ':0.08',
+        'auxVolume:0.02',
+        'auxStop',
+      ]);
     });
 
     test('exposes audio-focus ownership through the canonical session', () async {
