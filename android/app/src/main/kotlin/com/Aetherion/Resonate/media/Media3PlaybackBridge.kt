@@ -228,8 +228,16 @@ class Media3PlaybackBridge(
                     connected.clearMediaItems()
                     result.success(true)
                 }
-                "skipToNext" -> { connected.seekToNextMediaItem(); result.success(true) }
-                "skipToPrevious" -> { connected.seekToPreviousMediaItem(); result.success(true) }
+                "skipToNext" -> {
+                    Media3PlaybackService.instance?.clearPreload()
+                    connected.seekToNextMediaItem()
+                    result.success(true)
+                }
+                "skipToPrevious" -> {
+                    Media3PlaybackService.instance?.clearPreload()
+                    connected.seekToPreviousMediaItem()
+                    result.success(true)
+                }
                 "setRepeatMode" -> {
                     val mode = call.argument<String>("mode")
                     val nativeMode = when (mode) {
