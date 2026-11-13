@@ -745,3 +745,20 @@ CI and physical-device regression testing are required. Verify Pause during a
 DJ sample, echo tap, crossfade, and ordinary playback; then raise device volume
 while paused and confirm complete silence. Also verify Play does not resurrect
 the old sample and that normal DJ effects still work after resuming.
+
+
+## 30. Automated pause ownership regression guard — 2026-11-13
+
+The auxiliary DJ/sample player is a separate native output path. Its pause
+cleanup is now selected through `AudioOutputPolicy.shouldStopAuxiliaryAudio`,
+which returns true only for a canonical active-deck pause. JVM tests assert
+that a canonical pause stops auxiliary output, while active playback and a
+standby-deck pause do not trigger that cleanup.
+
+Device acceptance must respect DJ's automated operation: enable DJ and allow
+a natural track-end transition to occur; do not expect a manual sample trigger.
+During that listening session, verify normal DJ output, pause during or after
+an automated effect when the opportunity occurs, and confirm silence while
+paused. Record whether the relevant effect was actually active at pause time.
+CI policy tests validate routing intent but cannot prove physical audio output
+has stopped on a device.
