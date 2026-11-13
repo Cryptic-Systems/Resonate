@@ -6,6 +6,8 @@ import 'package:just_audio/just_audio.dart';
 /// is currently active. Stream binding, session callbacks, and crossfade
 /// orchestration stay on [MusicProvider].
 class EnginePair {
+  bool _disposed = false;
+
   EnginePair() {
     equalizerA = AndroidEqualizer();
     equalizerB = AndroidEqualizer();
@@ -63,6 +65,10 @@ class EnginePair {
   }
 
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    await playerA.stop();
+    await playerB.stop();
     await playerA.dispose();
     await playerB.dispose();
   }

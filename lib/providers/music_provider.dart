@@ -169,6 +169,7 @@ class MusicProvider extends ChangeNotifier {
   StreamSubscription<int?>? _sessionASub;
   StreamSubscription<int?>? _sessionBSub;
   bool _disposed = false;
+  bool _legacyEnginesRetired = false;
   final QueueStore _queueStore = QueueStore();
   /// Compatibility aliases — queue state lives in [_queueStore].
   List<Song> get _queue => _queueStore.songs;
@@ -808,6 +809,27 @@ class MusicProvider extends ChangeNotifier {
     attachMedia3DjOverlaySession(session);
     _media3ProviderSessionPrepared = true;
     _media3ProviderSessionActive = true;
+
+    // The legacy EnginePair is no longer a fallback after this point. Stop
+    // every listener first, then dispose both just_audio players so no delayed
+    // stream-recovery future can keep an independent audio engine alive.
+    _legacyEnginesRetired = true;
+    _playerStreamBinder.cancel();
+    _currentIndexSubscription?.cancel();
+    _currentIndexSubscription = null;
+    _volumeSubscription?.cancel();
+    _volumeSubscription = null;
+    await _sessionASub?.cancel();
+    _sessionASub = null;
+    await _sessionBSub?.cancel();
+    _sessionBSub = null;
+    await _engines.dispose();
+    await ResonateDiagnostics.record('legacy_just_audio_engines_retired', {
+      'playerAPlaying': _playerA.playing,
+      'playerBPlaying': _playerB.playing,
+      'disposed': true,
+    });
+
     final initialState = _media3ShadowState;
     if (initialState != null) {
       this._acceptMedia3ProviderState(initialState);
@@ -820,6 +842,7 @@ class MusicProvider extends ChangeNotifier {
       'focusEnabled': true,
       'transportAuthority': 'media3_provider_session',
       'legacyEnginesStopped': true,
+      'legacyEnginesDisposed': _legacyEnginesRetired,
     }));
   }
 
@@ -1777,13 +1800,27 @@ class MusicProvider extends ChangeNotifier {
         if (due) {
           _lastPlayKickAt = now;
           isPlaying = true;
+          final recoveryEpoch = _userTransportEpoch;
+          bool stillOwnsLegacyRecovery() =>
+              !_disposed &&
+              !_legacyEnginesRetired &&
+              !_media3ProviderSessionActive &&
+              _userTransportEpoch == recoveryEpoch &&
+              _userWantsPlaying &&
+              !_recentlyUserPaused &&
+              !_transitionLive &&
+              identical(player, audioPlayer);
           unawaited(() async {
-            // Do not re-claim focus mid-crossfade — it can reset OEM volume/routing mid-ramp.
-            if (_transitionLive) return;
+            // This listener belongs only to the legacy backend. Recheck after
+            // every await: Media3 handoff or a newer Pause may have happened
+            // while audio focus / seek was pending.
+            if (!stillOwnsLegacyRecovery()) return;
             if (!await _claimAudioFocus(reason: 'player_stream_recovery')) return;
+            if (!stillOwnsLegacyRecovery()) return;
             try {
               await player.seek(player.position);
             } catch (_) {}
+            if (!stillOwnsLegacyRecovery()) return;
             try {
               await player.play();
             } catch (_) {}

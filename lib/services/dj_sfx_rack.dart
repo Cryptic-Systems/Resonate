@@ -530,6 +530,10 @@ class DjSfxRack {
         });
         return;
       }
+      // A selected playback session is authoritative. If it cannot provide
+      // auxiliary audio, skip the sample rather than silently constructing a
+      // second just_audio engine alongside the canonical player.
+      if (candidate != null) return;
       final player = AudioPlayer();
       _oneshot = player;
       // Start quietly and let tick() duck the sample further as the
