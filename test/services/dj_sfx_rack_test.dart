@@ -6,6 +6,7 @@ import 'package:resonate/dj_engine/core/dj_policy.dart';
 import 'package:resonate/dj_engine/core/dj_types.dart';
 import 'package:resonate/services/dj_sfx_rack.dart';
 import 'package:resonate/services/playback_engine_session.dart';
+import 'package:resonate/services/playback_backend.dart';
 
 const safePool = <DjSfxPreset>{
   DjSfxPreset.tightGlue,
@@ -99,13 +100,55 @@ void main() {
 
         expect(
           rack.activePreset,
-          DjSfxPreset.filterOpen,
-          reason: '$requested must not invoke a legacy-only effect under Media3',
+          requested,
+          reason: '$requested should remain available through the Media3 session contract',
         );
-        expect(session.setCalls.map((call) => call.deck), ['active', 'standby']);
+        if (requested == DjSfxPreset.filterOpen || requested == DjSfxPreset.filterClose) {
+          expect(session.setCalls.map((call) => call.deck), ['active', 'standby']);
+        } else {
+          expect(session.setCalls, isEmpty);
+        }
         await rack.restore();
-        expect(session.clearCalls, ['active', 'standby']);
+        if (requested == DjSfxPreset.filterOpen || requested == DjSfxPreset.filterClose) {
+          expect(session.clearCalls, ['active', 'standby']);
+        } else {
+          expect(session.clearCalls, isEmpty);
+        }
       }
+    });
+
+    test('cancels Media3 brake automation and restores the captured playback rate', () async {
+      final rack = DjSfxRack(random: _SequenceRandom());
+      final session = _RecordingDeckOverlaySession();
+
+      await rack.engage(
+        energyScore: 0.8,
+        preset: DjSfxPreset.brake,
+        playbackSession: session,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await rack.restore();
+
+      expect(session.speedCalls, isNotEmpty);
+      expect(session.speedCalls.any((speed) => speed < 1.25), isTrue);
+      expect(session.speedCalls.last, 1.25);
+      expect(rack.engaged, isFalse);
+    });
+
+    test('routes Media3 scratch seeks through the canonical session', () async {
+      final rack = DjSfxRack(random: _SequenceRandom());
+      final session = _RecordingDeckOverlaySession();
+
+      await rack.engage(
+        energyScore: 0.8,
+        preset: DjSfxPreset.scratch,
+        playbackSession: session,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await rack.restore();
+
+      expect(session.seekCalls, isNotEmpty);
+      expect(session.speedCalls.last, 1.25);
     });
 
     test('retains the engaged Media3 session for tick and restore', () async {
@@ -231,9 +274,41 @@ class _DeckOverlayCall {
   final List<double> gainsDb;
 }
 
-class _RecordingDeckOverlaySession implements PlaybackEngineSession {
+class _RecordingDeckOverlaySession implements PlaybackEngineSession, PlaybackAuxiliaryEffectsBackend {
   final List<_DeckOverlayCall> setCalls = <_DeckOverlayCall>[];
   final List<String> clearCalls = <String>[];
+  final List<Duration> seekCalls = <Duration>[];
+  final List<double> speedCalls = <double>[];
+  final List<String> auxiliaryCalls = <String>[];
+
+  @override
+  double playbackSpeed = 1.25;
+
+  @override
+  Duration position = const Duration(seconds: 20);
+
+  @override
+  Duration? duration = const Duration(minutes: 4);
+
+  @override
+  Future<void> seek(Duration value) async { seekCalls.add(value); }
+
+  @override
+  Future<void> setPlaybackSpeed(double value) async {
+    playbackSpeed = value;
+    speedCalls.add(value);
+  }
+
+  @override
+  Future<void> playAuxiliarySound(Uri uri, {required double volume, Duration startPosition = Duration.zero, Duration? endPosition}) async {
+    auxiliaryCalls.add('play:${uri.toString()}:${volume.toString()}');
+  }
+
+  @override
+  Future<void> setAuxiliarySoundVolume(double volume) async { auxiliaryCalls.add('volume:${volume.toString()}'); }
+
+  @override
+  Future<void> stopAuxiliarySound() async { auxiliaryCalls.add('stop'); }
 
   @override
   Future<void> setDeckEqOverlay({
