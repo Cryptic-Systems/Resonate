@@ -648,7 +648,7 @@ class Media3PlaybackRuntime {
         if (backend is! PlaybackAuxiliaryEffectsBackend) {
           throw UnsupportedError('The playback backend has no auxiliary-effects capability.');
         }
-        await backend.playAuxiliarySound(
+        await (backend as PlaybackAuxiliaryEffectsBackend).playAuxiliarySound(
           uri,
           volume: volume,
           startPosition: startPosition,
@@ -664,7 +664,7 @@ class Media3PlaybackRuntime {
         if (backend is! PlaybackAuxiliaryEffectsBackend) {
           throw UnsupportedError('The playback backend has no auxiliary-effects capability.');
         }
-        await backend.setAuxiliarySoundVolume(volume);
+        await (backend as PlaybackAuxiliaryEffectsBackend).setAuxiliarySoundVolume(volume);
       });
 
   Future<void> stopAuxiliarySound() => _run(() async {
@@ -672,7 +672,7 @@ class Media3PlaybackRuntime {
         if (backend is! PlaybackAuxiliaryEffectsBackend) {
           throw UnsupportedError('The playback backend has no auxiliary-effects capability.');
         }
-        await backend.stopAuxiliarySound();
+        await (backend as PlaybackAuxiliaryEffectsBackend).stopAuxiliarySound();
       });
 
   Future<void> _run(Future<void> Function() command) {
