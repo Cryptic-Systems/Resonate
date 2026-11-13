@@ -782,6 +782,12 @@ class MusicProvider extends ChangeNotifier {
     }, onError: (Object error) {
       debugPrint('Media3 audio session stream error: $error');
     });
+    // Release any legacy DJ one-shot / track automation before disposing
+    // EnginePair. DjSfxRack can own its own just_audio AudioPlayer, independent
+    // of the two queue decks, so stopping A/B alone is not a complete silence
+    // barrier during provider cutover.
+    await _restoreDjTransitionSfx();
+
     // Commit the handoff only after the session has the provider queue,
     // repeat/shuffle/volume policy, and both observation subscriptions.
     // Media3 becomes the sole transport and recovery owner from this point.
