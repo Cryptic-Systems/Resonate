@@ -150,7 +150,7 @@ void main() {
       });
 
       final uri = Uri.parse('asset:///flutter_assets/assets/sfx/whoosh.wav');
-      await client.playAuxiliarySound(uri, volume: 0.12);
+      await client.playAuxiliarySound(uri, volume: 0.12, startPosition: const Duration(milliseconds: 120), endPosition: const Duration(milliseconds: 780));
       await client.setAuxiliarySoundVolume(0.04);
       await client.stopAuxiliarySound();
 
@@ -162,6 +162,8 @@ void main() {
       expect(calls.first.arguments, {
         'uri': uri.toString(),
         'volume': 0.12,
+        'startPositionMs': 120,
+        'endPositionMs': 780,
       });
       expect(calls[1].arguments, {'volume': 0.04});
 
@@ -171,6 +173,10 @@ void main() {
       );
       await expectLater(
         client.playAuxiliarySound(uri, volume: 1.1),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.playAuxiliarySound(uri, volume: 0.1, startPosition: const Duration(seconds: 2), endPosition: const Duration(seconds: 1)),
         throwsArgumentError,
       );
       await expectLater(
