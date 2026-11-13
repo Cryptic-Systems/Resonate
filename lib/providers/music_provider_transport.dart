@@ -66,24 +66,12 @@ Future<void> pause({String source = 'normal_player'}) {
         }
         if (_media3ProviderSessionActive) {
           final session = _media3ProviderSession!;
-          // Media3 is canonical, but a stale legacy just_audio deck must never
-          // remain audible if an old callback/path accidentally restarted it.
-          // Pause both legacy players as a defensive silence barrier before
-          // acknowledging the Media3 pause.
-          final legacyAWasPlaying = _playerA.playing;
-          final legacyBWasPlaying = _playerB.playing;
-          // Stop the canonical source first so legacy cleanup can never delay
-          // the actual user-visible pause.
+          // Legacy engines are disposed at handoff. Pause the canonical session
+          // directly; never recreate a Flutter player as a silence barrier.
           await session.pause();
-          await Future.wait<void>([
-            _playerA.pause().catchError((Object _) {}),
-            _playerB.pause().catchError((Object _) {}),
-          ]);
-          unawaited(ResonateDiagnostics.record('media3_pause_legacy_silence_barrier', {
-            'legacyAWasPlaying': legacyAWasPlaying,
-            'legacyBWasPlaying': legacyBWasPlaying,
-            'legacyAPlayingAfterPause': _playerA.playing,
-            'legacyBPlayingAfterPause': _playerB.playing,
+          unawaited(ResonateDiagnostics.record('media3_pause_canonical_only', {
+            'legacyEnginesRetired': _legacyEnginesRetired,
+            'transportEpoch': _userTransportEpoch,
           }));
           this._reconcileMedia3ProviderSession();
           isPlaying = session.isPlaying;

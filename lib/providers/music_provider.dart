@@ -113,28 +113,42 @@ class MusicProvider extends ChangeNotifier {
   final PodcastSessionBridge _podcastSession = PodcastSessionBridge();
   final AudiobookSessionBridge _audiobookSession = AudiobookSessionBridge();
   ModeProvider? _modes;
-  late final AudioEffectsController _audioEffectsController;
   final LibraryVisibilityStore _visibility = LibraryVisibilityStore.instance;
-  final EnginePair _engines = EnginePair();
-  /// Compatibility aliases — dual engines live in [_engines].
-  AudioPlayer get _playerA => _engines.playerA;
-  AudioPlayer get _playerB => _engines.playerB;
-  AndroidEqualizer get _equalizerA => _engines.equalizerA;
-  AndroidEqualizer get _equalizerB => _engines.equalizerB;
-  AndroidLoudnessEnhancer get _loudnessA => _engines.loudnessA;
-  AndroidLoudnessEnhancer get _loudnessB => _engines.loudnessB;
-  bool get _activeIsA => _engines.activeIsA;
-  set _activeIsA(bool value) => _engines.activeIsA = value;
-  AudioPlayer get audioPlayer => _engines.active;
-  /// Both players own independent Android audio sessions; session-based
-  /// auxiliary effects must be reapplied to either engine across handoffs.
+  EnginePair? _engines;
+  bool _legacyEngineObserversInitialized = false;
+  EnginePair get _legacyEngines {
+    if (_legacyEnginesRetired || _media3ProviderSessionActive) {
+      throw StateError('Legacy just_audio engines are retired; Media3 owns playback.');
+    }
+    return _engines ??= EnginePair();
+  }
+  late final AudioEffectsController _audioEffectsController =
+      AudioEffectsController(
+    equalizerA: _legacyEngines.equalizerA,
+    equalizerB: _legacyEngines.equalizerB,
+    loudnessA: _legacyEngines.loudnessA,
+    loudnessB: _legacyEngines.loudnessB,
+  );
+  AudioPlayer get _playerA => _legacyEngines.playerA;
+  AudioPlayer get _playerB => _legacyEngines.playerB;
+  AndroidEqualizer get _equalizerA => _legacyEngines.equalizerA;
+  AndroidEqualizer get _equalizerB => _legacyEngines.equalizerB;
+  AndroidLoudnessEnhancer get _loudnessA => _legacyEngines.loudnessA;
+  AndroidLoudnessEnhancer get _loudnessB => _legacyEngines.loudnessB;
+  bool get _activeIsA => _media3ProviderSessionActive ? true : _legacyEngines.activeIsA;
+  set _activeIsA(bool value) {
+    if (!_media3ProviderSessionActive && !_legacyEnginesRetired) {
+      _legacyEngines.activeIsA = value;
+    }
+  }
+  AudioPlayer get audioPlayer => _legacyEngines.active;
   List<AudioPlayer> get audioSessionPlayers => [_playerA, _playerB];
-  AudioPlayer get inactivePlayer => _engines.inactive;
-  AndroidEqualizer get equalizer => _engines.equalizer;
-  AndroidLoudnessEnhancer get loudnessEnhancer => _engines.loudnessEnhancer;
-  AndroidEqualizer get inactiveEqualizer => _engines.inactiveEqualizer;
+  AudioPlayer get inactivePlayer => _legacyEngines.inactive;
+  AndroidEqualizer get equalizer => _legacyEngines.equalizer;
+  AndroidLoudnessEnhancer get loudnessEnhancer => _legacyEngines.loudnessEnhancer;
+  AndroidEqualizer get inactiveEqualizer => _legacyEngines.inactiveEqualizer;
   AndroidLoudnessEnhancer get inactiveLoudnessEnhancer =>
-      _engines.inactiveLoudnessEnhancer;
+      _legacyEngines.inactiveLoudnessEnhancer;
 
   Song? currentSong;
   bool isPlaying = false;
@@ -640,6 +654,7 @@ class MusicProvider extends ChangeNotifier {
   /// Switch active engine to A and rebind streams if we were on B.
   /// Safe to call at the start of any non-crossfade play path.
   void _ensureEngineA({String reason = 'default'}) {
+    if (_media3ProviderSessionActive || _legacyEnginesRetired) return;
     if (_activeIsA) return;
     _activeIsA = true;
     _bindActivePlayerStreams();
@@ -672,29 +687,11 @@ class MusicProvider extends ChangeNotifier {
     this.audioHandler,
     PlaybackEngineSession? media3ProviderSession,
   }) : _media3ProviderSession = media3ProviderSession {
-    // Players + Android effects are constructed by [EnginePair].
-    _audioEffectsController = AudioEffectsController(
-      equalizerA: _equalizerA,
-      equalizerB: _equalizerB,
-      loudnessA: _loudnessA,
-      loudnessB: _loudnessB,
-    );
-    _sessionASub = _playerA.androidAudioSessionIdStream.listen((id) {
-      if (_disposed || _media3ProviderSessionActive) return;
-      try {
-        if (id != null && id > 0 && _activeIsA) onAndroidSession?.call(id);
-      } catch (e) {
-        debugPrint('onAndroidSession A failed: $e');
-      }
-    }, onError: (e) => debugPrint('sessionA stream error: $e'));
-    _sessionBSub = _playerB.androidAudioSessionIdStream.listen((id) {
-      if (_disposed || _media3ProviderSessionActive) return;
-      try {
-        if (id != null && id > 0 && !_activeIsA) onAndroidSession?.call(id);
-      } catch (e) {
-        debugPrint('onAndroidSession B failed: $e');
-      }
-    }, onError: (e) => debugPrint('sessionB stream error: $e'));
+    // A Media3-backed provider must not construct Flutter audio players at
+    // startup. Initialize legacy decks only when the explicit fallback is used.
+    if (_media3ProviderSession == null) {
+      _initializeLegacyEngineObservers();
+    }
     if (audioHandler is AudioServiceHandler) {
       (audioHandler! as AudioServiceHandler).bindPlaybackController(
         // CRITICAL: onPlay must never toggle. If isPlaying was optimistic-true
@@ -708,13 +705,37 @@ class MusicProvider extends ChangeNotifier {
         onPrevious: () => this.previousSong(source: 'audio_service'),
       );
     }
-    _bindActivePlayerStreams();
-    unawaited(_configureAudioSession());
     _playbackSettingsLoad = _loadPlaybackSettings();
     unawaited(_playbackSettingsLoad!);
     _systemVolumePollTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => unawaited(_syncSystemVolume()));
     _queueRestore = _restoreQueue();
     unawaited(_queueRestore!);
+  }
+
+  void _initializeLegacyEngineObservers() {
+    if (_legacyEngineObserversInitialized || _disposed ||
+        _legacyEnginesRetired || _media3ProviderSessionActive) return;
+    _legacyEngineObserversInitialized = true;
+    final playerA = _playerA;
+    final playerB = _playerB;
+    _sessionASub = playerA.androidAudioSessionIdStream.listen((id) {
+      if (_disposed || _media3ProviderSessionActive || _legacyEnginesRetired) return;
+      try {
+        if (id != null && id > 0 && _activeIsA) onAndroidSession?.call(id);
+      } catch (e) {
+        debugPrint('onAndroidSession A failed: $e');
+      }
+    }, onError: (e) => debugPrint('sessionA stream error: $e'));
+    _sessionBSub = playerB.androidAudioSessionIdStream.listen((id) {
+      if (_disposed || _media3ProviderSessionActive || _legacyEnginesRetired) return;
+      try {
+        if (id != null && id > 0 && !_activeIsA) onAndroidSession?.call(id);
+      } catch (e) {
+        debugPrint('onAndroidSession B failed: $e');
+      }
+    }, onError: (e) => debugPrint('sessionB stream error: $e'));
+    _bindActivePlayerStreams();
+    unawaited(_configureAudioSession());
   }
 
   /// Starts the injected Media3 session, restores the provider queue/settings,
@@ -791,13 +812,16 @@ class MusicProvider extends ChangeNotifier {
     // repeat/shuffle/volume policy, and both observation subscriptions.
     // Media3 becomes the sole transport and recovery owner from this point.
     await session.setAudioFocusHandling(true);
-    try { await _playerA.stop(); } catch (_) {}
-    try { await _playerB.stop(); } catch (_) {}
-    if (_playerA.playing || _playerB.playing) {
-      await session.setAudioFocusHandling(false);
-      throw StateError(
-        'Cannot hand off to Media3 while a legacy playback deck is still active.',
-      );
+    final legacyEngines = _engines;
+    if (legacyEngines != null) {
+      try { await legacyEngines.playerA.stop(); } catch (_) {}
+      try { await legacyEngines.playerB.stop(); } catch (_) {}
+      if (legacyEngines.playerA.playing || legacyEngines.playerB.playing) {
+        await session.setAudioFocusHandling(false);
+        throw StateError(
+          'Cannot hand off to Media3 while a legacy playback deck is still active.',
+        );
+      }
     }
     _crossfadeInProgress = false;
     _automaticCrossfadeInFlight = false;
@@ -828,7 +852,7 @@ class MusicProvider extends ChangeNotifier {
     _sessionASub = null;
     await _sessionBSub?.cancel();
     _sessionBSub = null;
-    await _engines.dispose();
+    if (legacyEngines != null) await legacyEngines.dispose();
     await ResonateDiagnostics.record('legacy_just_audio_engines_retired', {
       'disposed': true,
       'reason': 'media3_handoff',
@@ -1729,14 +1753,12 @@ class MusicProvider extends ChangeNotifier {
     if (session != null) {
       pos = session.position;
       buffered = session.bufferedPosition;
+    } else if (_engines != null && !_legacyEnginesRetired) {
+      pos = _engines!.active.position;
+      buffered = _engines!.active.bufferedPosition;
     } else {
-      try {
-        pos = audioPlayer.position;
-        buffered = audioPlayer.bufferedPosition;
-      } catch (_) {
-        pos = currentPosition;
-        buffered = currentPosition;
-      }
+      pos = currentPosition;
+      buffered = currentPosition;
     }
 
     if (positionOnly) {
@@ -1761,6 +1783,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   void _bindActivePlayerStreams() {
+    if (_media3ProviderSessionActive || _legacyEnginesRetired) return;
     _playerStreamBinder.cancel(); _currentIndexSubscription?.cancel(); _volumeSubscription?.cancel();
     final player = audioPlayer;
     _playerStreamBinder.bindPlayerState(player.playerStateStream, (state) {
@@ -1995,7 +2018,7 @@ class MusicProvider extends ChangeNotifier {
           'positionMs': position.inMilliseconds,
           'metadataDurationMs': currentDuration?.inMilliseconds,
           'engine': _activeIsA ? 'A' : 'B',
-          'playing': audioPlayer.playing,
+          'playing': media3Session?.isPlaying ?? (_engines?.active.playing ?? false),
           'reason': 'active_engine_duration_unavailable',
         }));
       }
@@ -3072,6 +3095,7 @@ class MusicProvider extends ChangeNotifier {
         intentToken: intentToken,
       );
     }
+    _initializeLegacyEngineObservers();
     if (!await _claimAudioFocus(reason: 'play_song_internal')) {
       _userWantsPlaying = false;
       isPlaying = false;
@@ -3874,9 +3898,11 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Stream<Duration?> get durationStream => _media3ProviderSessionActive
-      ? _media3ProviderSession!.durationStream
-      : audioPlayer.durationStream;
+  Stream<Duration?> get durationStream {
+    if (_media3ProviderSessionActive) return _media3ProviderSession!.durationStream;
+    if (_engines != null && !_legacyEnginesRetired) return _engines!.active.durationStream;
+    return Stream<Duration?>.value(currentDuration);
+  }
   @override
   void dispose() {
     if (_disposed) return;
@@ -3905,7 +3931,8 @@ class MusicProvider extends ChangeNotifier {
     _media3ShadowState = null;
     final media3Session = _media3ProviderSession;
     if (media3Session != null) unawaited(media3Session.dispose());
-    unawaited(_engines.dispose());
+    final legacyEngines = _engines;
+    if (legacyEngines != null) unawaited(legacyEngines.dispose());
     super.dispose();
   }
 }
