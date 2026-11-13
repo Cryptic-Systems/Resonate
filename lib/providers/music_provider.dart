@@ -104,6 +104,7 @@ class MusicProvider extends ChangeNotifier {
   Future<void>? _media3HandoffFuture;
   bool _media3ProviderSessionPrepared = false;
   bool _media3ProviderSessionActive = false;
+  bool _media3FallbackEnabled = false;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
   bool get media3ProviderSessionActive => _media3ProviderSessionActive;
   /// The exact session that owns canonical playback after provider handoff.
@@ -117,8 +118,9 @@ class MusicProvider extends ChangeNotifier {
   EnginePair? _engines;
   bool _legacyEngineObserversInitialized = false;
   EnginePair get _legacyEngines {
-    if (_legacyEnginesRetired || _media3ProviderSessionActive) {
-      throw StateError('Legacy just_audio engines are retired; Media3 owns playback.');
+    if (_legacyEnginesRetired || _media3ProviderSessionActive ||
+        (_media3ProviderSession != null && !_media3FallbackEnabled)) {
+      throw StateError('Legacy just_audio engines are unavailable while Media3 owns or is preparing playback.');
     }
     return _engines ??= EnginePair();
   }
@@ -570,7 +572,7 @@ class MusicProvider extends ChangeNotifier {
       return false;
     }
     if (currentSong == null || currentSong!.filePath.trim().isEmpty) return false;
-    final playing = _media3ProviderSessionActive
+    final playing = _media3ProviderSession != null
         ? _media3ProviderSession!.isPlaying
         : audioPlayer.playing;
     if (!playing && !_userWantsPlaying) return false;
@@ -717,7 +719,8 @@ class MusicProvider extends ChangeNotifier {
 
   void _initializeLegacyEngineObservers() {
     if (_legacyEngineObserversInitialized || _disposed ||
-        _legacyEnginesRetired || _media3ProviderSessionActive) return;
+        _legacyEnginesRetired || _media3ProviderSessionActive ||
+        (_media3ProviderSession != null && !_media3FallbackEnabled)) return;
     _legacyEngineObserversInitialized = true;
     final playerA = _playerA;
     final playerB = _playerB;
@@ -988,6 +991,8 @@ class MusicProvider extends ChangeNotifier {
 
   /// If UI says playing but engine volume is near zero outside a crossfade, unstick.
   void _maybeRecoverSilentPlayback() {
+    if (_media3ProviderSession != null && !_media3ProviderSessionActive &&
+        !_media3FallbackEnabled) return;
     if (_media3ProviderSessionActive) {
       this._recoverMedia3ProviderPlayback();
       return;
@@ -1099,6 +1104,8 @@ class MusicProvider extends ChangeNotifier {
   /// without this, Audiobook's LoopMode.one can leak into Normal mode.
   Future<void> _synchronizeModePlaybackBoundary() async {
     final generation = ++_modeBoundaryGeneration;
+    if (_media3ProviderSession != null && !_media3ProviderSessionActive &&
+        !_media3FallbackEnabled) return;
     if (_media3ProviderSessionActive) {
       final session = _media3ProviderSession!;
       await session.setRepeatMode(switch (_repeatMode) {
@@ -1191,6 +1198,8 @@ class MusicProvider extends ChangeNotifier {
   /// Public: re-claim focus and restore volume if playback went silent while UI moved.
   Future<void> ensureAudiblePlayback() async {
     try {
+      if (_media3ProviderSession != null && !_media3ProviderSessionActive &&
+          !_media3FallbackEnabled) return;
       if (_recentlyUserPaused) return;
       if (!_userWantsPlaying) return;
       // Do not fight an active sleep-timer fade-out.
@@ -1368,6 +1377,8 @@ class MusicProvider extends ChangeNotifier {
   /// OEMs often take 0.5–3s to settle A2DP; we pulse volume a few times.
   Future<void> _onAudioRouteChanged() async {
     if (_disposed) return;
+    if (_media3ProviderSession != null && !_media3ProviderSessionActive &&
+        !_media3FallbackEnabled) return;
     final now = DateTime.now();
     if (_lastRouteRecoverAt != null &&
         now.difference(_lastRouteRecoverAt!) < const Duration(milliseconds: 800)) {
@@ -1486,6 +1497,8 @@ class MusicProvider extends ChangeNotifier {
 
   /// Apply current master gain (preamp × sleep fade × duck) to the active engine.
   Future<void> _applyActiveMasterVolume() async {
+    if (_media3ProviderSession != null && !_media3ProviderSessionActive &&
+        !_media3FallbackEnabled) return;
     if (_media3ProviderSessionActive) {
       try {
         await _media3ProviderSession!.setGainFactors(
@@ -1508,6 +1521,9 @@ class MusicProvider extends ChangeNotifier {
 
   /// Silence the idle (non-active) engine. Safe during transitions.
   Future<void> _silenceIdleEngine() async {
+    if (_media3ProviderSession != null && !_media3ProviderSessionActive &&
+        !_media3FallbackEnabled) return;
+    if (_media3ProviderSessionActive) return;
     try {
       await inactivePlayer.setVolume(0.0);
     } catch (_) {}
@@ -3086,7 +3102,8 @@ class MusicProvider extends ChangeNotifier {
       try {
         await prepareMedia3ProviderSession();
       } catch (error) {
-        debugPrint('Media3 provider handoff unavailable; retaining legacy path: $error');
+        _media3FallbackEnabled = true;
+        debugPrint('Media3 provider handoff unavailable; enabling the explicit legacy fallback: $error');
       }
     }
     if (_media3ProviderSessionActive) {
