@@ -67,6 +67,47 @@ void main() {
       expect(session.clearCalls, ['active', 'standby']);
     });
 
+    test('routes legacy-only samples and track effects to Media3-safe EQ', () async {
+      final rack = DjSfxRack(random: _SequenceRandom());
+      final session = _RecordingDeckOverlaySession();
+      final legacyOnlyPresets = <DjSfxPreset>[
+        DjSfxPreset.airHorn,
+        DjSfxPreset.gunshot,
+        DjSfxPreset.vinylScratch,
+        DjSfxPreset.rewind,
+        DjSfxPreset.whoosh,
+        DjSfxPreset.impact,
+        DjSfxPreset.scratch,
+        DjSfxPreset.stutter,
+        DjSfxPreset.beatRepeat,
+        DjSfxPreset.retrigger,
+        DjSfxPreset.brake,
+        DjSfxPreset.echo,
+        DjSfxPreset.dryEcho,
+        DjSfxPreset.repeat,
+        DjSfxPreset.repeatRestart,
+      ];
+
+      for (final requested in legacyOnlyPresets) {
+        session.setCalls.clear();
+        session.clearCalls.clear();
+        await rack.engage(
+          energyScore: 0.5,
+          preset: requested,
+          playbackSession: session,
+        );
+
+        expect(
+          rack.activePreset,
+          DjSfxPreset.filterOpen,
+          reason: '$requested must not invoke a legacy-only effect under Media3',
+        );
+        expect(session.setCalls.map((call) => call.deck), ['active', 'standby']);
+        await rack.restore();
+        expect(session.clearCalls, ['active', 'standby']);
+      }
+    });
+
     test('retains the engaged Media3 session for tick and restore', () async {
       final rack = DjSfxRack(random: _SequenceRandom());
       final session = _RecordingDeckOverlaySession();
