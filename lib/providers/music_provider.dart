@@ -1677,14 +1677,46 @@ class MusicProvider extends ChangeNotifier {
   void _publishServiceState({bool positionOnly = false}) {
     final handler = audioHandler;
     if (handler is! AudioServiceHandler) return;
-    Duration pos = currentPosition;
-    Duration? buffered;
-    try { pos = audioPlayer.position; buffered = audioPlayer.bufferedPosition; } catch (_) { buffered = currentPosition; }
+
+    // After the provider handoff, Media3 is the only playback authority.
+    // Reading position/buffered position from the compatibility EnginePair
+    // here would publish stale (often zero) values to Android's audio_service
+    // notification even while the Media3 deck is progressing normally.
+    final session = _media3ProviderSessionActive ? _media3ProviderSession : null;
+    final Duration pos;
+    final Duration? buffered;
+    if (session != null) {
+      pos = session.position;
+      buffered = session.bufferedPosition;
+    } else {
+      try {
+        pos = audioPlayer.position;
+        buffered = audioPlayer.bufferedPosition;
+      } catch (_) {
+        pos = currentPosition;
+        buffered = currentPosition;
+      }
+    }
+
     if (positionOnly) {
-      handler.publishPositionTick(playing: isPlaying, position: pos, bufferedPosition: buffered, speed: 1.0);
+      handler.publishPositionTick(
+        playing: isPlaying,
+        position: pos,
+        bufferedPosition: buffered,
+        speed: 1.0,
+      );
       return;
     }
-    handler.publishPlayback(song: currentSong, playing: isPlaying, position: pos, duration: currentDuration ?? currentSong?.duration, speed: 1.0, bufferedPosition: buffered, playbackQueue: _queue, queueIndex: _queueIndex);
+    handler.publishPlayback(
+      song: currentSong,
+      playing: isPlaying,
+      position: pos,
+      duration: currentDuration ?? currentSong?.duration,
+      speed: 1.0,
+      bufferedPosition: buffered,
+      playbackQueue: _queue,
+      queueIndex: _queueIndex,
+    );
   }
 
   void _bindActivePlayerStreams() {
