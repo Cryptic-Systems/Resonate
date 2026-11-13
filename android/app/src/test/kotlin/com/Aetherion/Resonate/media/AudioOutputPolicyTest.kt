@@ -14,7 +14,6 @@ class AudioOutputPolicyTest {
     fun standbyDeckNeverOwnsNoisyOutputHandling() {
         assertFalse(AudioOutputPolicy.handlesBecomingNoisy(isCanonicalActiveDeck = false))
     }
-}
 
     @Test
     fun onlyCanonicalActiveDeckMayOwnAudioFocus() {
