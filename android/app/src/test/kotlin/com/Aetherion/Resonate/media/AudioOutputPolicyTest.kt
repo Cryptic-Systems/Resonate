@@ -6,6 +6,32 @@ import org.junit.Test
 
 class AudioOutputPolicyTest {
     @Test
+    fun canonicalPauseStopsAuxiliaryAudio() {
+        assertTrue(
+            AudioOutputPolicy.shouldStopAuxiliaryAudio(
+                isCanonicalActiveDeck = true,
+                playWhenReady = false,
+            ),
+        )
+    }
+
+    @Test
+    fun activePlaybackAndStandbyPauseDoNotStopAuxiliaryAudio() {
+        assertFalse(
+            AudioOutputPolicy.shouldStopAuxiliaryAudio(
+                isCanonicalActiveDeck = true,
+                playWhenReady = true,
+            ),
+        )
+        assertFalse(
+            AudioOutputPolicy.shouldStopAuxiliaryAudio(
+                isCanonicalActiveDeck = false,
+                playWhenReady = false,
+            ),
+        )
+    }
+
+    @Test
     fun canonicalActiveDeckHandlesHeadphoneAndRouteDisconnects() {
         assertTrue(AudioOutputPolicy.handlesBecomingNoisy(isCanonicalActiveDeck = true))
     }
