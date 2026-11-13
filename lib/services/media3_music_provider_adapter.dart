@@ -11,7 +11,7 @@ import 'playback_snapshot.dart';
 /// Resonate's Song/queue model into immutable Media3 descriptors and forwards
 /// the native state stream. MusicProvider can migrate its transport boundary
 /// through this facade without exposing Media3 implementation details.
-class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackPlaylistSyncBackend, PlaybackSpeedBackend, PlaybackDeckSpeedBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend {
+class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackPlaylistSyncBackend, PlaybackSpeedBackend, PlaybackDeckSpeedBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend {
   Media3MusicProviderAdapter({Media3PlaybackClient? client})
       : _client = client ?? Media3PlaybackClient();
 
@@ -179,6 +179,13 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
   @override
   Future<void> clearDeckEqOverlay({required String deck}) =>
       _client.clearDeckEqOverlay(deck: deck);
+
+  @override
+  Future<void> playAuxiliarySound(Uri uri, {required double volume}) =>
+      _client.playAuxiliarySound(uri, volume: volume);
+
+  @override
+  Future<void> stopAuxiliarySound() => _client.stopAuxiliarySound();
 
   @override
   Future<void> setAudioFocusHandling(bool enabled) =>
