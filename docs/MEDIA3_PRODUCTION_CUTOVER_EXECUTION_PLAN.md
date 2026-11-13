@@ -722,3 +722,26 @@ focus regain rather than introducing a second competing AudioManager listener.
 JVM tests cover active-versus-standby ownership and the disabled migration
 state. Physical validation remains required for transient/permanent focus
 loss, duck/gain, call/VoIP interruptions, and Bluetooth/wired route changes.
+
+
+## 29. Pause/stop silences the Media3 auxiliary DJ player — 2026-11-13
+
+A device-reported symptom of audio continuing after Pause prompted a review of
+all native audio producers. The service-owned DJ sample/echo ExoPlayer is
+separate from the canonical MediaSession player and does not request audio
+focus. Previously, the canonical Pause/Stop commands did not explicitly stop
+that auxiliary player.
+
+The canonical active deck's `onPlayWhenReadyChanged(false)` listener now
+stops auxiliary playback, covering MediaSession, notification, headset, and
+other direct-controller pause paths as well as Flutter transport. The bridge
+also explicitly stops the auxiliary player before completing Pause/Stop.
+Stopping is intentional rather than pausing: DJ samples and echo taps are
+transient effects and must not resume unexpectedly with the next track.
+
+This is a targeted correction for one plausible independent audio source; it
+does not prove that it was the only source of the reported sound. Exact-head
+CI and physical-device regression testing are required. Verify Pause during a
+DJ sample, echo tap, crossfade, and ordinary playback; then raise device volume
+while paused and confirm complete silence. Also verify Play does not resurrect
+the old sample and that normal DJ effects still work after resuming.
