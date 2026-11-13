@@ -275,6 +275,24 @@ class Media3PlaybackClient {
     await _invokeAccepted('clearDeckEqOverlay', <String, Object>{'deck': deck});
   }
 
+  /// Plays a short sample through the service-owned auxiliary Media3 player.
+  /// The main queue, MediaSession and audio-focus owner remain unchanged.
+  Future<void> playAuxiliarySound(Uri uri, {required double volume}) async {
+    if (!uri.hasScheme ||
+        !const {'asset', 'file', 'content', 'http', 'https'}.contains(uri.scheme)) {
+      throw ArgumentError.value(uri, 'uri', 'A supported media URI is required.');
+    }
+    if (!volume.isFinite || volume < 0.0 || volume > 1.0) {
+      throw ArgumentError.value(volume, 'volume', 'Must be finite and between 0 and 1.');
+    }
+    await _invokeAccepted('playAuxiliarySound', <String, Object>{
+      'uri': uri.toString(),
+      'volume': volume,
+    });
+  }
+
+  Future<void> stopAuxiliarySound() => _command('stopAuxiliarySound');
+
   /// Controls whether the Media3 active deck requests Android audio focus.
   /// Disable only when another playback owner has explicitly taken over focus.
   Future<void> setAudioFocusHandling(bool enabled) async {
