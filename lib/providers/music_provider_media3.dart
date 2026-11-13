@@ -121,7 +121,6 @@ extension MusicProviderMedia3 on MusicProvider {
 
     _crossfadeInProgress = true;
     _transitionArmedAt = DateTime.now();
-    StreamSubscription<Media3ProviderState>? promotionSubscription;
     try {
       // A preload can still be decoding when the end-window trigger arrives.
       // Wait for the in-flight session command rather than racing a second
@@ -180,16 +179,6 @@ extension MusicProviderMedia3 on MusicProvider {
         'activeSpeed': preparation?.activeSpeed ?? 1.0,
         'standbySpeed': preparation?.standbySpeed ?? 1.0,
       });
-      // Subscribe before issuing the command so a fast native handoff cannot
-      // be missed by the provider's completion observer.
-      final promoted = Completer<void>();
-      promotionSubscription = session.stateStream.listen((state) {
-        if (!promoted.isCompleted &&
-            state.currentSong?.id == nextSong.id &&
-            state.queueIndex == nextIndex) {
-          promoted.complete();
-        }
-      });
       await session.crossfade(duration: Duration(milliseconds: durationMs));
 
       var elapsedMs = 0;
@@ -212,13 +201,13 @@ extension MusicProviderMedia3 on MusicProvider {
           throw TimeoutException('Media3 native crossfade did not promote the incoming deck.');
         }
       }
-      await promoted.future.timeout(
-        Duration(milliseconds: durationMs + 6500),
-        onTimeout: () => throw TimeoutException(
-          'Media3 crossfade promotion state was not observed.',
-        ),
-      );
-      if (!stillOwnsTransition()) return;
+      // The native session's current media item/index are the promotion
+      // authority. The polling loop above already waited for this exact
+      // occurrence, so a second event-stream completer would only add a
+      // race where a missed/paused state event could strand the transition.
+      if (session.currentSong?.id != nextSong.id ||
+          session.queueIndex != nextIndex ||
+          !stillOwnsTransition()) return;
 
       await session.setDeckPlaybackSpeeds(
         activeSpeed: 1.0,
@@ -349,9 +338,6 @@ extension MusicProviderMedia3 on MusicProvider {
         await _restoreDjTransitionSfx();
       }
     } finally {
-      try {
-        await promotionSubscription?.cancel();
-      } catch (_) {}
       if (transitionGeneration == _automaticTransitionGeneration) {
         _crossfadeInProgress = false;
         _automaticCrossfadeInFlight = false;
