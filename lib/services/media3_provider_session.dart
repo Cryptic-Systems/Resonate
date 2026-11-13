@@ -26,6 +26,7 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryE
   late final Media3ProviderStateBridge _bridge;
   bool _started = false;
   bool _disposed = false;
+  double _playbackSpeed = 1.0;
   Future<void>? _startFuture;
 
   Stream<Media3ProviderState> get states => _bridge.states;
@@ -198,7 +199,14 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryE
   @override
   Future<void> previous() => _runtime.previous();
   @override
-  Future<void> setPlaybackSpeed(double speed) => _runtime.setPlaybackSpeed(speed);
+  @override
+  double get playbackSpeed => _playbackSpeed;
+
+  @override
+  Future<void> setPlaybackSpeed(double speed) async {
+    await _runtime.setPlaybackSpeed(speed);
+    _playbackSpeed = speed;
+  }
 
   @override
   Future<void> setDeckPlaybackSpeeds({
