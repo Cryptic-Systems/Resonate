@@ -25,6 +25,10 @@ class Media3PlaybackState {
     required this.volume,
     this.audioSessionId,
     this.activeDeckId = 'A',
+    this.crossfadeStatus = 'idle',
+    this.crossfadeProgress = 0.0,
+    this.activeDeckVolume = 1.0,
+    this.standbyDeckVolume = 0.0,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -51,6 +55,11 @@ class Media3PlaybackState {
   final int? audioSessionId;
   /// Physical A/B deck currently promoted by the Media3 service.
   final String activeDeckId;
+  /// Native A/B transition phase and independently applied physical deck gains.
+  final String crossfadeStatus;
+  final double crossfadeProgress;
+  final double activeDeckVolume;
+  final double standbyDeckVolume;
   final String repeatMode;
   final bool shuffleModeEnabled;
   final bool hasError;
@@ -96,6 +105,18 @@ class Media3PlaybackState {
           ? integerValue(map['audioSessionId'])
           : null,
       activeDeckId: map['activeDeckId'] == 'B' ? 'B' : 'A',
+      crossfadeStatus: const {
+        'idle', 'preparing', 'waiting_ready', 'ready', 'starting',
+        'fading', 'completed', 'cancelled', 'incoming_error',
+      }.contains(map['crossfadeStatus'])
+          ? map['crossfadeStatus'] as String
+          : 'idle',
+      crossfadeProgress: doubleValue(map['crossfadeProgress'])
+          .clamp(0.0, 1.0).toDouble(),
+      activeDeckVolume: doubleValue(map['activeDeckVolume'])
+          .clamp(0.0, 1.0).toDouble(),
+      standbyDeckVolume: doubleValue(map['standbyDeckVolume'])
+          .clamp(0.0, 1.0).toDouble(),
       repeatMode: const {'off', 'one', 'all'}.contains(map['repeatMode'])
           ? map['repeatMode'] as String
           : 'off',

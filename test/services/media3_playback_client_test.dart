@@ -16,6 +16,11 @@ void main() {
         'mediaId': 'content://media/track/1',
         'volume': 0.65,
         'audioSessionId': 37,
+        'activeDeckId': 'B',
+        'crossfadeStatus': 'fading',
+        'crossfadeProgress': 0.5,
+        'activeDeckVolume': 0.7071,
+        'standbyDeckVolume': 0.7071,
         'repeatMode': 'all',
         'shuffleModeEnabled': true,
         'hasError': false,
@@ -30,6 +35,11 @@ void main() {
       expect(state.mediaId, 'content://media/track/1');
       expect(state.volume, 0.65);
       expect(state.audioSessionId, 37);
+      expect(state.activeDeckId, 'B');
+      expect(state.crossfadeStatus, 'fading');
+      expect(state.crossfadeProgress, 0.5);
+      expect(state.activeDeckVolume, 0.7071);
+      expect(state.standbyDeckVolume, 0.7071);
       expect(state.repeatMode, 'all');
       expect(state.shuffleModeEnabled, isTrue);
       expect(state.hasError, isFalse);
@@ -71,6 +81,10 @@ void main() {
       expect(state.position, Duration.zero);
       expect(state.duration, isNull);
       expect(state.volume, 1.0);
+      expect(state.crossfadeStatus, 'idle');
+      expect(state.crossfadeProgress, 0.0);
+      expect(state.activeDeckVolume, 1.0);
+      expect(state.standbyDeckVolume, 0.0);
     });
 
     test('uses safe defaults for non-finite native numeric fields', () {

@@ -630,6 +630,12 @@ class Media3PlaybackService : MediaSessionService() {
 
     fun crossfadeState(): Map<String, Any?> = mapOf(
         "status" to crossfadeStatus,
+        "progress" to when (crossfadeStatus) {
+            "fading" -> crossfadeClock.progress(android.os.SystemClock.elapsedRealtime())
+            "completed" -> 1f
+            else -> 0f
+        },
+        "activeDeckId" to activeDeckId,
         "activeMediaId" to activePlayer.currentMediaItem?.mediaId,
         "incomingReady" to (standbyPlayer.playbackState == Player.STATE_READY),
         "activePositionMs" to activePlayer.currentPosition.coerceAtLeast(0L),

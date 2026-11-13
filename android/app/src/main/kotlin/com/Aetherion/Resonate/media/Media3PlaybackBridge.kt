@@ -614,7 +614,11 @@ class Media3PlaybackBridge(
         eventSink?.success(stateSnapshot(player))
     }
 
-    private fun stateSnapshot(player: Player): Map<String, Any?> = mapOf(
+    private fun stateSnapshot(player: Player): Map<String, Any?> {
+        val crossfade = Media3PlaybackService.instance?.crossfadeState()
+            ?: mapOf<String, Any?>("status" to "idle", "progress" to 0f,
+                "activeVolume" to player.volume, "incomingVolume" to 0f)
+        return mapOf(
         "connected" to true,
         "isPlaying" to player.isPlaying,
         "playbackState" to player.playbackState,
@@ -639,9 +643,14 @@ class Media3PlaybackBridge(
         "volume" to player.volume,
         "audioSessionId" to (Media3PlaybackService.instance?.activeAudioSessionId() ?: 0),
         "activeDeckId" to (Media3PlaybackService.instance?.activeDeckId() ?: "A"),
+        "crossfadeStatus" to (crossfade["status"] ?: "idle"),
+        "crossfadeProgress" to (crossfade["progress"] ?: 0f),
+        "activeDeckVolume" to (crossfade["activeVolume"] ?: player.volume),
+        "standbyDeckVolume" to (crossfade["incomingVolume"] ?: 0f),
         "hasError" to (player.playerError != null),
         "error" to player.playerError?.message,
-    )
+        )
+    }
 
     fun release() {
         released = true

@@ -22,6 +22,10 @@ class PlaybackSnapshot {
     required this.volume,
     this.audioSessionId,
     this.activeDeckId = 'A',
+    this.crossfadeStatus = 'idle',
+    this.crossfadeProgress = 0.0,
+    this.activeDeckVolume = 1.0,
+    this.standbyDeckVolume = 0.0,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -47,6 +51,10 @@ class PlaybackSnapshot {
   final int? audioSessionId;
   /// Physical A/B deck currently promoted as the canonical playback deck.
   final String activeDeckId;
+  final String crossfadeStatus;
+  final double crossfadeProgress;
+  final double activeDeckVolume;
+  final double standbyDeckVolume;
   final double volume;
   /// Current queue repeat policy: `off`, `one`, or `all`.
   final String repeatMode;

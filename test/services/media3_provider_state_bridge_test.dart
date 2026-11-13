@@ -28,6 +28,10 @@ PlaybackSnapshot _snapshot({
   bool buffering = false,
   bool completed = false,
   String activeDeckId = 'A',
+  String crossfadeStatus = 'idle',
+  double crossfadeProgress = 0.0,
+  double activeDeckVolume = 1.0,
+  double standbyDeckVolume = 0.0,
 }) =>
     PlaybackSnapshot(
       connected: true,
@@ -48,6 +52,10 @@ PlaybackSnapshot _snapshot({
       volume: 1,
       audioSessionId: audioSessionId,
       activeDeckId: activeDeckId,
+      crossfadeStatus: crossfadeStatus,
+      crossfadeProgress: crossfadeProgress,
+      activeDeckVolume: activeDeckVolume,
+      standbyDeckVolume: standbyDeckVolume,
       repeatMode: repeatMode,
       shuffleModeEnabled: shuffleModeEnabled,
       hasError: false,
@@ -167,6 +175,27 @@ void main() {
       expect(projected.audioSessionId, 42);
       expect(projected.repeatMode, 'one');
       expect(projected.shuffleModeEnabled, isTrue);
+    });
+
+    test('projects native crossfade phase and both physical deck gains', () async {
+      await bridge.start();
+      final fading = bridge.states.first;
+      backend.value = _snapshot(
+        mediaId: 'track-1',
+        playing: true,
+        activeDeckId: 'B',
+        crossfadeStatus: 'fading',
+        crossfadeProgress: 0.5,
+        activeDeckVolume: 0.7071,
+        standbyDeckVolume: 0.7071,
+      );
+      backend.controller.add(backend.value);
+      final projected = await fading;
+      expect(projected.activeDeckId, 'B');
+      expect(projected.crossfadeStatus, 'fading');
+      expect(projected.crossfadeProgress, 0.5);
+      expect(projected.activeDeckVolume, 0.7071);
+      expect(projected.standbyDeckVolume, 0.7071);
     });
 
     test('projects the active physical A/B deck identity', () async {

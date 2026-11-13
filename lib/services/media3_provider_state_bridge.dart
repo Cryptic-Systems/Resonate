@@ -54,6 +54,10 @@ class Media3ProviderStateBridge {
       volume: snapshot?.volume ?? 1.0,
       audioSessionId: snapshot?.audioSessionId,
       activeDeckId: snapshot?.activeDeckId ?? 'A',
+      crossfadeStatus: snapshot?.crossfadeStatus ?? 'idle',
+      crossfadeProgress: snapshot?.crossfadeProgress ?? 0.0,
+      activeDeckVolume: snapshot?.activeDeckVolume ?? 1.0,
+      standbyDeckVolume: snapshot?.standbyDeckVolume ?? 0.0,
       repeatMode: snapshot?.repeatMode ?? 'off',
       shuffleModeEnabled: snapshot?.shuffleModeEnabled ?? false,
       hasError: state.hasError,
@@ -91,6 +95,10 @@ class Media3ProviderState {
     required this.volume,
     this.audioSessionId,
     this.activeDeckId = 'A',
+    this.crossfadeStatus = 'idle',
+    this.crossfadeProgress = 0.0,
+    this.activeDeckVolume = 1.0,
+    this.standbyDeckVolume = 0.0,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -114,6 +122,10 @@ class Media3ProviderState {
         volume = 1.0,
         audioSessionId = null,
         activeDeckId = 'A',
+        crossfadeStatus = 'idle',
+        crossfadeProgress = 0.0,
+        activeDeckVolume = 1.0,
+        standbyDeckVolume = 0.0,
         repeatMode = 'off',
         shuffleModeEnabled = false,
         hasError = false,
@@ -141,6 +153,10 @@ class Media3ProviderState {
 
   /// Physical Media3 deck currently owning canonical playback.
   final String activeDeckId;
+  final String crossfadeStatus;
+  final double crossfadeProgress;
+  final double activeDeckVolume;
+  final double standbyDeckVolume;
 
   final String repeatMode;
   final bool shuffleModeEnabled;
