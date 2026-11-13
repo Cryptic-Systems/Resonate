@@ -762,3 +762,20 @@ an automated effect when the opportunity occurs, and confirm silence while
 paused. Record whether the relevant effect was actually active at pause time.
 CI policy tests validate routing intent but cannot prove physical audio output
 has stopped on a device.
+
+
+## 31. Session-bound Android effects cover both Media3 decks — 2026-11-13
+
+The native playback snapshot now reports the active and prepared-standby
+ExoPlayer audio-session IDs independently. The provider-facing snapshot keeps
+both values, and AudioEffectsProvider follows the canonical Media3 state stream
+to attach the persisted Android Reverb/Virtualizer profile to both physical
+decks before promotion. A/B role swaps preserve both attachments; a session is
+detached only after its deck is no longer active or prepared.
+
+The regression suite covers standby attachment, promotion without redundant
+reattachment/detachment, and cleanup when a deck is released. This closes the
+previous active-session-only attachment gap in the Android session-bound
+effects path. Exact-head CI and device audition with Reverb/Virtualizer enabled
+during crossfade remain required; the per-deck Resonate DSP sink remains a
+separate processing layer.

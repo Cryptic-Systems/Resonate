@@ -7,17 +7,43 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:resonate/providers/audio_effects_provider.dart';
 import 'package:resonate/services/playback_engine_session.dart';
+import 'package:resonate/services/media3_provider_state_bridge.dart';
 
 class _FakePlaybackSession implements PlaybackEngineSession {
   final StreamController<int?> _audioSessionIds =
       StreamController<int?>.broadcast(sync: true);
+  final StreamController<Media3ProviderState> _states =
+      StreamController<Media3ProviderState>.broadcast(sync: true);
 
   @override
   Stream<int?> get audioSessionIdStream => _audioSessionIds.stream;
+  @override
+  Stream<Media3ProviderState> get stateStream => _states.stream;
 
-  void emitSessionId(int? id) => _audioSessionIds.add(id);
+  void emitState(int? active, [int? standby]) {
+    _states.add(Media3ProviderState(
+      currentSong: null,
+      queueIndex: null,
+      isPlaying: false,
+      position: Duration.zero,
+      duration: null,
+      connected: true,
+      isReady: false,
+      playWhenReady: false,
+      mediaId: null,
+      queueLength: 0,
+      volume: 1.0,
+      audioSessionId: active,
+      standbyAudioSessionId: standby,
+      hasError: false,
+      error: null,
+    ));
+  }
 
-  Future<void> close() => _audioSessionIds.close();
+  Future<void> close() async {
+    await _audioSessionIds.close();
+    await _states.close();
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -51,18 +77,17 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 20));
   }
 
-  test('Media3 active-session handoff detaches old and attaches new ID',
+  test('Media3 effects stay attached to both decks through promotion',
       () async {
     final session = _FakePlaybackSession();
     final provider = AudioEffectsProvider(
       sessionPlayers: const [],
       playbackSession: session,
     );
-    // Let asynchronous preference restoration finish before asserting calls.
     await Future<void>.delayed(const Duration(milliseconds: 20));
     calls.clear();
 
-    session.emitSessionId(301);
+    session.emitState(301);
     await settleProvider(provider);
     expect(
       calls.where((call) => call.method == 'attachToSession').map(
@@ -72,31 +97,43 @@ void main() {
     );
 
     calls.clear();
-    session.emitSessionId(302);
-    await settleProvider(provider);
-
-    final detachIndex = calls.indexWhere(
-      (call) =>
-          call.method == 'detachFromSession' &&
-          (call.arguments as Map)['sessionId'] == 301,
-    );
-    final attachIndex = calls.indexWhere(
-      (call) =>
-          call.method == 'attachToSession' &&
-          (call.arguments as Map)['sessionId'] == 302,
-    );
-    expect(detachIndex, isNonNegative);
-    expect(attachIndex, greaterThan(detachIndex));
-
-    calls.clear();
-    session.emitSessionId(null);
+    session.emitState(301, 302);
     await settleProvider(provider);
     expect(
-      calls.any(
-        (call) =>
-            call.method == 'detachFromSession' &&
-            (call.arguments as Map)['sessionId'] == 302,
-      ),
+      calls.where((call) => call.method == 'attachToSession').map(
+            (call) => (call.arguments as Map)['sessionId'],
+          ),
+      contains(302),
+    );
+    expect(
+      calls.where((call) => call.method == 'detachFromSession'),
+      isEmpty,
+      reason: 'the outgoing deck remains a live session during the overlap',
+    );
+
+    calls.clear();
+    session.emitState(302, 301);
+    await settleProvider(provider);
+    expect(calls, isEmpty,
+        reason: 'promotion must not detach or redundantly reattach either deck');
+
+    calls.clear();
+    session.emitState(302);
+    await settleProvider(provider);
+    expect(
+      calls.any((call) =>
+          call.method == 'detachFromSession' &&
+          (call.arguments as Map)['sessionId'] == 301),
+      isTrue,
+    );
+
+    calls.clear();
+    session.emitState(null);
+    await settleProvider(provider);
+    expect(
+      calls.any((call) =>
+          call.method == 'detachFromSession' &&
+          (call.arguments as Map)['sessionId'] == 302),
       isTrue,
     );
 
@@ -115,7 +152,7 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 20));
     calls.clear();
 
-    session.emitSessionId(601);
+    session.emitState(601);
     await settleProvider(provider);
 
     expect(
@@ -140,11 +177,11 @@ void main() {
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    session.emitSessionId(411);
+    session.emitState(411);
     await settleProvider(provider);
     calls.clear();
 
-    session.emitSessionId(411);
+    session.emitState(411);
     await settleProvider(provider);
 
     expect(
@@ -166,7 +203,7 @@ void main() {
 
     provider.dispose();
     calls.clear();
-    session.emitSessionId(512);
+    session.emitState(512);
     await Future<void>.delayed(const Duration(milliseconds: 10));
 
     expect(
