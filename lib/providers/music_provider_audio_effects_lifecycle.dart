@@ -14,9 +14,9 @@ extension MusicProviderAudioEffectsLifecycle on MusicProvider {
   }
 
   Future<void> _enableEffects(
-    AudioPlayer player,
-    AndroidEqualizer eq,
-    AndroidLoudnessEnhancer loud,
+    dynamic player,
+    dynamic eq,
+    dynamic loud,
   ) async {
     // Once Media3 owns playback, its active-session observer in
     // AudioEffectsProvider is the only permitted session-attach path. Do not

@@ -4,8 +4,8 @@ extension MusicProviderDjHandoff on MusicProvider {
 
   /// Step 2–3: optional beat seek + tempo stretch for the incoming handoff.
   Future<void> _prepareDjHandoff({
-    required AudioPlayer outgoing,
-    required AudioPlayer incoming,
+    required dynamic outgoing,
+    required dynamic incoming,
     required Song? outgoingSong,
     required Song incomingSong,
   }) async {
@@ -255,8 +255,8 @@ extension MusicProviderDjHandoff on MusicProvider {
   }
 
   Future<void> _applyV2DjHandoff({
-    required AudioPlayer outgoing,
-    required AudioPlayer incoming,
+    required dynamic outgoing,
+    required dynamic incoming,
     required Song outgoingSong,
     required Song incomingSong,
     required DjTrackProfile profileA,
