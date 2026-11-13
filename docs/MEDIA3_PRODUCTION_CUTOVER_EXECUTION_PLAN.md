@@ -693,3 +693,18 @@ The user did not report a failure in these checks. Audio-focus interruption by p
 
 This is a positive first device-acceptance milestone, not complete lifecycle/focus acceptance or approval to retire the legacy engine. The marker correction is under exact-head CI validation.
 
+## 27. Canonical audio-route interruption ownership — 2026-11-13
+
+The Media3 service now enables ExoPlayer's built-in becoming-noisy handling on
+the physical player currently attached to the canonical MediaSession, and
+disables it on the standby deck. When a crossfade promotes the standby player,
+route-handling ownership moves with the MediaSession player. This keeps a
+headphone/wired-route disconnect from being handled independently by both
+decks while a transition is in flight.
+
+The ownership decision is isolated in `AudioOutputPolicy` and covered by JVM
+tests for active-versus-standby ownership. ExoPlayer's active-player audio
+attributes continue to own audio-focus behavior; the standby deck remains
+non-focus-owning. Transient/permanent focus-loss behavior and real wired,
+Bluetooth, call/VoIP, and process-recovery scenarios still require physical
+device acceptance. This code change is not a substitute for those tests.
