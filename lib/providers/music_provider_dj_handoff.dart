@@ -594,7 +594,7 @@ extension MusicProviderDjHandoff on MusicProvider {
           preamp: _eqPreampUserScale,
           sleepFade: _sleepFadeScale,
           focusDuck: _isDucked
-              ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel)
+              ? (_audioFocusLevel == 1 ? 0.18 : MusicProvider._duckLevel)
               : 1.0,
         );
         if (wasPreempted()) return;
