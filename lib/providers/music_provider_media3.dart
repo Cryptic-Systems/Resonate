@@ -663,6 +663,16 @@ extension MusicProviderMedia3 on MusicProvider {
 
   Future<void> _handleMedia3ProviderCompletion(String completedSongId) async {
     if (!_media3ProviderSessionActive || _disposed) return;
+    // Completion observation can be delivered asynchronously after the user
+    // has already paused at the end of a track. Explicit pause intent wins;
+    // never turn a late completion callback into an automatic next/play.
+    if (!_userWantsPlaying) {
+      await ResonateDiagnostics.record('media3_provider_completion_ignored', {
+        'songId': completedSongId,
+        'reason': 'user_paused',
+      });
+      return;
+    }
     _endOfTrackWatchdog?.cancel();
     _endOfTrackWatchdog = null;
     final completedSong = currentSong;
