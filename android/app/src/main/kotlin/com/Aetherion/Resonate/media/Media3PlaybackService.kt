@@ -283,6 +283,22 @@ class Media3PlaybackService : MediaSessionService() {
                 }
             }
 
+            override fun onMediaItemTransition(
+                mediaItem: MediaItem?,
+                reason: Int,
+            ) {
+                // MediaSession controllers (headsets, Bluetooth, notification,
+                // Android Auto) can navigate the active playlist without going
+                // through the Flutter command lane. Invalidate any preloaded
+                // incoming deck on those transitions so an old crossfade can
+                // never promote stale queue content over the user's selection.
+                if (deck === activePlayer &&
+                    reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED
+                ) {
+                    clearPreload()
+                }
+            }
+
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 // MediaSession/headset commands can bypass the Flutter bridge.
                 // Never allow a deck to continue output in call/VoIP mode.
