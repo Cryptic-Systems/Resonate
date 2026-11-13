@@ -152,15 +152,15 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 20));
     calls.clear();
 
-    session.emitState(601);
+    session.emitState(601, 602);
     await settleProvider(provider);
 
     expect(
       calls.where((call) => call.method == 'attachToSession').map(
             (call) => (call.arguments as Map)['sessionId'],
           ),
-      [601],
-      reason: 'the active Media3 session must be the only effects attachment target',
+      containsAll([601, 602]),
+      reason: 'Media3 must own effects on both physical decks, not legacy players',
     );
 
     provider.dispose();
