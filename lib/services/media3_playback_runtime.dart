@@ -639,6 +639,17 @@ class Media3PlaybackRuntime {
         await backend.playAuxiliarySound(uri, volume: volume);
       });
 
+  Future<void> setAuxiliarySoundVolume(double volume) => _run(() async {
+        if (!volume.isFinite || volume < 0.0 || volume > 1.0) {
+          throw ArgumentError.value(volume, 'volume', 'Must be finite and between 0 and 1.');
+        }
+        final backend = _backend;
+        if (backend is! PlaybackAuxiliaryEffectsBackend) {
+          throw UnsupportedError('The playback backend has no auxiliary-effects capability.');
+        }
+        await backend.setAuxiliarySoundVolume(volume);
+      });
+
   Future<void> stopAuxiliarySound() => _run(() async {
         final backend = _backend;
         if (backend is! PlaybackAuxiliaryEffectsBackend) {
