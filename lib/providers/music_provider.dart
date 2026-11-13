@@ -1683,8 +1683,8 @@ class MusicProvider extends ChangeNotifier {
     // here would publish stale (often zero) values to Android's audio_service
     // notification even while the Media3 deck is progressing normally.
     final session = _media3ProviderSessionActive ? _media3ProviderSession : null;
-    final Duration pos;
-    final Duration? buffered;
+    Duration pos;
+    Duration? buffered;
     if (session != null) {
       pos = session.position;
       buffered = session.bufferedPosition;
