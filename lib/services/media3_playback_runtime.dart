@@ -629,6 +629,24 @@ class Media3PlaybackRuntime {
   /// Serializes every command that can mutate native playback state. Rapid
   /// UI taps, queue replacement and a crossfade request must not race each
   /// other across the Flutter/native boundary.
+  /// Dispatches auxiliary sample playback on the same serialized native
+  /// command lane as transport and deck effects.
+  Future<void> playAuxiliarySound(Uri uri, {required double volume}) => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackAuxiliaryEffectsBackend) {
+          throw UnsupportedError('The playback backend has no auxiliary-effects capability.');
+        }
+        await backend.playAuxiliarySound(uri, volume: volume);
+      });
+
+  Future<void> stopAuxiliarySound() => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackAuxiliaryEffectsBackend) {
+          throw UnsupportedError('The playback backend has no auxiliary-effects capability.');
+        }
+        await backend.stopAuxiliarySound();
+      });
+
   Future<void> _run(Future<void> Function() command) {
     _ensureAlive();
     final result = _commandTail.then((_) {
