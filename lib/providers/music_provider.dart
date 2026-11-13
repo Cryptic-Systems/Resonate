@@ -1662,10 +1662,12 @@ class MusicProvider extends ChangeNotifier {
       currentSong = _queue[_queueIndex];
       unawaited(_refreshTrackLevelingFor(currentSong));
       currentDuration = currentSong!.duration;
-      // Restore last known position for the current song (if any).
-      if (_modePreciseResume &&
-          _resumeSongId == currentSong!.id &&
-          _resumePositionMs > 1500) {
+      // Process-death recovery is independent of the active playback mode:
+      // when the app is relaunched, restore the saved queue's current track
+      // position even if the user is in the ordinary (start-from-zero on
+      // manual selection) mode. _modePreciseResume governs explicit song
+      // selections, not restoration of the interrupted app session.
+      if (_resumeSongId == currentSong!.id && _resumePositionMs > 1500) {
         final cap = currentDuration?.inMilliseconds ?? _resumePositionMs;
         final ms = _resumePositionMs.clamp(0, cap).toInt();
         // Don't resume at the very end — treat as finished.
