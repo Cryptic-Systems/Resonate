@@ -53,6 +53,7 @@ class Media3ProviderStateBridge {
       queueLength: snapshot?.queueLength ?? 0,
       volume: snapshot?.volume ?? 1.0,
       audioSessionId: snapshot?.audioSessionId,
+      standbyAudioSessionId: snapshot?.standbyAudioSessionId,
       activeDeckId: snapshot?.activeDeckId ?? 'A',
       crossfadeStatus: snapshot?.crossfadeStatus ?? 'idle',
       crossfadeProgress: snapshot?.crossfadeProgress ?? 0.0,
@@ -94,6 +95,7 @@ class Media3ProviderState {
     required this.queueLength,
     required this.volume,
     this.audioSessionId,
+    this.standbyAudioSessionId,
     this.activeDeckId = 'A',
     this.crossfadeStatus = 'idle',
     this.crossfadeProgress = 0.0,
@@ -121,6 +123,7 @@ class Media3ProviderState {
         queueLength = 0,
         volume = 1.0,
         audioSessionId = null,
+        standbyAudioSessionId = null,
         activeDeckId = 'A',
         crossfadeStatus = 'idle',
         crossfadeProgress = 0.0,
@@ -150,6 +153,8 @@ class Media3ProviderState {
   /// crossfade handoff, so consumers must follow state updates rather than
   /// cache the first non-null value indefinitely.
   final int? audioSessionId;
+  /// Prepared standby deck's Android audio session, when allocated.
+  final int? standbyAudioSessionId;
 
   /// Physical Media3 deck currently owning canonical playback.
   final String activeDeckId;

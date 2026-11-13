@@ -642,6 +642,7 @@ class Media3PlaybackBridge(
         "shuffleModeEnabled" to player.shuffleModeEnabled,
         "volume" to player.volume,
         "audioSessionId" to (Media3PlaybackService.instance?.activeAudioSessionId() ?: 0),
+        "standbyAudioSessionId" to (Media3PlaybackService.instance?.standbyAudioSessionId() ?: 0),
         "activeDeckId" to (Media3PlaybackService.instance?.activeDeckId() ?: "A"),
         "crossfadeStatus" to (crossfade["status"] ?: "idle"),
         "crossfadeProgress" to (crossfade["progress"] ?: 0f),

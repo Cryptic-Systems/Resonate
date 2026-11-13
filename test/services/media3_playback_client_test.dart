@@ -16,6 +16,7 @@ void main() {
         'mediaId': 'content://media/track/1',
         'volume': 0.65,
         'audioSessionId': 37,
+        'standbyAudioSessionId': 42,
         'activeDeckId': 'B',
         'crossfadeStatus': 'fading',
         'crossfadeProgress': 0.5,
@@ -35,6 +36,7 @@ void main() {
       expect(state.mediaId, 'content://media/track/1');
       expect(state.volume, 0.65);
       expect(state.audioSessionId, 37);
+      expect(state.standbyAudioSessionId, 42);
       expect(state.activeDeckId, 'B');
       expect(state.crossfadeStatus, 'fading');
       expect(state.crossfadeProgress, 0.5);

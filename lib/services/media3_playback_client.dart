@@ -24,6 +24,7 @@ class Media3PlaybackState {
     required this.mediaItemCount,
     required this.volume,
     this.audioSessionId,
+    this.standbyAudioSessionId,
     this.activeDeckId = 'A',
     this.crossfadeStatus = 'idle',
     this.crossfadeProgress = 0.0,
@@ -53,6 +54,8 @@ class Media3PlaybackState {
   final double volume;
   /// Active ExoPlayer audio session; can change when the crossfade decks swap.
   final int? audioSessionId;
+  /// Prepared standby deck's Android audio session, when allocated.
+  final int? standbyAudioSessionId;
   /// Physical A/B deck currently promoted by the Media3 service.
   final String activeDeckId;
   /// Native A/B transition phase and independently applied physical deck gains.
@@ -103,6 +106,9 @@ class Media3PlaybackState {
       volume: doubleValue(map['volume']).clamp(0.0, 1.0).toDouble(),
       audioSessionId: integerValue(map['audioSessionId'], 0) > 0
           ? integerValue(map['audioSessionId'])
+          : null,
+      standbyAudioSessionId: integerValue(map['standbyAudioSessionId'], 0) > 0
+          ? integerValue(map['standbyAudioSessionId'])
           : null,
       activeDeckId: map['activeDeckId'] == 'B' ? 'B' : 'A',
       crossfadeStatus: const {

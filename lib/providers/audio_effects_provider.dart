@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/dsp_settings.dart';
 import '../services/audio_effects_bridge.dart';
 import '../services/playback_engine_session.dart';
+import '../services/media3_provider_state_bridge.dart';
 
 class AudioEffectsProvider extends ChangeNotifier {
   final AudioPlayer? player;
@@ -20,8 +21,8 @@ class AudioEffectsProvider extends ChangeNotifier {
 
   final List<StreamSubscription<int?>> _sessionSubscriptions = [];
   final Map<AudioPlayer, int> _sessionIdsByPlayer = {};
-  StreamSubscription<int?>? _media3SessionSubscription;
-  int? _media3SessionId;
+  StreamSubscription<Media3ProviderState>? _media3SessionSubscription;
+  final Set<int> _media3SessionIds = <int>{};
   Future<void> _nativeApplyQueue = Future<void>.value();
 
   AudioEffectsProvider({
@@ -68,11 +69,13 @@ class AudioEffectsProvider extends ChangeNotifier {
     // carries the current snapshot, and subsequent events include deck
     // handoffs. Keep this opt-in so legacy construction remains unchanged.
     if (playbackSession != null) {
-      _media3SessionSubscription =
-          playbackSession!.audioSessionIdStream.listen(
-        _onMedia3SessionId,
+      // Both physical Media3 decks have independent Android audio sessions.
+      // Attach session-bound Reverb/Virtualizer to the standby deck before it
+      // is promoted, rather than waiting for the active-session ID to change.
+      _media3SessionSubscription = playbackSession!.stateStream.listen(
+        _onMedia3State,
         onError: (Object error) {
-          debugPrint('Media3 audio-effects session stream failed: $error');
+          debugPrint('Media3 audio-effects state stream failed: $error');
         },
       );
     }
@@ -80,20 +83,30 @@ class AudioEffectsProvider extends ChangeNotifier {
   }
 
   bool _isSessionTracked(int sessionId) =>
-      _media3SessionId == sessionId ||
+      _media3SessionIds.contains(sessionId) ||
       _sessionIdsByPlayer.values.contains(sessionId);
 
-  void _onMedia3SessionId(int? rawId) {
-    final nextId = rawId != null && rawId > 0 ? rawId : null;
-    final previousId = _media3SessionId;
-    if (previousId == nextId) return;
-    _media3SessionId = nextId;
-    if (previousId != null && !_isSessionTracked(previousId)) {
-      unawaited(_detachNativeSession(previousId));
+  void _onMedia3State(Media3ProviderState state) {
+    final nextIds = <int>{
+      if (state.audioSessionId != null && state.audioSessionId! > 0)
+        state.audioSessionId!,
+      if (state.standbyAudioSessionId != null &&
+          state.standbyAudioSessionId! > 0)
+        state.standbyAudioSessionId!,
+    };
+    final removed = _media3SessionIds.difference(nextIds);
+    final added = nextIds.difference(_media3SessionIds);
+    _media3SessionIds
+      ..clear()
+      ..addAll(nextIds);
+    for (final id in removed) {
+      if (!_isSessionTracked(id)) unawaited(_detachNativeSession(id));
     }
-    if (nextId != null) {
-      // Rebind native auxiliary effects after an active-deck handoff.
-      unawaited(_applyNative(sessionIdOverride: nextId));
+    if (added.isNotEmpty) {
+      // Serialize attach + effect application for each newly prepared deck.
+      for (final id in added) {
+        unawaited(_applyNative(sessionIdOverride: id));
+      }
     }
   }
 
@@ -165,9 +178,7 @@ class AudioEffectsProvider extends ChangeNotifier {
     final sessionIds = sessionIdOverride != null
         ? <int>{sessionIdOverride}
         : playbackSession != null
-            ? <int>{
-                if (_media3SessionId != null) _media3SessionId!,
-              }
+            ? <int>{..._media3SessionIds}
             : <int>{
                 ..._sessionIdsByPlayer.values,
                 if ((player?.androidAudioSessionId ?? 0) > 0)
@@ -277,7 +288,7 @@ class AudioEffectsProvider extends ChangeNotifier {
     _sessionSubscriptions.clear();
     unawaited(_media3SessionSubscription?.cancel());
     _media3SessionSubscription = null;
-    _media3SessionId = null;
+    _media3SessionIds.clear();
     _sessionIdsByPlayer.clear();
     AudioEffectsBridge.release();
     super.dispose();

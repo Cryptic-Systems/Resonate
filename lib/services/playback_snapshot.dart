@@ -21,6 +21,7 @@ class PlaybackSnapshot {
     required this.queueLength,
     required this.volume,
     this.audioSessionId,
+    this.standbyAudioSessionId,
     this.activeDeckId = 'A',
     this.crossfadeStatus = 'idle',
     this.crossfadeProgress = 0.0,
@@ -49,6 +50,8 @@ class PlaybackSnapshot {
   final int queueLength;
   /// Active native audio session, when the backend exposes one.
   final int? audioSessionId;
+  /// Prepared standby deck's Android audio session, when allocated.
+  final int? standbyAudioSessionId;
   /// Physical A/B deck currently promoted as the canonical playback deck.
   final String activeDeckId;
   final String crossfadeStatus;

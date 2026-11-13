@@ -134,6 +134,14 @@ class Media3PlaybackService : MediaSessionService() {
     fun activeAudioSessionId(): Int =
         if (::activePlayer.isInitialized) activePlayer.audioSessionId else 0
 
+    /** Session of the prepared standby deck, for session-bound Android effects. */
+    fun standbyAudioSessionId(): Int =
+        if (::standbyPlayer.isInitialized && standbyPlayer.mediaItemCount > 0) {
+            standbyPlayer.audioSessionId
+        } else {
+            0
+        }
+
     /** Physical A/B deck currently promoted as the canonical MediaSession player. */
     fun activeDeckId(): String = activeDeckId
 

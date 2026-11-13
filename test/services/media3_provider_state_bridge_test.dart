@@ -22,6 +22,7 @@ PlaybackSnapshot _snapshot({
   int index = 0,
   bool playing = false,
   int? audioSessionId,
+  int? standbyAudioSessionId,
   String repeatMode = 'off',
   bool shuffleModeEnabled = false,
   Duration bufferedPosition = Duration.zero,
@@ -51,6 +52,7 @@ PlaybackSnapshot _snapshot({
       queueLength: 1,
       volume: 1,
       audioSessionId: audioSessionId,
+      standbyAudioSessionId: standbyAudioSessionId,
       activeDeckId: activeDeckId,
       crossfadeStatus: crossfadeStatus,
       crossfadeProgress: crossfadeProgress,
@@ -147,6 +149,7 @@ void main() {
       expect(bridge.current.volume, 1.0);
       expect(bridge.current.duration, const Duration(minutes: 3));
       expect(bridge.current.audioSessionId, 37);
+      expect(bridge.current.standbyAudioSessionId, isNull);
       expect(bridge.current.repeatMode, 'off');
       expect(bridge.current.shuffleModeEnabled, isFalse);
     });
@@ -160,6 +163,7 @@ void main() {
         mediaId: 'track-1',
         playing: true,
         audioSessionId: 42,
+        standbyAudioSessionId: 43,
         repeatMode: 'one',
         shuffleModeEnabled: true,
       ));
@@ -173,6 +177,7 @@ void main() {
       expect(projected.mediaId, 'track-1');
       expect(projected.queueLength, 1);
       expect(projected.audioSessionId, 42);
+      expect(projected.standbyAudioSessionId, 43);
       expect(projected.repeatMode, 'one');
       expect(projected.shuffleModeEnabled, isTrue);
     });
