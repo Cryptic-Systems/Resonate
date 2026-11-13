@@ -8,9 +8,9 @@ class PlayerStreamBinder {
   StreamSubscription<Duration>? _positionSubscription;
   StreamSubscription<Duration?>? _durationSubscription;
 
-  void bindPlayerState(
-    Stream<dynamic> stream,
-    void Function(dynamic state) onData,
+  void bindPlayerState<T>(
+    Stream<T> stream,
+    void Function(T state) onData,
   ) {
     unawaited(_playerStateSubscription?.cancel());
     _playerStateSubscription = stream.listen(onData);
