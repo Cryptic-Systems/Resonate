@@ -2976,7 +2976,9 @@ class MusicProvider extends ChangeNotifier {
             'toSongId': currentSong?.id,
             'queueIndex': _queueIndex,
             'failedTrackCount': skippedFailedTracks,
-            'playing': audioPlayer.playing,
+            'playing': _media3ProviderSessionActive
+                ? _media3ProviderSession!.isPlaying
+                : audioPlayer.playing,
           });
           return;
         }
@@ -3856,6 +3858,9 @@ class MusicProvider extends ChangeNotifier {
     _repeatSelfHandoffInFlight = false;
     _transitionArmedAt = null;
     unawaited(_restoreDjTransitionSfx());
+    // Media3 cancellation above owns the native decks. Do not touch the
+    // retired Flutter EnginePair from this watchdog cleanup.
+    if (_media3ProviderSessionActive || _legacyEnginesRetired) return;
     unawaited(() async {
       try {
         await inactivePlayer.pause();
