@@ -61,6 +61,14 @@ abstract interface class PlaybackDeckEqOverlayBackend {
   Future<void> clearDeckEqOverlay({required String deck});
 }
 
+/// Optional capability for short auxiliary effects owned by the playback backend.
+/// Auxiliary audio is mixed by the Media3 service and never replaces the
+/// canonical queue item or creates a second MediaSession/transport authority.
+abstract interface class PlaybackAuxiliaryEffectsBackend {
+  Future<void> playAuxiliarySound(Uri uri, {required double volume});
+  Future<void> stopAuxiliarySound();
+}
+
 /// Optional capability for reconciling queue edits without resetting the active player.
 /// Backends that do not implement this retain their existing full-load fallback.
 abstract interface class PlaybackPlaylistSyncBackend {
