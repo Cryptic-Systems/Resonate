@@ -821,6 +821,14 @@ extension MusicProviderMedia3 on MusicProvider {
   }
 
   void _drainPendingMedia3Completion() {
+    // A preload may finish while the full crossfade is still running. Keep
+    // the pending completion until the final owner has released the transition.
+    if (_crossfadeInProgress ||
+        _automaticCrossfadeInFlight ||
+        _repeatSelfHandoffInFlight ||
+        _crossfadePreloadInFlight) {
+      return;
+    }
     final songId = _pendingMedia3CompletionSongId;
     final deckId = _pendingMedia3CompletionDeckId;
     final transportEpoch = _pendingMedia3CompletionTransportEpoch;
@@ -834,11 +842,7 @@ extension MusicProviderMedia3 on MusicProvider {
         !_userWantsPlaying ||
         transportEpoch != _userTransportEpoch ||
         currentSong?.id != songId ||
-        (_media3ShadowState?.activeDeckId ?? 'A') != deckId ||
-        _crossfadeInProgress ||
-        _automaticCrossfadeInFlight ||
-        _repeatSelfHandoffInFlight ||
-        _crossfadePreloadInFlight) {
+        (_media3ShadowState?.activeDeckId ?? 'A') != deckId) {
       return;
     }
     unawaited(_handleMedia3ProviderCompletion(songId));
