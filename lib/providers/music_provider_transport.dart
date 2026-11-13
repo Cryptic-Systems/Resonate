@@ -72,11 +72,13 @@ Future<void> pause({String source = 'normal_player'}) {
           // acknowledging the Media3 pause.
           final legacyAWasPlaying = _playerA.playing;
           final legacyBWasPlaying = _playerB.playing;
+          // Stop the canonical source first so legacy cleanup can never delay
+          // the actual user-visible pause.
+          await session.pause();
           await Future.wait<void>([
             _playerA.pause().catchError((Object _) {}),
             _playerB.pause().catchError((Object _) {}),
           ]);
-          await session.pause();
           unawaited(ResonateDiagnostics.record('media3_pause_legacy_silence_barrier', {
             'legacyAWasPlaying': legacyAWasPlaying,
             'legacyBWasPlaying': legacyBWasPlaying,
