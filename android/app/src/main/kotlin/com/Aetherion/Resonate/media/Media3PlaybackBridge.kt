@@ -307,11 +307,13 @@ class Media3PlaybackBridge(
                 }
                 "pause" -> {
                     Media3PlaybackService.instance?.pauseCrossfade()
+                    Media3PlaybackService.instance?.stopAuxiliarySound()
                     connected.pause()
                     result.success(true)
                 }
                 "stop" -> {
                     Media3PlaybackService.instance?.clearPreload()
+                    Media3PlaybackService.instance?.stopAuxiliarySound()
                     connected.stop()
                     result.success(true)
                 }
