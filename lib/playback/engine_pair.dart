@@ -67,9 +67,9 @@ class EnginePair {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    await playerA.stop();
-    await playerB.stop();
-    await playerA.dispose();
-    await playerB.dispose();
+    try { await playerA.stop(); } catch (_) {}
+    try { await playerB.stop(); } catch (_) {}
+    try { await playerA.dispose(); } catch (_) {}
+    try { await playerB.dispose(); } catch (_) {}
   }
 }
