@@ -117,6 +117,32 @@ void main() {
       }
     });
 
+    test('plays Media3 sample presets through the auxiliary deck and stops them on restore', () async {
+      final rack = DjSfxRack(random: _SequenceRandom());
+      final session = _RecordingDeckOverlaySession();
+
+      await rack.engage(
+        energyScore: 0.5,
+        preset: DjSfxPreset.whoosh,
+        playbackSession: session,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        session.auxiliaryCalls,
+        hasLength(1),
+        reason: 'A Media3 sample preset must reach the service-owned auxiliary player',
+      );
+      expect(
+        session.auxiliaryCalls.single,
+        startsWith('play:asset:///flutter_assets/assets/sfx/whoosh.wav:'),
+      );
+
+      await rack.restore();
+      expect(session.auxiliaryCalls.last, 'stop');
+      expect(rack.engaged, isFalse);
+    });
+
     test('cancels Media3 brake automation and restores the captured playback rate', () async {
       final rack = DjSfxRack(random: _SequenceRandom());
       final session = _RecordingDeckOverlaySession();
