@@ -680,3 +680,16 @@ The Flutter bridge's explicit next/previous commands also clear the preload befo
 - Confirm notification metadata, queue index, position, and provider UI converge on the same selected item after each command.
 
 This is a transport-safety hardening slice, not proof of complete Android Auto browse/search support or full device parity. Exact-head CI and physical-device acceptance remain gates.
+
+## 26. First production-device acceptance report — 2026-11-13
+
+The user installed the exact-head release APK from CI run #1564 (commit `2fe7c5f09844f29aa3f63521395e8f0d30f93e82`) and reported successful device checks for:
+
+- Basic playback, background playback, lock-screen controls, and external controls.
+- Crossfade playback and manual Next during crossfade; Next selected/promoted the incoming track rather than allowing a stale standby item to take over.
+- DJ samples/effects and interruption of an effect during transport operations.
+
+The user did not report a failure in these checks. Audio-focus interruption by phone/VoIP calls, transient/permanent focus loss and regain, wired/Bluetooth disconnection, and process/service recreation have not yet been explicitly tested. The player-screen engine marker was visually ambiguous because the Media3 label used the legacy B-deck icon; a follow-up UI commit now gives canonical Media3 playback a distinct equalizer icon and label.
+
+This is a positive first device-acceptance milestone, not complete lifecycle/focus acceptance or approval to retire the legacy engine. The marker correction is under exact-head CI validation.
+
