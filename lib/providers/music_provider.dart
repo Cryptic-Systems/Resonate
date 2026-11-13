@@ -576,7 +576,9 @@ class MusicProvider extends ChangeNotifier {
   bool get crossfadeEnabled => _crossfadeEnabled;
   int get crossfadeDurationMs => _crossfadeDurationMs;
   String get crossfadeFadeType => _crossfadeFadeType;
-  String get activeEngineLabel => _authority.engineLabel(this);
+  String get activeEngineLabel => _media3ProviderSessionActive
+      ? (_media3ShadowState?.activeDeckId ?? 'A')
+      : _authority.engineLabel(this);
 
   /// Last DJ handoff snapshot for Now Playing "why this transition" chip.
   DateTime? get lastDjHandoffAt => _lastDjHandoffAt;
@@ -592,7 +594,7 @@ class MusicProvider extends ChangeNotifier {
 
   /// Phase 2: normal listening is always Engine A. Engine B is only for an
   /// in-progress crossfade (or a track that was handed off via crossfade).
-  bool get isEngineA => _activeIsA;
+  bool get isEngineA => activeEngineLabel == 'A';
 
   /// True when we have a saved mid-track position for the current queue song.
   bool get canContinueListening {

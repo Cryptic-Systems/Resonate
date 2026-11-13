@@ -29,6 +29,7 @@ Media3ProviderState _state({
   bool completed = false,
   bool playWhenReady = false,
   Duration position = Duration.zero,
+  String activeDeckId = 'A',
 }) => Media3ProviderState(
       currentSong: song,
       queueIndex: queueIndex,
@@ -44,6 +45,7 @@ Media3ProviderState _state({
       mediaId: song.id,
       queueLength: queueIndex + 1,
       volume: 1.0,
+      activeDeckId: activeDeckId,
       hasError: false,
       error: null,
     );
@@ -238,6 +240,8 @@ void main() {
   SharedPreferences.setMockInitialValues(<String, Object>{});
 
   group('MusicProvider Media3 session preparation', () {
+    setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
+
     test('requires an explicitly injected session', () async {
       final provider = MusicProvider();
       await expectLater(
@@ -305,6 +309,67 @@ void main() {
         session.calls.indexOf('seek:42000'),
         lessThan(session.calls.indexOf('focus:true')),
       );
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('persists live Media3 position so force-stop recovery has a durable checkpoint', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final song = _song('media3-resume-checkpoint');
+      await provider.enqueueSongs(<Song>[song]);
+      await provider.prepareMedia3ProviderSession();
+
+      session.positionValue = const Duration(seconds: 42);
+      session.playingValue = true;
+      session.states.add(_state(
+        song: song,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: const Duration(seconds: 42),
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt('playback_resume_position_ms'), 42000);
+      expect(prefs.getString('playback_resume_song_id'), song.id);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('reports native Engine A/B promotion and recovers DJ state on Media3 only', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final song = _song('deck-identity');
+      await provider.enqueueSongs(<Song>[song]);
+      await provider.prepareMedia3ProviderSession();
+
+      session.states.add(_state(
+        song: song,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: const Duration(seconds: 12),
+        activeDeckId: 'B',
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(provider.activeEngineLabel, 'B');
+      expect(provider.isEngineA, isFalse);
+
+      provider.configureDjMode(beatAlignActive: true, tempoMatchActive: true, sfxActive: true);
+      provider.configureDjMode(beatAlignActive: false, tempoMatchActive: false, sfxActive: false);
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+      expect(session.calls, contains('gainFactors'));
+      expect(session.calls, isNot(contains('pause')));
+      expect(session.calls, isNot(contains('stop')));
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);

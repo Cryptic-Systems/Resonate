@@ -576,6 +576,44 @@ extension MusicProviderDjHandoff on MusicProvider {
   }
 
   Future<void> _recoverDjEngineState({String reason = 'recover'}) async {
+    // Media3 owns both physical decks and its own focus/gain policy after
+    // provider cutover. Never recover through the retired EnginePair or
+    // reactivate the legacy AudioSession: doing so can interrupt or duck the
+    // canonical Media3 output when the DJ master toggle is changed.
+    final media3 = _media3ProviderSessionActive ? _media3ProviderSession : null;
+    if (media3 != null) {
+      final recoveryTransportEpoch = _userTransportEpoch;
+      bool wasPreempted() => recoveryTransportEpoch != _userTransportEpoch;
+      try {
+        await _restoreDjTransitionSfx();
+        if (wasPreempted()) return;
+        await media3.setDeckPlaybackSpeeds(activeSpeed: 1.0, standbySpeed: 1.0);
+        if (wasPreempted()) return;
+        await media3.setGainFactors(
+          trackLevel: _trackLevelingScale,
+          preamp: _eqPreampUserScale,
+          sleepFade: _sleepFadeScale,
+          focusDuck: _isDucked
+              ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel)
+              : 1.0,
+        );
+        if (wasPreempted()) return;
+        await ResonateDiagnostics.recordDj(
+          stage: 'engine_recover',
+          outcome: 'applied',
+          reason: reason,
+          extra: {
+            'engine': 'Media3',
+            'activeDeck': _media3ShadowState?.activeDeckId ?? 'A',
+            'playing': media3.isPlaying,
+            'positionMs': media3.position.inMilliseconds,
+          },
+        );
+      } catch (error) {
+        debugPrint('Media3 DJ engine recover failed: $error');
+      }
+      return;
+    }
     // Recovery is asynchronous and may overlap a manual track selection. It
     // must never restore master volume on an engine captured before that
     // selection, or it can make the old track audible again.

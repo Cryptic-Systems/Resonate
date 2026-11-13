@@ -53,6 +53,7 @@ class Media3ProviderStateBridge {
       queueLength: snapshot?.queueLength ?? 0,
       volume: snapshot?.volume ?? 1.0,
       audioSessionId: snapshot?.audioSessionId,
+      activeDeckId: snapshot?.activeDeckId ?? 'A',
       repeatMode: snapshot?.repeatMode ?? 'off',
       shuffleModeEnabled: snapshot?.shuffleModeEnabled ?? false,
       hasError: state.hasError,
@@ -89,6 +90,7 @@ class Media3ProviderState {
     required this.queueLength,
     required this.volume,
     this.audioSessionId,
+    this.activeDeckId = 'A',
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -111,6 +113,7 @@ class Media3ProviderState {
         queueLength = 0,
         volume = 1.0,
         audioSessionId = null,
+        activeDeckId = 'A',
         repeatMode = 'off',
         shuffleModeEnabled = false,
         hasError = false,
@@ -135,6 +138,9 @@ class Media3ProviderState {
   /// crossfade handoff, so consumers must follow state updates rather than
   /// cache the first non-null value indefinitely.
   final int? audioSessionId;
+
+  /// Physical Media3 deck currently owning canonical playback.
+  final String activeDeckId;
 
   final String repeatMode;
   final bool shuffleModeEnabled;

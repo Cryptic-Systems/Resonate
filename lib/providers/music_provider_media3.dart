@@ -468,6 +468,11 @@ extension MusicProviderMedia3 on MusicProvider {
       _lastCompletionSongId = null;
     }
     currentPosition = state.position;
+    // Persist from the canonical Media3 position stream, not only from the
+    // legacy just_audio binder or lifecycle callbacks. Android may kill the
+    // process without delivering paused/detached, so refresh the durable
+    // resume checkpoint while Media3 is reporting position.
+    _persistResumePosition();
     if (state.isPlaying && !_crossfadeInProgress) {
       _maybeStartAutomaticCrossfade(state.position);
     }

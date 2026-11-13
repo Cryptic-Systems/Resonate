@@ -136,6 +136,9 @@ class Media3PlaybackService : MediaSessionService() {
     fun activeAudioSessionId(): Int =
         if (::activePlayer.isInitialized) activePlayer.audioSessionId else 0
 
+    /** Physical A/B deck currently promoted as the canonical MediaSession player. */
+    fun activeDeckId(): String = activeDeckId
+
     /** True while Android is in a phone, VoIP, or ringing communication mode. */
     fun isCommunicationActive(): Boolean {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager

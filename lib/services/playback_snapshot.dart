@@ -21,6 +21,7 @@ class PlaybackSnapshot {
     required this.queueLength,
     required this.volume,
     this.audioSessionId,
+    this.activeDeckId = 'A',
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -44,6 +45,8 @@ class PlaybackSnapshot {
   final int queueLength;
   /// Active native audio session, when the backend exposes one.
   final int? audioSessionId;
+  /// Physical A/B deck currently promoted as the canonical playback deck.
+  final String activeDeckId;
   final double volume;
   /// Current queue repeat policy: `off`, `one`, or `all`.
   final String repeatMode;

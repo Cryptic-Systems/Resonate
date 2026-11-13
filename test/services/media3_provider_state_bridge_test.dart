@@ -27,6 +27,7 @@ PlaybackSnapshot _snapshot({
   Duration bufferedPosition = Duration.zero,
   bool buffering = false,
   bool completed = false,
+  String activeDeckId = 'A',
 }) =>
     PlaybackSnapshot(
       connected: true,
@@ -46,6 +47,7 @@ PlaybackSnapshot _snapshot({
       queueLength: 1,
       volume: 1,
       audioSessionId: audioSessionId,
+      activeDeckId: activeDeckId,
       repeatMode: repeatMode,
       shuffleModeEnabled: shuffleModeEnabled,
       hasError: false,
@@ -165,6 +167,14 @@ void main() {
       expect(projected.audioSessionId, 42);
       expect(projected.repeatMode, 'one');
       expect(projected.shuffleModeEnabled, isTrue);
+    });
+
+    test('projects the active physical A/B deck identity', () async {
+      final deckB = bridge.states.first;
+      backend.value = _snapshot(mediaId: 'track-1', activeDeckId: 'B');
+      backend.controller.add(backend.value);
+      expect((await deckB).activeDeckId, 'B');
+      expect(bridge.current.activeDeckId, 'B');
     });
 
     test('projects buffering, buffered position, and completion state', () async {
