@@ -324,7 +324,12 @@ class Media3PlaybackService : MediaSessionService() {
                 // MediaSession/headset commands can bypass the Flutter bridge.
                 // A canonical pause must also silence the separate DJ sample
                 // player; otherwise it can remain audible under a paused track.
-                if (deck === activePlayer && !playWhenReady) {
+                if (
+                    AudioOutputPolicy.shouldStopAuxiliaryAudio(
+                        isCanonicalActiveDeck = deck === activePlayer,
+                        playWhenReady = playWhenReady,
+                    )
+                ) {
                     stopAuxiliarySound()
                 }
                 // Never allow a deck to continue output in call/VoIP mode.
