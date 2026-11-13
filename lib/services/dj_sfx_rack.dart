@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -377,8 +376,8 @@ class DjSfxRack {
             await shot.setVolume(volume);
           } else {
             final session = playbackSession ?? _playbackSession;
-            if (session is PlaybackAuxiliaryEffectsBackend) {
-              await session.setAuxiliarySoundVolume(volume);
+            if (session != null && session is PlaybackAuxiliaryEffectsBackend) {
+              await (session as PlaybackAuxiliaryEffectsBackend).setAuxiliarySoundVolume(volume);
             }
           }
         } catch (_) {}
@@ -497,12 +496,13 @@ class DjSfxRack {
       await _stopOneshot();
       if (gen != _oneshotGen || !engaged) return;
       final session = _playbackSession;
-      if (session is PlaybackAuxiliaryEffectsBackend) {
+      if (session != null && session is PlaybackAuxiliaryEffectsBackend) {
+        final auxiliary = session as PlaybackAuxiliaryEffectsBackend;
         _oneshotBaseVolume = djSfxOneShotVolumeForEnergy(score);
         final assetUri = Uri.parse('asset:///flutter_assets/$asset');
-        await session.playAuxiliarySound(assetUri, volume: _oneshotBaseVolume);
+        await auxiliary.playAuxiliarySound(assetUri, volume: _oneshotBaseVolume);
         if (gen != _oneshotGen || !engaged) {
-          await session.stopAuxiliarySound();
+          await auxiliary.stopAuxiliarySound();
           return;
         }
         _auxiliaryOneShotActive = true;
@@ -533,7 +533,8 @@ class DjSfxRack {
 
   Future<void> _playTrackEchoOnSession(String? rawUri, double score) async {
     final session = _playbackSession;
-    if (session is! PlaybackAuxiliaryEffectsBackend || rawUri == null || rawUri.trim().isEmpty) return;
+    if (session == null || session is! PlaybackAuxiliaryEffectsBackend || rawUri == null || rawUri.trim().isEmpty) return;
+    final auxiliary = session as PlaybackAuxiliaryEffectsBackend;
     final currentMs = session.position.inMilliseconds;
     final startMs = _musicalEchoStart(currentMs);
     if (startMs < 0) return;
@@ -550,14 +551,14 @@ class DjSfxRack {
       _oneshotBaseVolume = (score >= 0.85 ? 0.08 : (score >= 0.7 ? 0.10 : 0.12)).clamp(0.05, 0.14);
       await Future<void>.delayed(const Duration(milliseconds: 220));
       if (gen != _oneshotGen || !engaged) return;
-      await session.playAuxiliarySound(
+      await auxiliary.playAuxiliarySound(
         sourceUri,
         volume: _oneshotBaseVolume,
         startPosition: Duration(milliseconds: startMs),
         endPosition: Duration(milliseconds: endMs),
       );
       if (gen != _oneshotGen || !engaged) {
-        await session.stopAuxiliarySound();
+        await auxiliary.stopAuxiliarySound();
         return;
       }
       _auxiliaryOneShotActive = true;
@@ -626,9 +627,9 @@ class DjSfxRack {
     if (_auxiliaryOneShotActive) {
       _auxiliaryOneShotActive = false;
       final session = _playbackSession;
-      if (session is PlaybackAuxiliaryEffectsBackend) {
+      if (session != null && session is PlaybackAuxiliaryEffectsBackend) {
         try {
-          await session.stopAuxiliarySound();
+          await (session as PlaybackAuxiliaryEffectsBackend).stopAuxiliarySound();
         } catch (_) {}
       }
     }
