@@ -231,6 +231,10 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryE
       _runtime.playAuxiliarySound(uri, volume: volume);
 
   @override
+  Future<void> setAuxiliarySoundVolume(double volume) =>
+      _runtime.setAuxiliarySoundVolume(volume);
+
+  @override
   Future<void> stopAuxiliarySound() => _runtime.stopAuxiliarySound();
 
   @override
