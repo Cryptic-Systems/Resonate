@@ -3573,7 +3573,6 @@ class MusicProvider extends ChangeNotifier {
     final media3Session = _media3ProviderSessionActive
         ? _media3ProviderSession
         : null;
-    final outgoingPlayer = media3Session == null ? audioPlayer : null;
     try {
       final profile = outgoingProfile;
       final beatMs = profile?.beatGrid.beatMs ?? const <int>[];
@@ -3590,7 +3589,6 @@ class MusicProvider extends ChangeNotifier {
               energyScore: energyScore,
               equalizerA: _equalizerA,
               equalizerB: _equalizerB,
-              outgoing: outgoingPlayer,
               outgoingUri: currentSong?.filePath,
               beatMs: beatMs,
               sections: sections,
@@ -3621,7 +3619,6 @@ class MusicProvider extends ChangeNotifier {
           energyScore: energyScore,
           equalizerA: _equalizerA,
           equalizerB: _equalizerB,
-          outgoing: outgoingPlayer,
           outgoingUri: currentSong?.filePath,
           beatMs: beatMs,
           sections: sections,
@@ -3649,7 +3646,6 @@ class MusicProvider extends ChangeNotifier {
       equalizerA: _equalizerA,
       equalizerB: _equalizerB,
       energyScore: _lastDjEnergyScore,
-      outgoing: _media3ProviderSessionActive ? null : audioPlayer,
       playbackSession: _media3ProviderSessionActive
           ? _media3ProviderSession
           : _djSfxMedia3OverlaySession,

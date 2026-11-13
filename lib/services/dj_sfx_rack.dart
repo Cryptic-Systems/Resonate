@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio_effects_bridge.dart';
@@ -53,10 +52,7 @@ class DjSfxRack {
   List<double>? _savedEqGainsA;
   List<double>? _savedEqGainsB;
   bool _eqTouched = false;
-  double _savedOutgoingSpeed = 1.0;
-  AudioPlayer? _outgoing;
   PlaybackEngineSession? _playbackSession;
-  AudioPlayer? _oneshot;
   int _oneshotGen = 0;
   double _oneshotBaseVolume = 0.0;
   bool _auxiliaryOneShotActive = false;
@@ -176,7 +172,6 @@ class DjSfxRack {
     DjSfxPreset? preset,
     AndroidEqualizer? equalizerA,
     AndroidEqualizer? equalizerB,
-    AudioPlayer? outgoing,
     String? outgoingUri,
     List<int> beatMs = const <int>[],
     List<DjSection> sections = const <DjSection>[],
@@ -203,8 +198,7 @@ class DjSfxRack {
           energyScore: score,
           transitionKind: transitionKind,
           sections: sections,
-          positionMs: playbackSession?.position.inMilliseconds ??
-              outgoing?.position.inMilliseconds ?? 0,
+          positionMs: playbackSession?.position.inMilliseconds ?? 0,
           aggressiveness: aggressiveness,
         );
 
@@ -235,21 +229,8 @@ class DjSfxRack {
     _usageCounts[activePreset!] = (_usageCounts[activePreset!] ?? 0) + 1;
     engaged = true;
     _eqTouched = false;
-    // Media3 owns both transition decks. Do not retain or even inspect a
-    // legacy AudioPlayer on that path; all track operations use the captured
-    // canonical session's serialized transport/speed commands.
-    _outgoing = playbackSession == null ? outgoing : null;
     _beatMs = List<int>.from(beatMs)..sort();
     _phraseAnchors = _buildPhraseAnchors(_beatMs);
-    _savedOutgoingSpeed = playbackSession?.playbackSpeed ?? 1.0;
-    if (playbackSession == null) {
-      try {
-        if (outgoing != null) {
-          _savedOutgoingSpeed = outgoing.speed;
-        }
-      } catch (_) {}
-    }
-
     try {
       if (playbackSession == null) {
         _savedEqGainsA = await _snapshotEq(equalizerA);
@@ -300,32 +281,17 @@ class DjSfxRack {
         }
         if (generation != _engageGen || !engaged) return;
       }
-      // These paths create a separate just_audio player or mutate the
-      // outgoing just_audio deck. They must never execute under Media3 session
-      // authority, even if a future preset-selection change admits such a
-      // preset accidentally.
-      if (_isSample(activePreset!)) {
-        // Fire one-shot early so it sits over the outgoing fade. Media3 routes
-        // the sample through its service-owned auxiliary player; legacy mode
-        // retains the existing just_audio implementation.
+      // Auxiliary samples and track automation are routed only through the
+      // canonical Media3 session. No secondary Flutter audio player is created.
+      if (playbackSession != null && _isSample(activePreset!)) {
         unawaited(_playOneshot(activePreset!, score));
       }
       if (playbackSession != null &&
           (activePreset == DjSfxPreset.echo || activePreset == DjSfxPreset.dryEcho)) {
         unawaited(_playTrackEchoOnSession(outgoingUri, score));
       }
-      if (_usesTrackManipulation(activePreset!)) {
-        if (playbackSession != null) {
-          unawaited(_runTrackManipulationOnSession(activePreset!, playbackSession));
-        } else {
-          unawaited(_runTrackManipulation(activePreset!));
-        }
-      }
-      if (playbackSession == null) {
-        if (activePreset == DjSfxPreset.echo ||
-            activePreset == DjSfxPreset.dryEcho) {
-          unawaited(_playTrackEcho(outgoingUri, score));
-        }
+      if (playbackSession != null && _usesTrackManipulation(activePreset!)) {
+        unawaited(_runTrackManipulationOnSession(activePreset!, playbackSession));
       }
     } catch (e) {
       debugPrint('DjSfxRack.engage: $e');
@@ -337,7 +303,6 @@ class DjSfxRack {
     AndroidEqualizer? equalizerA,
     AndroidEqualizer? equalizerB,
     double energyScore = 0.5,
-    AudioPlayer? outgoing,
     PlaybackEngineSession? playbackSession,
   }) async {
     if (!engaged || activePreset == null) return;
@@ -345,7 +310,6 @@ class DjSfxRack {
     bool isCurrent() => generation == _engageGen && engaged;
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
-    if (outgoing != null) _outgoing = outgoing;
     try {
       final session = playbackSession ?? _playbackSession;
       if (session == null) {
@@ -365,23 +329,18 @@ class DjSfxRack {
         }
         if (!isCurrent()) return;
       }
-      // Duck oneshot under the incoming rise so samples fade with the blend.
-      final shot = _oneshot;
-      if ((shot != null || _auxiliaryOneShotActive) && _oneshotBaseVolume > 0) {
+      // Duck the service-owned auxiliary sample under the incoming rise.
+      if (_auxiliaryOneShotActive && _oneshotBaseVolume > 0) {
         final progress = t.clamp(0.0, 1.6);
         final duck = progress <= 1.0
             ? (1.0 - progress * 0.85)
             : (0.15 * (1.6 - progress) / 0.6).clamp(0.0, 0.15);
         final volume = (_oneshotBaseVolume * duck).clamp(0.0, 0.14);
         try {
-          if (shot != null) {
-            await shot.setVolume(volume);
-          } else {
-            final candidate = playbackSession ?? _playbackSession;
-            if (candidate is PlaybackAuxiliaryEffectsBackend) {
-              final auxiliary = candidate as PlaybackAuxiliaryEffectsBackend;
-              await auxiliary.setAuxiliarySoundVolume(volume);
-            }
+          final candidate = playbackSession ?? _playbackSession;
+          if (candidate is PlaybackAuxiliaryEffectsBackend) {
+            final auxiliary = candidate as PlaybackAuxiliaryEffectsBackend;
+            await auxiliary.setAuxiliarySoundVolume(volume);
           }
         } catch (_) {}
       }
@@ -422,16 +381,6 @@ class DjSfxRack {
     }
     try {
       final session = playbackSession ?? _playbackSession;
-      final out = session == null ? _outgoing : null;
-      if (out != null) {
-        try {
-          await out.setSpeed(_savedOutgoingSpeed.clamp(0.5, 1.5));
-        } catch (_) {
-          try {
-            await out.setSpeed(1.0);
-          } catch (_) {}
-        }
-      }
       await _stopOneshot();
       if (session == null) {
         final prefs = await SharedPreferences.getInstance();
@@ -460,9 +409,7 @@ class DjSfxRack {
       activePreset = null;
       _savedEqGainsA = null;
       _savedEqGainsB = null;
-      _outgoing = null;
       _playbackSession = null;
-      _savedOutgoingSpeed = 1.0;
       _beatMs = const <int>[];
       _phraseAnchors = const <int>[];
     }
@@ -475,7 +422,6 @@ class DjSfxRack {
     DjSfxPreset? preset,
     AndroidEqualizer? equalizerA,
     AndroidEqualizer? equalizerB,
-    AudioPlayer? outgoing,
     String? outgoingUri,
     List<int> beatMs = const <int>[],
     List<DjSection> sections = const <DjSection>[],
@@ -508,48 +454,27 @@ class DjSfxRack {
 
   Future<void> _playOneshot(DjSfxPreset preset, double score) async {
     final asset = sampleAssets[preset];
-    if (asset == null) return;
+    final candidate = _playbackSession;
+    if (asset == null || candidate is! PlaybackAuxiliaryEffectsBackend) return;
+    final auxiliary = candidate as PlaybackAuxiliaryEffectsBackend;
     final gen = ++_oneshotGen;
     try {
       await _stopOneshot();
       if (gen != _oneshotGen || !engaged) return;
-      final candidate = _playbackSession;
-      if (candidate is PlaybackAuxiliaryEffectsBackend) {
-        final auxiliary = candidate as PlaybackAuxiliaryEffectsBackend;
-        _oneshotBaseVolume = djSfxOneShotVolumeForEnergy(score);
-        final assetUri = Uri.parse('asset:///flutter_assets/$asset');
-        await auxiliary.playAuxiliarySound(assetUri, volume: _oneshotBaseVolume);
-        if (gen != _oneshotGen || !engaged) {
-          await auxiliary.stopAuxiliarySound();
-          return;
-        }
-        _auxiliaryOneShotActive = true;
-        Future<void>.delayed(const Duration(milliseconds: 900), () async {
-          if (gen != _oneshotGen) return;
-          await _stopOneshot();
-        });
+      _oneshotBaseVolume = djSfxOneShotVolumeForEnergy(score);
+      final assetUri = Uri.parse('asset:///flutter_assets/$asset');
+      await auxiliary.playAuxiliarySound(assetUri, volume: _oneshotBaseVolume);
+      if (gen != _oneshotGen || !engaged) {
+        await auxiliary.stopAuxiliarySound();
         return;
       }
-      // A selected playback session is authoritative. If it cannot provide
-      // auxiliary audio, skip the sample rather than silently constructing a
-      // second just_audio engine alongside the canonical player.
-      if (candidate != null) return;
-      final player = AudioPlayer();
-      _oneshot = player;
-      // Start quietly and let tick() duck the sample further as the
-      // incoming track rises. Never allow a sample to dominate the music.
-      _oneshotBaseVolume = djSfxOneShotVolumeForEnergy(score);
-      await player.setVolume(_oneshotBaseVolume);
-      await player.setAudioSource(AudioSource.asset(asset));
-      if (gen != _oneshotGen) return;
-      await player.play();
-      // Auto-stop after max sample length.
+      _auxiliaryOneShotActive = true;
       Future<void>.delayed(const Duration(milliseconds: 900), () async {
         if (gen != _oneshotGen) return;
         await _stopOneshot();
       });
     } catch (e) {
-      debugPrint('DjSfxRack oneshot $preset: $e');
+      debugPrint('DjSfxRack Media3 oneshot $preset: $e');
     }
   }
 
@@ -595,58 +520,7 @@ class DjSfxRack {
     }
   }
 
-  Future<void> _playTrackEcho(String? uri, double score) async {
-    if (uri == null || uri.trim().isEmpty) return;
-    final out = _outgoing;
-    if (out == null) return;
-    final gen = ++_oneshotGen;
-    try {
-      final startMs = _musicalEchoStart(out.position.inMilliseconds);
-      if (startMs < 0) return;
-      final durationMs = out.duration?.inMilliseconds;
-      final endMs = math.min(
-        durationMs ?? (startMs + 900),
-        startMs + 850,
-      );
-      if (endMs <= startMs + 80) return;
-
-      await _stopOneshot();
-      if (gen != _oneshotGen || !engaged) return;
-      final player = AudioPlayer();
-      _oneshot = player;
-      // Keep samples under the music so they colour the fade, not dominate it.
-      final volume = score >= 0.85 ? 0.08 : (score >= 0.7 ? 0.10 : 0.12);
-      _oneshotBaseVolume = volume.clamp(0.05, 0.14);
-      await player.setVolume(_oneshotBaseVolume);
-      final sourceUri = uri.startsWith('content://') ||
-              uri.startsWith('file://') ||
-              uri.startsWith('http://') ||
-              uri.startsWith('https://')
-          ? Uri.parse(uri)
-          : Uri.file(uri);
-      await player.setAudioSource(
-        ClippingAudioSource(
-          child: AudioSource.uri(sourceUri),
-          start: Duration(milliseconds: startMs),
-          end: Duration(milliseconds: endMs),
-        ),
-      );
-      if (gen != _oneshotGen || !engaged) return;
-      await Future<void>.delayed(const Duration(milliseconds: 220));
-      if (gen != _oneshotGen || !engaged) return;
-      await player.play();
-      Future<void>.delayed(const Duration(milliseconds: 1100), () async {
-        if (gen != _oneshotGen) return;
-        await _stopOneshot();
-      });
-    } catch (e) {
-      debugPrint('DjSfxRack track echo: $e');
-    }
-  }
-
   Future<void> _stopOneshot() async {
-    final p = _oneshot;
-    _oneshot = null;
     _oneshotBaseVolume = 0.0;
     if (_auxiliaryOneShotActive) {
       _auxiliaryOneShotActive = false;
@@ -658,15 +532,6 @@ class DjSfxRack {
         } catch (_) {}
       }
     }
-    if (p == null) return;
-    try {
-      await p.stop();
-    } catch (_) {}
-    try {
-      await p.dispose();
-    } catch (_) {}
-  }
-
   bool _usesTrackManipulation(DjSfxPreset p) =>
       p == DjSfxPreset.repeat ||
       p == DjSfxPreset.repeatRestart ||
@@ -773,92 +638,6 @@ class DjSfxRack {
         }
         _trackActionRunning = false;
       }
-    }
-  }
-
-  /// Manipulates the actual outgoing track using just_audio controls.
-  Future<void> _runTrackManipulation(DjSfxPreset preset) async {
-    final out = _outgoing;
-    if (out == null || _trackActionRunning) return;
-    final gen = ++_trackFxGen;
-    _trackActionRunning = true;
-    try {
-      final originalSpeed = _savedOutgoingSpeed.clamp(0.5, 1.5).toDouble();
-      final current = out.position.inMilliseconds;
-      if (current < 120) return;
-
-      if (preset == DjSfxPreset.repeat || preset == DjSfxPreset.repeatRestart) {
-        final anchor = _musicalPhraseAnchor(current);
-        final sliceMs = _musicalSliceMs(anchor);
-        final repeatAnchor = math.max(0, anchor - sliceMs);
-        for (var i = 0; i < 3; i++) {
-          if (gen != _trackFxGen || !engaged) return;
-          await out.seek(Duration(milliseconds: repeatAnchor));
-          await out.setSpeed(originalSpeed);
-          await Future<void>.delayed(const Duration(milliseconds: 680));
-        }
-        if (preset == DjSfxPreset.repeatRestart &&
-            gen == _trackFxGen &&
-            engaged) {
-          await out.seek(Duration.zero);
-          await out.setSpeed(originalSpeed);
-        }
-        return;
-      }
-
-      if (preset == DjSfxPreset.stutter || preset == DjSfxPreset.beatRepeat) {
-        final anchor = _musicalAnchor(current);
-        final beat = _musicalSliceMs(anchor);
-        final slice = preset == DjSfxPreset.stutter ? (beat ~/ 2).clamp(120, 700) : beat.clamp(250, 1400);
-        final start = math.max(0, anchor - slice);
-        final count = preset == DjSfxPreset.stutter ? 5 : 4;
-        for (var i = 0; i < count; i++) {
-          if (gen != _trackFxGen || !engaged) return;
-          await out.seek(Duration(milliseconds: start));
-          await out.setSpeed(originalSpeed);
-          await Future<void>.delayed(Duration(milliseconds: slice));
-        }
-        return;
-      }
-
-      if (preset == DjSfxPreset.retrigger) {
-        final anchor = _musicalAnchor(current);
-        final beat = _musicalSliceMs(anchor);
-        final start = math.max(0, anchor - beat);
-        for (var i = 0; i < 3; i++) {
-          if (gen != _trackFxGen || !engaged) return;
-          await out.seek(Duration(milliseconds: start));
-          await out.setSpeed(originalSpeed);
-          await Future<void>.delayed(Duration(milliseconds: beat.clamp(250, 1400)));
-        }
-        return;
-      }
-
-      if (preset == DjSfxPreset.brake) {
-        for (final multiplier in <double>[0.94, 0.82, 0.70, 0.58, 0.50]) {
-          if (gen != _trackFxGen || !engaged) return;
-          await out.setSpeed((originalSpeed * multiplier).clamp(0.5, 1.5));
-          await Future<void>.delayed(const Duration(milliseconds: 110));
-        }
-        if (gen == _trackFxGen && engaged) await out.setSpeed(originalSpeed);
-        return;
-      }
-      final center = _musicalPhraseAnchor(current);
-      const strokes = <int>[120, -100, 150, -130, 80];
-      for (final delta in strokes) {
-        if (gen != _trackFxGen || !engaged) return;
-        final target = math.max(0, center + delta);
-        await out.seek(Duration(milliseconds: target));
-        await out.setSpeed(
-          delta >= 0 ? originalSpeed * 1.55 : originalSpeed * 0.62,
-        );
-        await Future<void>.delayed(const Duration(milliseconds: 115));
-      }
-      if (gen == _trackFxGen) await out.setSpeed(originalSpeed);
-    } catch (e) {
-      debugPrint('DjSfxRack track manipulation $preset: $e');
-    } finally {
-      if (gen == _trackFxGen) _trackActionRunning = false;
     }
   }
 
@@ -985,10 +764,6 @@ class DjSfxRack {
   bool _usesEq(DjSfxPreset p) =>
       p == DjSfxPreset.filterOpen || p == DjSfxPreset.filterClose;
 
-  bool _usesSpeed(DjSfxPreset p) =>
-      p == DjSfxPreset.vinylStop ||
-      (p == DjSfxPreset.rewind && !_isSample(p));
-
   double _envelope(double t) {
     if (t <= 0) return 0.0;
     if (t < 0.15) return (t / 0.15).clamp(0.0, 1.0);
@@ -1060,14 +835,6 @@ class DjSfxRack {
     await AudioEffectsBridge.setReverb(reverb);
     if (!current()) return;
 
-    if (_usesSpeed(p) && _outgoing != null) {
-      final speed = p == DjSfxPreset.vinylStop
-          ? (1.0 - 0.45 * x).clamp(0.55, 1.0)
-          : (1.0 - 0.55 * x).clamp(0.45, 1.0);
-      try {
-        await _outgoing!.setSpeed(speed);
-      } catch (_) {}
-    }
   }
 
   Future<List<double>?> _snapshotEq(AndroidEqualizer? eq) async {
