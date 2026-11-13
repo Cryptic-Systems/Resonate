@@ -23,6 +23,7 @@ PlaybackSnapshot _snapshot({
   int index = 0,
   bool playing = false,
   int? audioSessionId,
+  int? standbyAudioSessionId,
   Duration bufferedPosition = Duration.zero,
   bool buffering = false,
   bool completed = false,
@@ -45,6 +46,7 @@ PlaybackSnapshot _snapshot({
       queueLength: 1,
       volume: 0.75,
       audioSessionId: audioSessionId,
+      standbyAudioSessionId: standbyAudioSessionId,
       hasError: false,
       error: null,
     );
@@ -188,6 +190,29 @@ void main() {
       expect(state.isReady, isTrue);
       expect(state.volume, 0.75);
       expect(backend.calls, ['loadQueue']);
+    });
+
+    test('replays active and standby audio sessions to late state subscribers', () async {
+      await session.start();
+      await session.loadQueue(<Song>[_song('late-effects-subscriber')]);
+
+      backend.value = _snapshot(
+        mediaId: 'late-effects-subscriber',
+        audioSessionId: 731,
+        standbyAudioSessionId: 732,
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      final state = await session.stateStream.first;
+      expect(state.audioSessionId, 731);
+      expect(state.standbyAudioSessionId, 732);
+
+      // A second listener gets the same current snapshot without waiting for a
+      // future playback tick or a deck-promotion event.
+      final secondState = await session.stateStream.first;
+      expect(secondState.audioSessionId, 731);
+      expect(secondState.standbyAudioSessionId, 732);
     });
 
     test('forwards live queue reconciliation through the session command lane', () async {

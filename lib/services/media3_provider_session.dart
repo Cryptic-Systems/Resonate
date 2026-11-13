@@ -32,7 +32,32 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryE
   Stream<Media3ProviderState> get states => _bridge.states;
 
   @override
-  Stream<Media3ProviderState> get stateStream => states;
+  Stream<Media3ProviderState> get stateStream =>
+      Stream<Media3ProviderState>.multi((output) {
+        // Subscribe before taking the current snapshot. Late consumers such as
+        // AudioEffectsProvider must attach to both deck sessions immediately,
+        // even if playback is paused and no position ticker event is pending.
+        var initialized = false;
+        var lastState = current;
+        final subscription = states.listen(
+          (state) {
+            if (!initialized || identical(state, lastState)) return;
+            lastState = state;
+            output.add(state);
+          },
+          onError: output.addError,
+        );
+        lastState = current;
+        initialized = true;
+        final initial = lastState;
+        if (initial.connected ||
+            initial.currentSong != null ||
+            initial.audioSessionId != null ||
+            initial.standbyAudioSessionId != null) {
+          output.add(initial);
+        }
+        output.onCancel = subscription.cancel;
+      });
 
   /// Follows the active Media3 deck so DSP and visualizers can rebind when a
   /// crossfade swaps the active player and its Android audio session.

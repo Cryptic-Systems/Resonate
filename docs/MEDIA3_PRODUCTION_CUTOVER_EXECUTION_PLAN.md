@@ -779,3 +779,31 @@ previous active-session-only attachment gap in the Android session-bound
 effects path. Exact-head CI and device audition with Reverb/Virtualizer enabled
 during crossfade remain required; the per-deck Resonate DSP sink remains a
 separate processing layer.
+
+
+## 32. Repeat-one uses the Media3 standby deck — 2026-11-13
+
+When crossfade is enabled, repeat-one now preloads the same queue occurrence
+at position zero on the standby ExoPlayer, temporarily disables repeat on the
+outgoing deck, and runs the native equal-power fade. After A/B promotion, the
+provider restores the listener's current repeat policy. If preload or promotion
+fails, it cancels the transition and restores native repeat-one on the current
+deck without reviving the legacy player. A regression test verifies the same
+queue occurrence, standby promotion, and repeat-policy restoration.
+
+## 33. DJ auxiliary output follows the media stream — 2026-11-13
+
+The service-owned auxiliary ExoPlayer now uses the canonical media audio
+attributes while continuing to request no audio focus. This keeps DJ samples
+and clipped echo taps on the listener's media-volume/output route rather than
+the notification/sonification stream. Physical-device listening is still
+required to confirm sample audibility, output mixing, and pause cleanup.
+
+## 34. Late state subscribers receive both Media3 deck sessions — 2026-11-13
+
+Media3ProviderSession.stateStream now replays its current reconciled snapshot
+to a new subscriber while subscribing to future state changes without a gap.
+This lets lazily created consumers attach session-bound effects to active and
+standby decks immediately, including while playback is paused and the position
+ticker is idle. A regression test covers repeated late subscriptions and both
+session IDs.

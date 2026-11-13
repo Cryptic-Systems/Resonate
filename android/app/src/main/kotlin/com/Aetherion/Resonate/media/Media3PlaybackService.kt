@@ -77,13 +77,11 @@ class Media3PlaybackService : MediaSessionService() {
             .setMediaSourceFactory(DefaultMediaSourceFactory(this))
             .build()
             .also { created ->
-                created.setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(C.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(C.AUDIO_CONTENT_TYPE_SONIFICATION)
-                        .build(),
-                    false,
-                )
+                // DJ samples and echo taps are part of the music mix. Use
+                // the media stream (not the notification/sonification stream)
+                // so they follow the listener's media volume and output route.
+                // Focus remains disabled: the canonical deck owns audio focus.
+                created.setAudioAttributes(audioAttributes(), false)
                 auxiliaryPlayer = created
             }
         return try {
