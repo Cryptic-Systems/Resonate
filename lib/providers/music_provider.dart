@@ -107,6 +107,8 @@ class MusicProvider extends ChangeNotifier {
   bool _media3FallbackEnabled = false;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
   bool get media3ProviderSessionActive => _media3ProviderSessionActive;
+  @visibleForTesting
+  bool get debugLegacyEngineConstructed => _engines != null;
   /// The exact session that owns canonical playback after provider handoff.
   /// Consumers such as DSP/effects must observe this session rather than the
   /// retired legacy EnginePair audio-session IDs.

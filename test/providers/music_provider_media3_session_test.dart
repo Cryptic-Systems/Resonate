@@ -265,6 +265,8 @@ void main() {
     test('mirrors provider queue and settings before enabling the session handoff', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
+      expect(provider.debugLegacyEngineConstructed, isFalse,
+          reason: 'Media3 startup must not construct the retired Flutter audio decks.');
 
       await provider.enqueueSongs(<Song>[_song('one'), _song('two')]);
       await provider.setRepeatMode(PlaybackRepeatMode.all);
@@ -294,6 +296,8 @@ void main() {
       expect(session.focusHandling, isTrue,
           reason: 'Media3 owns audio focus after the provider handoff is committed.');
       expect(provider.media3ProviderSessionActive, isTrue);
+      expect(provider.debugLegacyEngineConstructed, isFalse,
+          reason: 'A successful Media3 handoff must not create a just_audio EnginePair.');
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
