@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:resonate/models/song.dart';
 import 'package:resonate/providers/music_provider.dart';
+import 'package:resonate/services/audio_service_handler.dart';
 import 'package:resonate/services/playback_backend.dart';
 import 'package:resonate/services/playback_engine_session.dart';
 import 'package:resonate/services/media3_provider_state_bridge.dart';
@@ -449,6 +450,39 @@ void main() {
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
       await session.audioSessions.close();
+    });
+
+    test('publishes canonical Media3 position to the system media notification', () async {
+      final handler = AudioServiceHandler();
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(
+        audioHandler: handler,
+        media3ProviderSession: session,
+      );
+      final song = _song('notification-track');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
+
+      // The legacy compatibility players are idle after handoff. The system
+      // media state must nevertheless follow the progressing Media3 session.
+      session.positionValue = const Duration(seconds: 42);
+      session.states.add(_state(
+        song: song,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(handler.playbackState.value.updatePosition,
+          const Duration(seconds: 42));
+      expect(handler.playbackState.value.playing, isTrue);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
     });
 
     test('does not mark the session prepared when startup fails', () async {
