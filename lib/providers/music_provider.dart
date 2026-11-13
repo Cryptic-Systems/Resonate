@@ -825,9 +825,8 @@ class MusicProvider extends ChangeNotifier {
     _sessionBSub = null;
     await _engines.dispose();
     await ResonateDiagnostics.record('legacy_just_audio_engines_retired', {
-      'playerAPlaying': _playerA.playing,
-      'playerBPlaying': _playerB.playing,
       'disposed': true,
+      'reason': 'media3_handoff',
     });
 
     final initialState = _media3ShadowState;
