@@ -199,17 +199,14 @@ class DjSfxRack {
     // Media3 session effects are restricted to capabilities implemented by
     // its canonical service session; track automation uses serialized seek/speed.
     final requested = preset ??
-        (playbackSession != null
-            ? (transitionKind == DjTransitionKind.outroIntro
-                ? DjSfxPreset.filterClose
-                : DjSfxPreset.filterOpen)
-            : _pickPhraseAwarePreset(
-                energyScore: score,
-                transitionKind: transitionKind,
-                sections: sections,
-                positionMs: outgoing?.position.inMilliseconds ?? 0,
-                aggressiveness: aggressiveness,
-              ));
+        _pickPhraseAwarePreset(
+          energyScore: score,
+          transitionKind: transitionKind,
+          sections: sections,
+          positionMs: playbackSession?.position.inMilliseconds ??
+              outgoing?.position.inMilliseconds ?? 0,
+          aggressiveness: aggressiveness,
+        );
 
     // Legacy repeat/repeat-restart are still kept out of automatic selection
     // until the user has explicitly opted into track automation. Media3's
@@ -657,6 +654,7 @@ class DjSfxRack {
   bool _usesTrackManipulation(DjSfxPreset p) =>
       p == DjSfxPreset.repeat ||
       p == DjSfxPreset.repeatRestart ||
+      p == DjSfxPreset.vinylStop ||
       p == DjSfxPreset.scratch ||
       p == DjSfxPreset.stutter ||
       p == DjSfxPreset.beatRepeat ||
