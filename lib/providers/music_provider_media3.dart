@@ -442,6 +442,7 @@ extension MusicProviderMedia3 on MusicProvider {
     final session = _media3ProviderSession;
     if (session == null) return;
     final oldSongId = currentSong?.id;
+    final previousQueueIndex = _queueIndex;
     final previousPosition = currentPosition;
     final resolvedIndex = Media3MusicProviderAdapter.resolveCurrentQueueIndex(
       _queue,
@@ -468,11 +469,6 @@ extension MusicProviderMedia3 on MusicProvider {
       _lastCompletionSongId = null;
     }
     currentPosition = state.position;
-    // Persist from the canonical Media3 position stream, not only from the
-    // legacy just_audio binder or lifecycle callbacks. Android may kill the
-    // process without delivering paused/detached, so refresh the durable
-    // resume checkpoint while Media3 is reporting position.
-    _persistResumePosition();
     if (state.isPlaying && !_crossfadeInProgress) {
       _maybeStartAutomaticCrossfade(state.position);
     }
@@ -481,6 +477,15 @@ extension MusicProviderMedia3 on MusicProvider {
       _lastCompletionSongId = null;
     }
     currentDuration = state.duration ?? currentSong?.duration;
+    // Keep the persisted queue occurrence aligned with native promotion. A
+    // resume checkpoint for the incoming track is useless if the saved queue
+    // index still points at the outgoing track after process death.
+    if (oldSongId != currentSong?.id || previousQueueIndex != _queueIndex) {
+      unawaited(_persistQueue());
+    }
+    // Persist from canonical Media3 observations so force-stop recovery does
+    // not depend on a Flutter lifecycle callback being delivered.
+    _persistResumePosition();
     // Buffering does not clear the user's play intent. isPlaying is strictly
     // the reconciled native state, not an optimistic command flag.
     isPlaying = state.isPlaying;

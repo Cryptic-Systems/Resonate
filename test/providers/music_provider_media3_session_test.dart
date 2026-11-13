@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:resonate/models/song.dart';
+import 'package:resonate/playback/queue_store.dart';
 import 'package:resonate/providers/music_provider.dart';
 import 'package:resonate/services/audio_service_handler.dart';
 import 'package:resonate/services/playback_backend.dart';
@@ -337,6 +338,38 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getInt('playback_resume_position_ms'), 42000);
       expect(prefs.getString('playback_resume_song_id'), song.id);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('persists the queue index when Media3 promotes the next deck', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('queue-first');
+      final second = _song('queue-second');
+      await provider.enqueueSongs(<Song>[first, second]);
+      await provider.prepareMedia3ProviderSession();
+
+      session.currentSongValue = second;
+      session.queueIndexValue = 1;
+      session.positionValue = const Duration(seconds: 18);
+      session.playingValue = true;
+      session.states.add(_state(
+        song: second,
+        queueIndex: 1,
+        playing: true,
+        playWhenReady: true,
+        position: const Duration(seconds: 18),
+        activeDeckId: 'B',
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt(QueueStore.savedQueueIndexKey), 1);
+      expect(prefs.getString('playback_resume_song_id'), second.id);
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
