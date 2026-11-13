@@ -106,6 +106,10 @@ class MusicProvider extends ChangeNotifier {
   bool _media3ProviderSessionActive = false;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
   bool get media3ProviderSessionActive => _media3ProviderSessionActive;
+  /// The exact session that owns canonical playback after provider handoff.
+  /// Consumers such as DSP/effects must observe this session rather than the
+  /// retired legacy EnginePair audio-session IDs.
+  PlaybackEngineSession? get media3PlaybackSession => _media3ProviderSession;
   final PodcastSessionBridge _podcastSession = PodcastSessionBridge();
   final AudiobookSessionBridge _audiobookSession = AudiobookSessionBridge();
   ModeProvider? _modes;
