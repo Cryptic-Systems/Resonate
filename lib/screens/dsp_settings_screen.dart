@@ -59,13 +59,19 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
     });
   }
 
-  Future<void> _commit({bool pushBands = false}) {
-    final next = _commitTail.then((_) => _performCommit(pushBands: pushBands));
+  Future<void> _commit({bool pushBands = false, bool pushSpeaker = false}) {
+    final next = _commitTail.then((_) => _performCommit(
+          pushBands: pushBands,
+          pushSpeaker: pushSpeaker,
+        ));
     _commitTail = next.catchError((_) {});
     return next;
   }
 
-  Future<void> _performCommit({required bool pushBands}) async {
+  Future<void> _performCommit({
+    required bool pushBands,
+    required bool pushSpeaker,
+  }) async {
     final current = _settings;
     if (!mounted || current == null) return;
     final bandsSnapshot = _bands.map((band) => band.copyWith()).toList();
@@ -135,8 +141,10 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
         lowDb: current.limiterLowCeilingDb,
       );
       await AudioEffectsBridge.setLiveDspCrossoverHz(current.crossoverHz);
-      await AudioEffectsBridge.setLiveDspSpeakerMode(current.speakerProtectionEnabled);
-      await AudioEffectsBridge.setLiveDspVirtualBass(current.virtualBassAmount);
+      if (pushSpeaker) {
+        await AudioEffectsBridge.setLiveDspSpeakerMode(current.speakerProtectionEnabled);
+        await AudioEffectsBridge.setLiveDspVirtualBass(current.virtualBassAmount);
+      }
       await AudioEffectsBridge.setLiveDspDither(
         enabled: current.ditherEnabled,
         mode: current.ditherMode,
@@ -511,7 +519,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                         value: settings.speakerProtectionEnabled,
                         onChanged: (v) {
                           _changeSettings((s) => s.copyWith(speakerProtectionEnabled: v));
-                          _commit();
+                          _commit(pushSpeaker: true);
                         },
                       ),
                       _valueSlider(
@@ -522,7 +530,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                         suffix: 'level',
                         divisions: 100,
                         onChanged: (v) => _changeSettings((s) => s.copyWith(virtualBassAmount: v)),
-                        onChangeEnd: (_) => _commit(),
+                        onChangeEnd: (_) => _commit(pushSpeaker: true),
                       ),
                     ]),
                     _section('Dither', 'Noise shaping for PCM16 output quantization.', [
