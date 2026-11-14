@@ -1283,24 +1283,40 @@ class MusicProvider extends ChangeNotifier {
 
   /// Public: re-claim focus and restore volume if playback went silent while UI moved.
   Future<void> ensureAudiblePlayback() async {
+    final media3Session = _media3ProviderSession;
+    final transportEpoch = _userTransportEpoch;
+    bool stillOwnsAudibleRecovery() =>
+        !_disposed &&
+        transportEpoch == _userTransportEpoch &&
+        _userWantsPlaying &&
+        !_recentlyUserPaused &&
+        _sleepFadeScale >= 0.999 &&
+        identical(media3Session, _media3ProviderSession) &&
+        (media3Session == null || _media3ProviderSessionActive);
+
     try {
-      if (_media3ProviderSession != null && !_media3ProviderSessionActive &&
-          _media3ProviderSession != null) return;
-      if (_recentlyUserPaused) return;
-      if (!_userWantsPlaying) return;
-      // Do not fight an active sleep-timer fade-out.
-      if (_sleepFadeScale < 0.999) return;
+      // An injected session blocks legacy fallback even before handoff. Do not
+      // let this best-effort recovery path lazily construct the just_audio pair.
+      if (media3Session != null && !_media3ProviderSessionActive) return;
+      if (!stillOwnsAudibleRecovery()) return;
       if (!await _claimAudioFocus(reason: 'ensure_audible')) return;
-      if (_media3ProviderSessionActive) {
+
+      // Focus acquisition may yield while Pause, Stop, or a track change runs.
+      // Revalidate the transport generation before touching either engine.
+      if (!stillOwnsAudibleRecovery()) return;
+      if (media3Session != null) {
         await _applyActiveMasterVolume();
-        if (_userWantsPlaying && !_media3ProviderSession!.isPlaying) {
-          await _media3ProviderSession!.play();
-        }
+        if (!stillOwnsAudibleRecovery()) return;
+        if (!media3Session.isPlaying) await media3Session.play();
         return;
       }
+
       final vol = (_eqPreampScale * _sleepFadeScale).clamp(0.05, 1.0);
-      if (audioPlayer.volume < vol * 0.85) await audioPlayer.setVolume(vol);
-      if (_userWantsPlaying && !audioPlayer.playing) await audioPlayer.play();
+      if (audioPlayer.volume < vol * 0.85) {
+        await audioPlayer.setVolume(vol);
+      }
+      if (!stillOwnsAudibleRecovery()) return;
+      if (!audioPlayer.playing) await audioPlayer.play();
     } catch (e) {
       debugPrint('ensureAudiblePlayback: $e');
     }
