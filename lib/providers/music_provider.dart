@@ -1074,10 +1074,13 @@ class MusicProvider extends ChangeNotifier {
 
   /// If UI says playing but engine volume is near zero outside a crossfade, unstick.
   void _maybeRecoverSilentPlayback() {
-    if (_media3ProviderSession != null && !_media3ProviderSessionActive &&
-        _media3ProviderSession != null) return;
-    if (_media3ProviderSessionActive) {
-      this._recoverMedia3ProviderPlayback();
+    // An injected session is authoritative even before its handoff completes.
+    // Never fall through to audioPlayer here: that getter can construct the
+    // retired just_audio EnginePair while Media3 is still preparing.
+    if (_media3ProviderSession != null) {
+      if (_media3ProviderSessionActive) {
+        this._recoverMedia3ProviderPlayback();
+      }
       return;
     }
     _forceClearStuckTransition(reason: 'silent_recover_probe');
