@@ -103,10 +103,10 @@ struct NativeHandle {
     uint32_t appliedSequence = 0; // Audio-thread owned.
     const int sampleRate;
     const int channels;
-    std::atomic<int64_t> processCalls{0};
-    std::atomic<int64_t> totalNs{0};
-    std::atomic<int64_t> maxNs{0};
-    std::atomic<int64_t> overruns{0};
+    std::atomic<uint32_t> processCalls{0};
+    std::atomic<float> averageUs{0.f};
+    std::atomic<float> maxUs{0.f};
+    std::atomic<uint32_t> overruns{0};
     std::atomic<int32_t> lastFrames{0};
 
     NativeHandle(int sr, int ch) : sampleRate(sr), channels(ch) {}
@@ -266,21 +266,27 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeProcessPcm16Direct(
     const jlong required = static_cast<jlong>(frames) * channels * sizeof(int16_t);
     if (!address || capacity < required) return DSP_ERR_INVALID_ARG;
 
-    applyPending(h);
     const auto start = std::chrono::steady_clock::now();
+    applyPending(h);
     const DspError rc = dsp_process_pcm16(h->engine, static_cast<int16_t*>(address), frames);
-    const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+    const int64_t elapsedNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now() - start).count();
     if (rc == DSP_OK) {
-        h->processCalls.fetch_add(1, std::memory_order_relaxed);
-        h->totalNs.fetch_add(elapsed, std::memory_order_relaxed);
-        int64_t oldMax = h->maxNs.load(std::memory_order_relaxed);
-        while (elapsed > oldMax && !h->maxNs.compare_exchange_weak(
-            oldMax, elapsed, std::memory_order_relaxed)) {}
+        const uint32_t calls = h->processCalls.fetch_add(1, std::memory_order_relaxed) + 1;
+        const float elapsedUs = static_cast<float>(elapsedNs) / 1000.f;
+        float oldAverage = h->averageUs.load(std::memory_order_relaxed);
+        while (!h->averageUs.compare_exchange_weak(
+            oldAverage,
+            oldAverage + (elapsedUs - oldAverage) / static_cast<float>(calls),
+            std::memory_order_relaxed)) {}
+        float oldMax = h->maxUs.load(std::memory_order_relaxed);
+        while (elapsedUs > oldMax && !h->maxUs.compare_exchange_weak(
+            oldMax, elapsedUs, std::memory_order_relaxed)) {}
         h->lastFrames.store(frames, std::memory_order_relaxed);
-        const int64_t budget = static_cast<int64_t>(
-            static_cast<double>(frames) * 1.0e9 / static_cast<double>(h->sampleRate));
-        if (elapsed > budget) h->overruns.fetch_add(1, std::memory_order_relaxed);
+        const double budgetNs = static_cast<double>(frames) * 1.0e9 /
+            static_cast<double>(h->sampleRate);
+        if (static_cast<double>(elapsedNs) > budgetNs)
+            h->overruns.fetch_add(1, std::memory_order_relaxed);
     }
     return rc;
 }
@@ -449,10 +455,8 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeGetStats(
     if (auto* h = fromHandle(value)) {
         const int64_t calls = h->processCalls.load(std::memory_order_relaxed);
         vals[0] = static_cast<double>(calls);
-        vals[1] = calls > 0
-            ? (static_cast<double>(h->totalNs.load(std::memory_order_relaxed)) / calls) / 1000.0
-            : 0.0;
-        vals[2] = static_cast<double>(h->maxNs.load(std::memory_order_relaxed)) / 1000.0;
+        vals[1] = static_cast<double>(h->averageUs.load(std::memory_order_relaxed));
+        vals[2] = static_cast<double>(h->maxUs.load(std::memory_order_relaxed));
         vals[3] = static_cast<double>(h->overruns.load(std::memory_order_relaxed));
         vals[4] = static_cast<double>(h->lastFrames.load(std::memory_order_relaxed));
         vals[5] = static_cast<double>(h->sampleRate);
@@ -466,8 +470,8 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeResetStats(
         JNIEnv*, jclass, jlong value) {
     if (auto* h = fromHandle(value)) {
         h->processCalls.store(0, std::memory_order_relaxed);
-        h->totalNs.store(0, std::memory_order_relaxed);
-        h->maxNs.store(0, std::memory_order_relaxed);
+        h->averageUs.store(0.f, std::memory_order_relaxed);
+        h->maxUs.store(0.f, std::memory_order_relaxed);
         h->overruns.store(0, std::memory_order_relaxed);
         h->lastFrames.store(0, std::memory_order_relaxed);
     }
