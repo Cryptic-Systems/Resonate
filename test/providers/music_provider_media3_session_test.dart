@@ -605,10 +605,12 @@ void main() {
         startGate.complete();
         await Future.wait(<Future<void>>[preparing, resume, pause]);
 
-        expect(session.calls, isNot(contains('focus:true')),
-            reason: 'A resume superseded during activation must not enable focus handling.');
+        expect(session.calls, contains('pause'),
+            reason: 'The later pause must be applied after activation completes.');
         expect(session.calls, isNot(contains('play')),
             reason: 'A superseded resume must not restart playback after pause.');
+        expect(session.focusHandling, isFalse,
+            reason: 'The completed pause must leave Media3 focus handling released.');
         expect(session.calls, contains('pause'));
         expect(session.focusHandling, isFalse);
         expect(provider.isPlaying, isFalse);
