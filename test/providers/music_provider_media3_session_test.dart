@@ -287,6 +287,20 @@ void main() {
       await session.states.close();
     });
 
+    test('saved audio-effect sync does not construct legacy engines for Media3', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+
+      await provider.syncSavedAudioEffects();
+
+      expect(provider.debugLegacyEngineConstructed, isFalse,
+          reason: 'Media3 owns effect synchronization; the legacy controller must not create just_audio decks.');
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('playback feature changes activate and remain on injected Media3', () async {
       final session = _PitchCapableFakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
