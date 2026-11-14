@@ -87,16 +87,10 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
             ditherMode: current.ditherMode,
           ));
       if (!mounted) return;
-      if (pushBands) {
-        await context.read<EqualizerProvider>().setParametricEqBands(_bands);
-      } else {
-        await AudioEffectsBridge.setLiveDspParametricEqBands(
-          frequenciesHz: _bands.map((band) => band.frequencyHz).toList(),
-          gainsDb: _bands.map((band) => band.gainDb).toList(),
-          qs: _bands.map((band) => band.q).toList(),
-          types: _bands.map((band) => band.type).toList(),
-        );
-      }
+      await context.read<EqualizerProvider>().setParametricEqBands(
+        _bands,
+        markCustom: pushBands,
+      );
       await context.read<EqualizerProvider>().setPreamp(current.preampDb);
       await AudioEffectsBridge.setLiveDspDvc(
         enabled: current.dvcEnabled,
