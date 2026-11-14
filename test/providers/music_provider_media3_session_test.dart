@@ -337,13 +337,20 @@ void main() {
       await session.states.close();
     });
 
-    test('navigation and seek before explicit handoff activate injected Media3 without legacy engines', () async {
+    test('queue edits, playback modes, navigation and seek stay on injected Media3', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
       final first = _song('pre-handoff-first');
       final second = _song('pre-handoff-second');
       await provider.enqueueSongs(<Song>[first, second]);
+      expect(provider.media3ProviderSessionActive, isTrue);
+      expect(session.calls, contains('synchronizeQueue'));
       expect(provider.debugLegacyEngineConstructed, isFalse);
+
+      await provider.setShuffleEnabled(true);
+      expect(session.calls, contains('shuffle:true'));
+      await provider.setRepeatMode(PlaybackRepeatMode.one);
+      expect(session.calls, contains('repeat:one'));
 
       await provider.nextSong();
       expect(provider.media3ProviderSessionActive, isTrue);
