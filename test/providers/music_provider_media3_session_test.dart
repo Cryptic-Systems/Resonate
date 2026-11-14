@@ -466,6 +466,38 @@ void main() {
       await session.states.close();
     });
 
+    test('explicit queue selection cancels native crossfade before loading the selected track', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('queue-select-first');
+      final second = _song('queue-select-second');
+      final third = _song('queue-select-third');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(
+        first,
+        queue: <Song>[first, second, third],
+      ), isTrue);
+
+      // Ignore cancellation performed by the initial Play Song command.
+      session.calls.clear();
+      expect(await provider.playQueueIndex(2), isTrue);
+
+      final cancelIndex = session.calls.indexOf('cancelCrossfade');
+      final loadIndex = session.calls.lastIndexOf('loadQueue');
+      expect(cancelIndex, greaterThanOrEqualTo(0),
+          reason: 'Queue selection must invalidate a prepared native standby deck.');
+      expect(loadIndex, greaterThan(cancelIndex),
+          reason: 'The requested queue occurrence must load after cancellation.');
+      expect(provider.currentSong?.id, third.id);
+      expect(provider.queueIndex, 2);
+      expect(session.currentSong?.id, third.id);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('uses canonical Media3 state for recovery without overriding an external pause', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
