@@ -498,6 +498,33 @@ void main() {
       await session.states.close();
     });
 
+    test('preserves the selected occurrence when a queue contains duplicate song IDs', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final firstOccurrence = _song('duplicate-id');
+      final secondOccurrence = firstOccurrence.copyWith(
+        filePath: '/music/duplicate-id-remastered.mp3',
+        title: 'Remastered',
+      );
+      await provider.prepareMedia3ProviderSession();
+
+      expect(await provider.playSong(
+        secondOccurrence,
+        queue: <Song>[firstOccurrence, secondOccurrence],
+        startIndex: 1,
+      ), isTrue);
+
+      expect(session.loadedIndex, 1);
+      expect(provider.queueIndex, 1);
+      expect(provider.currentSong?.filePath,
+          '/music/duplicate-id-remastered.mp3');
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('uses canonical Media3 state for recovery without overriding an external pause', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
