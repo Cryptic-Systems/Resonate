@@ -328,6 +328,11 @@ void main() {
       final song = _song('watchdog-native-resume');
       await provider.enqueueSongs(<Song>[song]);
       await provider.prepareMedia3ProviderSession();
+      await provider.play();
+      // Establish a genuine user playback intent before simulating a native
+      // deck stall; a state snapshot alone must not manufacture that intent.
+      session.calls.clear();
+      session.playingValue = false;
 
       final focusGate = Completer<void>();
       final focusEntered = Completer<void>();
