@@ -71,12 +71,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     // Media3 and the legacy engine share the same user-facing rate range.
     speed = value.clamp(0.5, 2.0).toDouble();
     try {
-      final session = music.media3PlaybackSession;
-      if (music.media3ProviderSessionActive && session != null) {
-        await music.setPlaybackSpeedForFeatures(speed);
-      } else {
-        await music.setPlaybackSpeedForFeatures(speed);
-      }
+      await music.setPlaybackSpeedForFeatures(speed);
     } catch (e) {
       debugPrint('Playback speed failed: $e');
     }
@@ -87,12 +82,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   Future<void> setPitch(double value) async {
     pitch = value.clamp(0.5, 2.0).toDouble();
     try {
-      final session = music.media3PlaybackSession;
-      if (music.media3ProviderSessionActive && session != null) {
-        await music.setPlaybackPitchForFeatures(pitch);
-      } else {
-        await music.setPlaybackPitchForFeatures(pitch);
-      }
+      await music.setPlaybackPitchForFeatures(pitch);
     } catch (e) {
       debugPrint('Playback pitch failed: $e');
     }
@@ -124,18 +114,8 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
 
   Future<void> _applyNormalization() async {
     try {
-      final session = music.media3PlaybackSession;
-      if (music.media3ProviderSessionActive && session != null) {
-        // Media3 composes track trim with preamp, sleep fade and focus duck
-        // atomically. Track normalization is attenuation-only to avoid
-        // introducing clipping when the source has unknown headroom.
-        await music.setNormalizationForFeatures(
-          targetGainMillibels: _normalizationGainDb * 100.0,
-          enabled: normalizationEnabled,
-          trackLevel: _normalizationTrackLevel,
-        );
-        return;
-      }
+      // MusicProvider selects the canonical backend. On Media3, normalization
+      // is composed as attenuation-only track gain with the other gain factors.
       await music.setNormalizationForFeatures(
         targetGainMillibels: _normalizationGainDb * 100.0,
         enabled: normalizationEnabled,
@@ -149,22 +129,13 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   Future<void> applyToActiveEngine() async {
     if (_disposed) return;
     try {
-      final session = music.media3PlaybackSession;
-      if (music.media3ProviderSessionActive && session != null) {
-        await music.setPlaybackSpeedForFeatures(speed.clamp(0.5, 2.0).toDouble());
-        await music.setPlaybackPitchForFeatures(pitch.clamp(0.5, 2.0).toDouble());
-        // Restore track trim on the newly active session/deck alongside rate
-        // and pitch; the native gain policy preserves sleep/focus/preamp factors.
-        await music.setNormalizationForFeatures(targetGainMillibels: _normalizationGainDb * 100.0, enabled: normalizationEnabled, trackLevel: _normalizationTrackLevel);
-      } else {
-        await music.setPlaybackSpeedForFeatures(speed);
-        await music.setPlaybackPitchForFeatures(pitch);
-      }
-      if (!music.media3ProviderSessionActive && normalizationEnabled) {
-        await _applyNormalization();
-      } else if (!music.media3ProviderSessionActive) {
-        await music.setNormalizationForFeatures(targetGainMillibels: 0.0, enabled: false, trackLevel: 1.0);
-      }
+      await music.setPlaybackSpeedForFeatures(speed.clamp(0.5, 2.0).toDouble());
+      await music.setPlaybackPitchForFeatures(pitch.clamp(0.5, 2.0).toDouble());
+      await music.setNormalizationForFeatures(
+        targetGainMillibels: _normalizationGainDb * 100.0,
+        enabled: normalizationEnabled,
+        trackLevel: _normalizationTrackLevel,
+      );
     } catch (e) {
       debugPrint('Active playback feature sync failed: $e');
     }
