@@ -1,12 +1,13 @@
 import 'resonate_biquad.dart';
 
-/// Resonate-owned multi-band software EQ model.
+/// Resonate-owned 31-band EQ response model used for curve visualization,
+/// profile migration and hardware-capability mapping. Live PCM processing is
+/// performed by DSP-ENGINE in the Media3 AudioProcessor, not by this model.
 ///
 /// Design goals (original to this project):
 /// - 31 fixed centers (ISO-ish) as the control surface
 /// - Peaking sections with bandwidth that scales mildly with frequency
-/// - Cascaded response used to drive whatever output path is available
-///   (Android hardware EQ bands today; native sample processor later)
+/// - Cascaded response available for plotting and compatibility mapping.
 ///
 /// This is not a port of Superpowered, Musicolet, or any other player DSP.
 class ResonateDspEngine {
