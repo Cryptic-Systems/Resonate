@@ -389,9 +389,22 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
     if (_queue.isEmpty || index < 0 || index >= _queue.length) {
       return Future<bool>.value(false);
     }
+    final wasCrossfadeActive =
+        _crossfadeInProgress || _automaticCrossfadeInFlight;
     final intentToken = _playbackIntentGate.issue();
-    _automaticCrossfadeInFlight = false;
-    _crossfadeInProgress = false;
+    // Explicit queue selection has the same priority as Play Song/Next:
+    // invalidate any native standby transition before loading the requested
+    // occurrence. Clearing only the Dart flags leaves Media3 free to promote
+    // its stale preload after the user's selection.
+    _cancelAutomaticPlaybackWork();
+    if (wasCrossfadeActive) {
+      unawaited(ResonateDiagnostics.record('automatic_transition_preempted', {
+        'command': 'play_queue_index',
+        'songId': currentSong?.id,
+        'requestedSongId': _queue[index].id,
+        'queueIndex': index,
+      }));
+    }
     _completionAdvanceInProgress = false;
     _lastCompletionSongId = null;
     return _serializePlayback(
