@@ -527,6 +527,12 @@ class Media3PlaybackService : MediaSessionService() {
                 applyDeckVolumes()
                 if (progress >= 1f) {
                     val oldPlayer = activePlayer
+                    // Close the outgoing output before changing the gain policy.
+                    // At the end of the ramp it is still playing; resetting the
+                    // equal-power gains first would briefly restore both decks
+                    // to full level. Muting is safe before the reference swap
+                    // because volume changes do not emit transport callbacks.
+                    oldPlayer.volume = 0f
                     activePlayer = standbyPlayer
                     standbyPlayer = oldPlayer
                     activeDeckId = if (activeDeckId == "A") "B" else "A"
@@ -536,14 +542,14 @@ class Media3PlaybackService : MediaSessionService() {
                     // now-standby deck so the next preload starts from the new
                     // active rate rather than a stale outgoing correction.
                     standbyPlayer.playbackParameters = activePlayer.playbackParameters
-                    oldPlayer.setAudioAttributes(
+                    standbyPlayer.setAudioAttributes(
                         audioAttributes(),
                         AudioOutputPolicy.handlesAudioFocus(
                             isCanonicalActiveDeck = false,
                             focusHandlingEnabled = media3AudioFocusEnabled,
                         ),
                     )
-                    oldPlayer.setHandleAudioBecomingNoisy(false)
+                    standbyPlayer.setHandleAudioBecomingNoisy(false)
                     activePlayer.setAudioAttributes(
                         audioAttributes(),
                         AudioOutputPolicy.handlesAudioFocus(
@@ -554,11 +560,15 @@ class Media3PlaybackService : MediaSessionService() {
                     activePlayer.setHandleAudioBecomingNoisy(
                         AudioOutputPolicy.handlesBecomingNoisy(true),
                     )
+                    // Rebind the canonical MediaSession before stopping the
+                    // outgoing physical player. Its listener now observes it as
+                    // standby, so the pause cannot be mistaken for a user pause
+                    // of the newly promoted active deck.
                     mediaSession?.setPlayer(activePlayer)
-                    gainPolicy.resetDecks()
-                    applyDeckVolumes()
                     standbyPlayer.pause()
                     standbyPlayer.clearMediaItems()
+                    gainPolicy.resetDecks()
+                    applyDeckVolumes()
                     crossfadeStatus = "completed"
                     fadeRunnable = null
                     crossfadeClock.reset()
