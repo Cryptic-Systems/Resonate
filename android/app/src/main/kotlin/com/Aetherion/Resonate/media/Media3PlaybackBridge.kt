@@ -229,14 +229,22 @@ class Media3PlaybackBridge(
                     result.success(true)
                 }
                 "skipToNext" -> {
-                    Media3PlaybackService.instance?.clearPreload()
-                    connected.seekToNextMediaItem()
-                    result.success(true)
+                    val accepted = Media3PlaybackService.instance?.skipToNext() == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "MEDIA3_TRANSPORT_UNAVAILABLE",
+                        "The active Media3 deck could not advance the queue.",
+                        null,
+                    )
                 }
                 "skipToPrevious" -> {
-                    Media3PlaybackService.instance?.clearPreload()
-                    connected.seekToPreviousMediaItem()
-                    result.success(true)
+                    val accepted = Media3PlaybackService.instance?.skipToPrevious() == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "MEDIA3_TRANSPORT_UNAVAILABLE",
+                        "The active Media3 deck could not return in the queue.",
+                        null,
+                    )
                 }
                 "setRepeatMode" -> {
                     val mode = call.argument<String>("mode")
