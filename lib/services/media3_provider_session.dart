@@ -14,7 +14,7 @@ import 'playback_engine_session.dart';
 /// constructing multiple clients or listening to native snapshots independently.
 /// The app composition root injects it and commits the provider handoff after
 /// settings and queue restoration.
-class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryEffectsBackend {
+class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryEffectsBackend, PlaybackPitchSession {
   Media3ProviderSession({PlaybackBackend? backend})
       : _runtime = Media3PlaybackRuntime(
           backend ?? Media3MusicProviderAdapter(),
@@ -231,6 +231,10 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryE
     await _runtime.setPlaybackSpeed(speed);
     _playbackSpeed = speed;
   }
+
+  @override
+  Future<void> setPlaybackPitch(double pitch) =>
+      _runtime.setPlaybackPitch(pitch);
 
   @override
   Future<void> setDeckPlaybackSpeeds({
