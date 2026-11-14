@@ -622,6 +622,28 @@ class Media3PlaybackService : MediaSessionService() {
     }
 
     /**
+     * Navigate the currently promoted physical deck as one main-thread operation.
+     * Clearing standby before dispatch prevents a prepared/fading deck from
+     * continuing to output while the active queue advances. Using activePlayer
+     * (rather than a previously captured deck reference) also makes the command
+     * promotion-safe after MediaSession.setPlayer() swaps the canonical deck.
+     */
+    fun skipToNext(): Boolean {
+        if (!::activePlayer.isInitialized || !::standbyPlayer.isInitialized) return false
+        clearPreload()
+        activePlayer.seekToNextMediaItem()
+        return true
+    }
+
+    /** Same promotion-safe transport barrier as [skipToNext]. */
+    fun skipToPrevious(): Boolean {
+        if (!::activePlayer.isInitialized || !::standbyPlayer.isInitialized) return false
+        clearPreload()
+        activePlayer.seekToPreviousMediaItem()
+        return true
+    }
+
+    /**
      * Invalidates the standby deck when the active source or queue is replaced.
      * Without this, a later crossfade could promote a track from an obsolete queue.
      */
