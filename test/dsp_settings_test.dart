@@ -101,6 +101,13 @@ void main() {
       expect(clamped.gainDb, -24);
       expect(clamped.q, 0.1);
       expect(clamped.type, 4);
+
+      final nonFinite = const ParametricEqBand(
+        frequencyHz: 1000,
+        q: 1,
+      ).copyWith(frequencyHz: double.nan, q: double.infinity);
+      expect(nonFinite.frequencyHz, 20);
+      expect(nonFinite.q, 0.1);
     });
 
     test('migrates legacy 31-band graphic EQ into equivalent peak filters', () {
