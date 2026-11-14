@@ -205,12 +205,24 @@ class Media3PlaybackService : MediaSessionService() {
      * Keep the two values explicit so a standby correction never changes the
      * active deck or gets silently overwritten by a shared speed update.
      */
+    /** Apply user pitch to both decks while preserving DJ/user playback rates. */
+    fun setPlaybackPitch(pitch: Float): Boolean {
+        if (!pitch.isFinite() || pitch !in 0.5f..2.0f) return false
+        activePlayer.playbackParameters = PlaybackParameters(
+            activePlayer.playbackParameters.speed, pitch,
+        )
+        standbyPlayer.playbackParameters = PlaybackParameters(
+            standbyPlayer.playbackParameters.speed, pitch,
+        )
+        return true
+    }
+
     fun setDeckPlaybackSpeeds(active: Float, standby: Float): Boolean {
         if (!active.isFinite() || active !in 0.5f..2.0f ||
             !standby.isFinite() || standby !in 0.5f..2.0f
         ) return false
-        activePlayer.playbackParameters = PlaybackParameters(active)
-        standbyPlayer.playbackParameters = PlaybackParameters(standby)
+        activePlayer.playbackParameters = PlaybackParameters(active, activePlayer.playbackParameters.pitch)
+        standbyPlayer.playbackParameters = PlaybackParameters(standby, standbyPlayer.playbackParameters.pitch)
         return true
     }
 
