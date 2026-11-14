@@ -68,11 +68,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     try {
       final session = music.media3PlaybackSession;
       if (music.media3ProviderSessionActive && session != null) {
-        if (session is PlaybackPitchSession) {
-          await session.setPlaybackPitch(pitch);
-        } else {
-          throw UnsupportedError('The active playback session does not support pitch changes.');
-        }
+        await session.setPlaybackPitch(pitch);
       } else {
         await player.setPitch(pitch);
       }
@@ -129,11 +125,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       final session = music.media3PlaybackSession;
       if (music.media3ProviderSessionActive && session != null) {
         await session.setPlaybackSpeed(speed.clamp(0.5, 2.0).toDouble());
-        if (session is PlaybackPitchSession) {
-          await session.setPlaybackPitch(pitch.clamp(0.5, 2.0).toDouble());
-        } else {
-          throw UnsupportedError('The active playback session does not support pitch changes.');
-        }
+        await session.setPlaybackPitch(pitch.clamp(0.5, 2.0).toDouble());
         // Restore track trim on the newly active session/deck alongside rate
         // and pitch; the native gain policy preserves sleep/focus/preamp factors.
         await session.setGainFactors(trackLevel: _normalizationTrackLevel);
