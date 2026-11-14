@@ -1784,12 +1784,17 @@ class MusicProvider extends ChangeNotifier {
       buffered = currentPosition;
     }
 
+    // Keep Android's media notification aligned with the canonical
+    // playback rate. Hard-coding 1.0 makes system controls/metadata disagree
+    // with Media3 whenever the user changes playback speed.
+    final speed = session?.playbackSpeed ??
+        (_engines?.active.speed ?? 1.0);
     if (positionOnly) {
       handler.publishPositionTick(
         playing: isPlaying,
         position: pos,
         bufferedPosition: buffered,
-        speed: 1.0,
+        speed: speed,
       );
       return;
     }
@@ -1798,7 +1803,7 @@ class MusicProvider extends ChangeNotifier {
       playing: isPlaying,
       position: pos,
       duration: currentDuration ?? currentSong?.duration,
-      speed: 1.0,
+      speed: speed,
       bufferedPosition: buffered,
       playbackQueue: _queue,
       queueIndex: _queueIndex,
