@@ -39,17 +39,17 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
     if (!mounted) return;
     final eq = context.read<EqualizerProvider>();
     final restored = canonical.parametricEqBands;
-    final bands = restored.length == EqualizerProvider.studioFrequencies.length
-        ? restored.map((band) => band.copyWith()).toList()
-        : List<ParametricEqBand>.generate(
-            EqualizerProvider.studioFrequencies.length,
-            (index) => ParametricEqBand(
+    final bands = List<ParametricEqBand>.generate(
+      EqualizerProvider.studioFrequencies.length,
+      (index) => index < restored.length
+          ? restored[index].copyWith()
+          : ParametricEqBand(
               frequencyHz: eq.studioBands[index].frequencyHz,
               gainDb: eq.studioBands[index].gainDb,
               q: 1,
               type: 0,
             ),
-          );
+    );
     if (!mounted) return;
     setState(() {
       _settings = canonical;
