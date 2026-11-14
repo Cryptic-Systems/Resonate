@@ -393,6 +393,34 @@ void main() {
       await session.states.close();
     });
 
+    test('clearing upcoming queue awaits persistence and synchronizes Media3', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('clear-upcoming-current');
+      final second = _song('clear-upcoming-next');
+      final third = _song('clear-upcoming-later');
+
+      expect(await provider.playSong(
+        first,
+        queue: <Song>[first, second, third],
+      ), isTrue);
+      session.calls.clear();
+
+      await provider.clearUpcomingQueue();
+
+      expect(session.queue.map((song) => song.id).toList(), [first.id]);
+      expect(session.calls, contains('synchronizeQueue'));
+      expect(provider.currentSong?.id, first.id);
+      expect(provider.queueIndex, 0);
+      expect(provider.debugLegacyEngineConstructed, isFalse,
+          reason: 'Clearing upcoming items must remain on the injected Media3 session.');
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('restores the provider resume position into the new Media3 session before handoff', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
