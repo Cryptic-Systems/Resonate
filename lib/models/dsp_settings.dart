@@ -2,13 +2,67 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// One native parametric EQ section. Type values match DSP-ENGINE's C ABI:
+/// 0 peak, 1 low shelf, 2 high shelf, 3 low-pass, 4 high-pass.
+class ParametricEqBand {
+  final double frequencyHz;
+  final double gainDb;
+  final double q;
+  final int type;
+
+  const ParametricEqBand({
+    required this.frequencyHz,
+    this.gainDb = 0,
+    this.q = 1,
+    this.type = 0,
+  });
+
+  ParametricEqBand copyWith({
+    double? frequencyHz,
+    double? gainDb,
+    double? q,
+    int? type,
+  }) => ParametricEqBand(
+        frequencyHz: _clamp(frequencyHz ?? this.frequencyHz, 20, 20000),
+        gainDb: _clamp(gainDb ?? this.gainDb, -24, 24),
+        q: _clamp(q ?? this.q, 0.1, 18),
+        type: (type ?? this.type).clamp(0, 4),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'frequencyHz': frequencyHz,
+        'gainDb': gainDb,
+        'q': q,
+        'type': type,
+      };
+
+  factory ParametricEqBand.fromJson(dynamic value) {
+    if (value is! Map) {
+      throw const FormatException('Invalid parametric EQ band.');
+    }
+    double number(String key, double fallback, double min, double max) {
+      final raw = value[key];
+      if (raw is! num || !raw.toDouble().isFinite) return fallback;
+      return raw.toDouble().clamp(min, max).toDouble();
+    }
+    final rawType = value['type'];
+    final type = rawType is num ? rawType.toInt().clamp(0, 4) : 0;
+    return ParametricEqBand(
+      frequencyHz: number('frequencyHz', 1000, 20, 20000),
+      gainDb: number('gainDb', 0, -24, 24),
+      q: number('q', 1, 0.1, 18),
+      type: type,
+    );
+  }
+}
+
 /// Canonical, versioned snapshot for Resonate's native DSP user settings.
 ///
 /// Fields remain independent by design: EQ preamp is not DVC, and neither is
 /// the transport/crossfade envelope. Existing preference keys are read as a
 /// migration source; new writes use one JSON document.
 class DspSettings {
-  static const int schemaVersion = 2;
+  static const int schemaVersion = 3;
   static const String preferenceKey = 'resonate_dsp_settings_v1';
   static Future<void> _writeQueue = Future<void>.value();
 
@@ -16,6 +70,7 @@ class DspSettings {
   final bool eqEnabled;
   final String preset;
   final List<double> eqBandGainsDb;
+  final List<ParametricEqBand> parametricEqBands;
   final double preampDb;
   final bool autoEqHeadroom;
   final double dvcDb;
@@ -35,6 +90,7 @@ class DspSettings {
     this.eqEnabled = true,
     this.preset = 'Flat',
     List<double> eqBandGainsDb = const [],
+    List<ParametricEqBand> parametricEqBands = const [],
     this.preampDb = 0,
     this.autoEqHeadroom = false,
     this.dvcDb = 0,
@@ -47,8 +103,11 @@ class DspSettings {
     this.effectsEnabled = true,
     this.reverbAmount = 0,
     this.virtualizerAmount = 0,
-  }) : eqBandGainsDb = List<double>.unmodifiable(
+  })  : eqBandGainsDb = List<double>.unmodifiable(
           eqBandGainsDb.map((v) => _clamp(v, -12, 12)),
+        ),
+        parametricEqBands = List<ParametricEqBand>.unmodifiable(
+          parametricEqBands.map((band) => band.copyWith()),
         );
 
   static double _clamp(double value, double min, double max) =>
@@ -59,6 +118,7 @@ class DspSettings {
     bool? eqEnabled,
     String? preset,
     List<double>? eqBandGainsDb,
+    List<ParametricEqBand>? parametricEqBands,
     double? preampDb,
     bool? autoEqHeadroom,
     double? dvcDb,
@@ -76,6 +136,7 @@ class DspSettings {
         eqEnabled: eqEnabled ?? this.eqEnabled,
         preset: preset ?? this.preset,
         eqBandGainsDb: eqBandGainsDb ?? this.eqBandGainsDb,
+        parametricEqBands: parametricEqBands ?? this.parametricEqBands,
         preampDb: _clamp(preampDb ?? this.preampDb, -6, 6),
         autoEqHeadroom: autoEqHeadroom ?? this.autoEqHeadroom,
         dvcDb: _clamp(dvcDb ?? this.dvcDb, -24, 6),
@@ -100,6 +161,7 @@ class DspSettings {
         'eqEnabled': eqEnabled,
         'preset': preset,
         'eqBandGainsDb': eqBandGainsDb,
+        'parametricEqBands': parametricEqBands.map((band) => band.toJson()).toList(),
         'preampDb': preampDb,
         'autoEqHeadroom': autoEqHeadroom,
         'dvcDb': dvcDb,
@@ -116,7 +178,7 @@ class DspSettings {
 
   factory DspSettings.fromJson(Map<String, dynamic> json) {
     final version = json['version'];
-    if (version != 1 && version != schemaVersion) {
+    if (version != 1 && version != 2 && version != schemaVersion) {
       throw const FormatException('Unsupported Resonate DSP settings version.');
     }
     double number(String key, double fallback, double min, double max) {
@@ -129,11 +191,33 @@ class DspSettings {
     final bands = rawBands is List
         ? rawBands.whereType<num>().map((v) => _clamp(v.toDouble(), -12, 12)).toList()
         : <double>[];
+    final rawParametric = json['parametricEqBands'];
+    final parametricBands = rawParametric is List
+        ? rawParametric.map(ParametricEqBand.fromJson).toList()
+        : <ParametricEqBand>[];
+    // Migrate old fixed graphic-EQ gains to peak filters without changing tone.
+    const frequencies = [
+      20.0, 25, 32, 40, 50, 63, 80, 100, 125, 160,
+      200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600,
+      2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000,
+    ];
+    final migratedParametric = parametricBands.isNotEmpty
+        ? parametricBands
+        : [
+            for (var i = 0; i < bands.length && i < frequencies.length; i++)
+              ParametricEqBand(
+                frequencyHz: frequencies[i],
+                gainDb: bands[i],
+                q: 1.0,
+                type: 0,
+              ),
+          ];
     return DspSettings(
       masterEnabled: true, // DSP is a permanent part of the Resonate playback path.
       eqEnabled: true, // EQ is always active in the Resonate playback chain.
       preset: json['preset'] is String ? json['preset'] as String : 'Flat',
       eqBandGainsDb: bands,
+      parametricEqBands: migratedParametric,
       preampDb: number('preampDb', 0, -6, 6),
       autoEqHeadroom: json['autoEqHeadroom'] is bool ? json['autoEqHeadroom'] as bool : false,
       dvcDb: number('dvcDb', 0, -24, 6),
