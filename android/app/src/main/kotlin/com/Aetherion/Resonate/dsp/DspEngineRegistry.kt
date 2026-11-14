@@ -282,10 +282,12 @@ object DspEngineRegistry {
     fun applyPreampAll(linearGain: Double) {
         val g = linearGain.coerceIn(0.0, 4.0)
         stickyState = stickyState.copy(preamp = g)
+        val state = stickyState
+        val effective = effectivePreamp(state)
         val list = snapshotHandles()
         for (h in list) {
             try {
-                nativeApi.setPreamp(h, g)
+                nativeApi.setPreamp(h, effective)
             } catch (t: Throwable) {
                 Log.w(TAG, "setPreamp failed handle=$h", t)
             }
@@ -327,10 +329,15 @@ object DspEngineRegistry {
     fun applyVolumeAll(linearGain: Double) {
         val g = linearGain.coerceIn(0.0, 4.0)
         stickyState = stickyState.copy(linearGain = g, dvcDb = (20.0 * kotlin.math.log10(g.coerceAtLeast(1.0e-6))).toFloat())
+        val state = stickyState
         val list = snapshotHandles()
         for (h in list) {
             try {
-                nativeApi.setVolume(h, g)
+                if (state.dvcEnabled) {
+                    nativeApi.setVolume(h, g)
+                } else {
+                    nativeApi.setPreamp(h, effectivePreamp(state))
+                }
             } catch (t: Throwable) {
                 Log.w(TAG, "setVolume failed handle=$h", t)
             }
@@ -352,6 +359,7 @@ object DspEngineRegistry {
         handles.values.forEach { engine ->
             runCatching {
                 nativeApi.setDvc(engine.handle, state.dvcEnabled, state.dvcDb, state.dvcSmoothing, state.dvcSmoothingMs)
+                nativeApi.setPreamp(engine.handle, effectivePreamp(state))
             }.onFailure { Log.w(TAG, "setDvc failed handle=${engine.handle}", it) }
         }
     }
@@ -588,6 +596,9 @@ object DspEngineRegistry {
             20.0 * 1000.0.pow(index.toDouble() / (count - 1).coerceAtLeast(1))
         }
 
+    private fun effectivePreamp(state: StickyState): Double =
+        (state.preamp * if (state.dvcEnabled) 1.0 else state.linearGain).coerceIn(0.0, 4.0)
+
     private fun applyStickyToHandle(handle: Long, deckId: String): Boolean {
         val state = stickyState
         try {
@@ -617,7 +628,7 @@ object DspEngineRegistry {
             }
             nativeApi.setSpeakerMode(handle, state.speakerMode)
             nativeApi.setVirtualBass(handle, state.virtualBass)
-            nativeApi.setPreamp(handle, state.preamp)
+            nativeApi.setPreamp(handle, effectivePreamp(state))
             nativeApi.setLimiterCeiling(handle, state.limiterHigh, state.limiterLow)
             nativeApi.setCrossoverHz(handle, state.crossoverHz)
             nativeApi.setLimiterConfig(handle, state.limiterEnabled, state.limiterMode, state.limiterThresholdDb, state.limiterReleaseMs, state.limiterAttackMs, state.limiterLookaheadMs, state.limiterKneeDb)
