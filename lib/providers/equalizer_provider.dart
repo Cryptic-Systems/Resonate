@@ -823,6 +823,15 @@ class EqualizerProvider extends ChangeNotifier {
     }
   }
 
+  void _syncParametricGainsFromStudio() {
+    if (parametricEqBands.length != studioBands.length) return;
+    for (var i = 0; i < studioBands.length; i++) {
+      parametricEqBands[i] = parametricEqBands[i].copyWith(
+        gainDb: studioBands[i].gainDb,
+      );
+    }
+  }
+
   void _applyStudioGains(List<double> gains) {
     final expanded = expandGainsToStudio(gains);
     for (var i = 0; i < studioBands.length; i++) {
@@ -830,6 +839,7 @@ class EqualizerProvider extends ChangeNotifier {
       studioBands[i].gainDb = g.clamp(studioMinDb, studioMaxDb);
       bands[studioBands[i].label] = studioBands[i].gainDb;
     }
+    _syncParametricGainsFromStudio();
   }
 
 
@@ -965,6 +975,7 @@ class EqualizerProvider extends ChangeNotifier {
       band.gainDb = 0.0;
       bands[band.label] = 0.0;
     }
+    _syncParametricGainsFromStudio();
     preset = 'Custom';
     await _save();
     await _pushToHardware();
