@@ -1687,7 +1687,8 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _unduckAfterInterruption() async {
-    if (_media3ProviderSessionActive) {
+    if (_media3ProviderSession != null) {
+      final session = (await _ensureMedia3ProviderSessionActive())!;
       if (!_isDucked) return;
       if (_transitionLive) {
         _unduckPendingAfterCrossfade = true;
@@ -1695,7 +1696,12 @@ class MusicProvider extends ChangeNotifier {
       }
       final focusGeneration = _focusInterruption.focusEventGeneration;
       _isDucked = false;
-      await _applyActiveMasterVolume();
+      await session.setGainFactors(
+        trackLevel: _trackLevelingScale,
+        preamp: _eqPreampUserScale,
+        sleepFade: _sleepFadeScale,
+        focusDuck: 1.0,
+      );
       if (_focusInterruption.ownsFocusEventGeneration(focusGeneration)) {
         unawaited(ResonateDiagnostics.record('audio_focus_unduck', {
           'level': _effectiveCrossfadeMaster,
@@ -1768,7 +1774,7 @@ class MusicProvider extends ChangeNotifier {
     // can reclaim focus from another music app that has just taken ownership.
     await Future<void>.delayed(const Duration(milliseconds: 1200));
     if (generation != _focusResumeGeneration || !_userWantsPlaying) return;
-    if (_media3ProviderSessionActive) {
+    if (_media3ProviderSession != null) {
       _isDucked = false;
       await this.resumePlayback(source: 'system');
       if (generation == _focusResumeGeneration && _userWantsPlaying) {
