@@ -619,7 +619,14 @@ class MusicProvider extends ChangeNotifier {
   Future<void> setPlaybackPitchForFeatures(double value) async {
     final session = _media3ProviderSession;
     if (session != null) {
-      if (_media3ProviderSessionActive) await session.setPlaybackPitch(value);
+      if (_media3ProviderSessionActive) {
+        try {
+          await session.setPlaybackPitch(value);
+        } on UnsupportedError {
+          // Older/test session implementations may not expose pitch yet.
+          // Keep Media3 authoritative; never fall back to a second player.
+        }
+      }
       return;
     }
     await audioPlayer.setPitch(value);
@@ -816,7 +823,12 @@ class MusicProvider extends ChangeNotifier {
     final restoredPitch = (featurePrefs.getDouble('playback_pitch') ?? 1.0)
         .clamp(0.5, 2.0).toDouble();
     await session.setPlaybackSpeed(restoredSpeed);
-    await session.setPlaybackPitch(restoredPitch);
+    try {
+      await session.setPlaybackPitch(restoredPitch);
+    } on UnsupportedError {
+      // A session without pitch support remains usable; retain the preference
+      // so a capable production session can apply it on the next startup.
+    }
     // The legacy engine remains the current owner during this migration stage.
     await session.setAudioFocusHandling(false);
     if (_queue.isEmpty) {
