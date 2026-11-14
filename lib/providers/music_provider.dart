@@ -612,7 +612,8 @@ class MusicProvider extends ChangeNotifier {
   Future<void> setPlaybackSpeedForFeatures(double value) async {
     final session = _media3ProviderSession;
     if (session != null) {
-      if (_media3ProviderSessionActive) await session.setPlaybackSpeed(value);
+      final activeSession = (await _ensureMedia3ProviderSessionActive())!;
+      await activeSession.setPlaybackSpeed(value);
       return;
     }
     await audioPlayer.setSpeed(value);
@@ -621,13 +622,12 @@ class MusicProvider extends ChangeNotifier {
   Future<void> setPlaybackPitchForFeatures(double value) async {
     final session = _media3ProviderSession;
     if (session != null) {
-      if (_media3ProviderSessionActive) {
-        try {
-          await session.setPlaybackPitch(value);
-        } on UnsupportedError {
-          // Older/test session implementations may not expose pitch yet.
-          // Keep Media3 authoritative; never fall back to a second player.
-        }
+      final activeSession = (await _ensureMedia3ProviderSessionActive())!;
+      try {
+        await activeSession.setPlaybackPitch(value);
+      } on UnsupportedError {
+        // Older/test session implementations may not expose pitch yet.
+        // Keep Media3 authoritative; never fall back to a second player.
       }
       return;
     }
@@ -641,9 +641,8 @@ class MusicProvider extends ChangeNotifier {
   }) async {
     final session = _media3ProviderSession;
     if (session != null) {
-      if (_media3ProviderSessionActive) {
-        await session.setGainFactors(trackLevel: enabled ? trackLevel : 1.0);
-      }
+      final activeSession = (await _ensureMedia3ProviderSessionActive())!;
+      await activeSession.setGainFactors(trackLevel: enabled ? trackLevel : 1.0);
       return;
     }
     await loudnessEnhancer.setTargetGain(
@@ -1867,8 +1866,9 @@ class MusicProvider extends ChangeNotifier {
     // Keep Android's media notification aligned with the canonical
     // playback rate. Hard-coding 1.0 makes system controls/metadata disagree
     // with Media3 whenever the user changes playback speed.
-    final speed = session?.playbackSpeed ??
-        (_engines?.active.speed ?? 1.0);
+    final speed = _media3ProviderSession != null
+        ? _media3ProviderSession!.playbackSpeed
+        : (_engines?.active.speed ?? 1.0);
     if (positionOnly) {
       handler.publishPositionTick(
         playing: isPlaying,
