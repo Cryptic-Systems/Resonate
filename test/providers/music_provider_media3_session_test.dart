@@ -479,7 +479,8 @@ void main() {
         simulateCall = true;
         communicationChecks = 0;
         session.calls.clear();
-        session.focusEnableGate = Completer<void>();
+        final focusGate = Completer<void>();
+        session.focusEnableGate = focusGate;
 
         final recovery = provider.ensureAudiblePlayback();
         for (var attempt = 0;
@@ -488,7 +489,7 @@ void main() {
           await Future<void>.delayed(const Duration(milliseconds: 5));
         }
         expect(session.calls, contains('focus:true'));
-        session.focusEnableGate!.complete();
+        focusGate.complete();
         await recovery;
 
         expect(communicationChecks, 4);
