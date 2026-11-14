@@ -4,12 +4,12 @@ import androidx.media3.common.audio.AudioProcessor
 import android.util.Log
 
 /**
- * Reflection entry for just_audio patch → DefaultAudioSink processors.
+ * Factory for native DSP AudioProcessors installed in Media3 DefaultAudioSink.
  *
- * Called once per ExoPlayer / just_audio engine. Resonate dual playback
- * therefore gets **two** independent [DspEngineAudioProcessor] instances
- * (engine A and engine B) when both players are created — which is what
- * we want for flawless crossfade (no shared native handle across threads).
+ * Media3 calls [createProcessors] once per deck, so dual playback receives
+ * independent DSP processors and native handles for decks A and B. The
+ * no-argument overload remains as compatibility for the legacy just_audio
+ * injection hook while that backend is being retired.
  *
  * Crash history (2026-09-28): old JNI called dsp_create(double, int) but the
  * real ABI is dsp_create(const DspConfig*). That treated the sample-rate bits
@@ -25,7 +25,7 @@ object DspEngineSinkHook {
      */
     private const val ENABLE_NATIVE_LIVE_DSP = true
 
-    /** Legacy just_audio reflection hook remains separate from Media3 deck slots. */
+    /** Compatibility overload used only by the legacy just_audio sink patch. */
     @JvmStatic
     fun createProcessors(): Array<AudioProcessor> = createProcessors("legacy")
 
