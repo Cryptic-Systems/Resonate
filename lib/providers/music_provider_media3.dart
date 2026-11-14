@@ -550,10 +550,36 @@ extension MusicProviderMedia3 on MusicProvider {
         .where((item) => item.filePath.trim().isNotEmpty)
         .toList(growable: false);
     if (normalized.isEmpty) return false;
-    final selectedIndex = normalized.indexWhere((item) => item.id == song.id);
-    final resolvedIndex = selectedIndex >= 0
-        ? selectedIndex
-        : startIndex.clamp(0, normalized.length - 1).toInt();
+
+    // Preserve the requested queue occurrence, not merely the first matching
+    // song ID. Playlists may legitimately contain the same media more than
+    // once, and filtering unplayable entries changes the native queue index.
+    int? requestedPlayableIndex;
+    if (startIndex >= 0 &&
+        startIndex < requested.length &&
+        requested[startIndex].id == song.id &&
+        requested[startIndex].filePath.trim().isNotEmpty) {
+      requestedPlayableIndex = requested
+          .take(startIndex)
+          .where((item) => item.filePath.trim().isNotEmpty)
+          .length;
+    }
+    final matchingOccurrences = <int>[
+      for (var i = 0; i < normalized.length; i++)
+        if (normalized[i].id == song.id &&
+            normalized[i].filePath.trim() == song.filePath.trim())
+          i,
+    ];
+    final resolvedIndex = requestedPlayableIndex ??
+        (matchingOccurrences.length == 1 ? matchingOccurrences.single : -1);
+    if (resolvedIndex < 0 || resolvedIndex >= normalized.length) {
+      await ResonateDiagnostics.record('media3_provider_play_rejected', {
+        'songId': song.id,
+        'requestedIndex': startIndex,
+        'reason': 'ambiguous_queue_occurrence',
+      });
+      return false;
+    }
     final selected = normalized[resolvedIndex];
     final nextQueue = effectiveShuffleEnabled && normalized.length > 1
         ? <Song>[
