@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'music_provider.dart';
@@ -56,8 +55,6 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     _load();
   }
 
-  AudioPlayer get player => music.audioPlayer;
-  AndroidLoudnessEnhancer get loudnessEnhancer => music.loudnessEnhancer;
   bool get sleepTimerActive => sleepRemainingSeconds > 0;
 
   void _syncEngineIfNeeded() {
@@ -76,9 +73,9 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     try {
       final session = music.media3PlaybackSession;
       if (music.media3ProviderSessionActive && session != null) {
-        await session.setPlaybackSpeed(speed);
+        await music.setPlaybackSpeedForFeatures(speed);
       } else {
-        await player.setSpeed(speed);
+        await music.setPlaybackSpeedForFeatures(speed);
       }
     } catch (e) {
       debugPrint('Playback speed failed: $e');
@@ -92,9 +89,9 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     try {
       final session = music.media3PlaybackSession;
       if (music.media3ProviderSessionActive && session != null) {
-        await session.setPlaybackPitch(pitch);
+        await music.setPlaybackPitchForFeatures(pitch);
       } else {
-        await player.setPitch(pitch);
+        await music.setPlaybackPitchForFeatures(pitch);
       }
     } catch (e) {
       debugPrint('Playback pitch failed: $e');
@@ -132,13 +129,18 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
         // Media3 composes track trim with preamp, sleep fade and focus duck
         // atomically. Track normalization is attenuation-only to avoid
         // introducing clipping when the source has unknown headroom.
-        await session.setGainFactors(trackLevel: _normalizationTrackLevel);
+        await music.setNormalizationForFeatures(
+          targetGainMillibels: _normalizationGainDb * 100.0,
+          enabled: normalizationEnabled,
+          trackLevel: _normalizationTrackLevel,
+        );
         return;
       }
-      await loudnessEnhancer.setTargetGain(
-        (_normalizationGainDb * 100.0).clamp(-1000.0, 0.0),
+      await music.setNormalizationForFeatures(
+        targetGainMillibels: _normalizationGainDb * 100.0,
+        enabled: normalizationEnabled,
+        trackLevel: _normalizationTrackLevel,
       );
-      await loudnessEnhancer.setEnabled(normalizationEnabled);
     } catch (e) {
       debugPrint('Volume normalization failed: $e');
     }
@@ -149,19 +151,19 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     try {
       final session = music.media3PlaybackSession;
       if (music.media3ProviderSessionActive && session != null) {
-        await session.setPlaybackSpeed(speed.clamp(0.5, 2.0).toDouble());
-        await session.setPlaybackPitch(pitch.clamp(0.5, 2.0).toDouble());
+        await music.setPlaybackSpeedForFeatures(speed.clamp(0.5, 2.0).toDouble());
+        await music.setPlaybackPitchForFeatures(pitch.clamp(0.5, 2.0).toDouble());
         // Restore track trim on the newly active session/deck alongside rate
         // and pitch; the native gain policy preserves sleep/focus/preamp factors.
-        await session.setGainFactors(trackLevel: _normalizationTrackLevel);
+        await music.setNormalizationForFeatures(targetGainMillibels: _normalizationGainDb * 100.0, enabled: normalizationEnabled, trackLevel: _normalizationTrackLevel);
       } else {
-        await player.setSpeed(speed);
-        await player.setPitch(pitch);
+        await music.setPlaybackSpeedForFeatures(speed);
+        await music.setPlaybackPitchForFeatures(pitch);
       }
       if (!music.media3ProviderSessionActive && normalizationEnabled) {
         await _applyNormalization();
       } else if (!music.media3ProviderSessionActive) {
-        await loudnessEnhancer.setEnabled(false);
+        await music.setNormalizationForFeatures(targetGainMillibels: 0.0, enabled: false, trackLevel: 1.0);
       }
     } catch (e) {
       debugPrint('Active playback feature sync failed: $e');
