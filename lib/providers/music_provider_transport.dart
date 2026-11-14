@@ -336,6 +336,7 @@ Future<void> previousSong({String source = 'normal_player'}) {
 
 Future<void> seek(Duration position, {String source = 'normal_player'}) {
     final intentToken = _playbackIntentGate.issue();
+    final injectedSession = _media3ProviderSession;
     _cancelAutomaticPlaybackWork();
     return _serializePlayback(
       () async {
