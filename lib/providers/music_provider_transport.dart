@@ -434,10 +434,11 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
     bool stillOwnsResume([PlaybackEngineSession? session]) =>
         !_disposed &&
         _playbackIntentGate.isCurrent(intentToken) &&
-        (injectedSession == null ||
-            (identical(injectedSession, _media3ProviderSession) &&
+        (injectedSession == null
+            ? !_legacyEnginesRetired
+            : identical(injectedSession, _media3ProviderSession) &&
                 _media3ProviderSessionActive &&
-                (session == null || identical(session, injectedSession))));
+                (session == null || identical(session, injectedSession)));
     _cancelAutomaticPlaybackWork();
     return _serializePlayback(() async {
       try {
@@ -524,6 +525,7 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
           } else {
             await session.play();
           }
+          if (!stillOwnsResume(session)) return;
           this._reconcileMedia3ProviderSession();
           isPlaying = session.isPlaying;
           currentPosition = session.position;
@@ -559,13 +561,15 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
             } catch (_) {}
           }
           if (!stillOwnsResume()) return;
-          for (var attempt = 0; attempt < 12; attempt++) {
+          var attempts = 0;
+          while (attempts < 12) {
             if (!stillOwnsResume()) return;
-            if (attempt == 0 || attempt == 3 || attempt == 6) {
+            if (attempts == 0 || attempts == 3 || attempts == 6) {
               try {
                 audioPlayer.play();
               } catch (_) {}
             }
+            attempts++;
             await Future<void>.delayed(const Duration(milliseconds: 90));
             if (!stillOwnsResume()) return;
             if (audioPlayer.playing) break;
