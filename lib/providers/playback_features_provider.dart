@@ -59,7 +59,12 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   Future<void> setPitch(double value) async {
     pitch = value.clamp(0.5, 2.0).toDouble();
     try {
-      await player.setPitch(pitch);
+      final session = music.media3PlaybackSession;
+      if (music.media3ProviderSessionActive && session != null) {
+        await session.setPlaybackPitch(pitch);
+      } else {
+        await player.setPitch(pitch);
+      }
     } catch (e) {
       debugPrint('Playback pitch failed: $e');
     }
@@ -108,8 +113,8 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       final session = music.media3PlaybackSession;
       if (music.media3ProviderSessionActive && session != null) {
         await session.setPlaybackSpeed(speed.clamp(0.5, 2.0).toDouble());
-        // Pitch and loudness are not silently sent to a retired just_audio
-        // player. Their Media3 capability is wired separately.
+        await session.setPlaybackPitch(pitch.clamp(0.5, 2.0).toDouble());
+        // Loudness normalization uses a separate Media3 gain capability.
         if (normalizationEnabled) {
           debugPrint('Track normalization awaits Media3 gain capability.');
         }
