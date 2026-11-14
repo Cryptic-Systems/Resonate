@@ -209,7 +209,7 @@ class DspSettings {
         : [
             for (var i = 0; i < bands.length && i < frequencies.length; i++)
               ParametricEqBand(
-                frequencyHz: frequencies[i],
+                frequencyHz: frequencies[i].toDouble(),
                 gainDb: bands[i],
                 q: 1.0,
                 type: 0,
