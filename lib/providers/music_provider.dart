@@ -183,6 +183,11 @@ class MusicProvider extends ChangeNotifier {
   /// Sleep-timer fade multiplier (1.0 = full, 0.0 = silent). Applied on top of preamp.
   double get _sleepFadeScale => _volumeFacade.sleepFadeScale;
   set _sleepFadeScale(double value) => _volumeFacade.setSleepFadeScale(value);
+  /// Current Android audio session from the active playback backend.
+  /// Consumers must not reach through to a concrete just_audio player to read it.
+  int? _activeAndroidAudioSessionId;
+  int? get activeAudioSessionId => _activeAndroidAudioSessionId;
+
   /// Optional listener for Android audio session (Resonate native DSP).
   void Function(int sessionId)? onAndroidSession;
   StreamSubscription<int?>? _sessionASub;
@@ -778,7 +783,10 @@ class MusicProvider extends ChangeNotifier {
     _sessionASub = playerA.androidAudioSessionIdStream.listen((id) {
       if (_disposed || _media3ProviderSessionActive || _legacyEnginesRetired) return;
       try {
-        if (id != null && id > 0 && _activeIsA) onAndroidSession?.call(id);
+        if (!_activeIsA) return;
+        _activeAndroidAudioSessionId = id != null && id > 0 ? id : null;
+        final sessionId = _activeAndroidAudioSessionId;
+        if (sessionId != null) onAndroidSession?.call(sessionId);
       } catch (e) {
         debugPrint('onAndroidSession A failed: $e');
       }
@@ -786,7 +794,10 @@ class MusicProvider extends ChangeNotifier {
     _sessionBSub = playerB.androidAudioSessionIdStream.listen((id) {
       if (_disposed || _media3ProviderSessionActive || _legacyEnginesRetired) return;
       try {
-        if (id != null && id > 0 && !_activeIsA) onAndroidSession?.call(id);
+        if (_activeIsA) return;
+        _activeAndroidAudioSessionId = id != null && id > 0 ? id : null;
+        final sessionId = _activeAndroidAudioSessionId;
+        if (sessionId != null) onAndroidSession?.call(sessionId);
       } catch (e) {
         debugPrint('onAndroidSession B failed: $e');
       }
@@ -829,6 +840,23 @@ class MusicProvider extends ChangeNotifier {
     await _playbackSettingsLoad;
     await _queueRestore;
     if (_disposed) throw StateError('MusicProvider is disposed.');
+    // Subscribe before native startup/queue preparation so the first Android
+    // AudioTrack session cannot be missed by broadcast-only implementations.
+    _activeAndroidAudioSessionId = null;
+    await _media3AudioSessionSub?.cancel();
+    _media3AudioSessionSub = session.audioSessionIdStream.listen((id) {
+      if (_disposed) return;
+      _activeAndroidAudioSessionId = id != null && id > 0 ? id : null;
+      final sessionId = _activeAndroidAudioSessionId;
+      if (sessionId == null) return;
+      try {
+        onAndroidSession?.call(sessionId);
+      } catch (e) {
+        debugPrint('Media3 onAndroidSession callback failed: $e');
+      }
+    }, onError: (Object error) {
+      debugPrint('Media3 audio session stream error: $error');
+    });
     await session.start();
     // Restore rate and pitch directly onto the canonical Media3 session before
     // handoff. PlaybackFeaturesProvider may have loaded these preferences while
@@ -878,17 +906,6 @@ class MusicProvider extends ChangeNotifier {
       if (_media3ProviderSessionActive) this._acceptMedia3ProviderState(state);
     }, onError: (Object error) {
       debugPrint('Media3 provider state stream error: $error');
-    });
-    await _media3AudioSessionSub?.cancel();
-    _media3AudioSessionSub = session.audioSessionIdStream.listen((id) {
-      if (_disposed || id == null || id <= 0) return;
-      try {
-        onAndroidSession?.call(id);
-      } catch (e) {
-        debugPrint('Media3 onAndroidSession callback failed: $e');
-      }
-    }, onError: (Object error) {
-      debugPrint('Media3 audio session stream error: $error');
     });
     // Release legacy DJ automation and any Media3 auxiliary sample before
     // disposing EnginePair. The DJ rack no longer creates independent audio
@@ -2003,6 +2020,12 @@ class MusicProvider extends ChangeNotifier {
         _legacyEnginesRetired) return;
     _playerStreamBinder.cancel(); _currentIndexSubscription?.cancel(); _volumeSubscription?.cancel();
     final player = audioPlayer;
+    _activeAndroidAudioSessionId =
+        player.androidAudioSessionId != null && player.androidAudioSessionId! > 0
+            ? player.androidAudioSessionId
+            : null;
+    final currentSessionId = _activeAndroidAudioSessionId;
+    if (currentSessionId != null) onAndroidSession?.call(currentSessionId);
     _playerStreamBinder.bindPlayerState(player.playerStateStream, (state) {
       if (_disposed || _media3ProviderSessionActive) return;
       final completed = state.processingState == ProcessingState.completed;
@@ -4221,6 +4244,7 @@ class MusicProvider extends ChangeNotifier {
     _media3StateSub?.cancel();
     _media3StateSub = null;
     _media3ShadowState = null;
+    _activeAndroidAudioSessionId = null;
     final media3Session = _media3ProviderSession;
     if (media3Session != null) unawaited(media3Session.dispose());
     final legacyEngines = _engines;
