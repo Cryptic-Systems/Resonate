@@ -602,7 +602,7 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
           await ResonateDiagnostics.record('resume_playback', {
             'source': source,
             'playing': audioPlayer.playing,
-            'attempts': attempt,
+            'attempts': attempts,
           });
           notifyListeners();
           return;
