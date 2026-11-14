@@ -502,9 +502,14 @@ void main() {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
       final firstOccurrence = _song('duplicate-id');
-      final secondOccurrence = firstOccurrence.copyWith(
-        filePath: '/music/duplicate-id-remastered.mp3',
+      final secondOccurrence = Song(
+        id: 'duplicate-id',
         title: 'Remastered',
+        artist: 'Artist',
+        album: 'Album',
+        filePath: '/music/duplicate-id-remastered.mp3',
+        duration: const Duration(minutes: 3),
+        dateAdded: DateTime.utc(2026, 1, 1),
       );
       await provider.prepareMedia3ProviderSession();
 
