@@ -117,22 +117,32 @@ class QueueStore {
 
   bool containsId(String id) => _songs.any((q) => q.id == id);
 
-  Future<void> persist() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (_songs.isEmpty) {
-        await prefs.remove(savedQueueIdsKey);
-        await prefs.remove(savedQueueIndexKey);
-      } else {
-        await prefs.setStringList(
-          savedQueueIdsKey,
-          _songs.map((song) => song.id).toList(),
-        );
-        await prefs.setInt(savedQueueIndexKey, _index);
+  Future<void> _persistTail = Future<void>.value();
+
+  /// Persist an immutable snapshot in invocation order. Queue state can change
+  /// while SharedPreferences is being initialized or while an earlier write
+  /// is pending; reading [_songs] only after an await could otherwise write a
+  /// newer queue from an older operation, or allow writes to complete out of
+  /// order and restore stale playback state after process death.
+  Future<void> persist() {
+    final ids = _songs.map((song) => song.id).toList(growable: false);
+    final index = _index;
+    final operation = _persistTail.then((_) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        if (ids.isEmpty) {
+          await prefs.remove(savedQueueIdsKey);
+          await prefs.remove(savedQueueIndexKey);
+        } else {
+          await prefs.setStringList(savedQueueIdsKey, ids);
+          await prefs.setInt(savedQueueIndexKey, index);
+        }
+      } catch (e) {
+        debugPrint('Playback queue persistence failed: $e');
       }
-    } catch (e) {
-      debugPrint('Playback queue persistence failed: $e');
-    }
+    });
+    _persistTail = operation;
+    return operation;
   }
 
   Future<void> persistShuffleFlag() async {
