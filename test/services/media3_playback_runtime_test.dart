@@ -40,7 +40,7 @@ PlaybackSnapshot snapshot({
       error: null,
     );
 
-class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend {
+class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackPitchBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   PlaybackSnapshot value = snapshot();
@@ -50,6 +50,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, 
   Duration? lastSeek;
   double? lastVolume;
   double? lastSpeed;
+  double? lastPitch;
   bool? lastAudioFocusHandling;
   bool? lastShuffleMode;
   Map<String, double?> lastGainFactors = const {};
@@ -121,6 +122,8 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, 
   Future<void> previous() async {}
   @override
   Future<void> setPlaybackSpeed(double speed) async { lastSpeed = speed; commandOrder.add('speed'); }
+  @override
+  Future<void> setPlaybackPitch(double pitch) async { lastPitch = pitch; commandOrder.add('pitch'); }
   @override
   Future<void> setDeckEqOverlay({required String deck, required List<double> centersHz, required List<double> gainsDb}) async {
     deckEqCalls.add('set:$deck:${centersHz.join(',')}:${gainsDb.join(',')}');
@@ -488,6 +491,15 @@ void main() {
       expect(() => runtime.setPlaybackSpeed(0.1), throwsArgumentError);
       expect(() => runtime.setPlaybackSpeed(double.nan), throwsArgumentError);
       expect(backend.lastSpeed, 1.15);
+    });
+
+    test('validates and serializes playback pitch at the runtime boundary', () async {
+      await runtime.setPlaybackPitch(1.2);
+      expect(backend.lastPitch, 1.2);
+      expect(backend.commandOrder, ['pitch']);
+      expect(() => runtime.setPlaybackPitch(0.1), throwsArgumentError);
+      expect(() => runtime.setPlaybackPitch(double.infinity), throwsArgumentError);
+      expect(backend.lastPitch, 1.2);
     });
 
     test('clamps master volume at the runtime boundary', () async {
