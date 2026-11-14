@@ -446,7 +446,35 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
         }
         if (_media3ProviderSession != null) {
           final session = (await _ensureMedia3ProviderSessionActive())!;
+          // Session activation is asynchronous. A call can begin after the
+          // initial guard above, so recheck before asking Media3 for focus.
+          if (await _isCommunicationActive()) {
+            _userWantsPlaying = false;
+            isPlaying = false;
+            await session.setAudioFocusHandling(false);
+            await ResonateDiagnostics.record(
+              'playback_blocked_communication_after_media3_activation',
+              {'source': source, 'songId': currentSong?.id},
+            );
+            _publishServiceState();
+            notifyListeners();
+            return;
+          }
           await session.setAudioFocusHandling(true);
+          // Focus handling itself crosses the platform boundary; close the
+          // final race by relinquishing focus if communication began meanwhile.
+          if (await _isCommunicationActive()) {
+            _userWantsPlaying = false;
+            isPlaying = false;
+            await session.setAudioFocusHandling(false);
+            await ResonateDiagnostics.record(
+              'playback_blocked_communication_after_media3_focus',
+              {'source': source, 'songId': currentSong?.id},
+            );
+            _publishServiceState();
+            notifyListeners();
+            return;
+          }
           _userWantsPlaying = true;
           _isDucked = false;
           if (session.currentSong == null && currentSong != null) {
