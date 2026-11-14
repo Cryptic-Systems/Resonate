@@ -138,6 +138,19 @@ class DspEngineRegistryTest {
     }
 
     @Test
+    fun master_volume_remains_effective_when_dvc_is_bypassed() {
+        DspEngineRegistry.applyPreampAll(1.0)
+        DspEngineRegistry.applyDvcAll(false, -6f, true, 15f)
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.register(12, 12012L))
+        assertTrue(fake.calls.any { it.startsWith("preamp:12012:0.501") })
+
+        fake.calls.clear()
+        DspEngineRegistry.applyVolumeAll(0.25)
+        assertTrue(fake.calls.any { it == "preamp:12012:0.25" })
+    }
+
+    @Test
     fun register_rejects_engine_when_sticky_application_fails() {
         val failing = object : FakeApi() {
             override fun setVolume(handle: Long, linearGain: Double) {
