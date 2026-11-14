@@ -50,6 +50,56 @@ void main() {
       expect(restored.virtualizerAmount, 0.7);
     });
 
+    test('round trips full parametric band shape and clamps invalid values', () {
+      final settings = DspSettings(
+        parametricEqBands: const [
+          ParametricEqBand(frequencyHz: 80, gainDb: 4.5, q: 1.7, type: 0),
+          ParametricEqBand(frequencyHz: 12000, gainDb: -3, q: 0.8, type: 2),
+        ],
+      );
+      final restored = DspSettings.fromJson(
+        jsonDecode(jsonEncode(settings.toJson())) as Map<String, dynamic>,
+      );
+      expect(restored.parametricEqBands, hasLength(2));
+      expect(restored.parametricEqBands[0].frequencyHz, 80);
+      expect(restored.parametricEqBands[0].gainDb, 4.5);
+      expect(restored.parametricEqBands[0].q, 1.7);
+      expect(restored.parametricEqBands[0].type, 0);
+      expect(restored.parametricEqBands[1].type, 2);
+
+      final clamped = ParametricEqBand.fromJson({
+        'frequencyHz': 30000,
+        'gainDb': -40,
+        'q': 0,
+        'type': 99,
+      });
+      expect(clamped.frequencyHz, 20000);
+      expect(clamped.gainDb, -24);
+      expect(clamped.q, 0.1);
+      expect(clamped.type, 4);
+    });
+
+    test('migrates legacy 31-band graphic EQ into equivalent peak filters', () {
+      final restored = DspSettings.fromJson({
+        'version': 2,
+        'eqBandGainsDb': List<double>.generate(31, (i) => i == 7 ? 5 : 0),
+      });
+      expect(restored.parametricEqBands, hasLength(31));
+      expect(restored.parametricEqBands[7].frequencyHz, 1000);
+      expect(restored.parametricEqBands[7].gainDb, 5);
+      expect(restored.parametricEqBands[7].q, 1);
+      expect(restored.parametricEqBands[7].type, 0);
+    });
+
+    test('an explicitly empty parametric list stays empty', () {
+      final restored = DspSettings.fromJson({
+        'version': 3,
+        'eqBandGainsDb': [4.0, 2.0],
+        'parametricEqBands': [],
+      });
+      expect(restored.parametricEqBands, isEmpty);
+    });
+
     test('clamps controls independently and rejects unknown schema', () {
       final settings = DspSettings().copyWith(
         preampDb: 20,
