@@ -758,7 +758,10 @@ class EqualizerProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> setParametricEqBands(List<ParametricEqBand> filters) async {
+  Future<void> setParametricEqBands(
+    List<ParametricEqBand> filters, {
+    bool markCustom = true,
+  }) async {
     if (filters.length != studioBands.length) return;
     final safe = filters.map((band) => band.copyWith()).toList(growable: true);
     _manualPresetRevision++;
@@ -770,7 +773,7 @@ class EqualizerProvider extends ChangeNotifier {
         ..gainDb = safe[i].gainDb;
       bands[studioBands[i].label] = safe[i].gainDb;
     }
-    preset = 'Custom';
+    if (markCustom) preset = 'Custom';
     await _pushToHardware();
     await _applyPreamp();
     await _save();
