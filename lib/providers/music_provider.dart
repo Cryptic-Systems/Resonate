@@ -1328,9 +1328,15 @@ class MusicProvider extends ChangeNotifier {
       }));
       return false;
     }
-    if (_media3ProviderSessionActive) {
+    final media3Session = _media3ProviderSession;
+    if (media3Session != null) {
       try {
-        await _media3ProviderSession!.setAudioFocusHandling(true);
+        // An injected session owns focus policy before as well as after the
+        // explicit handoff. Activating it here prevents a pre-handoff focus
+        // request from falling through to Flutter AudioSession and creating
+        // a second, competing focus authority.
+        final session = await _ensureMedia3ProviderSessionActive();
+        await session!.setAudioFocusHandling(true);
         return true;
       } catch (error) {
         debugPrint('Media3 focus policy ($reason): $error');
