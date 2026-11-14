@@ -558,6 +558,7 @@ extension MusicProviderMedia3 on MusicProvider {
     if (startIndex >= 0 &&
         startIndex < requested.length &&
         requested[startIndex].id == song.id &&
+        requested[startIndex].filePath.trim() == song.filePath.trim() &&
         requested[startIndex].filePath.trim().isNotEmpty) {
       requestedPlayableIndex = requested
           .take(startIndex)
