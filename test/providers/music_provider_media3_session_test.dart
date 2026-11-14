@@ -68,6 +68,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   double? volumeSet;
   bool? focusHandling;
   Completer<void>? focusEnableGate;
+  Completer<void>? startGate;
   Map<String, double?>? gainFactors;
   Song? preloadedSong;
   int? preloadedIndex;
@@ -124,7 +125,14 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   Stream<Media3ProviderState> get stateStream => states.stream;
 
   @override
-  Future<void> start() async => calls.add('start');
+  Future<void> start() async {
+    calls.add('start');
+    final gate = startGate;
+    if (gate != null) {
+      startGate = null;
+      await gate.future;
+    }
+  }
 
   @override
   Future<void> setAudioFocusHandling(bool enabled) async {
@@ -498,6 +506,50 @@ void main() {
         expect(session.focusHandling, isFalse);
         expect(session.calls, isNot(contains('play')),
             reason: 'Audible recovery must not restart playback after focus is revoked.');
+      } finally {
+        provider.dispose();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(communicationChannel, null);
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('pause supersedes resume while Media3 activation is pending', () async {
+      const communicationChannel =
+          MethodChannel('com.aetherion.resonate/media_store');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(communicationChannel, (call) async => false);
+
+      final session = _FakePlaybackSession();
+      final startGate = Completer<void>();
+      session.startGate = startGate;
+      final provider = MusicProvider(media3ProviderSession: session);
+
+      try {
+        final resume = provider.resumePlayback();
+        for (var attempt = 0;
+            attempt < 80 && !session.calls.contains('start');
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        expect(session.calls, contains('start'),
+            reason: 'The test must hold Media3 activation before it completes.');
+
+        final pause = provider.pause();
+        startGate.complete();
+        await Future.wait(<Future<void>>[resume, pause]);
+
+        expect(session.calls, isNot(contains('focus:true')),
+            reason: 'A superseded resume must not acquire focus.');
+        expect(session.calls, isNot(contains('play')),
+            reason: 'A superseded resume must not restart playback after pause.');
+        expect(session.calls, contains('pause'));
+        expect(session.focusHandling, isFalse);
+        expect(provider.isPlaying, isFalse);
+        expect(provider.debugLegacyEngineConstructed, isFalse,
+            reason: 'A stale Media3 resume must never fall through to just_audio.');
       } finally {
         provider.dispose();
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
