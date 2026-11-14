@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <mutex>
+#include <new>
 
 #define LOG_TAG "DspEngineJni"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
