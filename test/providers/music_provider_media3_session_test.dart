@@ -758,6 +758,8 @@ void main() {
         reason: 'A stopped deck with native playWhenReady intent is recoverable.',
       );
       expect(session.playingValue, isTrue);
+      expect(provider.debugLegacyEngineConstructed, isFalse,
+          reason: 'The Media3 watchdog must not construct legacy just_audio decks.');
 
       final playCallsAfterRecovery =
           session.calls.where((call) => call == 'play').length;
