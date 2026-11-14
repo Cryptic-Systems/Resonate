@@ -497,10 +497,10 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                       _valueSlider(
                         label: 'High-band ceiling',
                         value: settings.limiterHighCeilingDb,
-                        min: -6,
-                        max: -0.1,
+                        min: -12,
+                        max: -0.05,
                         suffix: 'dBFS',
-                        divisions: 59,
+                        divisions: 1195,
                         onChanged: (v) => _changeSettings((s) => s.copyWith(limiterHighCeilingDb: v)),
                         onChangeEnd: (_) => _commit(),
                       ),
