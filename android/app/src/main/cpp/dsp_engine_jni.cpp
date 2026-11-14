@@ -23,7 +23,7 @@ constexpr int kMaxEqBands = DSP_EQ_MAX_BANDS;
 
 struct PendingSettings {
     std::mutex writer;
-    std::atomic<uint64_t> sequence{2};
+    std::atomic<uint32_t> sequence{2};
     std::atomic<int> processingEnabled{1};
     std::atomic<int> eqEnabled{1};
     std::atomic<int> eqCount{0};
@@ -63,7 +63,7 @@ struct PendingSettings {
     template <typename F>
     void update(F&& fn) {
         std::lock_guard<std::mutex> lock(writer);
-        const uint64_t current = sequence.load(std::memory_order_relaxed);
+        const uint32_t current = sequence.load(std::memory_order_relaxed);
         sequence.store(current + 1, std::memory_order_release);
         fn();
         sequence.store(current + 2, std::memory_order_release);
@@ -71,7 +71,7 @@ struct PendingSettings {
 };
 
 struct Snapshot {
-    uint64_t sequence = 0;
+    uint32_t sequence = 0;
     int processingEnabled = 1;
     int eqEnabled = 1;
     int eqCount = 0;
@@ -100,7 +100,7 @@ struct Snapshot {
 struct NativeHandle {
     DspEngine* engine = nullptr;
     PendingSettings pending;
-    uint64_t appliedSequence = 0; // Audio-thread owned.
+    uint32_t appliedSequence = 0; // Audio-thread owned.
     const int sampleRate;
     const int channels;
     std::atomic<int64_t> processCalls{0};
@@ -114,7 +114,7 @@ struct NativeHandle {
 
 bool readSnapshot(const PendingSettings& p, Snapshot* out) {
     for (int attempt = 0; attempt < 3; ++attempt) {
-        const uint64_t before = p.sequence.load(std::memory_order_acquire);
+        const uint32_t before = p.sequence.load(std::memory_order_acquire);
         if ((before & 1U) != 0U) continue;
         Snapshot s;
         s.sequence = before;
@@ -146,7 +146,7 @@ bool readSnapshot(const PendingSettings& p, Snapshot* out) {
         s.crossover = p.crossover.load(std::memory_order_relaxed);
         s.ditherEnabled = p.ditherEnabled.load(std::memory_order_relaxed);
         s.ditherMode = p.ditherMode.load(std::memory_order_relaxed);
-        const uint64_t after = p.sequence.load(std::memory_order_acquire);
+        const uint32_t after = p.sequence.load(std::memory_order_acquire);
         if (before == after && (after & 1U) == 0U) {
             *out = s;
             return true;
