@@ -1466,16 +1466,19 @@ class MusicProvider extends ChangeNotifier {
   /// OEMs often take 0.5–3s to settle A2DP; we pulse volume a few times.
   Future<void> _onAudioRouteChanged() async {
     if (_disposed) return;
-    // Route changes can arrive before the explicit provider handoff. An
-    // injected Media3 session is already the sole playback authority in that
-    // window, so let _claimAudioFocus activate it rather than abandoning
-    // recovery or falling through to the legacy AudioPlayer path.
     final now = DateTime.now();
     if (_lastRouteRecoverAt != null &&
         now.difference(_lastRouteRecoverAt!) < const Duration(milliseconds: 800)) {
       return;
     }
     _lastRouteRecoverAt = now;
+    final routeTransportEpoch = _userTransportEpoch;
+    bool stillOwnsRouteRecovery() =>
+        !_disposed &&
+        _userWantsPlaying &&
+        routeTransportEpoch == _userTransportEpoch &&
+        !_crossfadeInProgress &&
+        !_automaticCrossfadeInFlight;
     try {
       await ResonateDiagnostics.record('audio_route_changed', {
         'userWantsPlaying': _userWantsPlaying,
@@ -1484,57 +1487,78 @@ class MusicProvider extends ChangeNotifier {
         'songId': currentSong?.id,
       });
     } catch (_) {}
-    if (_disposed || !_userWantsPlaying) return;
-    if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
-    if (_media3ProviderSessionActive) {
+    if (!stillOwnsRouteRecovery()) return;
+
+    // An injected session is authoritative even before the explicit startup
+    // handoff. Activate it here, then keep every route-recovery operation on
+    // that same session; never fall through to legacy AudioPlayer access.
+    final injectedSession = _media3ProviderSession;
+    if (injectedSession != null) {
+      PlaybackEngineSession session;
+      try {
+        session = (await _ensureMedia3ProviderSessionActive())!;
+        if (!stillOwnsRouteRecovery()) return;
+        if (await _isCommunicationActive()) return;
+        await session.setAudioFocusHandling(true);
+      } catch (error) {
+        await ResonateDiagnostics.record('audio_route_recover_failed', {
+          'engine': 'media3_provider_session',
+          'stage': 'activate',
+          'error': error.toString(),
+        });
+        return;
+      }
+
       for (final delayMs in <int>[200, 700, 1600, 3200]) {
         await Future<void>.delayed(Duration(milliseconds: delayMs));
-        if (_disposed || !_userWantsPlaying) return;
+        if (!stillOwnsRouteRecovery()) return;
         if (await _isCommunicationActive()) return;
         try {
-          await _applyActiveMasterVolume();
-          if (!_media3ProviderSession!.isPlaying) {
-            await _media3ProviderSession!.setAudioFocusHandling(true);
-            await _media3ProviderSession!.play();
+          await session.setGainFactors(
+            trackLevel: _trackLevelingScale,
+            preamp: _eqPreampUserScale,
+            sleepFade: _sleepFadeScale,
+            focusDuck: _isDucked
+                ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel)
+                : 1.0,
+          );
+          if (!stillOwnsRouteRecovery()) return;
+          if (!session.isPlaying) {
+            await session.play();
           }
         } catch (_) {}
       }
       await ResonateDiagnostics.record('audio_route_recover_done', {
-        'playing': _media3ProviderSession!.isPlaying,
-        'positionMs': _media3ProviderSession!.position.inMilliseconds,
+        'playing': session.isPlaying,
+        'positionMs': session.position.inMilliseconds,
         'songId': currentSong?.id,
         'engine': 'media3_provider_session',
       });
       return;
     }
+
     if (!await _claimAudioFocus(reason: 'audio_route_changed')) return;
-    if (_disposed) return;
-    if (_disposed) return;
+    if (!stillOwnsRouteRecovery()) return;
     for (final delayMs in <int>[200, 700, 1600, 3200]) {
       await Future<void>.delayed(Duration(milliseconds: delayMs));
-      if (_disposed || !_userWantsPlaying) return;
-      if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
+      if (!stillOwnsRouteRecovery()) return;
       try {
         await _recoverDjEngineState(reason: 'audio_route_changed');
       } catch (_) {}
-      if (_disposed) return;
+      if (!stillOwnsRouteRecovery()) return;
       try {
         final active = audioPlayer;
         final vol = _effectiveCrossfadeMaster.clamp(0.0, 1.0).toDouble();
         // Route recovery must respect the same master envelope as ordinary
-        // playback: EQ/leveling, sleep fade, and any active focus duck. A hard
-        // minimum volume here can undo a deliberate fade or notification duck.
+        // playback: EQ/leveling, sleep fade, and any active focus duck.
         await active.setVolume(vol);
-        if (_disposed) return;
-        if (_userWantsPlaying && !active.playing) {
-          try {
-            await active.play();
-          } catch (_) {}
+        if (!stillOwnsRouteRecovery()) return;
+        if (!active.playing) {
+          await active.play();
         }
       } catch (_) {}
-      if (_disposed) return;
     }
-    if (_disposed) return;
+    if (!stillOwnsRouteRecovery()) return;
     try {
       await ResonateDiagnostics.record('audio_route_recover_done', {
         'playing': audioPlayer.playing,
