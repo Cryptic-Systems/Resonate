@@ -468,7 +468,7 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
         }
         if (injectedSession != null) {
           final session = await _ensureMedia3ProviderSessionActive();
-          if (!stillOwnsResume(session)) return;
+          if (session == null || !stillOwnsResume(session)) return;
 
           // Session activation is asynchronous. A call or a newer transport
           // intent can arrive while it is starting; neither may be overwritten
