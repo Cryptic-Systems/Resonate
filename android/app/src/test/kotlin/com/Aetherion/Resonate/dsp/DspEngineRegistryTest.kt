@@ -329,14 +329,14 @@ class DspEngineRegistryTest {
         DspEngineRegistry.applyLimiterCeilingAll(-99f, 1f)
         DspEngineRegistry.applyCrossoverHzAll(900f)
 
-        assertTrue(fake.calls.contains("limiter:1001:-6.0:-0.1"))
-        assertTrue(fake.calls.contains("limiter:2002:-6.0:-0.1"))
+        assertTrue(fake.calls.contains("limiter:1001:-12.0:-0.05"))
+        assertTrue(fake.calls.contains("limiter:2002:-12.0:-0.05"))
         assertTrue(fake.calls.contains("crossover:1001:200.0"))
         assertTrue(fake.calls.contains("crossover:2002:200.0"))
 
         fake.calls.clear()
         assertTrue(DspEngineRegistry.register(3, 3003L))
-        assertTrue(fake.calls.contains("limiter:3003:-6.0:-0.1"))
+        assertTrue(fake.calls.contains("limiter:3003:-12.0:-0.05"))
         assertTrue(fake.calls.contains("crossover:3003:200.0"))
     }
 
