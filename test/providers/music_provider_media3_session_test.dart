@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:resonate/models/song.dart';
 import 'package:resonate/playback/queue_store.dart';
@@ -407,6 +408,45 @@ void main() {
       expect(session.disposed, isTrue);
       await session.audioSessions.close();
       await session.states.close();
+    });
+
+    test('rechecks communication mode after Media3 session activation before claiming focus', () async {
+      var communicationChecks = 0;
+      const communicationChannel =
+          MethodChannel('com.aetherion.resonate/media_store');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(communicationChannel, (call) async {
+        communicationChecks++;
+        // The first check allows recovery; the second simulates a call starting
+        // while the asynchronous Media3 activation/focus path is in progress.
+        return communicationChecks >= 2;
+      });
+
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final song = _song('focus-race');
+
+      try {
+        expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
+        expect(provider.media3ProviderSessionActive, isTrue);
+
+        communicationChecks = 0;
+        session.calls.clear();
+        await provider.ensureAudiblePlayback();
+
+        expect(communicationChecks, 2);
+        expect(session.calls, isNot(contains('focus:true')),
+            reason: 'A newly active call must prevent Media3 from reclaiming focus.');
+        expect(session.calls, isNot(contains('play')),
+            reason: 'Audible recovery must not restart playback during a call.');
+      } finally {
+        provider.dispose();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(communicationChannel, null);
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
     });
 
     test('clearing queue before explicit handoff activates and stops injected Media3', () async {
