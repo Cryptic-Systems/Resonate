@@ -764,7 +764,7 @@ class EqualizerProvider extends ChangeNotifier {
   }) async {
     if (filters.length != studioBands.length) return;
     final safe = filters.map((band) => band.copyWith()).toList(growable: true);
-    _manualPresetRevision++;
+    if (markCustom) _manualPresetRevision++;
     parametricEqBands = safe;
     for (var i = 0; i < safe.length; i++) {
       studioBands[i]
