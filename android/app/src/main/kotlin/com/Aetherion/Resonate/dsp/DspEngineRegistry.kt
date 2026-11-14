@@ -228,6 +228,17 @@ object DspEngineRegistry {
             "limiterHighDb" to stickyState.limiterHigh,
             "limiterLowDb" to stickyState.limiterLow,
             "crossoverHz" to stickyState.crossoverHz,
+            "dvcEnabled" to stickyState.dvcEnabled,
+            "dvcDb" to stickyState.dvcDb,
+            "limiterEnabled" to stickyState.limiterEnabled,
+            "limiterMode" to stickyState.limiterMode,
+            "limiterThresholdDb" to stickyState.limiterThresholdDb,
+            "limiterReleaseMs" to stickyState.limiterReleaseMs,
+            "limiterAttackMs" to stickyState.limiterAttackMs,
+            "limiterLookaheadMs" to stickyState.limiterLookaheadMs,
+            "limiterKneeDb" to stickyState.limiterKneeDb,
+            "ditherEnabled" to stickyState.ditherEnabled,
+            "ditherMode" to stickyState.ditherMode,
         )
         base.putAll(latencySnapshot())
         return base
@@ -319,6 +330,91 @@ object DspEngineRegistry {
             }
         }
         Log.i(TAG, "applyVolumeAll gain=$g targets=${list.size}")
+    }
+
+    @JvmStatic
+    @Synchronized
+    fun applyDvcAll(enabled: Boolean, gainDb: Float, smoothing: Boolean, smoothingMs: Float) {
+        stickyState = stickyState.copy(
+            dvcEnabled = enabled,
+            dvcDb = gainDb.coerceIn(-120f, 24f),
+            dvcSmoothing = smoothing,
+            dvcSmoothingMs = smoothingMs.coerceIn(0f, 200f),
+            linearGain = Math.pow(10.0, gainDb.coerceIn(-120f, 24f).toDouble() / 20.0),
+        )
+        val state = stickyState
+        handles.values.forEach { engine ->
+            runCatching {
+                nativeApi.setDvc(engine.handle, state.dvcEnabled, state.dvcDb, state.dvcSmoothing, state.dvcSmoothingMs)
+            }.onFailure { Log.w(TAG, "setDvc failed handle=${engine.handle}", it) }
+        }
+    }
+
+    @JvmStatic
+    @Synchronized
+    fun applyLimiterConfigAll(
+        enabled: Boolean, mode: Int, thresholdDb: Float, releaseMs: Float,
+        attackMs: Float, lookaheadMs: Float, kneeDb: Float,
+    ) {
+        stickyState = stickyState.copy(
+            limiterEnabled = enabled,
+            limiterMode = mode.coerceIn(0, 3),
+            limiterThresholdDb = thresholdDb.coerceIn(-24f, 0f),
+            limiterReleaseMs = releaseMs.coerceIn(1f, 2000f),
+            limiterAttackMs = attackMs.coerceIn(0.01f, 100f),
+            limiterLookaheadMs = lookaheadMs.coerceIn(0f, 40f),
+            limiterKneeDb = kneeDb.coerceIn(0f, 12f),
+        )
+        val state = stickyState
+        handles.values.forEach { engine ->
+            runCatching {
+                nativeApi.setLimiterConfig(
+                    engine.handle, state.limiterEnabled, state.limiterMode,
+                    state.limiterThresholdDb, state.limiterReleaseMs,
+                    state.limiterAttackMs, state.limiterLookaheadMs, state.limiterKneeDb,
+                )
+            }.onFailure { Log.w(TAG, "setLimiterConfig failed handle=${engine.handle}", it) }
+        }
+    }
+
+    @JvmStatic
+    @Synchronized
+    fun applyDitherAll(enabled: Boolean, mode: Int) {
+        stickyState = stickyState.copy(ditherEnabled = enabled, ditherMode = mode.coerceIn(0, 2))
+        val state = stickyState
+        handles.values.forEach { engine ->
+            runCatching { nativeApi.setDither(engine.handle, state.ditherEnabled, state.ditherMode) }
+                .onFailure { Log.w(TAG, "setDither failed handle=${engine.handle}", it) }
+        }
+    }
+
+    @JvmStatic
+    @Synchronized
+    fun applyParametricEqBandsAll(
+        frequenciesHz: FloatArray, gainsDb: FloatArray, qs: FloatArray, types: IntArray,
+    ): Boolean {
+        val count = frequenciesHz.size
+        if (count > 31 || gainsDb.size != count || qs.size != count || types.size != count ||
+            frequenciesHz.any { !it.isFinite() || it !in 20f..20000f } ||
+            gainsDb.any { !it.isFinite() || it !in -24f..24f } ||
+            qs.any { !it.isFinite() || it !in 0.1f..18f } ||
+            types.any { it !in 0..4 } ||
+            frequenciesHz.asList().zipWithNext().any { it.first >= it.second }
+        ) return false
+        stickyState = stickyState.copy(
+            eqEnabled = true,
+            dspEnabled = true,
+            centersHz = frequenciesHz.map { it.toDouble() }.toDoubleArray(),
+            gainsDb = gainsDb.map { it.toDouble() }.toDoubleArray(),
+            eqQ = qs.copyOf(),
+            eqTypes = types.copyOf(),
+        )
+        val state = stickyState
+        handles.values.forEach { engine ->
+            runCatching { applyEqForEngine(engine.handle, engine.deckId, state) }
+                .onFailure { Log.w(TAG, "setParametricEqBands failed handle=${engine.handle}", it) }
+        }
+        return true
     }
 
     /** Studio curve → all live engines. */
@@ -494,7 +590,14 @@ object DspEngineRegistry {
                 // enabled and leave the processor's flat default untouched.
                 val overlay = temporaryEqOverlays[deckId]
                 if (overlay != null) {
-                    nativeApi.setEqBands(handle, overlay.centersHz, overlay.gainsDb, true)
+                    nativeApi.setParametricEqBands(
+                        handle,
+                        overlay.centersHz.map { it.toFloat() }.toFloatArray(),
+                        overlay.gainsDb.map { it.toFloat() }.toFloatArray(),
+                        FloatArray(overlay.gainsDb.size) { 1f },
+                        IntArray(overlay.gainsDb.size),
+                        true,
+                    )
                 } else {
                     nativeApi.setEnabled(handle, state.eqEnabled && state.dspEnabled)
                 }
