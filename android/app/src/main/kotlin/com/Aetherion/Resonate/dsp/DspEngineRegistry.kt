@@ -33,7 +33,9 @@ object DspEngineRegistry {
         fun setPreamp(handle: Long, linearGain: Double)
         fun setLimiterCeiling(handle: Long, highDb: Float, lowDb: Float)
         fun setCrossoverHz(handle: Long, freqHz: Float)
-        fun setParametricEqBands(handle: Long, frequenciesHz: FloatArray, gainsDb: FloatArray, qs: FloatArray, types: IntArray, enabled: Boolean) {}
+        fun setParametricEqBands(handle: Long, frequenciesHz: FloatArray, gainsDb: FloatArray, qs: FloatArray, types: IntArray, enabled: Boolean) {
+            setEqBands(handle, frequenciesHz.map { it.toDouble() }.toDoubleArray(), gainsDb.map { it.toDouble() }.toDoubleArray(), enabled)
+        }
         fun setDvc(handle: Long, enabled: Boolean, gainDb: Float, smoothing: Boolean, smoothingMs: Float) {}
         fun setLimiterConfig(handle: Long, enabled: Boolean, mode: Int, thresholdDb: Float, releaseMs: Float, attackMs: Float, lookaheadMs: Float, kneeDb: Float) {}
         fun setDither(handle: Long, enabled: Boolean, mode: Int) {}
