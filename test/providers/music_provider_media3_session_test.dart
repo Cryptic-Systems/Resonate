@@ -315,6 +315,30 @@ void main() {
       await session.states.close();
     });
 
+    test('system position publication reads the injected session before handoff', () async {
+      final session = _FakePlaybackSession();
+      session.positionValue = const Duration(seconds: 42);
+      final handler = AudioServiceHandler();
+      final provider = MusicProvider(
+        audioHandler: handler,
+        media3ProviderSession: session,
+      );
+
+      // pause publishes synchronously before its serialized command starts
+      // Media3 preparation. The injected session is still the only valid
+      // position source; a legacy EnginePair must not be constructed/read.
+      final pause = provider.pause();
+      expect(handler.playbackState.value.position,
+          const Duration(seconds: 42));
+      expect(provider.debugLegacyEngineConstructed, isFalse);
+
+      await pause;
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('requires an explicitly injected session', () async {
       final provider = MusicProvider();
       await expectLater(
