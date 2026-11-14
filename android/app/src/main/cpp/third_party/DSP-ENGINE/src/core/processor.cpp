@@ -871,7 +871,7 @@ DspError dsp_limiter_set_release(DspEngine* eng, float release_ms) {
 DspError dsp_limiter_set_mode(DspEngine* eng, DspLimiterMode mode) {
     if (!eng) return DSP_ERR_INVALID_ARG;
     if (mode != DSP_LIMITER_FAST && mode != DSP_LIMITER_LOOKAHEAD &&
-        mode != DSP_LIMITER_TRUEPEAK)
+        mode != DSP_LIMITER_TRUEPEAK && mode != DSP_LIMITER_TWOBAND)
         return DSP_ERR_INVALID_ARG;
     eng->limiter_mode = mode;
     eng->update_limiter_coeffs();
