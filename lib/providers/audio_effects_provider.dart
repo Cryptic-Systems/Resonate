@@ -166,7 +166,25 @@ class AudioEffectsProvider extends ChangeNotifier {
       // DVC is independent from EQ preamp and must be restored even when the
       // user has not opened Audio automation in this process. Registry state
       // carries it to both current and subsequently-created A/B sinks.
-      await AudioEffectsBridge.setLiveDspDvcDb(canonical.dvcDb);
+      await AudioEffectsBridge.setLiveDspDvc(
+        enabled: canonical.dvcEnabled,
+        db: canonical.dvcDb,
+        smoothing: canonical.dvcSmoothing,
+        smoothingMs: canonical.dvcSmoothingMs,
+      );
+      await AudioEffectsBridge.setLiveDspLimiterConfig(
+        enabled: canonical.limiterEnabled,
+        mode: canonical.limiterMode,
+        thresholdDb: canonical.limiterThresholdDb,
+        releaseMs: canonical.limiterReleaseMs,
+        attackMs: canonical.limiterAttackMs,
+        lookaheadMs: canonical.limiterLookaheadMs,
+        kneeDb: canonical.limiterKneeDb,
+      );
+      await AudioEffectsBridge.setLiveDspDither(
+        enabled: canonical.ditherEnabled,
+        mode: canonical.ditherMode,
+      );
       effectsEnabled = canonical.effectsEnabled;
       reverb = canonical.reverbAmount;
       virtualizer = canonical.virtualizerAmount;
