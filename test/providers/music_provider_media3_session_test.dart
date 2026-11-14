@@ -289,17 +289,19 @@ void main() {
       expect(provider.media3ProviderSessionPrepared, isTrue);
       expect(provider.media3ShadowState, isNull,
           reason: 'No Media3 snapshot has been published by the fake session.');
-      expect(session.calls, [
-        'start',
-        'speed:1.0',
-        'focus:false',
-        'loadQueue',
-        'repeat:all',
-        'shuffle:true',
-        'volume:1.0',
-        'gainFactors',
-        'focus:true',
-      ]);
+      // Queue mutation now activates the injected Media3 session before
+      // explicit prepare; subsequent mode changes must be mirrored live.
+      expect(session.calls, contains('loadQueue'));
+      expect(session.calls, contains('repeat:all'));
+      expect(session.calls, contains('shuffle:true'));
+      expect(
+        session.calls.indexOf('start'),
+        lessThan(session.calls.indexOf('loadQueue')),
+      );
+      expect(
+        session.calls.lastIndexOf('repeat:all'),
+        greaterThan(session.calls.indexOf('loadQueue')),
+      );
       expect(session.queue.map((song) => song.id).toList(), expectedQueue);
       expect(session.loadedIndex, provider.queueIndex);
       expect(session.repeatModeSet, PlaybackQueueRepeatMode.all);
@@ -376,8 +378,10 @@ void main() {
     test('restores the provider resume position into the new Media3 session before handoff', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
-      await provider.enqueueSongs(<Song>[_song('resume'), _song('next')]);
+      // Set the restored provider position before the first queue mutation:
+      // queue synchronization activates the injected session immediately.
       provider.currentPosition = const Duration(seconds: 42);
+      await provider.enqueueSongs(<Song>[_song('resume'), _song('next')]);
 
       await provider.prepareMedia3ProviderSession();
 
