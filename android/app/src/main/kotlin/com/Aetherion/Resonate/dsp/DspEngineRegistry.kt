@@ -404,8 +404,7 @@ object DspEngineRegistry {
             frequenciesHz.any { !it.isFinite() || it !in 20f..20000f } ||
             gainsDb.any { !it.isFinite() || it !in -24f..24f } ||
             qs.any { !it.isFinite() || it !in 0.1f..18f } ||
-            types.any { it !in 0..4 } ||
-            frequenciesHz.asList().zipWithNext().any { it.first >= it.second }
+            types.any { it !in 0..4 }
         ) return false
         stickyState = stickyState.copy(
             eqEnabled = true,
