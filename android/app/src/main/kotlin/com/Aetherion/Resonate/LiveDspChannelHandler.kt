@@ -70,9 +70,9 @@ internal class LiveDspChannelHandler {
             }
             "setLiveDspLimiterCeiling" -> {
                 val high = ((call.argument<Number>("highDb") ?: -0.5).toFloat())
-                    .coerceIn(-6.0f, -0.1f)
+                    .coerceIn(-12.0f, -0.05f)
                 val low = ((call.argument<Number>("lowDb") ?: -0.2).toFloat())
-                    .coerceIn(-6.0f, -0.1f)
+                    .coerceIn(-12.0f, -0.05f)
                 DspEngineRegistry.applyLimiterCeilingAll(high, low)
                 result.success(mapOf(
                     "ok" to true,
