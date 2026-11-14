@@ -64,8 +64,8 @@ Future<void> pause({String source = 'normal_player'}) {
         if (!fromSystemFocus) {
           _userWantsPlaying = false;
         }
-        if (_media3ProviderSessionActive) {
-          final session = _media3ProviderSession!;
+        if (_media3ProviderSession != null) {
+          final session = (await _ensureMedia3ProviderSessionActive())!;
           // Legacy engines are disposed at handoff. Pause the canonical session
           // directly; never recreate a Flutter player as a silence barrier.
           await session.pause();
@@ -441,8 +441,8 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
           notifyListeners();
           return;
         }
-        if (_media3ProviderSessionActive) {
-          final session = _media3ProviderSession!;
+        if (_media3ProviderSession != null) {
+          final session = (await _ensureMedia3ProviderSessionActive())!;
           await session.setAudioFocusHandling(true);
           _userWantsPlaying = true;
           _isDucked = false;
@@ -540,8 +540,8 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
     // The UI/intent flags can remain optimistic while an OEM player has
     // actually stopped. Decide from both engines' native state so the mini
     // player can recover playback instead of repeatedly issuing pause.
-    final nativePlaybackActive = _media3ProviderSessionActive
-        ? (_media3ProviderSession?.isPlaying ?? false)
+    final nativePlaybackActive = _media3ProviderSession != null
+        ? _media3ProviderSession!.isPlaying
         : (_playerA.playing || _playerB.playing);
     if (nativePlaybackActive) {
       return this.pause(source: source);
@@ -562,9 +562,10 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
     _audiobookSession.onStopped(currentPosition);
       _modes?.onPlaybackStopped();
       await _finishHistoryEvent();
-      if (_media3ProviderSessionActive) {
-        await _media3ProviderSession!.stop();
-        await _media3ProviderSession!.setAudioFocusHandling(false);
+      if (_media3ProviderSession != null) {
+        final session = (await _ensureMedia3ProviderSessionActive())!;
+        await session.stop();
+        await session.setAudioFocusHandling(false);
       } else {
         await _stopBoth();
       }
