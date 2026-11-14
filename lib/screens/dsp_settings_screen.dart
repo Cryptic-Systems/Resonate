@@ -351,7 +351,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                         onChangeEnd: (_) => _commit(),
                       ),
                     ]),
-                    _section('Direct Volume Control', 'A dedicated, smoothed gain stage independent of EQ preamp.', [
+                    _section('Direct Volume Control', 'A dedicated, smoothed gain stage independent of EQ preamp. When bypassed, master volume remains active through the preamp path.', [
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: const Text('Enable DVC'),
