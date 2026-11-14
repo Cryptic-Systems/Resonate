@@ -38,6 +38,21 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
   Future<void> _load() async {
     final canonical = await DspSettings.load();
     if (!mounted) return;
+    final liveStatus = await AudioEffectsBridge.getLiveDspStatus();
+    if (!mounted) return;
+    final liveLinearGain = (liveStatus?['linearGain'] as num?)?.toDouble();
+    final liveDvcDb = liveLinearGain == null
+        ? canonical.dvcDb
+        : liveLinearGain <= 1.0e-6
+            ? -120.0
+            : 20.0 * math.log(liveLinearGain) / math.ln10;
+    final resolvedSettings = canonical.copyWith(
+      dvcDb: liveDvcDb,
+      speakerProtectionEnabled:
+          liveStatus?['speakerMode'] as bool? ?? canonical.speakerProtectionEnabled,
+      virtualBassAmount:
+          (liveStatus?['virtualBass'] as num?)?.toDouble() ?? canonical.virtualBassAmount,
+    );
     final eq = context.read<EqualizerProvider>();
     final restored = canonical.parametricEqBands;
     final bands = List<ParametricEqBand>.generate(
@@ -53,7 +68,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
     );
     if (!mounted) return;
     setState(() {
-      _settings = canonical;
+      _settings = resolvedSettings;
       _bands = bands;
       _loading = false;
     });
@@ -250,6 +265,8 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
           _statusRow('Maximum processing time', maxUs.toStringAsFixed(1) + ' μs'),
           _statusRow('Realtime budget overruns', overruns.toString()),
           _statusRow('Master / DVC gain', dvcGainDb == null ? '—' : dvcGainDb.toStringAsFixed(1) + ' dB'),
+          _statusRow('Speaker protection', status?['speakerMode'] == true ? 'On' : 'Off'),
+          _statusRow('Virtual bass', ((status?['virtualBass'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)),
           if (status?['gateTripped'] == true)
             const Padding(
               padding: EdgeInsets.only(top: 8),
