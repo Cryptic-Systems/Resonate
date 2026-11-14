@@ -84,7 +84,10 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
         }
 
         val rate = inputAudioFormat.sampleRate
-        val ch = inputAudioFormat.channelCount.coerceIn(1, 2)
+        // DSP-ENGINE currently supports mono/stereo only. Never clamp a
+        // multichannel format to stereo: that would reinterpret interleaved
+        // surround samples as unrelated left/right frames and corrupt routing.
+        val ch = inputAudioFormat.channelCount
 
         if (engineHandle != 0L && (rate != configuredRate || ch != configuredChannels)) {
             Log.i(TAG, "id=$processorId format change $configuredRate/$configuredChannels → $rate/$ch")
@@ -95,12 +98,18 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
         configuredRate = rate
         configuredChannels = ch
 
+        if (ch !in 1..kMaxChannels) {
+            Log.i(TAG, "id=$processorId channels=$ch unsupported by DSP; preserving PCM pass-through")
+            return inputAudioFormat
+        }
+
         maybeCreateEngine()
         return inputAudioFormat
     }
 
     private fun maybeCreateEngine() {
         if (!nativeProcessEnabled) return
+        if (configuredChannels !in 1..kMaxChannels) return
         if (!DspSessionGate.isNativeAllowed()) {
             nativeProcessEnabled = false
             return
