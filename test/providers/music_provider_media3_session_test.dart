@@ -67,6 +67,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   bool? shuffleModeSet;
   double? volumeSet;
   bool? focusHandling;
+  Completer<void>? focusEnableGate;
   Map<String, double?>? gainFactors;
   Song? preloadedSong;
   int? preloadedIndex;
@@ -127,8 +128,13 @@ class _FakePlaybackSession implements PlaybackEngineSession {
 
   @override
   Future<void> setAudioFocusHandling(bool enabled) async {
-    focusHandling = enabled;
     calls.add('focus:$enabled');
+    if (enabled && focusEnableGate != null) {
+      final gate = focusEnableGate!;
+      focusEnableGate = null;
+      await gate.future;
+    }
+    focusHandling = enabled;
   }
 
   @override
@@ -442,6 +448,55 @@ void main() {
             reason: 'A newly active call must prevent Media3 from reclaiming focus.');
         expect(session.calls, isNot(contains('play')),
             reason: 'Audible recovery must not restart playback during a call.');
+      } finally {
+        provider.dispose();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(communicationChannel, null);
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('audible recovery relinquishes Media3 focus if communication starts during focus request', () async {
+      var simulateCall = false;
+      var communicationChecks = 0;
+      const communicationChannel =
+          MethodChannel('com.aetherion.resonate/media_store');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(communicationChannel, (call) async {
+        if (!simulateCall) return false;
+        communicationChecks++;
+        return communicationChecks >= 3;
+      });
+
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final song = _song('audible-focus-request-race');
+
+      try {
+        expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
+        simulateCall = true;
+        communicationChecks = 0;
+        session.calls.clear();
+        session.focusEnableGate = Completer<void>();
+
+        final recovery = provider.ensureAudiblePlayback();
+        for (var attempt = 0;
+            attempt < 40 && !session.calls.contains('focus:true');
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        expect(session.calls, contains('focus:true'));
+        session.focusEnableGate!.complete();
+        await recovery;
+
+        expect(communicationChecks, 3);
+        expect(session.calls, contains('focus:false'),
+            reason: 'Media3 must relinquish focus when a call starts during the focus request.');
+        expect(session.focusHandling, isFalse);
+        expect(session.calls, isNot(contains('play')),
+            reason: 'Audible recovery must not restart playback after focus is revoked.');
       } finally {
         provider.dispose();
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
