@@ -1466,8 +1466,10 @@ class MusicProvider extends ChangeNotifier {
   /// OEMs often take 0.5–3s to settle A2DP; we pulse volume a few times.
   Future<void> _onAudioRouteChanged() async {
     if (_disposed) return;
-    if (_media3ProviderSession != null && !_media3ProviderSessionActive &&
-        _media3ProviderSession != null) return;
+    // Route changes can arrive before the explicit provider handoff. An
+    // injected Media3 session is already the sole playback authority in that
+    // window, so let _claimAudioFocus activate it rather than abandoning
+    // recovery or falling through to the legacy AudioPlayer path.
     final now = DateTime.now();
     if (_lastRouteRecoverAt != null &&
         now.difference(_lastRouteRecoverAt!) < const Duration(milliseconds: 800)) {
