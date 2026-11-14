@@ -84,3 +84,9 @@ abstract interface class PlaybackEngineSession
 
   Future<void> dispose();
 }
+
+
+/// Optional session-level playback-pitch control.
+abstract interface class PlaybackPitchSession {
+  Future<void> setPlaybackPitch(double pitch);
+}
