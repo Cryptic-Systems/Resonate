@@ -630,12 +630,7 @@ class EqualizerProvider extends ChangeNotifier {
       // Restore the full active native profile immediately. These registry
       // calls update sticky state even if playback has not created a sink yet.
       await _applyPreamp();
-      await _pushLiveDspCurve(dvcDb: canonical.dvcDb);
-      await AudioEffectsBridge.setLiveDspLimiterCeiling(
-        highDb: canonical.limiterHighCeilingDb,
-        lowDb: canonical.limiterLowCeilingDb,
-      );
-      await AudioEffectsBridge.setLiveDspCrossoverHz(canonical.crossoverHz);
+      await _pushLiveDspCurve(settings: canonical);
       final sessionId = _music?.audioPlayer.androidAudioSessionId;
       if (sessionId != null && sessionId > 0) {
         unawaited(attachNativeSession(sessionId));
@@ -862,8 +857,9 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
 
-  Future<void> _pushLiveDspCurve({double? dvcDb}) async {
+  Future<void> _pushLiveDspCurve({DspSettings? settings}) async {
     try {
+      final canonical = settings ?? await DspSettings.load();
       final filters = _effectiveParametricBands();
 
       // Master bypass, EQ enable, preamp, and DVC are independent stages.
@@ -876,8 +872,30 @@ class EqualizerProvider extends ChangeNotifier {
         types: filters.map((band) => band.type).toList(),
         enabled: true,
       );
-      final resolvedDvcDb = dvcDb ?? (await DspSettings.load()).dvcDb;
-      await AudioEffectsBridge.setLiveDspDvcDb(resolvedDvcDb);
+      await AudioEffectsBridge.setLiveDspDvc(
+        enabled: canonical.dvcEnabled,
+        db: canonical.dvcDb,
+        smoothing: canonical.dvcSmoothing,
+        smoothingMs: canonical.dvcSmoothingMs,
+      );
+      await AudioEffectsBridge.setLiveDspLimiterConfig(
+        enabled: canonical.limiterEnabled,
+        mode: canonical.limiterMode,
+        thresholdDb: canonical.limiterThresholdDb,
+        releaseMs: canonical.limiterReleaseMs,
+        attackMs: canonical.limiterAttackMs,
+        lookaheadMs: canonical.limiterLookaheadMs,
+        kneeDb: canonical.limiterKneeDb,
+      );
+      await AudioEffectsBridge.setLiveDspLimiterCeiling(
+        highDb: canonical.limiterHighCeilingDb,
+        lowDb: canonical.limiterLowCeilingDb,
+      );
+      await AudioEffectsBridge.setLiveDspCrossoverHz(canonical.crossoverHz);
+      await AudioEffectsBridge.setLiveDspDither(
+        enabled: canonical.ditherEnabled,
+        mode: canonical.ditherMode,
+      );
 
       // _applyPreamp() owns the effective gain, including automatic headroom.
       // Do not write raw [preamp] here afterwards: that would undo headroom.
