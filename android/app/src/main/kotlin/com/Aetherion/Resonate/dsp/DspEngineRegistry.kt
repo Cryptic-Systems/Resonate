@@ -33,6 +33,10 @@ object DspEngineRegistry {
         fun setPreamp(handle: Long, linearGain: Double)
         fun setLimiterCeiling(handle: Long, highDb: Float, lowDb: Float)
         fun setCrossoverHz(handle: Long, freqHz: Float)
+        fun setParametricEqBands(handle: Long, frequenciesHz: FloatArray, gainsDb: FloatArray, qs: FloatArray, types: IntArray, enabled: Boolean) {}
+        fun setDvc(handle: Long, enabled: Boolean, gainDb: Float, smoothing: Boolean, smoothingMs: Float) {}
+        fun setLimiterConfig(handle: Long, enabled: Boolean, mode: Int, thresholdDb: Float, releaseMs: Float, attackMs: Float, lookaheadMs: Float, kneeDb: Float) {}
+        fun setDither(handle: Long, enabled: Boolean, mode: Int) {}
     }
 
     private val jniApi = object : NativeDspApi {
@@ -47,6 +51,14 @@ object DspEngineRegistry {
         override fun setLimiterCeiling(handle: Long, highDb: Float, lowDb: Float) =
             DspEngineJni.nativeSetLimiterCeiling(handle, highDb, lowDb)
         override fun setCrossoverHz(handle: Long, freqHz: Float) = DspEngineJni.nativeSetCrossoverHz(handle, freqHz)
+        override fun setParametricEqBands(handle: Long, frequenciesHz: FloatArray, gainsDb: FloatArray, qs: FloatArray, types: IntArray, enabled: Boolean) =
+            DspEngineJni.nativeSetParametricEqBands(handle, frequenciesHz, gainsDb, qs, types, enabled)
+        override fun setDvc(handle: Long, enabled: Boolean, gainDb: Float, smoothing: Boolean, smoothingMs: Float) =
+            DspEngineJni.nativeSetDvc(handle, enabled, gainDb, smoothing, smoothingMs)
+        override fun setLimiterConfig(handle: Long, enabled: Boolean, mode: Int, thresholdDb: Float, releaseMs: Float, attackMs: Float, lookaheadMs: Float, kneeDb: Float) =
+            DspEngineJni.nativeSetLimiterConfig(handle, enabled, mode, thresholdDb, releaseMs, attackMs, lookaheadMs, kneeDb)
+        override fun setDither(handle: Long, enabled: Boolean, mode: Int) =
+            DspEngineJni.nativeSetDither(handle, enabled, mode)
     }
 
     @Volatile
@@ -63,12 +75,27 @@ object DspEngineRegistry {
         val dspEnabled: Boolean = true,
         val centersHz: DoubleArray? = null,
         val gainsDb: DoubleArray? = null,
+        val eqQ: FloatArray? = null,
+        val eqTypes: IntArray? = null,
         val speakerMode: Boolean = false,
         val virtualBass: Double = 0.55,
         val preamp: Double = 1.0,
         val limiterHigh: Float = -0.5f,
         val limiterLow: Float = -0.2f,
         val crossoverHz: Float = 120f,
+        val dvcEnabled: Boolean = true,
+        val dvcDb: Float = 0f,
+        val dvcSmoothing: Boolean = true,
+        val dvcSmoothingMs: Float = 15f,
+        val limiterEnabled: Boolean = true,
+        val limiterMode: Int = 0,
+        val limiterThresholdDb: Float = -1f,
+        val limiterReleaseMs: Float = 50f,
+        val limiterAttackMs: Float = 0.1f,
+        val limiterLookaheadMs: Float = 2f,
+        val limiterKneeDb: Float = 0f,
+        val ditherEnabled: Boolean = false,
+        val ditherMode: Int = 1,
     )
 
     @Volatile
@@ -252,7 +279,7 @@ object DspEngineRegistry {
     @JvmStatic
     @Synchronized
     fun applyLimiterCeilingAll(highDb: Float, lowDb: Float) {
-        stickyState = stickyState.copy(limiterHigh = highDb.coerceIn(-6f, -0.1f), limiterLow = lowDb.coerceIn(-6f, -0.1f))
+        stickyState = stickyState.copy(limiterHigh = highDb.coerceIn(-12f, -0.05f), limiterLow = lowDb.coerceIn(-12f, -0.05f))
         val list = snapshotHandles()
         for (h in list) {
             try {
@@ -282,7 +309,7 @@ object DspEngineRegistry {
     @Synchronized
     fun applyVolumeAll(linearGain: Double) {
         val g = linearGain.coerceIn(0.0, 4.0)
-        stickyState = stickyState.copy(linearGain = g)
+        stickyState = stickyState.copy(linearGain = g, dvcDb = (20.0 * kotlin.math.log10(g.coerceAtLeast(1.0e-6))).toFloat())
         val list = snapshotHandles()
         for (h in list) {
             try {
@@ -305,6 +332,8 @@ object DspEngineRegistry {
             dspEnabled = true,
             centersHz = centersHz?.copyOf(),
             gainsDb = gainsDb.copyOf(),
+            eqQ = FloatArray(gainsDb.size) { 1f },
+            eqTypes = IntArray(gainsDb.size) { 0 },
         )
         val state = stickyState
         val effectiveEqEnabled = true
@@ -380,12 +409,12 @@ object DspEngineRegistry {
             try {
                 val gains = state.gainsDb
                 if (gains != null && gains.isNotEmpty()) {
-                    nativeApi.setEqBands(engine.handle, state.centersHz, gains, true)
+                    nativeApi.setParametricEqBands(engine.handle, state.centersHz?.map { it.toFloat() }?.toFloatArray() ?: defaultCenters(gains.size).map { it.toFloat() }.toFloatArray(), gains.map { it.toFloat() }.toFloatArray(), state.eqQ ?: FloatArray(gains.size) { 1f }, state.eqTypes ?: IntArray(gains.size), true)
                 } else {
                     // Restore a neutral 31-band curve when there is no saved
                     // user curve, rather than leaving the last DJ filter active.
                     val centers = defaultCenters(31)
-                    nativeApi.setEqBands(engine.handle, centers, DoubleArray(31), true)
+                    nativeApi.setParametricEqBands(engine.handle, centers.map { it.toFloat() }.toFloatArray(), FloatArray(31), FloatArray(31) { 1f }, IntArray(31), true)
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, "clearTemporaryEqOverlay failed deck=$deckRole handle=${engine.handle}", t)
@@ -411,12 +440,12 @@ object DspEngineRegistry {
         val overlay = temporaryEqOverlays[deckId]
         if (overlay == null) {
             if (base != null && base.isNotEmpty()) {
-                nativeApi.setEqBands(handle, state.centersHz, base, true)
+                nativeApi.setParametricEqBands(handle, state.centersHz?.map { it.toFloat() }?.toFloatArray() ?: defaultCenters(base.size).map { it.toFloat() }.toFloatArray(), base.map { it.toFloat() }.toFloatArray(), state.eqQ ?: FloatArray(base.size) { 1f }, state.eqTypes ?: IntArray(base.size), true)
             }
             return
         }
         if (base == null || base.isEmpty()) {
-            nativeApi.setEqBands(handle, overlay.centersHz, overlay.gainsDb, true)
+            nativeApi.setParametricEqBands(handle, overlay.centersHz.map { it.toFloat() }.toFloatArray(), overlay.gainsDb.map { it.toFloat() }.toFloatArray(), FloatArray(overlay.gainsDb.size) { 1f }, IntArray(overlay.gainsDb.size), true)
             return
         }
         val persistentGains = base
@@ -425,7 +454,7 @@ object DspEngineRegistry {
         val combined = DoubleArray(persistentGains.size) { index ->
             (persistentGains[index] + interpolateDb(overlay, centers[index])).coerceIn(-24.0, 24.0)
         }
-        nativeApi.setEqBands(handle, centers, combined, true)
+        nativeApi.setParametricEqBands(handle, centers.map { it.toFloat() }.toFloatArray(), combined.map { it.toFloat() }.toFloatArray(), state.eqQ ?: FloatArray(combined.size) { 1f }, state.eqTypes ?: IntArray(combined.size), true)
     }
 
     private fun interpolateDb(overlay: EqOverlay, frequencyHz: Double): Double {
@@ -454,8 +483,8 @@ object DspEngineRegistry {
     private fun applyStickyToHandle(handle: Long, deckId: String): Boolean {
         val state = stickyState
         try {
-            nativeApi.setVolume(handle, state.linearGain)
             nativeApi.setProcessingEnabled(handle, state.dspEnabled)
+            nativeApi.setDvc(handle, state.dvcEnabled, state.dvcDb, state.dvcSmoothing, state.dvcSmoothingMs)
             val gains = state.gainsDb
             if (gains != null && gains.isNotEmpty()) {
                 applyEqForEngine(handle, deckId, state)
@@ -475,6 +504,8 @@ object DspEngineRegistry {
             nativeApi.setPreamp(handle, state.preamp)
             nativeApi.setLimiterCeiling(handle, state.limiterHigh, state.limiterLow)
             nativeApi.setCrossoverHz(handle, state.crossoverHz)
+            nativeApi.setLimiterConfig(handle, state.limiterEnabled, state.limiterMode, state.limiterThresholdDb, state.limiterReleaseMs, state.limiterAttackMs, state.limiterLookaheadMs, state.limiterKneeDb)
+            nativeApi.setDither(handle, state.ditherEnabled, state.ditherMode)
         } catch (t: Throwable) {
             Log.w(TAG, "applySticky failed handle=$handle", t)
             return false
