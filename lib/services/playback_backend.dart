@@ -105,3 +105,10 @@ enum PlaybackQueueRepeatMode {
 
   final String nativeValue;
 }
+
+
+/// Optional playback-pitch capability. Kept separate from the core session
+/// contract so backends without pitch control remain source-compatible.
+abstract interface class PlaybackPitchBackend {
+  Future<void> setPlaybackPitch(double pitch);
+}
