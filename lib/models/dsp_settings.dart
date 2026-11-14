@@ -26,7 +26,7 @@ class ParametricEqBand {
         frequencyHz: _clamp(frequencyHz ?? this.frequencyHz, 20, 20000),
         gainDb: _clamp(gainDb ?? this.gainDb, -24, 24),
         q: _clamp(q ?? this.q, 0.1, 18),
-        type: (type ?? this.type).clamp(0, 4),
+        type: (type ?? this.type).clamp(0, 4).toInt(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -46,7 +46,7 @@ class ParametricEqBand {
       return raw.toDouble().clamp(min, max).toDouble();
     }
     final rawType = value['type'];
-    final type = rawType is num ? rawType.toInt().clamp(0, 4) : 0;
+    final type = rawType is num ? rawType.toInt().clamp(0, 4).toInt() : 0;
     return ParametricEqBand(
       frequencyHz: number('frequencyHz', 1000, 20, 20000),
       gainDb: number('gainDb', 0, -24, 24),
