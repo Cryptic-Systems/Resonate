@@ -37,7 +37,7 @@ internal class LiveDspChannelHandler {
             }
             "setLiveDspDvc" -> {
                 val enabled = call.argument<Boolean>("enabled") ?: true
-                val db = (call.argument<Number>("db") ?: 0.0).toFloat().coerceIn(-24f, 6f)
+                val db = (call.argument<Number>("db") ?: 0.0).toFloat().coerceIn(-120f, 24f)
                 val smoothing = call.argument<Boolean>("smoothing") ?: true
                 val smoothingMs = (call.argument<Number>("smoothingMs") ?: 15.0).toFloat().coerceIn(0f, 200f)
                 DspEngineRegistry.applyDvcAll(enabled, db, smoothing, smoothingMs)
