@@ -5,6 +5,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'music_provider.dart';
+import '../services/playback_engine_session.dart';
 
 class PlaybackFeaturesProvider extends ChangeNotifier {
   final MusicProvider music;
@@ -61,7 +62,11 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     try {
       final session = music.media3PlaybackSession;
       if (music.media3ProviderSessionActive && session != null) {
-        await session.setPlaybackPitch(pitch);
+        if (session is PlaybackPitchSession) {
+          await session.setPlaybackPitch(pitch);
+        } else {
+          throw UnsupportedError('The active playback session does not support pitch changes.');
+        }
       } else {
         await player.setPitch(pitch);
       }
@@ -113,7 +118,11 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       final session = music.media3PlaybackSession;
       if (music.media3ProviderSessionActive && session != null) {
         await session.setPlaybackSpeed(speed.clamp(0.5, 2.0).toDouble());
-        await session.setPlaybackPitch(pitch.clamp(0.5, 2.0).toDouble());
+        if (session is PlaybackPitchSession) {
+          await session.setPlaybackPitch(pitch.clamp(0.5, 2.0).toDouble());
+        } else {
+          throw UnsupportedError('The active playback session does not support pitch changes.');
+        }
         // Loudness normalization uses a separate Media3 gain capability.
         if (normalizationEnabled) {
           debugPrint('Track normalization awaits Media3 gain capability.');
