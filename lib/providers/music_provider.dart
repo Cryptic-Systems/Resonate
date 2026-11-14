@@ -1355,8 +1355,31 @@ class MusicProvider extends ChangeNotifier {
         // request from falling through to Flutter AudioSession and creating
         // a second, competing focus authority.
         final session = await _ensureMedia3ProviderSessionActive();
+
+        // Session startup/handoff is asynchronous. A call or VoIP session can
+        // begin after the first communication check above, so re-check before
+        // enabling Media3 focus handling. Also fail closed if the provider was
+        // disposed or the injected session ceased to be authoritative meanwhile.
+        if (_disposed ||
+            !identical(media3Session, _media3ProviderSession) ||
+            !_media3ProviderSessionActive ||
+            await _isCommunicationActive()) {
+          unawaited(ResonateDiagnostics.record(
+            'audio_focus_blocked_after_media3_activation',
+            {
+              'reason': reason,
+              'songId': currentSong?.id,
+              'disposed': _disposed,
+              'sessionActive': _media3ProviderSessionActive,
+            },
+          ));
+          return false;
+        }
+
         await session!.setAudioFocusHandling(true);
-        return true;
+        return !_disposed &&
+            identical(media3Session, _media3ProviderSession) &&
+            _media3ProviderSessionActive;
       } catch (error) {
         debugPrint('Media3 focus policy ($reason): $error');
         return false;
