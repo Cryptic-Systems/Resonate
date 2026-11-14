@@ -67,6 +67,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   double? volumeSet;
   bool? focusHandling;
   Completer<void>? focusHandlingGate;
+  Completer<void>? focusHandlingEntered;
   Map<String, double?>? gainFactors;
   Song? preloadedSong;
   int? preloadedIndex;
@@ -127,6 +128,10 @@ class _FakePlaybackSession implements PlaybackEngineSession {
 
   @override
   Future<void> setAudioFocusHandling(bool enabled) async {
+    if (enabled) {
+      final entered = focusHandlingEntered;
+      if (entered != null && !entered.isCompleted) entered.complete();
+    }
     await focusHandlingGate?.future;
     focusHandling = enabled;
     calls.add('focus:$enabled');
@@ -325,15 +330,16 @@ void main() {
       await provider.prepareMedia3ProviderSession();
 
       final focusGate = Completer<void>();
+      final focusEntered = Completer<void>();
       session.focusHandlingGate = focusGate;
+      session.focusHandlingEntered = focusEntered;
       session.states.add(_state(
         song: song,
         queueIndex: 0,
         playing: false,
         playWhenReady: true,
       ));
-      await Future<void>.delayed(const Duration(milliseconds: 30));
-      expect(session.focusHandlingGate, same(focusGate));
+      await focusEntered.future.timeout(const Duration(seconds: 2));
 
       // Simulate the native deck recovering without a Flutter play command
       // while the watchdog is still waiting for focus policy to settle.
