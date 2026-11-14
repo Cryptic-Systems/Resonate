@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
@@ -15,6 +16,11 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   double targetLoudness = -14.0;
   int sleepRemainingSeconds = 0;
   String? normalizedSongId;
+  double _normalizationGainDb = 0.0;
+
+  double get _normalizationTrackLevel => normalizationEnabled
+      ? math.pow(10.0, _normalizationGainDb / 20.0).toDouble().clamp(0.0, 1.0).toDouble()
+      : 1.0;
   Timer? _sleepTimer;
   String? _lastSongId;
   String? _lastEngine;
@@ -93,20 +99,25 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
 
   Future<void> applyTrackGain(String songId, double gainDb) async {
     normalizedSongId = songId;
+    _normalizationGainDb = gainDb.isFinite ? gainDb : 0.0;
     if (!normalizationEnabled) return;
-    try {
-      await loudnessEnhancer.setTargetGain((gainDb * 100.0).clamp(-1000.0, 1000.0));
-      await loudnessEnhancer.setEnabled(true);
-    } catch (e) {
-      debugPrint('Track normalization failed: $e');
-    }
+    await _applyNormalization();
     notifyListeners();
   }
 
   Future<void> _applyNormalization() async {
     try {
-      final gainDb = 0.0;
-      await loudnessEnhancer.setTargetGain(gainDb * 100.0);
+      final session = music.media3PlaybackSession;
+      if (music.media3ProviderSessionActive && session != null) {
+        // Media3 composes track trim with preamp, sleep fade and focus duck
+        // atomically. Track normalization is attenuation-only to avoid
+        // introducing clipping when the source has unknown headroom.
+        await session.setGainFactors(trackLevel: _normalizationTrackLevel);
+        return;
+      }
+      await loudnessEnhancer.setTargetGain(
+        (_normalizationGainDb * 100.0).clamp(-1000.0, 0.0),
+      );
       await loudnessEnhancer.setEnabled(normalizationEnabled);
     } catch (e) {
       debugPrint('Volume normalization failed: $e');
@@ -123,10 +134,9 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
         } else {
           throw UnsupportedError('The active playback session does not support pitch changes.');
         }
-        // Loudness normalization uses a separate Media3 gain capability.
-        if (normalizationEnabled) {
-          debugPrint('Track normalization awaits Media3 gain capability.');
-        }
+        // Restore track trim on the newly active session/deck alongside rate
+        // and pitch; the native gain policy preserves sleep/focus/preamp factors.
+        await session.setGainFactors(trackLevel: _normalizationTrackLevel);
       } else {
         await player.setSpeed(speed);
         await player.setPitch(pitch);
