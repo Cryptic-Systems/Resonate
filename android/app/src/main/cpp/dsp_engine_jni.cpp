@@ -159,6 +159,8 @@ bool readSnapshot(const PendingSettings& p, Snapshot* out) {
 // dsp_process_pcm16. This protects the upstream implementation's EQ rebuild,
 // limiter state and speaker filter state from UI/audio data races.
 void applyPending(NativeHandle* h) {
+    const uint32_t pendingSequence = h->pending.sequence.load(std::memory_order_acquire);
+    if ((pendingSequence & 1U) != 0U || pendingSequence == h->appliedSequence) return;
     Snapshot s;
     if (!readSnapshot(h->pending, &s) || s.sequence == h->appliedSequence) return;
     DspEngine* e = h->engine;
