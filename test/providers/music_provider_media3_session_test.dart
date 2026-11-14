@@ -411,11 +411,13 @@ void main() {
     });
 
     test('rechecks communication mode after Media3 session activation before claiming focus', () async {
+      var simulateCall = false;
       var communicationChecks = 0;
       const communicationChannel =
           MethodChannel('com.aetherion.resonate/media_store');
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(communicationChannel, (call) async {
+        if (!simulateCall) return false;
         communicationChecks++;
         // The first check allows recovery; the second simulates a call starting
         // while the asynchronous Media3 activation/focus path is in progress.
@@ -430,6 +432,7 @@ void main() {
         expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
         expect(provider.media3ProviderSessionActive, isTrue);
 
+        simulateCall = true;
         communicationChecks = 0;
         session.calls.clear();
         await provider.ensureAudiblePlayback();
