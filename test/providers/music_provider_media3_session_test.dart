@@ -801,6 +801,18 @@ void main() {
       expect(failingProvider.media3ProviderSessionPrepared, isFalse);
       expect(failing.calls, ['start']);
 
+      // Production playback must fail closed rather than lazily constructing
+      // EnginePair/just_audio after Media3 startup has failed.
+      final failedSong = _song('media3-startup-failure');
+      expect(
+        await failingProvider.playSong(
+          failedSong,
+          queue: <Song>[failedSong],
+        ),
+        isFalse,
+      );
+      expect(failingProvider.debugLegacyEngineConstructed, isFalse);
+
       provider.dispose();
       failingProvider.dispose();
       await Future<void>.delayed(Duration.zero);
