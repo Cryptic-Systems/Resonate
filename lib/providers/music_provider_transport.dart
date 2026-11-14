@@ -430,10 +430,21 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
     _audiobookSession.onResumed(currentPosition);
     _modes?.onPlaybackResumed(currentSong);
     final intentToken = _playbackIntentGate.issue();
+    final injectedSession = _media3ProviderSession;
+    bool stillOwnsResume([PlaybackEngineSession? session]) =>
+        !_disposed &&
+        _playbackIntentGate.isCurrent(intentToken) &&
+        (injectedSession == null ||
+            (identical(injectedSession, _media3ProviderSession) &&
+                _media3ProviderSessionActive &&
+                (session == null || identical(session, injectedSession))));
     _cancelAutomaticPlaybackWork();
     return _serializePlayback(() async {
       try {
-        if (await _isCommunicationActive()) {
+        if (!stillOwnsResume()) return;
+        final communicationActive = await _isCommunicationActive();
+        if (!stillOwnsResume()) return;
+        if (communicationActive) {
           _userWantsPlaying = false;
           isPlaying = false;
           await ResonateDiagnostics.record('playback_blocked_communication', {
@@ -444,11 +455,15 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
           notifyListeners();
           return;
         }
-        if (_media3ProviderSession != null) {
-          final session = (await _ensureMedia3ProviderSessionActive())!;
-          // Session activation is asynchronous. A call can begin after the
-          // initial guard above, so recheck before asking Media3 for focus.
+        if (injectedSession != null) {
+          final session = await _ensureMedia3ProviderSessionActive();
+          if (!stillOwnsResume(session)) return;
+
+          // Session activation is asynchronous. A call or a newer transport
+          // intent can arrive while it is starting; neither may be overwritten
+          // by this now-stale resume request.
           if (await _isCommunicationActive()) {
+            if (!stillOwnsResume(session)) return;
             _userWantsPlaying = false;
             isPlaying = false;
             await session.setAudioFocusHandling(false);
@@ -460,10 +475,24 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
             notifyListeners();
             return;
           }
+          if (!stillOwnsResume(session)) return;
+
           await session.setAudioFocusHandling(true);
-          // Focus handling itself crosses the platform boundary; close the
-          // final race by relinquishing focus if communication began meanwhile.
+          // Focus handling itself crosses the platform boundary. Revalidate
+          // both communication policy and transport ownership before play.
+          if (!stillOwnsResume(session)) {
+            try {
+              await session.setAudioFocusHandling(false);
+            } catch (_) {}
+            return;
+          }
           if (await _isCommunicationActive()) {
+            if (!stillOwnsResume(session)) {
+              try {
+                await session.setAudioFocusHandling(false);
+              } catch (_) {}
+              return;
+            }
             _userWantsPlaying = false;
             isPlaying = false;
             await session.setAudioFocusHandling(false);
@@ -475,6 +504,13 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
             notifyListeners();
             return;
           }
+          if (!stillOwnsResume(session)) {
+            try {
+              await session.setAudioFocusHandling(false);
+            } catch (_) {}
+            return;
+          }
+
           _userWantsPlaying = true;
           _isDucked = false;
           if (session.currentSong == null && currentSong != null) {
@@ -498,10 +534,12 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
         }
         if (source != 'system' &&
             !await _claimAudioFocus(reason: 'resume_$source')) {
+          if (!stillOwnsResume()) return;
           _userWantsPlaying = false;
           isPlaying = false;
           return;
         }
+        if (!stillOwnsResume()) return;
         _userWantsPlaying = true;
         _isDucked = false;
         if (audioPlayer.audioSource != null) {
@@ -511,6 +549,7 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
               await audioPlayer.seek(Duration.zero);
             } catch (_) {}
           }
+          if (!stillOwnsResume()) return;
           final midTransition = _transitionLive;
           final target = _effectiveCrossfadeMaster.clamp(0.0, 1.0);
           // Start quiet then fade in (skip only during a real ramp).
@@ -519,43 +558,45 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
               await audioPlayer.setVolume(0.0);
             } catch (_) {}
           }
+          if (!stillOwnsResume()) return;
           for (var attempt = 0; attempt < 12; attempt++) {
+            if (!stillOwnsResume()) return;
             if (attempt == 0 || attempt == 3 || attempt == 6) {
               try {
                 audioPlayer.play();
-              } catch (e) {
-                debugPrint('resumePlayback play() fire $attempt failed: $e');
-              }
+              } catch (_) {}
             }
+            await Future<void>.delayed(const Duration(milliseconds: 90));
+            if (!stillOwnsResume()) return;
             if (audioPlayer.playing) break;
-            await Future<void>.delayed(Duration(milliseconds: 40 + attempt * 25));
           }
-          if (!midTransition && audioPlayer.playing && _audioFocusSettings.pauseResumeFadeEnabled) {
+          final midTransitionAfterStart = _transitionLive;
+          if (!midTransitionAfterStart && audioPlayer.playing && _audioFocusSettings.pauseResumeFadeEnabled) {
             await _fadePlayerVolume(
               audioPlayer,
               0.0,
               target,
-              durationMs: source == 'system' ? 160 : MusicProvider._transportFadeMs,
+              durationMs: MusicProvider._transportFadeMs,
+              steps: 6,
             );
-          } else if (!midTransition) {
-            try {
-              await audioPlayer.setVolume(target);
-            } catch (_) {}
+          } else if (!midTransitionAfterStart) {
+            await audioPlayer.setVolume(target);
           }
+          if (!stillOwnsResume()) return;
           isPlaying = audioPlayer.playing || _userWantsPlaying;
           _publishServiceState();
-          notifyListeners();
-          unawaited(ResonateDiagnostics.record('playback_resume_fade', {
+          await ResonateDiagnostics.record('resume_playback', {
             'source': source,
-            'faded': !midTransition,
             'playing': audioPlayer.playing,
-          }));
+            'attempts': attempt,
+          });
+          notifyListeners();
           return;
         }
         if (currentSong != null) {
           await _playSongInternal(
             currentSong!,
-            queue: _queue.isEmpty ? null : _queue,
+            queue: _queue,
             startIndex: _queueIndex,
             resume: true,
             playbackIntentToken: intentToken,
