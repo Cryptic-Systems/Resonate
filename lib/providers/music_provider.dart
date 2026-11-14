@@ -138,9 +138,11 @@ class MusicProvider extends ChangeNotifier {
   AndroidEqualizer get _equalizerB => _legacyEngines.equalizerB;
   AndroidLoudnessEnhancer get _loudnessA => _legacyEngines.loudnessA;
   AndroidLoudnessEnhancer get _loudnessB => _legacyEngines.loudnessB;
-  bool get _activeIsA => _media3ProviderSessionActive ? true : _legacyEngines.activeIsA;
+  bool get _activeIsA => _media3ProviderSession != null
+      ? (_media3ShadowState?.activeDeckId ?? 'A') != 'B'
+      : _legacyEngines.activeIsA;
   set _activeIsA(bool value) {
-    if (!_media3ProviderSessionActive && !_legacyEnginesRetired) {
+    if (_media3ProviderSession == null && !_legacyEnginesRetired) {
       _legacyEngines.activeIsA = value;
     }
   }
@@ -709,7 +711,7 @@ class MusicProvider extends ChangeNotifier {
   /// Switch active engine to A and rebind streams if we were on B.
   /// Safe to call at the start of any non-crossfade play path.
   void _ensureEngineA({String reason = 'default'}) {
-    if (_media3ProviderSessionActive || _legacyEnginesRetired) return;
+    if (_media3ProviderSession != null || _legacyEnginesRetired) return;
     if (_activeIsA) return;
     _activeIsA = true;
     _bindActivePlayerStreams();
@@ -2098,6 +2100,10 @@ class MusicProvider extends ChangeNotifier {
   int? resumePositionFor(String songId) => _resumeStore.positionFor(songId);
 
   void _maybeStartAutomaticCrossfade(Duration position) {
+    // The injected session is authoritative from construction onward. During
+    // startup it may not own playback yet, so do not fall through to a lazy
+    // just_audio getter while waiting for the Media3 handoff to complete.
+    if (_media3ProviderSession != null && !_media3ProviderSessionActive) return;
     final media3Session = _media3ProviderSessionActive
         ? _media3ProviderSession
         : null;
@@ -4076,7 +4082,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Stream<Duration?> get durationStream {
-    if (_media3ProviderSessionActive) return _media3ProviderSession!.durationStream;
+    if (_media3ProviderSession != null) return _media3ProviderSession!.durationStream;
     if (_engines != null && !_legacyEnginesRetired) return _engines!.active.durationStream;
     return Stream<Duration?>.value(currentDuration);
   }
