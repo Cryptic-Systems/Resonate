@@ -291,6 +291,7 @@ void main() {
           reason: 'No Media3 snapshot has been published by the fake session.');
       expect(session.calls, [
         'start',
+        'speed:1.0',
         'focus:false',
         'loadQueue',
         'repeat:all',
