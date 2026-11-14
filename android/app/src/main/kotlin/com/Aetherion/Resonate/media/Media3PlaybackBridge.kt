@@ -338,6 +338,16 @@ class Media3PlaybackBridge(
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_TRANSPORT_UNAVAILABLE", "Media3 playback speed is unavailable.", null)
                 }
+                "setPlaybackPitch" -> {
+                    val pitch = call.argument<Number>("pitch")?.toFloat()
+                    if (pitch == null || !pitch.isFinite() || pitch !in 0.5f..2.0f) {
+                        result.error("INVALID_PLAYBACK_PITCH", "pitch must be finite and between 0.5 and 2.0.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setPlaybackPitch(pitch) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_TRANSPORT_UNAVAILABLE", "Media3 playback pitch is unavailable.", null)
+                }
                 "setDeckPlaybackSpeeds" -> {
                     val active = call.argument<Number>("activeSpeed")?.toFloat()
                     val standby = call.argument<Number>("standbySpeed")?.toFloat()
