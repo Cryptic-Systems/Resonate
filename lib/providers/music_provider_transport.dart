@@ -69,6 +69,10 @@ Future<void> pause({String source = 'normal_player'}) {
           // Legacy engines are disposed at handoff. Pause the canonical session
           // directly; never recreate a Flutter player as a silence barrier.
           await session.pause();
+          // A pause is an explicit relinquishment of media focus. This also
+          // closes the race where a resume enabled focus while session startup
+          // was completing immediately before the pause took ownership.
+          await session.setAudioFocusHandling(false);
           unawaited(ResonateDiagnostics.record('media3_pause_canonical_only', {
             'legacyEnginesRetired': _legacyEnginesRetired,
             'transportEpoch': _userTransportEpoch,
