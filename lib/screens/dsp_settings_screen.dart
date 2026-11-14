@@ -72,11 +72,18 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
     final equalizer = context.read<EqualizerProvider>();
     setState(() => _saving = true);
     try {
+      final liveStatus = await AudioEffectsBridge.getLiveDspStatus();
+      final liveLinearGain = (liveStatus?['linearGain'] as num?)?.toDouble();
+      final liveDvcDb = liveLinearGain == null
+          ? current.dvcDb
+          : liveLinearGain <= 1.0e-6
+              ? -120.0
+              : 20.0 * math.log(liveLinearGain) / math.ln10;
       await DspSettings.update((saved) => saved.copyWith(
             parametricEqBands: bandsSnapshot,
             preampDb: current.preampDb,
             dvcEnabled: current.dvcEnabled,
-            dvcDb: current.dvcDb,
+            dvcDb: liveDvcDb,
             dvcSmoothing: current.dvcSmoothing,
             dvcSmoothingMs: current.dvcSmoothingMs,
             limiterEnabled: current.limiterEnabled,
