@@ -27,6 +27,24 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   int _sleepGeneration = 0;
   DateTime? _sleepDeadline;
   bool _sleepTickInFlight = false;
+  // Serialize native sleep-fade mutations so a stale tick cannot reapply a
+  // fade after cancellation or replacement has already cleared it.
+  Future<void> _sleepFadeOperations = Future<void>.value();
+
+  Future<void> _enqueueSleepFade(int generation, {double? scale}) {
+    final operation = _sleepFadeOperations.then((_) async {
+      if (generation != _sleepGeneration) return;
+      if (scale == null) {
+        await music.clearSleepFade();
+      } else {
+        await music.setSleepFadeScale(scale);
+      }
+    });
+    _sleepFadeOperations = operation.catchError((Object error) {
+      debugPrint('Sleep fade update failed: $error');
+    });
+    return _sleepFadeOperations;
+  }
 
   PlaybackFeaturesProvider({required this.music}) {
     music.addListener(_syncEngineIfNeeded);
@@ -147,12 +165,14 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
 
   Future<void> startSleepTimer(Duration duration) async {
     _sleepTimer?.cancel();
+    _sleepTimer = null;
     final gen = ++_sleepGeneration;
-    try {
-      await music.clearSleepFade();
-    } catch (_) {}
     sleepRemainingSeconds = duration.inSeconds.clamp(1, 24 * 60 * 60);
     _sleepDeadline = DateTime.now().add(Duration(seconds: sleepRemainingSeconds));
+    // Clear the previous fade before arming this timer. A newer start or
+    // cancellation invalidates this queued operation by generation.
+    await _enqueueSleepFade(gen);
+    if (gen != _sleepGeneration) return;
     _sleepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (gen != _sleepGeneration) {
         timer.cancel();
@@ -183,9 +203,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       } catch (e) {
         debugPrint('Sleep timer pause failed: $e');
       }
-      try {
-        await music.clearSleepFade();
-      } catch (_) {}
+      await _enqueueSleepFade(gen);
       if (gen == _sleepGeneration) {
         _sleepDeadline = null;
         notifyListeners();
@@ -195,11 +213,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     sleepRemainingSeconds = sleepRemainingSeconds.clamp(0, 24 * 60 * 60);
     if (sleepRemainingSeconds <= _fadeOutSeconds && gen == _sleepGeneration) {
       final t = (sleepRemainingSeconds / _fadeOutSeconds).clamp(0.0, 1.0);
-      try {
-        await music.setSleepFadeScale(t);
-      } catch (e) {
-        debugPrint('Sleep fade failed: $e');
-      }
+      await _enqueueSleepFade(gen, scale: t);
     }
     if (gen == _sleepGeneration) notifyListeners();
     } finally {
@@ -213,7 +227,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     _sleepTimer = null;
     sleepRemainingSeconds = 0;
     _sleepDeadline = null;
-    unawaited(music.clearSleepFade());
+    unawaited(_enqueueSleepFade(_sleepGeneration));
     notifyListeners();
   }
 
@@ -267,7 +281,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     _sleepDeadline = null;
     sleepRemainingSeconds = 0;
     // Provider disposal must not leave a native/Media3 gain fade applied.
-    unawaited(music.clearSleepFade());
+    unawaited(_enqueueSleepFade(_sleepGeneration));
     super.dispose();
   }
 }
