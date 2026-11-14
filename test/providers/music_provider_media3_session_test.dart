@@ -287,6 +287,34 @@ void main() {
       await session.states.close();
     });
 
+    test('playback feature changes activate and remain on injected Media3', () async {
+      final session = _PitchCapableFakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+
+      await provider.setPlaybackSpeedForFeatures(1.4);
+      await provider.setPlaybackPitchForFeatures(1.1);
+      await provider.setNormalizationForFeatures(
+        targetGainMillibels: -350,
+        enabled: true,
+        trackLevel: 0.82,
+      );
+
+      expect(provider.media3ProviderSessionActive, isTrue);
+      expect(session.playbackSpeedValue, 1.4);
+      expect(session.pitchValue, 1.1);
+      expect(session.gainFactors?['trackLevel'], 0.82);
+      expect(session.calls, contains('speed:1.4'));
+      expect(session.calls, contains('pitch:1.1'));
+      expect(session.calls, contains('gainFactors'));
+      expect(provider.debugLegacyEngineConstructed, isFalse,
+          reason: 'Feature changes must activate the injected session, not construct just_audio.');
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('requires an explicitly injected session', () async {
       final provider = MusicProvider();
       await expectLater(
