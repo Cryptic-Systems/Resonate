@@ -1377,9 +1377,29 @@ class MusicProvider extends ChangeNotifier {
         }
 
         await session!.setAudioFocusHandling(true);
-        return !_disposed &&
-            identical(media3Session, _media3ProviderSession) &&
-            _media3ProviderSessionActive;
+
+        // Communication can begin during the platform focus request itself.
+        // Recheck after that await and immediately relinquish Media3 focus;
+        // otherwise audible recovery can race a newly active call.
+        if (_disposed ||
+            !identical(media3Session, _media3ProviderSession) ||
+            !_media3ProviderSessionActive ||
+            await _isCommunicationActive()) {
+          try {
+            await session.setAudioFocusHandling(false);
+          } catch (_) {}
+          unawaited(ResonateDiagnostics.record(
+            'audio_focus_released_after_media3_focus_race',
+            {
+              'reason': reason,
+              'songId': currentSong?.id,
+              'disposed': _disposed,
+              'sessionActive': _media3ProviderSessionActive,
+            },
+          ));
+          return false;
+        }
+        return true;
       } catch (error) {
         debugPrint('Media3 focus policy ($reason): $error');
         return false;
