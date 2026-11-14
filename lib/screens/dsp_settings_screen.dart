@@ -215,7 +215,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
         final avgUs = (status?['avgUs'] as num?)?.toDouble() ?? 0;
         final overruns = (status?['overruns'] as num?)?.toInt() ?? 0;
         final maxUs = (status?['maxUs'] as num?)?.toDouble() ?? 0;
-        return _section('Live engine', 'Per-deck Media3 DSP status and PCM processing diagnostics.', [
+        return _section('Live engine', 'Per-deck Media3 DSP status and PCM diagnostics. Media3 owns output routing and sample-rate conversion; standalone backend and SRC controls are not used in this live path.', [
           _statusRow('Active DSP decks', engines.toString() + ' / 2'),
           _statusRow('PCM blocks processed', calls.toString()),
           _statusRow('Average processing time', avgUs.toStringAsFixed(1) + ' μs'),
@@ -426,9 +426,9 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                         label: 'Release',
                         value: settings.limiterReleaseMs,
                         min: 1,
-                        max: 1000,
+                        max: 2000,
                         suffix: 'ms',
-                        divisions: 999,
+                        divisions: 1999,
                         onChanged: (v) => _changeSettings((s) => s.copyWith(limiterReleaseMs: v)),
                         onChangeEnd: (_) => _commit(),
                       ),
@@ -493,7 +493,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                         onChangeEnd: (_) => _commit(),
                       ),
                     ]),
-                    _section('Speaker delivery', 'High-pass protection and optional virtual-bass harmonics for small speakers.', [
+                    _section('Speaker delivery', 'High-pass protection and optional virtual-bass harmonics for small speakers. Output-route safety policy may reapply these values when the audio route changes.', [
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: const Text('Speaker protection'),
