@@ -1855,7 +1855,10 @@ class MusicProvider extends ChangeNotifier {
     // Reading position/buffered position from the compatibility EnginePair
     // here would publish stale (often zero) values to Android's audio_service
     // notification even while the Media3 deck is progressing normally.
-    final session = _media3ProviderSessionActive ? _media3ProviderSession : null;
+    // An injected Media3 session is the canonical observation source from
+    // construction onward, including the short pre-handoff window. Never
+    // publish stale legacy EnginePair position while Media3 is preparing.
+    final session = _media3ProviderSession;
     Duration pos;
     Duration? buffered;
     if (session != null) {
