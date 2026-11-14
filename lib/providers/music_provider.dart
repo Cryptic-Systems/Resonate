@@ -3675,8 +3675,8 @@ class MusicProvider extends ChangeNotifier {
             await _djSfxRack.engageDelayed(
               delay: delay,
               energyScore: energyScore,
-              equalizerA: _equalizerA,
-              equalizerB: _equalizerB,
+              equalizerA: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerA,
+              equalizerB: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerB,
               outgoingUri: currentSong?.filePath,
               beatMs: beatMs,
               sections: sections,
@@ -3705,8 +3705,8 @@ class MusicProvider extends ChangeNotifier {
       } else {
         await _djSfxRack.engage(
           energyScore: energyScore,
-          equalizerA: _equalizerA,
-          equalizerB: _equalizerB,
+          equalizerA: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerA,
+          equalizerB: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerB,
           outgoingUri: currentSong?.filePath,
           beatMs: beatMs,
           sections: sections,
@@ -3731,8 +3731,8 @@ class MusicProvider extends ChangeNotifier {
     if (!_djSfxEngaged) return;
     await _djSfxRack.tick(
       t,
-      equalizerA: _equalizerA,
-      equalizerB: _equalizerB,
+      equalizerA: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerA,
+      equalizerB: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerB,
       energyScore: _lastDjEnergyScore,
       playbackSession: _media3ProviderSessionActive
           ? _media3ProviderSession
@@ -3752,8 +3752,8 @@ class MusicProvider extends ChangeNotifier {
         try {
           await _djSfxRack.tick(
             t,
-            equalizerA: _equalizerA,
-            equalizerB: _equalizerB,
+            equalizerA: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerA,
+            equalizerB: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerB,
             energyScore: _lastDjEnergyScore,
             playbackSession: _media3ProviderSessionActive
                 ? _media3ProviderSession
@@ -3764,8 +3764,8 @@ class MusicProvider extends ChangeNotifier {
       }
       final preset = _djSfxRack.presetName;
       await _djSfxRack.restore(
-        equalizerA: _equalizerA,
-        equalizerB: _equalizerB,
+        equalizerA: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerA,
+        equalizerB: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerB,
         playbackSession: _media3ProviderSessionActive
             ? _media3ProviderSession
             : _djSfxMedia3OverlaySession,
