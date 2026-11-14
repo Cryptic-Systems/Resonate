@@ -307,7 +307,6 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetVolume(
     if (auto* h = fromHandle(value)) h->pending.update([&] {
         const double g = std::clamp(linearGain, 0.0, 4.0);
         h->pending.dvcDb.store(static_cast<float>(g <= 1.0e-6 ? -120.0 : 20.0 * std::log10(g)), std::memory_order_relaxed);
-        h->pending.dvcEnabled.store(1, std::memory_order_relaxed);
     });
 }
 
