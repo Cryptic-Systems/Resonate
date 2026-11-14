@@ -320,6 +320,24 @@ void main() {
       await session.states.close();
     });
 
+    test('clearing queue before explicit handoff activates and stops injected Media3', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+
+      await provider.setQueue(<Song>[]);
+
+      expect(provider.media3ProviderSessionActive, isTrue);
+      expect(session.calls, contains('clearQueue'));
+      expect(session.calls, contains('stop'));
+      expect(provider.queue, isEmpty);
+      expect(provider.debugLegacyEngineConstructed, isFalse);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('toggle before explicit handoff prepares and uses injected Media3 without creating legacy engines', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
