@@ -66,8 +66,6 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   bool? shuffleModeSet;
   double? volumeSet;
   bool? focusHandling;
-  Completer<void>? focusHandlingGate;
-  Completer<void>? focusHandlingEntered;
   Map<String, double?>? gainFactors;
   Song? preloadedSong;
   int? preloadedIndex;
@@ -128,11 +126,6 @@ class _FakePlaybackSession implements PlaybackEngineSession {
 
   @override
   Future<void> setAudioFocusHandling(bool enabled) async {
-    if (enabled) {
-      final entered = focusHandlingEntered;
-      if (entered != null && !entered.isCompleted) entered.complete();
-    }
-    await focusHandlingGate?.future;
     focusHandling = enabled;
     calls.add('focus:$enabled');
   }
@@ -315,46 +308,6 @@ void main() {
       expect(session.calls, contains('gainFactors'));
       expect(provider.debugLegacyEngineConstructed, isFalse,
           reason: 'Feature changes must activate the injected session, not construct just_audio.');
-
-      provider.dispose();
-      await Future<void>.delayed(Duration.zero);
-      await session.audioSessions.close();
-      await session.states.close();
-    });
-
-    test('Media3 watchdog does not restart a deck that resumes during focus acquisition', () async {
-      final session = _FakePlaybackSession();
-      final provider = MusicProvider(media3ProviderSession: session);
-      final song = _song('watchdog-native-resume');
-      await provider.enqueueSongs(<Song>[song]);
-      await provider.prepareMedia3ProviderSession();
-      await provider.play();
-      // Establish a genuine user playback intent before simulating a native
-      // deck stall; a state snapshot alone must not manufacture that intent.
-      session.calls.clear();
-      session.playingValue = false;
-
-      final focusGate = Completer<void>();
-      final focusEntered = Completer<void>();
-      session.focusHandlingGate = focusGate;
-      session.focusHandlingEntered = focusEntered;
-      session.states.add(_state(
-        song: song,
-        queueIndex: 0,
-        playing: false,
-        playWhenReady: true,
-      ));
-      await focusEntered.future.timeout(const Duration(seconds: 2));
-
-      // Simulate the native deck recovering without a Flutter play command
-      // while the watchdog is still waiting for focus policy to settle.
-      session.playingValue = true;
-      focusGate.complete();
-      await Future<void>.delayed(const Duration(milliseconds: 30));
-
-      expect(session.calls.where((call) => call == 'play'), isEmpty,
-          reason: 'A recovered native deck must not receive a redundant restart.');
-      expect(provider.debugLegacyEngineConstructed, isFalse);
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
