@@ -36,6 +36,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
 
   Future<void> _load() async {
     final canonical = await DspSettings.load();
+    if (!mounted) return;
     final eq = context.read<EqualizerProvider>();
     final restored = canonical.parametricEqBands;
     final bands = restored.length == EqualizerProvider.studioFrequencies.length
@@ -85,6 +86,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
             ditherEnabled: current.ditherEnabled,
             ditherMode: current.ditherMode,
           ));
+      if (!mounted) return;
       if (pushBands) {
         await context.read<EqualizerProvider>().setParametricEqBands(_bands);
       } else {
@@ -203,10 +205,12 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
         final calls = (status?['processCalls'] as num?)?.toInt() ?? 0;
         final avgUs = (status?['avgUs'] as num?)?.toDouble() ?? 0;
         final overruns = (status?['overruns'] as num?)?.toInt() ?? 0;
+        final maxUs = (status?['maxUs'] as num?)?.toDouble() ?? 0;
         return _section('Live engine', 'Per-deck Media3 DSP status and PCM processing diagnostics.', [
           _statusRow('Active DSP decks', engines.toString() + ' / 2'),
           _statusRow('PCM blocks processed', calls.toString()),
           _statusRow('Average processing time', avgUs.toStringAsFixed(1) + ' μs'),
+          _statusRow('Maximum processing time', maxUs.toStringAsFixed(1) + ' μs'),
           _statusRow('Realtime budget overruns', overruns.toString()),
           if (status?['gateTripped'] == true)
             const Padding(
@@ -261,16 +265,17 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
             index, band.copyWith(frequencyHz: _positionToFrequency(position))),
           onChangeEnd: (_) => _commit(pushBands: true),
         ),
-        _valueSlider(
-          label: 'Gain',
-          value: band.gainDb,
-          min: -24,
-          max: 24,
-          suffix: 'dB',
-          divisions: 96,
-          onChanged: (value) => _changeBand(index, band.copyWith(gainDb: value)),
-          onChangeEnd: (_) => _commit(pushBands: true),
-        ),
+        if (band.type < 3)
+          _valueSlider(
+            label: 'Gain',
+            value: band.gainDb,
+            min: -24,
+            max: 24,
+            suffix: 'dB',
+            divisions: 96,
+            onChanged: (value) => _changeBand(index, band.copyWith(gainDb: value)),
+            onChangeEnd: (_) => _commit(pushBands: true),
+          ),
         _valueSlider(
           label: 'Bandwidth / Q',
           value: band.q,
