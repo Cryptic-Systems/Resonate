@@ -3,8 +3,8 @@ import 'package:audio_service/audio_service.dart';
 import '../models/song.dart';
 import 'playback_authority.dart';
 
-/// System-media bridge for Resonate. MusicProvider owns the only AudioPlayers;
-/// this service forwards transport commands and mirrors playback state.
+/// System-media bridge for Resonate. The canonical playback session owns audio;
+/// this service forwards transport commands and mirrors its published state.
 class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   final List<MediaItem> _items = [];
   String? _lastMediaItemId;
