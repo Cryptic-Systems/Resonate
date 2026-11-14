@@ -134,7 +134,7 @@ void main() {
     test('clamps controls independently and rejects unknown schema', () {
       final settings = DspSettings().copyWith(
         preampDb: 20,
-        dvcDb: -50,
+        dvcDb: -500,
         dvcSmoothingMs: 500,
         limiterMode: 9,
         limiterThresholdDb: -30,
@@ -151,7 +151,7 @@ void main() {
         reverbAmount: double.nan,
       );
       expect(settings.preampDb, 6);
-      expect(settings.dvcDb, -24);
+      expect(settings.dvcDb, -120);
       expect(settings.dvcSmoothingMs, 200);
       expect(settings.limiterMode, 3);
       expect(settings.limiterThresholdDb, -24);
