@@ -83,6 +83,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   String activeDeckIdValue = 'A';
   Duration positionValue = Duration.zero;
   Duration? durationValue;
+  double playbackSpeedValue = 1.0;
 
   @override
   Stream<int?> get audioSessionIdStream => audioSessions.stream;
@@ -110,6 +111,8 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   String? get error => null;
   @override
   double get volume => volumeSet ?? 1.0;
+  @override
+  double get playbackSpeed => playbackSpeedValue;
   @override
   PlaybackQueueRepeatMode get repeatMode => repeatModeSet ?? PlaybackQueueRepeatMode.off;
   @override
@@ -140,6 +143,11 @@ class _FakePlaybackSession implements PlaybackEngineSession {
 
   @override
   Future<void> play() async { playingValue = true; completedValue = false; calls.add('play'); }
+  @override
+  Future<void> setPlaybackSpeed(double speed) async {
+    playbackSpeedValue = speed;
+    calls.add('speed:$speed');
+  }
   @override
   Future<void> pause() async { playingValue = false; calls.add('pause'); }
   @override
@@ -828,7 +836,9 @@ void main() {
       expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
 
       // The legacy compatibility players are idle after handoff. The system
-      // media state must nevertheless follow the progressing Media3 session.
+      // media state must nevertheless follow the progressing Media3 session,
+      // including its actual playback rate.
+      session.playbackSpeedValue = 1.5;
       session.positionValue = const Duration(seconds: 42);
       session.states.add(_state(
         song: song,
@@ -842,6 +852,8 @@ void main() {
       expect(handler.playbackState.value.updatePosition,
           const Duration(seconds: 42));
       expect(handler.playbackState.value.playing, isTrue);
+      expect(handler.playbackState.value.speed, 1.5,
+          reason: 'Media notification must report the active Media3 playback speed.');
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
