@@ -448,8 +448,9 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
         (injectedSession == null
             ? !_legacyEnginesRetired
             : identical(injectedSession, _media3ProviderSession) &&
-                _media3ProviderSessionActive &&
-                (session == null || identical(session, injectedSession)));
+                (session == null ||
+                    (_media3ProviderSessionActive &&
+                        identical(session, injectedSession))));
     _cancelAutomaticPlaybackWork();
     return _serializePlayback(() async {
       try {
