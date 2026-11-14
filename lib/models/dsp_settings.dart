@@ -136,7 +136,7 @@ class DspSettings {
           eqBandGainsDb.map((v) => _clamp(v, -12, 12)),
         ),
         parametricEqBands = List<ParametricEqBand>.unmodifiable(
-          parametricEqBands.map((band) => band.copyWith()),
+          parametricEqBands.take(31).map((band) => band.copyWith()),
         );
 
   static double _clamp(double value, double min, double max) =>
