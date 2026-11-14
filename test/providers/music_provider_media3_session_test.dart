@@ -302,6 +302,28 @@ void main() {
       await session.states.close();
     });
 
+    test('publishes active Media3 audio session without constructing legacy players', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final publishedIds = <int>[];
+      provider.onAndroidSession = publishedIds.add;
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        session.audioSessions.add(4321);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(provider.activeAudioSessionId, 4321);
+        expect(publishedIds, <int>[4321]);
+        expect(provider.debugLegacyEngineConstructed, isFalse);
+      } finally {
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
     test('saved audio-effect sync does not construct legacy engines for Media3', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
