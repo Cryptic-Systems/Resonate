@@ -1900,7 +1900,13 @@ class MusicProvider extends ChangeNotifier {
   }
 
   void _bindActivePlayerStreams() {
-    if (_media3ProviderSessionActive || _legacyEnginesRetired) return;
+    // An injected Media3 session is authoritative from construction onward,
+    // including the pre-handoff window. Do not bind compatibility AudioPlayer
+    // streams during that window: their getters are intentionally unavailable,
+    // and their events must never compete with Media3 state observation.
+    if (_media3ProviderSession != null ||
+        _media3ProviderSessionActive ||
+        _legacyEnginesRetired) return;
     _playerStreamBinder.cancel(); _currentIndexSubscription?.cancel(); _volumeSubscription?.cancel();
     final player = audioPlayer;
     _playerStreamBinder.bindPlayerState(player.playerStateStream, (state) {
