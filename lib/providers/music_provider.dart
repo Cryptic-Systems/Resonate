@@ -807,6 +807,16 @@ class MusicProvider extends ChangeNotifier {
     await _queueRestore;
     if (_disposed) throw StateError('MusicProvider is disposed.');
     await session.start();
+    // Restore rate and pitch directly onto the canonical Media3 session before
+    // handoff. PlaybackFeaturesProvider may have loaded these preferences while
+    // the injected session was still starting, when feature commands are held.
+    final featurePrefs = await SharedPreferences.getInstance();
+    final restoredSpeed = (featurePrefs.getDouble('playback_speed') ?? 1.0)
+        .clamp(0.5, 2.0).toDouble();
+    final restoredPitch = (featurePrefs.getDouble('playback_pitch') ?? 1.0)
+        .clamp(0.5, 2.0).toDouble();
+    await session.setPlaybackSpeed(restoredSpeed);
+    await session.setPlaybackPitch(restoredPitch);
     // The legacy engine remains the current owner during this migration stage.
     await session.setAudioFocusHandling(false);
     if (_queue.isEmpty) {
