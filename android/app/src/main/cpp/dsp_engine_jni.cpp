@@ -332,7 +332,9 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetEqBands(
     jdouble gains[kMaxEqBands]{};
     jdouble centers[kMaxEqBands]{};
     env->GetDoubleArrayRegion(gainsDb, 0, count, gains);
-    if (centersHz && env->GetArrayLength(centersHz) >= count)
+    const bool hasCenters =
+        centersHz != nullptr && env->GetArrayLength(centersHz) >= count;
+    if (hasCenters)
         env->GetDoubleArrayRegion(centersHz, 0, count, centers);
     DspEqBand bands[kMaxEqBands]{};
     for (int i = 0; i < count; ++i) {
