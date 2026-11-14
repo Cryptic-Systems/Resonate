@@ -467,7 +467,7 @@ void main() {
           .setMockMethodCallHandler(communicationChannel, (call) async {
         if (!simulateCall) return false;
         communicationChecks++;
-        return communicationChecks >= 4;
+        return communicationChecks >= 3;
       });
 
       final session = _FakePlaybackSession();
@@ -492,7 +492,7 @@ void main() {
         focusGate.complete();
         await recovery;
 
-        expect(communicationChecks, 4);
+        expect(communicationChecks, 3);
         expect(session.calls, contains('focus:false'),
             reason: 'Media3 must relinquish focus when a call starts during the focus request.');
         expect(session.focusHandling, isFalse);
