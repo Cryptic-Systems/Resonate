@@ -865,6 +865,9 @@ DspError dsp_limiter_set_release(DspEngine* eng, float release_ms) {
     if (!eng || release_ms <= 0.f) return DSP_ERR_INVALID_ARG;
     eng->limiter_release_ms = release_ms;
     eng->update_limiter_coeffs();
+    eng->twoband.configure(eng->sample_rate, eng->crossover_hz,
+        eng->limiter_ceiling_db, eng->limiter_ceiling_low_db,
+        eng->limiter_attack_ms, eng->limiter_release_ms);
     return DSP_OK;
 }
 
@@ -904,6 +907,9 @@ DspError dsp_limiter_set_attack_ms(DspEngine* eng, float attack_ms) {
     if (!eng || attack_ms <= 0.f) return DSP_ERR_INVALID_ARG;
     eng->limiter_attack_ms = attack_ms;
     eng->update_limiter_coeffs();
+    eng->twoband.configure(eng->sample_rate, eng->crossover_hz,
+        eng->limiter_ceiling_db, eng->limiter_ceiling_low_db,
+        eng->limiter_attack_ms, eng->limiter_release_ms);
     return DSP_OK;
 }
 
