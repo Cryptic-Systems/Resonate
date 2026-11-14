@@ -1004,9 +1004,10 @@ class MusicProvider extends ChangeNotifier {
     }
     await _persistPlaybackModes();
     await _persistQueue();
-    if (_media3ProviderSessionActive) {
-      await _media3ProviderSession!.setShuffleMode(enabled);
-      await _media3ProviderSession!.synchronizeQueue(_queue);
+    if (_media3ProviderSession != null) {
+      final session = (await _ensureMedia3ProviderSessionActive())!;
+      await session.setShuffleMode(enabled);
+      await session.synchronizeQueue(_queue);
     }
     notifyListeners();
   }
@@ -1023,8 +1024,9 @@ class MusicProvider extends ChangeNotifier {
     // that stale operation can commit or fall back to replaying the old track.
     if (transitionActive) _cancelAutomaticPlaybackWork();
     _repeatMode = mode;
-    if (_media3ProviderSessionActive) {
-      await _media3ProviderSession!.setRepeatMode(switch (mode) {
+    if (_media3ProviderSession != null) {
+      final session = (await _ensureMedia3ProviderSessionActive())!;
+      await session.setRepeatMode(switch (mode) {
         PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
         PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
         PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
