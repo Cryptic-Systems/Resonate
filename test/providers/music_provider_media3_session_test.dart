@@ -264,6 +264,29 @@ void main() {
   group('MusicProvider Media3 session preparation', () {
     setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
 
+    test('restores saved speed and pitch before Media3 takes focus ownership', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'playback_speed': 1.35,
+        'playback_pitch': 1.15,
+      });
+      final session = _PitchCapableFakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+
+      await provider.prepareMedia3ProviderSession();
+
+      expect(session.playbackSpeedValue, 1.35);
+      expect(session.pitchValue, 1.15);
+      final focusHandoff = session.calls.indexOf('focus:false');
+      expect(session.calls.indexOf('speed:1.35'), lessThan(focusHandoff));
+      expect(session.calls.indexOf('pitch:1.15'), lessThan(focusHandoff));
+      expect(provider.debugLegacyEngineConstructed, isFalse);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('requires an explicitly injected session', () async {
       final provider = MusicProvider();
       await expectLater(
@@ -1002,6 +1025,17 @@ void main() {
       await failing.audioSessions.close();
     });
   });
+}
+
+class _PitchCapableFakePlaybackSession extends _FakePlaybackSession
+    implements PlaybackPitchSession {
+  double? pitchValue;
+
+  @override
+  Future<void> setPlaybackPitch(double pitch) async {
+    pitchValue = pitch;
+    calls.add('pitch:$pitch');
+  }
 }
 
 class _FailingStartSession extends _FakePlaybackSession {
