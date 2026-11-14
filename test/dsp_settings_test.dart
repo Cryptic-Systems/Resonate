@@ -82,13 +82,13 @@ void main() {
     test('migrates legacy 31-band graphic EQ into equivalent peak filters', () {
       final restored = DspSettings.fromJson({
         'version': 2,
-        'eqBandGainsDb': List<double>.generate(31, (i) => i == 7 ? 5 : 0),
+        'eqBandGainsDb': List<double>.generate(31, (i) => i == 17 ? 5 : 0),
       });
       expect(restored.parametricEqBands, hasLength(31));
-      expect(restored.parametricEqBands[7].frequencyHz, 1000);
-      expect(restored.parametricEqBands[7].gainDb, 5);
-      expect(restored.parametricEqBands[7].q, 1);
-      expect(restored.parametricEqBands[7].type, 0);
+      expect(restored.parametricEqBands[17].frequencyHz, 1000);
+      expect(restored.parametricEqBands[17].gainDb, 5);
+      expect(restored.parametricEqBands[17].q, 1);
+      expect(restored.parametricEqBands[17].type, 0);
     });
 
     test('an explicitly empty parametric list stays empty', () {
