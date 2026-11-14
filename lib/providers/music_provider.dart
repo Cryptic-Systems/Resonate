@@ -804,6 +804,21 @@ class MusicProvider extends ChangeNotifier {
     return _media3HandoffFuture ??= _prepareMedia3ProviderSession();
   }
 
+  /// Ensures an injected Media3 session becomes the sole playback authority
+  /// before transport commands run. Never fall through to lazy just_audio
+  /// construction when a production session has been supplied.
+  Future<PlaybackEngineSession?> _ensureMedia3ProviderSessionActive() async {
+    final session = _media3ProviderSession;
+    if (session == null) return null;
+    if (!_media3ProviderSessionActive) {
+      await prepareMedia3ProviderSession();
+    }
+    if (!_media3ProviderSessionActive) {
+      throw StateError('The injected Media3 playback session did not become active.');
+    }
+    return session;
+  }
+
   Future<void> _prepareMedia3ProviderSession() async {
     final session = _media3ProviderSession;
     if (session == null) {
