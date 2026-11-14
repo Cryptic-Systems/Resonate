@@ -156,7 +156,6 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   Future<void> startSleepTimer(Duration duration) async {
     _sleepTimer?.cancel();
     final gen = ++_sleepGeneration;
-    _sleepTickInFlight = false;
     try {
       await music.clearSleepFade();
     } catch (_) {}
@@ -202,7 +201,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       return;
     }
     sleepRemainingSeconds = sleepRemainingSeconds.clamp(0, 24 * 60 * 60);
-    if (sleepRemainingSeconds <= _fadeOutSeconds) {
+    if (sleepRemainingSeconds <= _fadeOutSeconds && gen == _sleepGeneration) {
       final t = (sleepRemainingSeconds / _fadeOutSeconds).clamp(0.0, 1.0);
       try {
         await music.setSleepFadeScale(t);
@@ -222,7 +221,6 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     _sleepTimer = null;
     sleepRemainingSeconds = 0;
     _sleepDeadline = null;
-    _sleepTickInFlight = false;
     unawaited(music.clearSleepFade());
     notifyListeners();
   }
