@@ -100,6 +100,14 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
           : liveLinearGain <= 1.0e-6
               ? -120.0
               : 20.0 * math.log(liveLinearGain) / math.ln10;
+      if (!mounted) return;
+      if (pushBands) {
+        await equalizer.setParametricEqBands(
+          bandsSnapshot,
+          markCustom: true,
+        );
+      }
+      await equalizer.setPreamp(current.preampDb);
       await DspSettings.update((saved) => saved.copyWith(
             parametricEqBands: bandsSnapshot,
             preampDb: current.preampDb,
@@ -124,18 +132,6 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
             ditherMode: current.ditherMode,
           ));
       if (!mounted) return;
-      await equalizer.setParametricEqBands(
-        bandsSnapshot,
-        markCustom: pushBands,
-      );
-      await equalizer.setPreamp(current.preampDb);
-      final liveStatus = await AudioEffectsBridge.getLiveDspStatus();
-      final liveLinearGain = (liveStatus?['linearGain'] as num?)?.toDouble();
-      final liveDvcDb = liveLinearGain == null
-          ? current.dvcDb
-          : liveLinearGain <= 1.0e-6
-              ? -120.0
-              : 20.0 * math.log(liveLinearGain) / math.ln10;
       await AudioEffectsBridge.setLiveDspDvc(
         enabled: current.dvcEnabled,
         db: liveDvcDb,
