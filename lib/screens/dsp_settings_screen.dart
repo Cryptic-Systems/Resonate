@@ -19,6 +19,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
   List<ParametricEqBand> _bands = <ParametricEqBand>[];
   bool _loading = true;
   bool _saving = false;
+  Future<void> _commitTail = Future<void>.value();
 
   static const _filterNames = <String>[
     'Peak', 'Low shelf', 'High shelf', 'Low-pass', 'High-pass',
@@ -58,13 +59,21 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
     });
   }
 
-  Future<void> _commit({bool pushBands = false}) async {
+  Future<void> _commit({bool pushBands = false}) {
+    final next = _commitTail.then((_) => _performCommit(pushBands: pushBands));
+    _commitTail = next.catchError((_) {});
+    return next;
+  }
+
+  Future<void> _performCommit({required bool pushBands}) async {
     final current = _settings;
-    if (current == null || _saving) return;
+    if (!mounted || current == null) return;
+    final bandsSnapshot = _bands.map((band) => band.copyWith()).toList();
+    final equalizer = context.read<EqualizerProvider>();
     setState(() => _saving = true);
     try {
       await DspSettings.update((saved) => saved.copyWith(
-            parametricEqBands: _bands,
+            parametricEqBands: bandsSnapshot,
             preampDb: current.preampDb,
             dvcEnabled: current.dvcEnabled,
             dvcDb: current.dvcDb,
@@ -87,11 +96,11 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
             ditherMode: current.ditherMode,
           ));
       if (!mounted) return;
-      await context.read<EqualizerProvider>().setParametricEqBands(
-        _bands,
+      await equalizer.setParametricEqBands(
+        bandsSnapshot,
         markCustom: pushBands,
       );
-      await context.read<EqualizerProvider>().setPreamp(current.preampDb);
+      await equalizer.setPreamp(current.preampDb);
       await AudioEffectsBridge.setLiveDspDvc(
         enabled: current.dvcEnabled,
         db: current.dvcDb,
@@ -118,6 +127,12 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
         enabled: current.ditherEnabled,
         mode: current.ditherMode,
       );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not apply DSP settings: ' + error.toString())),
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
