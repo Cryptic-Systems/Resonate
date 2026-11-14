@@ -48,6 +48,31 @@ class DspEngineRegistryTest {
         override fun setCrossoverHz(handle: Long, freqHz: Float) {
             calls += "crossover:" + handle + ":" + freqHz
         }
+
+        override fun setParametricEqBands(
+            handle: Long, frequenciesHz: FloatArray, gainsDb: FloatArray,
+            qs: FloatArray, types: IntArray, enabled: Boolean
+        ) {
+            calls += "parametric:" + handle + ":" + frequenciesHz.size + ":" +
+                qs.firstOrNull() + ":" + types.firstOrNull()
+            setEqBands(handle, frequenciesHz.map { it.toDouble() }.toDoubleArray(),
+                gainsDb.map { it.toDouble() }.toDoubleArray(), enabled)
+        }
+
+        override fun setDvc(handle: Long, enabled: Boolean, gainDb: Float, smoothing: Boolean, smoothingMs: Float) {
+            calls += "dvc:" + handle + ":" + enabled + ":" + gainDb + ":" + smoothing + ":" + smoothingMs
+        }
+
+        override fun setLimiterConfig(
+            handle: Long, enabled: Boolean, mode: Int, thresholdDb: Float,
+            releaseMs: Float, attackMs: Float, lookaheadMs: Float, kneeDb: Float
+        ) {
+            calls += "limiter-config:" + handle + ":" + enabled + ":" + mode + ":" + thresholdDb
+        }
+
+        override fun setDither(handle: Long, enabled: Boolean, mode: Int) {
+            calls += "dither:" + handle + ":" + enabled + ":" + mode
+        }
     }
 
     private lateinit var fake: FakeApi
@@ -89,6 +114,27 @@ class DspEngineRegistryTest {
         assertTrue(fake.calls.any { it == "preamp:2002:1.35" })
         assertTrue(fake.calls.any { it == "limiter:2002:-0.8:-0.3" })
         assertTrue(fake.calls.any { it == "crossover:2002:140.0" })
+    }
+
+    @Test
+    fun advanced_dsp_profile_is_sticky_and_applied_to_new_engine() {
+        DspEngineRegistry.applyDvcAll(false, -6f, false, 28f)
+        DspEngineRegistry.applyLimiterConfigAll(true, 3, -2f, 120f, 1f, 5f, 2f)
+        DspEngineRegistry.applyDitherAll(true, 2)
+        assertTrue(DspEngineRegistry.applyParametricEqBandsAll(
+            floatArrayOf(40f, 1000f, 12000f),
+            floatArrayOf(4f, -1f, 2f),
+            floatArrayOf(0.8f, 1.2f, 2f),
+            intArrayOf(1, 0, 2),
+        ))
+
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.register(11, 11011L))
+
+        assertTrue(fake.calls.any { it == "dvc:11011:false:-6.0:false:28.0" })
+        assertTrue(fake.calls.any { it == "limiter-config:11011:true:3:-2.0" })
+        assertTrue(fake.calls.any { it == "dither:11011:true:2" })
+        assertTrue(fake.calls.any { it == "parametric:11011:3:0.8:1" })
     }
 
     @Test
