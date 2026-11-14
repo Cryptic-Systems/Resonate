@@ -3133,9 +3133,23 @@ class MusicProvider extends ChangeNotifier {
     if (_media3ProviderSession != null && !_media3ProviderSessionActive) {
       try {
         await prepareMedia3ProviderSession();
-      } catch (error) {
-        _media3FallbackEnabled = true;
-        debugPrint('Media3 provider handoff unavailable; enabling the explicit legacy fallback: $error');
+      } catch (error, stack) {
+        // The production composition root injects Media3 as the playback
+        // authority. Do not silently construct a second just_audio engine when
+        // native startup or focus handoff fails; fail this request closed and
+        // leave the failure visible in diagnostics.
+        _userWantsPlaying = false;
+        _recentlyUserPaused = false;
+        isPlaying = false;
+        _loadingSource = false;
+        await ResonateDiagnostics.record('media3_provider_handoff_failed', {
+          'stage': 'play_song',
+          'error': error.toString(),
+          'stack': stack.toString(),
+          'legacyFallbackStarted': false,
+        });
+        notifyListeners();
+        return false;
       }
     }
     if (_media3ProviderSessionActive) {
