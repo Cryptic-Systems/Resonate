@@ -341,9 +341,17 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
       () async {
         if (!_playbackIntentGate.isCurrent(intentToken)) return;
         try {
-          final session = _media3ProviderSession == null
+          final session = injectedSession == null
               ? null
               : await _ensureMedia3ProviderSessionActive();
+          if (!_playbackIntentGate.isCurrent(intentToken) || _disposed) return;
+          if (injectedSession != null &&
+              (!identical(injectedSession, _media3ProviderSession) ||
+                  !identical(session, injectedSession) ||
+                  !_media3ProviderSessionActive)) {
+            return;
+          }
+          if (injectedSession == null && _legacyEnginesRetired) return;
           final duration = session != null
               ? (session.duration ?? currentDuration ?? Duration.zero)
               : (audioPlayer.duration ?? currentDuration ?? Duration.zero);
@@ -353,10 +361,12 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
           );
           if (session != null) {
             await session.seek(safe);
+            if (!_playbackIntentGate.isCurrent(intentToken) || _disposed) return;
             currentPosition = session.position;
             isPlaying = session.isPlaying;
           } else {
             await audioPlayer.seek(safe);
+            if (!_playbackIntentGate.isCurrent(intentToken) || _disposed) return;
             currentPosition = safe;
           }
           currentPosition = safe;
