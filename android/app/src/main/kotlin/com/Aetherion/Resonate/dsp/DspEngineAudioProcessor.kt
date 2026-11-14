@@ -9,7 +9,7 @@ import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Live path: PCM16 from one ExoPlayer sink → JNI → dsp_process.
+ * Live path: PCM16 from one ExoPlayer sink → JNI → dsp_process_pcm16 (DSP-ENGINE).
  *
  * Dual-engine rule: one processor + one native handle per player (A or B).
  * Fail-open: any native trouble → pass-through. Native resources are released
