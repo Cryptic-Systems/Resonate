@@ -2,6 +2,9 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+double _clampParametric(double value, double min, double max) =>
+    value.isFinite ? value.clamp(min, max).toDouble() : 0.0;
+
 /// One native parametric EQ section. Type values match DSP-ENGINE's C ABI:
 /// 0 peak, 1 low shelf, 2 high shelf, 3 low-pass, 4 high-pass.
 class ParametricEqBand {
@@ -23,9 +26,9 @@ class ParametricEqBand {
     double? q,
     int? type,
   }) => ParametricEqBand(
-        frequencyHz: _clamp(frequencyHz ?? this.frequencyHz, 20, 20000),
-        gainDb: _clamp(gainDb ?? this.gainDb, -24, 24),
-        q: _clamp(q ?? this.q, 0.1, 18),
+        frequencyHz: _clampParametric(frequencyHz ?? this.frequencyHz, 20, 20000),
+        gainDb: _clampParametric(gainDb ?? this.gainDb, -24, 24),
+        q: _clampParametric(q ?? this.q, 0.1, 18),
         type: (type ?? this.type).clamp(0, 4).toInt(),
       );
 
