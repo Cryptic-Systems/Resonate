@@ -452,6 +452,48 @@ void main() {
       }
     });
 
+    test('resume relinquishes Media3 focus if communication starts during focus handoff', () async {
+      var communicationChecks = 0;
+      const communicationChannel =
+          MethodChannel('com.aetherion.resonate/media_store');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(communicationChannel, (call) async {
+        communicationChecks++;
+        // Initial guard and post-activation guard pass; the call starts while
+        // Media3 is enabling its focus handling.
+        return communicationChecks >= 3;
+      });
+
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final song = _song('resume-focus-race');
+
+      try {
+        expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
+        await provider.pause();
+        session.calls.clear();
+        communicationChecks = 0;
+
+        await provider.resumePlayback();
+
+        expect(communicationChecks, 3);
+        expect(session.calls, contains('focus:true'));
+        expect(session.calls, contains('focus:false'));
+        expect(session.focusHandling, isFalse);
+        expect(session.calls, isNot(contains('play')),
+            reason: 'Resume must not start media playback after communication takes focus.');
+        expect(provider.isPlaying, isFalse);
+        expect(provider.debugLegacyEngineConstructed, isFalse);
+      } finally {
+        provider.dispose();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(communicationChannel, null);
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
     test('clearing queue before explicit handoff activates and stops injected Media3', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
