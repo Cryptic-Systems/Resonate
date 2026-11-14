@@ -258,7 +258,16 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   @override
   void dispose() {
     music.removeListener(_syncEngineIfNeeded);
+    // Invalidate any asynchronous tick already in flight. Without advancing
+    // the generation, a tick awaiting a fade update could still pause playback
+    // after this provider has been torn down.
+    _sleepGeneration++;
     _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepDeadline = null;
+    sleepRemainingSeconds = 0;
+    // Provider disposal must not leave a native/Media3 gain fade applied.
+    unawaited(music.clearSleepFade());
     super.dispose();
   }
 }
