@@ -18,6 +18,8 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   String? _lastSongId;
   String? _lastEngine;
   int _sleepGeneration = 0;
+  DateTime? _sleepDeadline;
+  bool _sleepTickInFlight = false;
 
   PlaybackFeaturesProvider({required this.music}) {
     music.addListener(_syncEngineIfNeeded);
@@ -38,9 +40,15 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   }
 
   Future<void> setSpeed(double value) async {
-    speed = value.clamp(0.25, 2.0).toDouble();
+    // Media3 and the legacy engine share the same user-facing rate range.
+    speed = value.clamp(0.5, 2.0).toDouble();
     try {
-      await player.setSpeed(speed);
+      final session = music.media3PlaybackSession;
+      if (music.media3ProviderSessionActive && session != null) {
+        await session.setPlaybackSpeed(speed);
+      } else {
+        await player.setSpeed(speed);
+      }
     } catch (e) {
       debugPrint('Playback speed failed: $e');
     }
@@ -97,11 +105,21 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
 
   Future<void> applyToActiveEngine() async {
     try {
-      await player.setSpeed(speed);
-      await player.setPitch(pitch);
-      if (normalizationEnabled) {
-        await _applyNormalization();
+      final session = music.media3PlaybackSession;
+      if (music.media3ProviderSessionActive && session != null) {
+        await session.setPlaybackSpeed(speed.clamp(0.5, 2.0).toDouble());
+        // Pitch and loudness are not silently sent to a retired just_audio
+        // player. Their Media3 capability is wired separately.
+        if (normalizationEnabled) {
+          debugPrint('Track normalization awaits Media3 gain capability.');
+        }
       } else {
+        await player.setSpeed(speed);
+        await player.setPitch(pitch);
+      }
+      if (!music.media3ProviderSessionActive && normalizationEnabled) {
+        await _applyNormalization();
+      } else if (!music.media3ProviderSessionActive) {
         await loudnessEnhancer.setEnabled(false);
       }
     } catch (e) {
@@ -114,10 +132,12 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   Future<void> startSleepTimer(Duration duration) async {
     _sleepTimer?.cancel();
     final gen = ++_sleepGeneration;
+    _sleepTickInFlight = false;
     try {
       await music.clearSleepFade();
     } catch (_) {}
     sleepRemainingSeconds = duration.inSeconds.clamp(1, 24 * 60 * 60);
+    _sleepDeadline = DateTime.now().add(Duration(seconds: sleepRemainingSeconds));
     _sleepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (gen != _sleepGeneration) {
         timer.cancel();
@@ -129,10 +149,19 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   }
 
   Future<void> _onSleepTick(Timer timer, int gen) async {
-    if (gen != _sleepGeneration) return;
-    if (sleepRemainingSeconds <= 1) {
+    if (gen != _sleepGeneration || _sleepTickInFlight) return;
+    _sleepTickInFlight = true;
+    try {
+      final deadline = _sleepDeadline;
+      if (deadline != null) {
+        sleepRemainingSeconds = deadline.difference(DateTime.now()).inSeconds.clamp(0, 24 * 60 * 60);
+      }
+      if (sleepRemainingSeconds <= 0) {
       timer.cancel();
       sleepRemainingSeconds = 0;
+      // Revalidate immediately before issuing the transport command. A timer
+      // cancelled/replaced while a prior tick was awaiting must not pause audio.
+      if (gen != _sleepGeneration) return;
       try {
         // Must go through MusicProvider so _userWantsPlaying is cleared.
         await music.pause(source: 'sleep_timer');
@@ -142,10 +171,13 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       try {
         await music.clearSleepFade();
       } catch (_) {}
-      if (gen == _sleepGeneration) notifyListeners();
+      if (gen == _sleepGeneration) {
+        _sleepDeadline = null;
+        notifyListeners();
+      }
       return;
     }
-    sleepRemainingSeconds--;
+    sleepRemainingSeconds = sleepRemainingSeconds.clamp(0, 24 * 60 * 60);
     if (sleepRemainingSeconds <= _fadeOutSeconds) {
       final t = (sleepRemainingSeconds / _fadeOutSeconds).clamp(0.0, 1.0);
       try {
@@ -155,6 +187,9 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       }
     }
     if (gen == _sleepGeneration) notifyListeners();
+    } finally {
+      _sleepTickInFlight = false;
+    }
   }
 
   void cancelSleepTimer() {
@@ -162,6 +197,8 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     _sleepTimer?.cancel();
     _sleepTimer = null;
     sleepRemainingSeconds = 0;
+    _sleepDeadline = null;
+    _sleepTickInFlight = false;
     unawaited(music.clearSleepFade());
     notifyListeners();
   }
