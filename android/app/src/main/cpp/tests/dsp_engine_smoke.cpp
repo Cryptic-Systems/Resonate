@@ -41,11 +41,14 @@ int main() {
 
     bool ok = true;
     ok &= dsp_eq_set_bands(engine, bands, DSP_EQ_MAX_BANDS) == DSP_OK;
+    ok &= dsp_eq_band_count(engine) == DSP_EQ_MAX_BANDS;
     ok &= dsp_eq_enable(engine, 1) == DSP_OK;
     ok &= dsp_dvc_enable(engine, 1) == DSP_OK;
     ok &= dsp_dvc_set_smoothing(engine, 1, 15.f) == DSP_OK;
     ok &= dsp_dvc_set_gain_db(engine, -2.f) == DSP_OK;
     ok &= dsp_limiter_set_mode(engine, DSP_LIMITER_TWOBAND) == DSP_OK;
+    ok &= dsp_limiter_get_mode(engine) == DSP_LIMITER_TWOBAND;
+    ok &= dsp_limiter_is_enabled(engine) == 1;
     ok &= dsp_limiter_set_ceiling_bands(engine, -0.5f, -0.2f) == DSP_OK;
     ok &= dsp_limiter_set_crossover_hz(engine, 120.f) == DSP_OK;
     ok &= dsp_speaker_set_enabled(engine, 1) == DSP_OK;
@@ -63,15 +66,19 @@ int main() {
     }
 
     ok &= dsp_process_pcm16(engine, pcm.data(), frames) == DSP_OK;
+    bool audible = false;
     for (const auto value : pcm) {
-        if (value == INT16_MIN) continue;
+        if (value != 0) audible = true;
     }
+    ok &= audible;
 
     DspStats stats{};
     ok &= dsp_get_stats(engine, &stats) == DSP_OK;
     ok &= stats.process_calls >= 1;
     ok &= stats.last_frames == frames;
     ok &= stats.channels == 2;
+    ok &= std::fabs(dsp_dvc_get_gain_db(engine) - (-2.f)) < 0.1f;
+    ok &= dsp_speaker_is_enabled(engine) == 1;
 
     dsp_destroy(engine);
     if (!ok) {
