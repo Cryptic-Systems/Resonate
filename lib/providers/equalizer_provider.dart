@@ -174,8 +174,12 @@ class EqualizerProvider extends ChangeNotifier {
     // enabled it. Hardware EQ still binds after playback has been running.
     _music?.onAndroidSession = (sessionId) {
       unawaited(attachNativeSession(sessionId));
-    unawaited(AudioOutputRouteService.instance.refreshNow());
+      unawaited(AudioOutputRouteService.instance.refreshNow());
     };
+    final currentSessionId = _music?.activeAudioSessionId;
+    if (currentSessionId != null && currentSessionId > 0) {
+      unawaited(attachNativeSession(currentSessionId));
+    }
   }
 
   bool get learnedEqEnabled => _learnedEqEnabled;
@@ -273,7 +277,7 @@ class EqualizerProvider extends ChangeNotifier {
     // Persisted master state must be applied to the registry even when no sink
     // exists yet; the registry carries it forward to future A/B engines.
     await ResonateNativeDspBridge.setEnabled(true);
-    final sid = _music?.audioPlayer.androidAudioSessionId;
+    final sid = _music?.activeAudioSessionId;
     if (sid != null && sid > 0) unawaited(attachNativeSession(sid));
     notifyListeners();
   }
@@ -643,7 +647,7 @@ class EqualizerProvider extends ChangeNotifier {
       // calls update sticky state even if playback has not created a sink yet.
       await _applyPreamp();
       await _pushLiveDspCurve(settings: canonical);
-      final sessionId = _music?.audioPlayer.androidAudioSessionId;
+      final sessionId = _music?.activeAudioSessionId;
       if (sessionId != null && sessionId > 0) {
         unawaited(attachNativeSession(sessionId));
       }
