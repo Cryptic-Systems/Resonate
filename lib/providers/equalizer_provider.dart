@@ -575,10 +575,20 @@ class EqualizerProvider extends ChangeNotifier {
       await DspSettings.update((settings) => settings.copyWith(masterEnabled: true, eqEnabled: true));
       preamp = canonical.preampDb;
       autoEqHeadroom = canonical.autoEqHeadroom;
-      parametricEqBands = canonical.parametricEqBands
-          .map((band) => band.copyWith())
-          .toList(growable: true);
-      if (parametricEqBands.length == studioBands.length) {
+      final restoredParametric = canonical.parametricEqBands;
+      if (restoredParametric.isNotEmpty) {
+        parametricEqBands = List<ParametricEqBand>.generate(
+          studioBands.length,
+          (index) => index < restoredParametric.length
+              ? restoredParametric[index].copyWith()
+              : ParametricEqBand(
+                  frequencyHz: studioBands[index].frequencyHz,
+                  gainDb: studioBands[index].gainDb,
+                  q: 1,
+                  type: 0,
+                ),
+          growable: true,
+        );
         for (var i = 0; i < studioBands.length; i++) {
           final band = parametricEqBands[i];
           studioBands[i]
@@ -586,6 +596,8 @@ class EqualizerProvider extends ChangeNotifier {
             ..label = _labelForFrequency(band.frequencyHz)
             ..gainDb = band.gainDb;
         }
+      } else {
+        parametricEqBands = <ParametricEqBand>[];
       }
       await _loadCustomPresets(prefs);
 
