@@ -254,8 +254,8 @@ class AudioEffectsBridge {
   }) async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('setLiveDspLimiterCeiling', {
-        'highDb': highDb.clamp(-6.0, -0.1),
-        'lowDb': lowDb.clamp(-6.0, -0.1),
+        'highDb': highDb.clamp(-12.0, -0.05),
+        'lowDb': lowDb.clamp(-12.0, -0.05),
       });
       if (raw is Map) return Map<String, dynamic>.from(raw);
     } catch (e) {
