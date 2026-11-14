@@ -101,9 +101,16 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
         markCustom: pushBands,
       );
       await equalizer.setPreamp(current.preampDb);
+      final liveStatus = await AudioEffectsBridge.getLiveDspStatus();
+      final liveLinearGain = (liveStatus?['linearGain'] as num?)?.toDouble();
+      final liveDvcDb = liveLinearGain == null
+          ? current.dvcDb
+          : liveLinearGain <= 1.0e-6
+              ? -120.0
+              : 20.0 * math.log(liveLinearGain) / math.ln10;
       await AudioEffectsBridge.setLiveDspDvc(
         enabled: current.dvcEnabled,
-        db: current.dvcDb,
+        db: liveDvcDb,
         smoothing: current.dvcSmoothing,
         smoothingMs: current.dvcSmoothingMs,
       );
@@ -215,12 +222,19 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
         final avgUs = (status?['avgUs'] as num?)?.toDouble() ?? 0;
         final overruns = (status?['overruns'] as num?)?.toInt() ?? 0;
         final maxUs = (status?['maxUs'] as num?)?.toDouble() ?? 0;
+        final linearGain = (status?['linearGain'] as num?)?.toDouble();
+        final dvcGainDb = linearGain == null
+            ? null
+            : linearGain <= 1.0e-6
+                ? -120.0
+                : 20.0 * math.log(linearGain) / math.ln10;
         return _section('Live engine', 'Per-deck Media3 DSP status and PCM diagnostics. Media3 owns output routing and sample-rate conversion; standalone backend and SRC controls are not used in this live path.', [
           _statusRow('Active DSP decks', engines.toString() + ' / 2'),
           _statusRow('PCM blocks processed', calls.toString()),
           _statusRow('Average processing time', avgUs.toStringAsFixed(1) + ' μs'),
           _statusRow('Maximum processing time', maxUs.toStringAsFixed(1) + ' μs'),
           _statusRow('Realtime budget overruns', overruns.toString()),
+          _statusRow('Master / DVC gain', dvcGainDb == null ? '—' : dvcGainDb.toStringAsFixed(1) + ' dB'),
           if (status?['gateTripped'] == true)
             const Padding(
               padding: EdgeInsets.only(top: 8),
@@ -351,7 +365,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                         onChangeEnd: (_) => _commit(),
                       ),
                     ]),
-                    _section('Direct Volume Control', 'A dedicated, smoothed gain stage independent of EQ preamp. When bypassed, master volume remains active through the preamp path.', [
+                    _section('Direct Volume Control', 'A dedicated, smoothed gain stage independent of EQ preamp. The player volume control drives its gain; when bypassed, master volume remains active through the preamp path.', [
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: const Text('Enable DVC'),
@@ -360,16 +374,6 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                           _changeSettings((s) => s.copyWith(dvcEnabled: v));
                           _commit();
                         },
-                      ),
-                      _valueSlider(
-                        label: 'DVC gain',
-                        value: settings.dvcDb,
-                        min: -24,
-                        max: 6,
-                        suffix: 'dB',
-                        divisions: 120,
-                        onChanged: (v) => _changeSettings((s) => s.copyWith(dvcDb: v)),
-                        onChangeEnd: (_) => _commit(),
                       ),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
