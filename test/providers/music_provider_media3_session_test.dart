@@ -318,6 +318,25 @@ void main() {
       await session.states.close();
     });
 
+    test('toggle before explicit handoff prepares and uses injected Media3 without creating legacy engines', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      expect(provider.debugLegacyEngineConstructed, isFalse);
+
+      await provider.togglePlayPause();
+
+      expect(provider.media3ProviderSessionActive, isTrue);
+      expect(session.calls, contains('play'));
+      expect(session.playingValue, isTrue);
+      expect(provider.debugLegacyEngineConstructed, isFalse,
+          reason: 'An injected Media3 session must never fall through to lazy just_audio construction.');
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('restores the provider resume position into the new Media3 session before handoff', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
