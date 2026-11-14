@@ -196,10 +196,10 @@ class DspSettings {
         limiterCeilingDb: _clamp(limiterCeilingDb ?? this.limiterCeilingDb, -12, 0),
         limiterHighCeilingDb: _clamp(
           limiterHighCeilingDb ?? limiterCeilingDb ?? this.limiterHighCeilingDb,
-          -6, -0.1),
+          -12, -0.05),
         limiterLowCeilingDb: _clamp(
           limiterLowCeilingDb ?? limiterCeilingDb ?? this.limiterLowCeilingDb,
-          -6, -0.1),
+          -12, -0.05),
         crossoverHz: _clamp(crossoverHz ?? this.crossoverHz, 80, 200),
         speakerProtectionEnabled: speakerProtectionEnabled ?? this.speakerProtectionEnabled,
         virtualBassAmount: _clamp(virtualBassAmount ?? this.virtualBassAmount, 0, 1),
@@ -301,13 +301,13 @@ class DspSettings {
       limiterCeilingDb: number('limiterCeilingDb', -1, -12, 0),
       limiterHighCeilingDb: number(
         'limiterHighCeilingDb',
-        version == 1 ? number('limiterCeilingDb', -0.5, -6, -0.1) : -0.5,
-        -6, -0.1,
+        version == 1 ? number('limiterCeilingDb', -0.5, -12, -0.05) : -0.5,
+        -12, -0.05,
       ),
       limiterLowCeilingDb: number(
         'limiterLowCeilingDb',
-        version == 1 ? number('limiterCeilingDb', -0.2, -6, -0.1) : -0.2,
-        -6, -0.1,
+        version == 1 ? number('limiterCeilingDb', -0.2, -12, -0.05) : -0.2,
+        -12, -0.05,
       ),
       crossoverHz: number('crossoverHz', 120, 80, 200),
       speakerProtectionEnabled: json['speakerProtectionEnabled'] is bool ? json['speakerProtectionEnabled'] as bool : false,
