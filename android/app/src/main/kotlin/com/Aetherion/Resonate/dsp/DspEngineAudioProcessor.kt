@@ -110,7 +110,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
 
     private fun maybeCreateEngine() {
         if (!nativeProcessEnabled) return
-        if (configuredChannels !in 1..kMaxChannels) return
+        if (configuredChannels !in 1..MAX_SUPPORTED_CHANNELS) return
         if (!DspSessionGate.isNativeAllowed()) {
             nativeProcessEnabled = false
             return
