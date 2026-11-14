@@ -910,15 +910,22 @@ extension MusicProviderMedia3 on MusicProvider {
         _userWantsPlaying &&
         !_recentlyUserPaused &&
         (_media3ShadowState?.playWhenReady ?? false);
+    bool sessionStillNeedsRecovery() =>
+        stillOwnsRecovery() &&
+        session.isReady &&
+        !session.isBuffering &&
+        !session.isCompleted &&
+        !session.isPlaying;
     unawaited(() async {
       try {
-        if (!stillOwnsRecovery()) return;
+        if (!sessionStillNeedsRecovery()) return;
         if (await _isCommunicationActive()) return;
-        if (!stillOwnsRecovery()) return;
+        if (!sessionStillNeedsRecovery()) return;
         await session.setAudioFocusHandling(true);
-        // This is the critical stale-work barrier: never let a watchdog that
-        // began before Pause issue play() after the user's newer command.
-        if (!stillOwnsRecovery()) return;
+        // Focus acquisition is asynchronous: native playback may recover on
+        // its own while it is pending. Re-check both user authority and native
+        // state so the watchdog never restarts an already-running deck.
+        if (!sessionStillNeedsRecovery()) return;
         await session.play();
         await ResonateDiagnostics.record('media3_provider_recovery', {
           'songId': session.currentSong?.id ?? currentSong?.id,
