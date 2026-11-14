@@ -46,7 +46,7 @@ class PlaybackAuthority extends ChangeNotifier {
     if (music.media3PlaybackSession != null) {
       return music.media3ProviderSessionActive ? 'Media3' : 'Media3 (starting)';
     }
-    return _engineLabelFor(music.audioPlayer);
+    return 'Engine ${music.activeEngineLabel}';
   }
 
   Future<void> userPause(MusicProvider music) => music.pause();
@@ -108,14 +108,5 @@ class PlaybackAuthority extends ChangeNotifier {
     unawaited(ResonateDiagnostics.recordPlaybackCommand(source: source, command: command, generation: _userGeneration));
   }
 
-  static final Map<int, String> _engineIds = <int, String>{};
 
-  String _engineLabelFor(Object player) {
-    final id = identityHashCode(player);
-    final known = _engineIds[id];
-    if (known != null) return known;
-    final label = _engineIds.isEmpty ? 'A' : (_engineIds.values.contains('A') ? 'B' : 'A');
-    _engineIds[id] = label;
-    return label;
-  }
 }
