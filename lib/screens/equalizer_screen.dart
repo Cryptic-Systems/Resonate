@@ -7,6 +7,7 @@ import '../providers/audio_effects_provider.dart';
 import '../providers/equalizer_provider.dart';
 import '../providers/music_provider.dart';
 import '../services/audio_effects_bridge.dart';
+import 'dsp_settings_screen.dart';
 
 /// Glass Equalizer — packed, creative, readable for everyone.
 class EqualizerScreen extends StatefulWidget {
@@ -128,6 +129,13 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
         elevation: 0,
         title: const Text('Equalizer'),
         actions: [
+          IconButton(
+            tooltip: 'DSP engine settings',
+            icon: const Icon(Icons.tune_rounded),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const DspSettingsScreen()),
+            ),
+          ),
           IconButton(
             tooltip: 'How to use',
             icon: const Icon(Icons.help_outline_rounded),
