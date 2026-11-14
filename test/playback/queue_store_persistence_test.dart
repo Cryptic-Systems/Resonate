@@ -51,4 +51,43 @@ void main() {
     );
     expect(prefs.getInt(QueueStore.savedQueueIndexKey), 1);
   });
+
+  test('shuffle persistence snapshots and orders rapid toggles', () async {
+    final store = QueueStore()..shuffleEnabled = false;
+
+    final disabledWrite = store.persistShuffleFlag();
+    store.shuffleEnabled = true;
+    final enabledWrite = store.persistShuffleFlag();
+    store.shuffleEnabled = false;
+    final finalDisabledWrite = store.persistShuffleFlag();
+
+    await Future.wait(<Future<void>>[
+      disabledWrite,
+      enabledWrite,
+      finalDisabledWrite,
+    ]);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(QueueStore.shuffleEnabledKey), isFalse);
+  });
+
+  test('queue and shuffle writes share the same persistence order', () async {
+    final store = QueueStore()..replace(<Song>[_song('before')]);
+
+    final queueWrite = store.persist();
+    store.shuffleEnabled = true;
+    final shuffleWrite = store.persistShuffleFlag();
+    store.replace(<Song>[_song('after')]);
+    final latestQueueWrite = store.persist();
+
+    await Future.wait(<Future<void>>[
+      queueWrite,
+      shuffleWrite,
+      latestQueueWrite,
+    ]);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getStringList(QueueStore.savedQueueIdsKey), <String>['after']);
+    expect(prefs.getBool(QueueStore.shuffleEnabledKey), isTrue);
+  });
 }
