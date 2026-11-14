@@ -98,7 +98,7 @@ class AudioEffectsBridge {
     try {
       final raw = await _channel.invokeMethod<dynamic>('setLiveDspDvc', {
         'enabled': enabled,
-        'db': db.clamp(-24.0, 6.0),
+        'db': db.clamp(-120.0, 24.0),
         'smoothing': smoothing,
         'smoothingMs': smoothingMs.clamp(0.0, 200.0),
       });
