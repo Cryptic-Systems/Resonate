@@ -43,6 +43,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
         const val MAX_FRAMES = 4096
         const val MAX_BYTES = MAX_FRAMES * 2 * 2
         private const val MAX_PROCESS_ERRORS = 8
+        private const val MAX_SUPPORTED_CHANNELS = 2
 
         private val nextId = AtomicInteger(1)
     }
@@ -98,7 +99,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
         configuredRate = rate
         configuredChannels = ch
 
-        if (ch !in 1..kMaxChannels) {
+        if (ch !in 1..MAX_SUPPORTED_CHANNELS) {
             Log.i(TAG, "id=$processorId channels=$ch unsupported by DSP; preserving PCM pass-through")
             return inputAudioFormat
         }
