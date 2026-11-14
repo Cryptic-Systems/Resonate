@@ -3138,7 +3138,7 @@ class MusicProvider extends ChangeNotifier {
         // native startup or focus handoff fails; fail this request closed and
         // leave the failure visible in diagnostics.
         _userWantsPlaying = false;
-        _recentlyUserPaused = false;
+        _lastUserPauseAt = null;
         isPlaying = false;
         _loadingSource = false;
         await ResonateDiagnostics.record('media3_provider_handoff_failed', {
