@@ -30,6 +30,11 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   // Serialize native sleep-fade mutations so a stale tick cannot reapply a
   // fade after cancellation or replacement has already cleared it.
   Future<void> _sleepFadeOperations = Future<void>.value();
+  bool _disposed = false;
+
+  void _notifyIfAlive() {
+    if (!_disposed) notifyListeners();
+  }
 
   Future<void> _enqueueSleepFade(int generation, {double? scale}) {
     final operation = _sleepFadeOperations.then((_) async {
@@ -56,6 +61,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   bool get sleepTimerActive => sleepRemainingSeconds > 0;
 
   void _syncEngineIfNeeded() {
+    if (_disposed) return;
     final songId = music.currentSong?.id;
     final engine = music.activeEngineLabel;
     if (songId == _lastSongId && engine == _lastEngine) return;
@@ -78,7 +84,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       debugPrint('Playback speed failed: $e');
     }
     await _save();
-    notifyListeners();
+    _notifyIfAlive();
   }
 
   Future<void> setPitch(double value) async {
@@ -139,6 +145,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   }
 
   Future<void> applyToActiveEngine() async {
+    if (_disposed) return;
     try {
       final session = music.media3PlaybackSession;
       if (music.media3ProviderSessionActive && session != null) {
@@ -164,6 +171,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   static const int _fadeOutSeconds = 45;
 
   Future<void> startSleepTimer(Duration duration) async {
+    if (_disposed) return;
     _sleepTimer?.cancel();
     _sleepTimer = null;
     final gen = ++_sleepGeneration;
@@ -172,7 +180,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     // Clear the previous fade before arming this timer. A newer start or
     // cancellation invalidates this queued operation by generation.
     await _enqueueSleepFade(gen);
-    if (gen != _sleepGeneration) return;
+    if (_disposed || gen != _sleepGeneration) return;
     _sleepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (gen != _sleepGeneration) {
         timer.cancel();
@@ -192,36 +200,41 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
         sleepRemainingSeconds = deadline.difference(DateTime.now()).inSeconds.clamp(0, 24 * 60 * 60);
       }
       if (sleepRemainingSeconds <= 0) {
-      timer.cancel();
-      sleepRemainingSeconds = 0;
-      // Revalidate immediately before issuing the transport command. A timer
-      // cancelled/replaced while a prior tick was awaiting must not pause audio.
-      if (gen != _sleepGeneration) return;
-      try {
-        // Must go through MusicProvider so _userWantsPlaying is cleared.
-        await music.pause(source: 'sleep_timer');
-      } catch (e) {
-        debugPrint('Sleep timer pause failed: $e');
+        timer.cancel();
+        sleepRemainingSeconds = 0;
+        // Revalidate immediately before issuing the transport command. A timer
+        // cancelled/replaced while a prior tick was awaiting must not pause audio.
+        if (gen != _sleepGeneration) return;
+        try {
+          // Must go through MusicProvider so _userWantsPlaying is cleared.
+          await music.pause(source: 'sleep_timer');
+        } catch (e) {
+          debugPrint('Sleep timer pause failed: $e');
+        }
+        await _enqueueSleepFade(gen);
+        if (gen == _sleepGeneration) {
+          _sleepDeadline = null;
+          _notifyIfAlive();
+        }
+        return;
       }
-      await _enqueueSleepFade(gen);
-      if (gen == _sleepGeneration) {
-        _sleepDeadline = null;
-        notifyListeners();
+
+      sleepRemainingSeconds =
+          sleepRemainingSeconds.clamp(0, 24 * 60 * 60);
+      if (sleepRemainingSeconds <= _fadeOutSeconds &&
+          gen == _sleepGeneration) {
+        final t =
+            (sleepRemainingSeconds / _fadeOutSeconds).clamp(0.0, 1.0);
+        await _enqueueSleepFade(gen, scale: t);
       }
-      return;
-    }
-    sleepRemainingSeconds = sleepRemainingSeconds.clamp(0, 24 * 60 * 60);
-    if (sleepRemainingSeconds <= _fadeOutSeconds && gen == _sleepGeneration) {
-      final t = (sleepRemainingSeconds / _fadeOutSeconds).clamp(0.0, 1.0);
-      await _enqueueSleepFade(gen, scale: t);
-    }
-    if (gen == _sleepGeneration) notifyListeners();
+      if (gen == _sleepGeneration) _notifyIfAlive();
     } finally {
       _sleepTickInFlight = false;
     }
   }
 
   void cancelSleepTimer() {
+    if (_disposed) return;
     _sleepGeneration++;
     _sleepTimer?.cancel();
     _sleepTimer = null;
@@ -244,17 +257,19 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   Future<void> _load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (_disposed) return;
       speed = prefs.getDouble('playback_speed') ?? 1.0;
       pitch = prefs.getDouble('playback_pitch') ?? 1.0;
       normalizationEnabled = prefs.getBool('normalization_enabled') ?? false;
       targetLoudness = prefs.getDouble('target_loudness') ?? -14.0;
       await applyToActiveEngine();
+      if (_disposed) return;
       _lastSongId = music.currentSong?.id;
       _lastEngine = music.activeEngineLabel;
     } catch (e) {
       debugPrint('Playback settings load failed: $e');
     }
-    notifyListeners();
+    _notifyIfAlive();
   }
 
   Future<void> _save() async {
@@ -271,6 +286,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     music.removeListener(_syncEngineIfNeeded);
     // Invalidate any asynchronous tick already in flight. Without advancing
     // the generation, a tick awaiting a fade update could still pause playback
