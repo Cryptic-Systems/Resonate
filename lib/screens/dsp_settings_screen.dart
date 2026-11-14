@@ -95,7 +95,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
           types: _bands.map((band) => band.type).toList(),
         );
       }
-      await AudioEffectsBridge.setLiveDspPreampDb(current.preampDb);
+      await context.read<EqualizerProvider>().setPreamp(current.preampDb);
       await AudioEffectsBridge.setLiveDspDvc(
         enabled: current.dvcEnabled,
         db: current.dvcDb,
@@ -494,7 +494,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                         value: settings.virtualBassAmount,
                         min: 0,
                         max: 1,
-                        suffix: '%',
+                        suffix: 'level',
                         divisions: 100,
                         onChanged: (v) => _changeSettings((s) => s.copyWith(virtualBassAmount: v)),
                         onChangeEnd: (_) => _commit(),
