@@ -591,7 +591,7 @@ void main() {
       final provider = MusicProvider(media3ProviderSession: session);
 
       try {
-        final resume = provider.resumePlayback();
+        final preparing = provider.prepareMedia3ProviderSession();
         for (var attempt = 0;
             attempt < 80 && !session.calls.contains('start');
             attempt++) {
@@ -600,12 +600,13 @@ void main() {
         expect(session.calls, contains('start'),
             reason: 'The test must hold Media3 activation before it completes.');
 
+        final resume = provider.resumePlayback();
         final pause = provider.pause();
         startGate.complete();
-        await Future.wait(<Future<void>>[resume, pause]);
+        await Future.wait(<Future<void>>[preparing, resume, pause]);
 
         expect(session.calls, isNot(contains('focus:true')),
-            reason: 'A superseded resume must not acquire focus.');
+            reason: 'A resume superseded during activation must not enable focus handling.');
         expect(session.calls, isNot(contains('play')),
             reason: 'A superseded resume must not restart playback after pause.');
         expect(session.calls, contains('pause'));
