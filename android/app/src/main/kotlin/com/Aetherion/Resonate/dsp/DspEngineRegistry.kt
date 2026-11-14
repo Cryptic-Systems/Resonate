@@ -139,9 +139,11 @@ object DspEngineRegistry {
     }
 
     @JvmStatic
+    @Synchronized
     fun activeCount(): Int = handles.size
 
     @JvmStatic
+    @Synchronized
     fun snapshotHandles(): List<Long> = handles.values.map { it.handle }.filter { it != 0L }
 
     /** Phone-speaker delivery: HPF + virtual bass + tighter limiter. */
@@ -178,6 +180,7 @@ object DspEngineRegistry {
 
     /** Aggregate Phase-2 latency across all live engines. */
     @JvmStatic
+    @Synchronized
     fun latencySnapshot(): Map<String, Any> {
         var calls = 0.0
         var avgUs = 0.0
@@ -213,6 +216,7 @@ object DspEngineRegistry {
     }
 
     @JvmStatic
+    @Synchronized
     fun statusMap(): Map<String, Any> {
         val base = mutableMapOf<String, Any>(
             "activeEngines" to activeCount(),
