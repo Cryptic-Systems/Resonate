@@ -337,6 +337,35 @@ void main() {
       await session.states.close();
     });
 
+    test('navigation and seek before explicit handoff activate injected Media3 without legacy engines', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('pre-handoff-first');
+      final second = _song('pre-handoff-second');
+      await provider.enqueueSongs(<Song>[first, second]);
+      expect(provider.debugLegacyEngineConstructed, isFalse);
+
+      await provider.nextSong();
+      expect(provider.media3ProviderSessionActive, isTrue);
+      expect(session.calls, contains('next'));
+      expect(provider.currentSong?.id, second.id);
+
+      await provider.previousSong();
+      expect(session.calls, contains('previous'));
+      expect(provider.currentSong?.id, first.id);
+
+      await provider.seek(const Duration(seconds: 25));
+      expect(session.calls, contains('seek:25000'));
+      expect(session.positionValue, const Duration(seconds: 25));
+      expect(provider.debugLegacyEngineConstructed, isFalse,
+          reason: 'Navigation and seeking must not construct the legacy just_audio EnginePair.');
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('restores the provider resume position into the new Media3 session before handoff', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
