@@ -89,17 +89,28 @@ class AudioEffectsBridge {
 
   /// Set the native Digital Volume Control gain, independent of EQ preamp.
   /// The native engine smooths the transition; range is -24 dB to +6 dB.
-  static Future<Map<String, dynamic>?> setLiveDspDvcDb(double db) async {
+  static Future<Map<String, dynamic>?> setLiveDspDvc({
+    bool enabled = true,
+    required double db,
+    bool smoothing = true,
+    double smoothingMs = 15,
+  }) async {
     try {
-      final raw = await _channel.invokeMethod<dynamic>('setLiveDspDvcDb', {
-        'db': db.clamp(-24.0, 6.0),
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspDvc', {
+        'enabled': enabled,
+        'db': db.clamp(-120.0, 24.0),
+        'smoothing': smoothing,
+        'smoothingMs': smoothingMs.clamp(0.0, 200.0),
       });
       if (raw is Map) return Map<String, dynamic>.from(raw);
     } catch (e) {
-      debugPrint('setLiveDspDvcDb failed: $e');
+      debugPrint('setLiveDspDvc failed: $e');
     }
     return null;
   }
+
+  static Future<Map<String, dynamic>?> setLiveDspDvcDb(double db) =>
+      setLiveDspDvc(db: db);
 
   static Future<Map<String, dynamic>?> setLiveDspEqBands({
     List<double>? centersHz,
@@ -167,6 +178,70 @@ class AudioEffectsBridge {
     return null;
   }
 
+  static Future<Map<String, dynamic>?> setLiveDspParametricEqBands({
+    required List<double> frequenciesHz,
+    required List<double> gainsDb,
+    required List<double> qs,
+    required List<int> types,
+    bool enabled = true,
+  }) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspParametricEqBands', {
+        'frequenciesHz': frequenciesHz,
+        'gainsDb': gainsDb,
+        'qs': qs,
+        'types': types,
+        'enabled': enabled,
+      });
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (e) {
+      debugPrint('setLiveDspParametricEqBands failed: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> setLiveDspLimiterConfig({
+    required bool enabled,
+    required int mode,
+    required double thresholdDb,
+    required double releaseMs,
+    required double attackMs,
+    required double lookaheadMs,
+    required double kneeDb,
+  }) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspLimiterConfig', {
+        'enabled': enabled,
+        'mode': mode.clamp(0, 3),
+        'thresholdDb': thresholdDb.clamp(-24.0, 0.0),
+        'releaseMs': releaseMs.clamp(1.0, 2000.0),
+        'attackMs': attackMs.clamp(0.01, 100.0),
+        'lookaheadMs': lookaheadMs.clamp(0.0, 40.0),
+        'kneeDb': kneeDb.clamp(0.0, 12.0),
+      });
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (e) {
+      debugPrint('setLiveDspLimiterConfig failed: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> setLiveDspDither({
+    required bool enabled,
+    required int mode,
+  }) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspDither', {
+        'enabled': enabled,
+        'mode': mode.clamp(0, 2),
+      });
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (e) {
+      debugPrint('setLiveDspDither failed: $e');
+    }
+    return null;
+  }
+
   static Future<void> release() async {
     try {
       await _channel.invokeMethod('release');
@@ -179,8 +254,8 @@ class AudioEffectsBridge {
   }) async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('setLiveDspLimiterCeiling', {
-        'highDb': highDb.clamp(-6.0, -0.1),
-        'lowDb': lowDb.clamp(-6.0, -0.1),
+        'highDb': highDb.clamp(-12.0, -0.05),
+        'lowDb': lowDb.clamp(-12.0, -0.05),
       });
       if (raw is Map) return Map<String, dynamic>.from(raw);
     } catch (e) {

@@ -333,3 +333,477 @@ Therefore, the successful workflow run is evidence that the PR head passed that 
 ### Next integration action
 
 Create or use a dedicated integration branch **from the current `Resonate-True-Apk` tip**, then port/reconcile the Media3 work in controlled slices. First wire a testable session boundary into production provider construction and observations; then move transport/queue; then focus/audio-session/DSP; then crossfade/DJ and media controls; finally remove legacy engine references and dependency. At every slice, preserve a known-good build and run the relevant tests. Do not import unrelated branch history simply to make the old PR mergeable.
+
+
+## 16. Release diagnostics review — 2026-11-12
+
+Source: user-supplied Resonate Android release diagnostics, report version 5, session `1792939478018408_android`, created 2026-11-12. The report contains 4,000 events spanning 2026-11-10 20:06 through 2026-11-12 13:49. This is runtime evidence from the currently installed release build, not a Media3 migration build or a controlled laboratory test.
+
+### Observed healthy behavior
+
+| Signal | Report evidence | Migration implication |
+|---|---|---|
+| Crashes/errors | 0 crashes; `topErrors` empty | No crash-driven emergency patch is justified by this report. |
+| Playback start | 21 begin → source-start → source-done → play-loop-start → play-loop-end sequences; 21 handoffs report `playing=true`; no play timeouts | Preserve the successful start/handoff contract and compare Media3 against it. |
+| Intent consistency | 0 `wantPlay` mismatches; 0 stops while upcoming songs remain | Keep desired-play intent and queue progression explicit in the canonical session state. |
+| Crossfade | 6 transitions committed; each pre-fade check reports outgoing volume 1.0, incoming volume 0.0, and outgoing delta 0.0; all six final active decks are playing at volume 1.0 | The earlier suspected pre-fade dip is not reproduced in these six captured transitions. Retain as a regression scenario, not a confirmed current defect. |
+| DJ | 5 V2 executions and 5 V2 handoffs prepared; 10 applied, 1 skipped, 0 failures; health hint says handoffs OK | Do not prioritize a speculative incoming-deck stall fix. Preserve planner/executor and manual-override semantics in the migration. |
+| Completion | 5 completion detections; 4 recovered by continuing the committed track; the one separately logged queue-advance attempt advanced successfully with 0 failed tracks | Test Media3 completion callbacks against both crossfade-committed and ordinary completion paths. |
+
+The 21 observed source preparations took 517–1,970 ms from `set_source_start` to `set_source_done` (median approximately 738 ms). These are measurements from this diagnostic session and should be treated as a baseline for same-device comparisons, not as a universal performance target.
+
+### Areas to investigate, not confirmed defects
+
+1. **Audio focus and route lifecycle.** Fourteen `audio_focus_pause` records all show `userWantsPlaying=false` and `preservedIntent=false`; the report does not establish that these were unexpected focus losses. Ten route-change records are present: nine while the app reports playback not wanted/not playing, and one while playback is wanted/playing. That playing route change is followed by one successful recovery record (`playing=true`, volume 1.0). Add structured focus-change reason/type, focus request result, route identity, and resume-decision reason to the migration acceptance telemetry.
+2. **Diagnostics coverage.** The report contains zero playback checkpoints and zero player snapshots. It therefore cannot independently prove continuous player state between handoffs or diagnose an intermittent silent-output report. Add bounded, privacy-safe checkpoints around focus, route, deck activation, MediaSession state, and recovery. Avoid logging personal media metadata.
+3. **Intelligence workload.** There are 1,651 `intelligence_recommendations_generated` events, with hourly concentrations of 396 and 275 in two observed hours. This may reflect intended Autopilot reevaluation; the report alone cannot establish CPU/battery impact or a bug. Profile recommendation generation and add reason/trigger, duration, cache-hit, and result-change telemetry before changing its cadence.
+4. **DJ metadata coverage.** There are 133 `no_tags` outcomes, plus one risk-based fallback and one BPM-delta skip. These are not counted as DJ failures. Preserve safe fallback behavior and separately measure metadata availability so missing tags are not mistaken for engine failures.
+
+### Updated migration priorities from this report
+
+- **P0 — maintain single ownership:** the report supports retaining the legacy production path until Media3 can reproduce the observed queue, handoff, crossfade, completion, focus, and route behavior under one authority. Do not swap transport alone.
+- **P0 — add parity tests:** use the six successful crossfades, 21 successful handoffs, five completion detections, and route/focus cases above as regression scenarios. Include repeat-all and the committed-track completion recovery path.
+- **P1 — observability parity:** Media3 diagnostics must expose canonical desired-play intent, active deck/session ID, queue occurrence/revision, actual playing/processing state, focus decision, route, preload state, and transition phase. Add checkpoints/snapshots because this report currently has none.
+- **P1 — performance measurement:** compare source preparation and preload readiness on the same device/build/route; profile the Autopilot recommendation bursts before tuning them.
+- **Not currently evidenced as defects:** pre-fade volume dip, DJ incoming-deck stall, playback timeout, queue stop with upcoming items, player desired-state mismatch, or crash.
+
+### Acceptance additions
+
+- [ ] Reproduce six representative crossfades and verify outgoing remains at intended gain until fade start, incoming is silent before fade, and active deck ends playing at unity gain.
+- [ ] Exercise at least 20 deck handoffs and verify every handoff resolves to the intended queue occurrence and correct active audio-session ID.
+- [ ] Test completion while a crossfade is in flight; ensure the committed incoming track is not skipped or advanced twice.
+- [ ] Test normal completion, repeat-all, and empty/end-of-queue behavior independently.
+- [ ] Test explicit pause, transient focus loss, permanent focus loss, ducking, focus regain, route change while paused, and route change while playing. Assert user intent is never overridden.
+- [ ] Capture player checkpoints/snapshots and focus/route decision reasons without exposing media titles or personal library content.
+- [ ] Compare source preparation/preload latency and recommendation CPU/battery cost on the same physical device and release configuration.
+
+**Interpretation limit:** these diagnostics describe the existing release build only. They do not prove Media3 parity, audio quality, absence of brief audible gaps, OS-level focus correctness, battery impact, or behavior on other devices. No migration code or device test is validated by this report alone.
+
+
+## 17. Integration foundation port — 2026-11-12
+
+A production-based integration slice has now been ported to `media3-cutover-integration` and opened as draft PR [#220](https://github.com/Cryptic-Systems/Resonate/pull/220).
+
+| Item | Current state |
+|---|---|
+| Base | `Resonate-True-Apk` at `9319e0c853b5ba3289737dbd9258e5bb70f32a71` |
+| Integration branch | `media3-cutover-integration` |
+| Draft PR | #220, targets `Resonate-True-Apk` |
+| Branch ancestry | 22 commits ahead, 0 behind at comparison time |
+| PR contents | 22 files; isolated runtime/backend/session contracts, native service/bridge, queue reconciliation, and tests |
+| Production provider | Unchanged; still uses `EnginePair` / `just_audio` |
+| Dependency retirement | Not attempted |
+| CI | PR #220 run #1380 (`43210239662`) passed all 15 substantive workflow steps for head `031d0aa26b7eee4541ab1bd0b78b9f121f5faf82`; CI only, not device acceptance |
+
+The integration slice includes:
+- Engine-neutral `PlaybackBackend`, `PlaybackObservationSource`, `PlaybackSnapshot`, and `PlaybackEngineSession` contracts.
+- Serialized `Media3PlaybackRuntime`, `Media3ProviderStateBridge`, `Media3ProviderSession`, and `Media3MusicProviderAdapter`.
+- The expanded typed Dart client, native Media3 bridge/service, crossfade clock, gain policy, and queue reconciliation policy.
+- Adapter, client, runtime, session, state-bridge, and native queue-policy tests.
+
+The existing production baseline already contains the Android Media3 dependency declarations, service manifest entry, and MainActivity bridge registration required by this isolated backend. The port therefore does not alter those files. The older isolated client/bridge/service prototypes were upgraded in place on the integration branch; no production `MusicProvider` import or construction was changed.
+
+### Gate before the next slice
+
+1. CI for the isolated foundation is green on the exact head recorded above; retain the device-acceptance gate.
+2. Review queue occurrence mapping, service startup/reconnect, crossfade cancellation, active audio-session changes, and DSP gain composition against the report-derived acceptance cases in section 16.
+3. Close DJ per-deck effects, focus/route ownership, and MediaSession ownership gaps before provider transport can switch.
+4. Only then introduce an injectable session ownership seam in `MusicProvider`; do not switch the production authority in that same change.
+5. Keep PR #220 draft and do not merge until provider integration and device acceptance are complete.
+
+
+## 18. DJ phrase-aligned preload position — 2026-11-12
+
+The next isolated backend slice adds a non-zero incoming-deck start position to the Media3 preload contract. This closes a known capability gap: the DJ execution plan can produce an incoming seekMs, while the earlier Media3 preload path always called setMediaItems(..., 0L).
+
+### Implemented on media3-cutover-integration
+
+- Added optional startPosition (default Duration.zero) to PlaybackCrossfadeBackend and PlaybackEngineSession.
+- Forwarded the position through Media3ProviderSession, Media3PlaybackRuntime, Media3MusicProviderAdapter, and Media3PlaybackClient.
+- Dart rejects negative positions before sending a native command.
+- The method-channel payload now carries positionMs; the Kotlin bridge defaults missing values to zero and rejects negative values.
+- Media3PlaybackService.preloadNext now applies the requested position with ExoPlayer setMediaItems(items, startIndex, startPositionMs).
+- Added forwarding/default-validation coverage in client, adapter, runtime, and provider-session tests.
+- Ported the existing native Media3CrossfadeClockTest and Media3GainPolicyTest into the production-based integration branch.
+
+### Validation state
+
+- Code-change CI head: fec2eee3fb912ca45e32ca309de57104b24cabe7; current branch head is c8ba7ea80d058aa7b6b82cc318b5286c1e24122e (documentation-only follow-up).
+- CI run #1377 (run ID 43207645630) was created for PR #220 and was in progress when this section was recorded.
+- No local Flutter/Kotlin test command or physical-device DJ audition was run in this work session. Do not treat the feature as validated until CI completes and a device test confirms that a planned non-zero phrase offset is audible and survives deck promotion.
+- The production MusicProvider remains unchanged; this is backend capability plumbing, not a production cutover or DJ call-site switch.
+
+### Next checks
+
+1. Resolve any CI failure before extending the DJ executor.
+2. Add an integration-level test that supplies a non-zero DJ phrase offset and proves the native standby deck starts at that exact position before crossfade.
+3. Verify seek offset is retained through standby readiness, crossfade start, deck swap, cancellation, and recovery; ensure the offset is not applied twice.
+4. Continue with per-deck DJ SFX/effects parity and the single-owner audio-focus/MediaSession design before provider cutover.
+
+
+## 19. DJ transition parity audit — 2026-11-12
+
+### Phrase-aligned preload is now wired end to end
+
+The current integration branch exposes `startPosition` on `PlaybackEngineSession.preloadNext`. The value is validated and serialized through the runtime, adapter, typed client and platform channel as `positionMs`. The Kotlin bridge validates the value and forwards it to `Media3PlaybackService.preloadNext`, which calls ExoPlayer `setMediaItems(items, startIndex, startPositionMs)`.
+
+Coverage currently exists at multiple Dart boundaries:
+- Provider-session forwarding verifies a non-zero 7,600 ms position reaches the backend contract.
+- Adapter queue-filtering coverage verifies a non-zero 18,450 ms phrase position survives playable-index remapping.
+- Client channel coverage verifies `positionMs=18450` and rejects a negative offset.
+
+This proves the software forwarding path in unit tests; it does **not** yet prove on-device audible phrase alignment, readiness retention, or correct position after promotion. The required device check remains: prepare a non-zero offset, confirm the standby deck's actual position before fade, promote it, and verify no second seek is applied.
+
+### DJ SFX/effects parity is not yet implemented
+
+Inspection of `lib/services/dj_sfx_rack.dart` shows the transition rack currently has several different effect ownership models:
+
+| Effect family | Current production mechanism | Media3 migration requirement |
+|---|---|---|
+| Filter open/close | Separate outgoing/incoming `AndroidEqualizer` instances; per-band gain envelopes | Per-deck DSP overlay with independent reset/restore |
+| Reverb / virtualizer / bass | `AudioEffectsBridge` calls to shared Android effect state | Decide whether these are intentionally master-bus effects or need deck-local processing; do not pretend global effects are per-deck |
+| One-shot samples / track echo | Additional `just_audio` player | Explicit auxiliary sample/FX playback owner, gain policy, focus and lifecycle behavior |
+| Brake / scratch / stutter / repeat | Direct seek and speed mutations on the outgoing `AudioPlayer` | Engine-neutral outgoing-deck command surface with cancellation and restoration guarantees |
+
+The Media3 native DSP registry currently indexes processors by generated processor ID and applies persistent settings to all registered handles. It does not identify a processor as the active or standby deck and exposes no temporary per-deck EQ overlay. The current service's processor factory is invoked independently for each ExoPlayer, but the deck identity is not passed into the DSP processor/registry.
+
+**Do not port the old A/B AndroidEqualizer writes by broadcasting them to every Media3 DSP handle.** That would make filter automation affect both decks identically and could overwrite persistent user EQ state. A safe implementation needs:
+1. An explicit deck role assigned at processor creation (active/standby), retained through registration and deck promotion.
+2. A per-deck temporary EQ/filter overlay kept separate from the sticky persistent EQ curve.
+3. Atomic overlay updates and explicit clear/restore semantics on completion, cancellation, source replacement, player recreation, and DSP fail-open.
+4. A typed Flutter/session contract for the transition rack; no direct access to `AudioPlayer` or guessed processor ordering.
+5. Tests proving an outgoing-only overlay leaves standby unchanged, an incoming-only overlay leaves active unchanged, persistent EQ changes compose correctly with overlays, and promotion does not transfer stale temporary state.
+
+The existing global reverb/virtualizer/bass effects also need an explicit master-bus versus per-deck decision. Until that is made, preserve current production behavior and keep the Media3 backend isolated.
+
+### Next implementation slice
+
+Implement the deck-role and temporary-EQ-overlay seam in the native DSP layer first, with JVM tests around registry routing and sticky-state composition. Then add the typed Media3 transition-effects command and Dart contract tests. Do not change the production `DjSfxRack` call sites or switch `MusicProvider` until that contract passes CI and a physical-device A/B transition test.
+
+
+## 20. Native DJ deck-scoped EQ overlay foundation — 2026-11-12
+
+### Implemented on the isolated integration branch
+
+The Media3 DSP path now distinguishes the two physical ExoPlayer deck slots (`A` and `B`) and exposes logical `active` / `standby` roles. The service updates the registry's active-slot mapping only when the two player instances are promoted at crossfade completion.
+
+A temporary EQ overlay is stored per physical deck and applied only to processors registered for that deck. The registry composes the overlay with the persistent Resonate EQ curve:
+- When a persistent curve exists, the overlay response is interpolated in log-frequency space at the persistent curve's center frequencies and summed with the base gains, clamped to the native DSP range.
+- When no persistent curve exists, the overlay is sent as its own curve.
+- Clearing an overlay restores the persistent curve, or a neutral curve when no user curve has been set.
+- Persistent EQ changes while an overlay is active are re-composed rather than overwriting the DJ effect.
+- Overlay inputs require 1–31 strictly increasing center frequencies in 20–20,000 Hz and gains in -12 to +12 dB. Updates attempt rollback if native application fails.
+
+The Flutter contract now exposes `setDeckEqOverlay` and `clearDeckEqOverlay` through the typed client, adapter, serialized runtime, and provider-facing `PlaybackEngineSession`. Native service commands route the request to the currently active or standby physical deck.
+
+The Media3 service clears temporary overlays on explicit cancellation/queue invalidation and after deck promotion. The generic crossfade-start reset preserves overlays so DJ transition curves can remain active during the fade. The same reset now preserves an independently corrected standby playback rate when the fade starts; explicit cancellation still resets the standby deck to the active baseline. This closes a second DJ transition hazard where the crossfade-start cleanup previously erased the incoming tempo correction.
+
+### Automated coverage added
+
+- Native registry tests cover active-only isolation, standby routing, role remapping after promotion, persistent-EQ composition, base-curve restoration, persistent EQ updates during an overlay, and invalid input rejection.
+- Dart client tests cover channel payloads and input validation.
+- Adapter tests cover forwarding of set/clear commands.
+- Runtime tests cover validation and command-lane ordering.
+
+### Scope and validation limits
+
+This is a backend capability foundation, **not yet a production DJ rack migration**. The existing production `DjSfxRack` still uses legacy `AndroidEqualizer` and `AudioEffectsBridge` paths. Its filter automation must be translated into frequency-response overlays and routed through the new session API only after the complete effect lifecycle (start, update, cancel, restore, source replacement, and promotion) is integrated and tested. Reverb, virtualizer, sample playback, scratch/brake speed and seek automation remain separate parity items.
+
+No production `MusicProvider` call site has been switched, no legacy player/effect path has been removed, and no physical-device audition has been performed by this change. CI must pass on the exact head, followed by a two-deck device test confirming audible isolation, persistent EQ composition, cancellation restoration, and correct logical roles after promotion.
+
+## 17. Provider cutover execution — started 2026-11-12
+
+The current PR #220 head passed CI run #1433 before this provider integration slice. The provider work is being done on `media3-cutover-integration`, still targeting `Resonate-True-Apk`.
+
+### First provider boundary landed
+
+- `MusicProvider` now accepts an optional provider-owned `PlaybackEngineSession`.
+- `prepareMedia3ProviderSession()` starts that single session and mirrors the current provider queue, repeat mode, shuffle mode, and user volume into it.
+- The preparation path explicitly disables Media3 focus requests because the legacy `EnginePair` remains the production owner at this stage.
+- The Media3 audio-session ID stream is attached to the provider's existing Android-session callback so DSP/session consumers can be migrated without reading a second player directly.
+- Provider disposal cancels the session-ID subscription and disposes the injected session.
+
+### Deliberate safety boundary
+
+This first slice does **not** activate Media3 transport, does not start a second audible player, and is not wired into the app composition root yet. It establishes one provider-owned session boundary and a deterministic queue/settings handoff. The next slice must move canonical state observation and serialized transport onto that same session before any production activation. Crossfade/DJ and all DSP/session-bound effects must then be migrated to it before the legacy EnginePair can be retired.
+
+### Immediate next implementation steps
+
+1. ~~Add a deterministic provider contract test with a fake `PlaybackEngineSession` proving startup, queue/index transfer, repeat/shuffle/volume mirroring, focus-disabled preparation, audio-session subscription, and disposal.~~ Landed in `test/providers/music_provider_media3_session_test.dart`; it covers queue/index mirroring, mode/volume mirroring, focus-disabled preparation, empty-queue handling, audio-session forwarding, startup failure, and disposal. Exact-head CI is the validation gate.
+2. Move canonical state projection and transport command serialization onto the injected session; keep the switch disabled until every provider recovery/watchdog path is session-aware.
+3. Migrate queue mutation, completion/history, repeat/shuffle, and media controls.
+4. Move crossfade/DJ and DSP/effect ownership to the same Media3 session.
+5. Wire the completed provider session in `main.dart` only after the above parity gates pass.
+
+
+## 21. Provider state-source and command-lane contract — 2026-11-12
+
+### Implemented on the integration branch
+
+- `PlaybackEngineSession` now exposes an immutable `stateStream` contract alongside its transport methods and read-only observation streams. The stream and commands are guaranteed to belong to the same session/backend.
+- `Media3ProviderSession` exposes the reconciled `Media3ProviderStateBridge` snapshots through that interface. All session transport methods continue to delegate to `Media3PlaybackRuntime`, whose single command lane serializes queue replacement, play/pause/stop, seek/navigation, volume, repeat/shuffle, focus ownership, crossfade and deck-effect commands.
+- `MusicProvider.prepareMedia3ProviderSession()` now subscribes to the injected session's state stream and retains the latest snapshot as `media3ShadowState`, with lifecycle cancellation on re-prepare/disposal. It deliberately does not overwrite public provider state while the legacy EnginePair remains audible.
+
+### Safety boundary / what is not cut over
+
+This completes the session-level canonical observation contract and makes the provider observe that exact source. It does **not** make Media3 the production canonical state or route user transport to Media3 yet. The provider still contains legacy-only automatic recovery/watchdog, completion/history, gapless-window, crossfade/DJ, audio-focus and audio-service paths. Enabling Media3 state as public truth or routing only the basic transport methods now would create split ownership and allow a legacy watchdog or completion callback to restart/advance the wrong engine. Keep the production authority unchanged until those paths are migrated and parity-tested as a single unit.
+
+### Validation
+
+- The provider subscribes to the session-owned snapshot stream only after successful session startup and cancels it during re-prepare/disposal.
+- Runtime command serialization remains centralized in `Media3PlaybackRuntime._run`; no second provider-side queue or competing native command lane was introduced.
+- Exact-head CI is required after this change. No physical-device acceptance is implied.
+
+
+## 18 Canonical provider-session handoff — landed on the integration branch
+
+The provider now supports an explicit, single-authority handoff to its injected Media3ProviderSession. The app composition root supplies the session and starts the handoff after persisted playback settings and queue restoration complete.
+
+The handoff sequence is transactional at the provider boundary:
+
+1. Start the Media3 session and mirror the restored provider queue, repeat mode, shuffle mode, and volume while Media3 focus handling is disabled.
+2. Attach the Media3 state and audio-session observers before changing authority.
+3. Enable Media3 focus handling, stop both legacy EnginePair decks, and deactivate the legacy AudioSession.
+4. Publish the Media3 session as the canonical observation source. Legacy player stream callbacks are ignored after the handoff.
+5. Route play, pause, resume, seek, next, previous, stop, repeat-one completion, automatic completion advancement, queue synchronization, and silent-playback recovery through the same injected session and the provider's serialized command coordinator.
+6. Resolve native queue indices against the provider queue using media ID and playable occurrence mapping; reject ambiguous duplicate occurrences rather than silently selecting a different item.
+
+A failed Media3 startup does not mark the handoff active. The legacy engine is not stopped until the session has started and its initial queue/settings and observers are ready.
+
+**Remaining full-cutover gates:** crossfade/DJ orchestration, DSP/effect ownership across both Media3 decks, and end-to-end MediaSession/notification control parity still require dedicated migration and acceptance coverage. This handoff lands canonical observation, transport, recovery, and completion ownership; it does not by itself certify every remaining playback feature or replace device acceptance testing.
+
+
+## 22. Provider-owned Media3 crossfade and DJ orchestration — implemented on the integration branch
+
+### Crossfade execution moved to the injected session
+
+- Automatic preload now prepares the Media3 standby deck with the provider's next queue occurrence and a DJ-planned incoming phrase offset. The provider applies independent active/standby playback speeds through the same serialized session command lane.
+- The provider starts the native equal-power crossfade clock and waits for the observed incoming media ID **and queue index** to become the canonical active item. Elapsed wall-clock time alone is never treated as a successful handoff.
+- The native service defers a requested fade until the standby deck is ready. Pending starts survive transient focus/buffering pauses and resume when both decks can run; explicit cancellation clears the pending request.
+- The native service promotes the standby ExoPlayer and updates the MediaSession player at the end of the gain ramp. The provider reconciles queue index, playback state, and transition bookkeeping from the Media3 state stream.
+- Manual provider transport preempts automatic work by cancelling the native transition and resetting deck rates. If native crossfade execution fails, fallback queue loading and playback remain on the same Media3 session; the legacy EnginePair is never restarted.
+- Repeat-one uses Media3's native repeat mode rather than the retired legacy dual-player self-handoff.
+
+### DJ handoff and transition automation
+
+- The existing DJ profile/autopilot planner is reused without passing legacy AudioPlayer instances. Its incoming phrase offset, tempo correction, transition duration bias, and profile metadata are mapped to Media3 standby preload and per-deck speed commands.
+- DJ filter-open/filter-close automation is routed through the session's active/standby EQ overlays and is updated against native crossfade progress. The rack restores both overlays after promotion or cancellation.
+- The Media3 path intentionally restricts DJ SFX to deck-scoped EQ filters. Legacy global reverb/virtualizer, sample playback, scratch/brake, repeat-seek and other track-mutating effects are not invoked through the old engine during a Media3 transition; they remain separate DSP/effect parity work.
+
+### Automated validation and remaining gates
+
+The provider contract suite now exercises a complete automatic Media3 crossfade: next-item preload, queue occurrence, native crossfade command, canonical promotion, and deck-rate reset. Exact-head CI must pass Flutter analysis/tests, native DSP compile/stress tests, Android unit tests, release APK build, and APK size-budget validation.
+
+This completes the provider-owned crossfade/DJ orchestration slice, **not** the remaining effect-rack migration. Per-deck/global DSP effect ownership, full MediaSession/notification control parity, and physical-device playback acceptance remain separate gates before PR #220 is production-ready. No device audition is implied by CI.
+
+
+## 23. Media3 auxiliary-effects playback contract — implemented, pending exact-head CI and device acceptance
+
+### Ownership model
+
+The canonical MediaSession player remains the sole owner of queue state, transport, notifications, and audio focus. Short DJ samples and clipped outgoing-track echo taps are mixed by a reusable auxiliary ExoPlayer owned by the same `Media3PlaybackService`. The auxiliary player:
+
+- Does not create a second MediaSession or publish a competing queue/playback state.
+- Does not request audio focus; the canonical active deck remains the focus owner.
+- Accepts only asset, file, content, HTTP, and HTTPS URIs, with finite 0–1 gain.
+- Supports a validated optional start/end clip range for musical echo taps.
+- Supports live gain changes so the DJ rack can duck samples as the incoming deck rises.
+- Is stopped on rack restoration and released with the service.
+
+### Flutter/session contract
+
+Added the optional `PlaybackAuxiliaryEffectsBackend` capability and exposed it through the Media3 adapter, serialized runtime command lane, and `Media3ProviderSession`. The typed client validates URI schemes, gain, and clip bounds before dispatch. Commands are:
+
+- `playAuxiliarySound(uri, volume, startPosition, endPosition)`
+- `setAuxiliarySoundVolume(volume)`
+- `stopAuxiliarySound()`
+
+The DJ rack now routes sample presets through the service-owned auxiliary player when a Media3 session is active. It also routes echo/dry-echo taps through a clipped segment of the outgoing track, preserving the phrase/beat-derived start and bounded tap duration. Both paths retain the existing gain-envelope ducking and cancellation/restore behavior. Legacy mode retains its existing `just_audio` sample/echo implementation. Track-mutating brake, scratch, stutter, repeat and retrigger effects remain intentionally gated; they still need a dedicated engine-neutral active-deck automation contract.
+
+### Automated coverage and remaining validation
+
+- Client tests cover accepted command payloads, URI/gain validation, and clip-bound validation.
+- Runtime tests cover serialized play/gain/stop dispatch and clipped-range forwarding.
+- Provider-session tests cover the optional capability through the canonical session.
+- Native service behavior is compile-gated by Android CI; no physical-device auxiliary mixing, audio-focus, or sample asset audition is implied until that test is performed.
+
+This was the initial auxiliary-effects milestone. The follow-on active-deck automation contract and supported preset routing are implemented in section 24; the remaining acceptance gate is exact-head CI plus device testing.
+
+
+## 24. Cancellable Media3 DJ track automation — implemented, pending exact-head CI and device acceptance
+
+### Session authority and behavior
+
+DJ track-mutating presets now execute through the captured `PlaybackEngineSession`, never through a legacy `AudioPlayer`, when Media3 is authoritative. The session exposes its tracked playback rate; the Media3 provider session updates that value only after the serialized backend command succeeds.
+
+The session automation path covers:
+
+- **Brake / vinyl stop:** a bounded deceleration envelope.
+- **Scratch:** phrase-relative seek strokes with alternating rate accents.
+- **Stutter / beat-repeat:** repeated beat- or half-beat slices.
+- **Retrigger:** repeated beat-aligned slice playback.
+- **Repeat / repeat-restart:** phrase-aligned repeats, with optional return to the start.
+
+The phrase-aware preset chooser is now used for Media3 transitions too. Aggressiveness policy remains in force; balanced mode continues to exclude its intentionally restricted effects, while musical mode can select the session-capable track effects.
+
+### Cancellation and restoration
+
+Each automation captures the session and its current playback rate. Every seek/rate step checks the rack generation and session identity. Restoring the rack invalidates pending steps, restores the captured playback rate, and clears the session reference. The provider's manual-transport preemption already invokes DJ SFX restoration before handing transport to the user, and crossfade/transition cleanup uses the same restore path.
+
+### Coverage and remaining acceptance
+
+- Rack tests verify Media3 preset routing, brake-rate restoration, and scratch seeks through the canonical session.
+- The Media3 session's playback-rate getter tracks successful serialized rate commands.
+- Exact-head Flutter analysis/tests and Android build are still required.
+- Physical-device acceptance must audition each effect during normal playback and crossfade, then interrupt with pause/seek/next and verify no stale seek/rate command or altered playback rate survives.
+
+
+### Cancellation hardening follow-up
+
+The rack now exposes `cancelTrackAutomation()`. It increments the automation generation and clears the running gate before its first asynchronous wait, then restores the captured rate through the same serialized Media3 session. `MusicProvider._restoreDjTransitionSfx()` invokes this cancellation before its soft-release waits. This closes the race where a manual pause/seek/next or a deck-promotion cleanup could otherwise be followed by a delayed DJ seek/rate step.
+
+The test matrix now exercises brake, vinyl-stop, scratch, stutter, beat-repeat, retrigger, repeat and repeat-restart. For each preset it verifies that cancellation prevents subsequent seek/rate commands and restores the captured rate. This is still software-level coverage; physical-device audition and interruption testing remain required.
+
+## 25. MediaSession external-navigation parity hardening — implemented, pending exact-head CI and device acceptance
+
+### Direct-controller navigation safety
+
+Android MediaSession controllers can issue playlist navigation directly to the canonical ExoPlayer without entering Flutter's serialized transport lane. The active physical deck now observes canonical media-item transitions and invalidates the standby preload/crossfade state immediately. This prevents a previously prepared incoming item from being promoted after a headset, Bluetooth, notification, or Android Auto controller selects another queue item.
+
+The Flutter bridge's explicit next/previous commands also clear the preload before seeking the canonical queue. This keeps provider-initiated navigation and direct MediaSession navigation under the same stale-standby safety rule. Pause/resume continue to use the existing active-deck listener to freeze and resume an in-flight fade.
+
+### Acceptance still required on device
+
+- Use notification, lock-screen, headset/Bluetooth, and Android Auto controls for play, pause, next, previous, and seek.
+- During a prepared or active crossfade, issue next/previous from each available external surface and verify the selected item remains canonical and no stale incoming deck is promoted.
+- Select a different queue item through any supported external browse/controller surface and verify the standby preload is invalidated.
+- Confirm notification metadata, queue index, position, and provider UI converge on the same selected item after each command.
+
+This is a transport-safety hardening slice, not proof of complete Android Auto browse/search support or full device parity. Exact-head CI and physical-device acceptance remain gates.
+
+## 26. First production-device acceptance report — 2026-11-13
+
+The user installed the exact-head release APK from CI run #1564 (commit `2fe7c5f09844f29aa3f63521395e8f0d30f93e82`) and reported successful device checks for:
+
+- Basic playback, background playback, lock-screen controls, and external controls.
+- Crossfade playback and manual Next during crossfade; Next selected/promoted the incoming track rather than allowing a stale standby item to take over.
+- DJ samples/effects and interruption of an effect during transport operations.
+
+The user did not report a failure in these checks. Audio-focus interruption by phone/VoIP calls, transient/permanent focus loss and regain, wired/Bluetooth disconnection, and process/service recreation have not yet been explicitly tested. The player-screen engine marker was visually ambiguous because the Media3 label used the legacy B-deck icon; a follow-up UI commit now gives canonical Media3 playback a distinct equalizer icon and label.
+
+This is a positive first device-acceptance milestone, not complete lifecycle/focus acceptance or approval to retire the legacy engine. The marker correction is under exact-head CI validation.
+
+## 27. Canonical audio-route interruption ownership — 2026-11-13
+
+The Media3 service now enables ExoPlayer's built-in becoming-noisy handling on
+the physical player currently attached to the canonical MediaSession, and
+disables it on the standby deck. When a crossfade promotes the standby player,
+route-handling ownership moves with the MediaSession player. This keeps a
+headphone/wired-route disconnect from being handled independently by both
+decks while a transition is in flight.
+
+The ownership decision is isolated in `AudioOutputPolicy` and covered by JVM
+tests for active-versus-standby ownership. ExoPlayer's active-player audio
+attributes continue to own audio-focus behavior; the standby deck remains
+non-focus-owning. Transient/permanent focus-loss behavior and real wired,
+Bluetooth, call/VoIP, and process-recovery scenarios still require physical
+device acceptance. This code change is not a substitute for those tests.
+
+## 28. Canonical Media3 audio-focus ownership — 2026-11-13
+
+Audio-focus ownership is now expressed by the same deck policy as noisy-route
+handling. Only the player attached to the canonical MediaSession can request
+focus, and only after the provider explicitly enables Media3 focus handling.
+The standby deck is always configured without focus handling; ownership is
+re-evaluated when the crossfade promotes it. This preserves ExoPlayer as the
+single focus implementation for transient loss, permanent loss, ducking, and
+focus regain rather than introducing a second competing AudioManager listener.
+
+JVM tests cover active-versus-standby ownership and the disabled migration
+state. Physical validation remains required for transient/permanent focus
+loss, duck/gain, call/VoIP interruptions, and Bluetooth/wired route changes.
+
+
+## 29. Pause/stop silences the Media3 auxiliary DJ player — 2026-11-13
+
+A device-reported symptom of audio continuing after Pause prompted a review of
+all native audio producers. The service-owned DJ sample/echo ExoPlayer is
+separate from the canonical MediaSession player and does not request audio
+focus. Previously, the canonical Pause/Stop commands did not explicitly stop
+that auxiliary player.
+
+The canonical active deck's `onPlayWhenReadyChanged(false)` listener now
+stops auxiliary playback, covering MediaSession, notification, headset, and
+other direct-controller pause paths as well as Flutter transport. The bridge
+also explicitly stops the auxiliary player before completing Pause/Stop.
+Stopping is intentional rather than pausing: DJ samples and echo taps are
+transient effects and must not resume unexpectedly with the next track.
+
+This is a targeted correction for one plausible independent audio source; it
+does not prove that it was the only source of the reported sound. Exact-head
+CI and physical-device regression testing are required. Verify Pause during a
+DJ sample, echo tap, crossfade, and ordinary playback; then raise device volume
+while paused and confirm complete silence. Also verify Play does not resurrect
+the old sample and that normal DJ effects still work after resuming.
+
+
+## 30. Automated pause ownership regression guard — 2026-11-13
+
+The auxiliary DJ/sample player is a separate native output path. Its pause
+cleanup is now selected through `AudioOutputPolicy.shouldStopAuxiliaryAudio`,
+which returns true only for a canonical active-deck pause. JVM tests assert
+that a canonical pause stops auxiliary output, while active playback and a
+standby-deck pause do not trigger that cleanup.
+
+Device acceptance must respect DJ's automated operation: enable DJ and allow
+a natural track-end transition to occur; do not expect a manual sample trigger.
+During that listening session, verify normal DJ output, pause during or after
+an automated effect when the opportunity occurs, and confirm silence while
+paused. Record whether the relevant effect was actually active at pause time.
+CI policy tests validate routing intent but cannot prove physical audio output
+has stopped on a device.
+
+
+## 31. Session-bound Android effects cover both Media3 decks — 2026-11-13
+
+The native playback snapshot now reports the active and prepared-standby
+ExoPlayer audio-session IDs independently. The provider-facing snapshot keeps
+both values, and AudioEffectsProvider follows the canonical Media3 state stream
+to attach the persisted Android Reverb/Virtualizer profile to both physical
+decks before promotion. A/B role swaps preserve both attachments; a session is
+detached only after its deck is no longer active or prepared.
+
+The regression suite covers standby attachment, promotion without redundant
+reattachment/detachment, and cleanup when a deck is released. This closes the
+previous active-session-only attachment gap in the Android session-bound
+effects path. Exact-head CI and device audition with Reverb/Virtualizer enabled
+during crossfade remain required; the per-deck Resonate DSP sink remains a
+separate processing layer.
+
+
+## 32. Repeat-one uses the Media3 standby deck — 2026-11-13
+
+When crossfade is enabled, repeat-one now preloads the same queue occurrence
+at position zero on the standby ExoPlayer, temporarily disables repeat on the
+outgoing deck, and runs the native equal-power fade. After A/B promotion, the
+provider restores the listener's current repeat policy. If preload or promotion
+fails, it cancels the transition and restores native repeat-one on the current
+deck without reviving the legacy player. A regression test verifies the same
+queue occurrence, standby promotion, and repeat-policy restoration.
+
+## 33. DJ auxiliary output follows the media stream — 2026-11-13
+
+The service-owned auxiliary ExoPlayer now uses the canonical media audio
+attributes while continuing to request no audio focus. This keeps DJ samples
+and clipped echo taps on the listener's media-volume/output route rather than
+the notification/sonification stream. Physical-device listening is still
+required to confirm sample audibility, output mixing, and pause cleanup.
+
+## 34. Late state subscribers receive both Media3 deck sessions — 2026-11-13
+
+Media3ProviderSession.stateStream now replays its current reconciled snapshot
+to a new subscriber while subscribing to future state changes without a gap.
+This lets lazily created consumers attach session-bound effects to active and
+standby decks immediately, including while playback is paused and the position
+ticker is idle. A regression test covers repeated late subscriptions and both
+session IDs.

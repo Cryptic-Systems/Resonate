@@ -4,12 +4,12 @@ import androidx.media3.common.audio.AudioProcessor
 import android.util.Log
 
 /**
- * Reflection entry for just_audio patch → DefaultAudioSink processors.
+ * Factory for native DSP AudioProcessors installed in Media3 DefaultAudioSink.
  *
- * Called once per ExoPlayer / just_audio engine. Resonate dual playback
- * therefore gets **two** independent [DspEngineAudioProcessor] instances
- * (engine A and engine B) when both players are created — which is what
- * we want for flawless crossfade (no shared native handle across threads).
+ * Media3 calls [createProcessors] once per deck, so dual playback receives
+ * independent DSP processors and native handles for decks A and B. The
+ * no-argument overload remains as compatibility for the legacy just_audio
+ * injection hook while that backend is being retired.
  *
  * Crash history (2026-09-28): old JNI called dsp_create(double, int) but the
  * real ABI is dsp_create(const DspConfig*). That treated the sample-rate bits
@@ -25,23 +25,27 @@ object DspEngineSinkHook {
      */
     private const val ENABLE_NATIVE_LIVE_DSP = true
 
+    /** Compatibility overload used only by the legacy just_audio sink patch. */
     @JvmStatic
-    fun createProcessors(): Array<AudioProcessor> {
+    fun createProcessors(): Array<AudioProcessor> = createProcessors("legacy")
+
+    @JvmStatic
+    fun createProcessors(deckId: String): Array<AudioProcessor> {
         return try {
             val allow = ENABLE_NATIVE_LIVE_DSP && DspSessionGate.isNativeAllowed()
-            val proc = DspEngineAudioProcessor()
+            val proc = DspEngineAudioProcessor(deckId)
             proc.setNativeProcessEnabled(allow)
             val active = DspEngineRegistry.activeCount()
             if (allow) {
                 Log.i(
                     TAG,
-                    "Injected 1 host AudioProcessor(s) native=ON " +
+                    "Injected 1 host AudioProcessor(s) native=ON deck=$deckId " +
                         "(session ok; registry_active=$active — dual A/B uses 2 injects)"
                 )
             } else {
                 Log.i(
                     TAG,
-                    "Injected 1 host AudioProcessor(s) pass-through " +
+                    "Injected 1 host AudioProcessor(s) pass-through deck=$deckId " +
                         "(ENABLE=$ENABLE_NATIVE_LIVE_DSP gate_tripped=${DspSessionGate.isTripped()})"
                 )
             }

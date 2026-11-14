@@ -35,11 +35,44 @@ internal class LiveDspChannelHandler {
                 DspEngineRegistry.applyVolumeAll(linear)
                 result.success(mapOf("ok" to true, "db" to db, "linear" to linear, "active" to DspEngineRegistry.activeCount()))
             }
+            "setLiveDspDvc" -> {
+                val enabled = call.argument<Boolean>("enabled") ?: true
+                val db = (call.argument<Number>("db") ?: 0.0).toFloat().coerceIn(-120f, 24f)
+                val smoothing = call.argument<Boolean>("smoothing") ?: true
+                val smoothingMs = (call.argument<Number>("smoothingMs") ?: 15.0).toFloat().coerceIn(0f, 200f)
+                DspEngineRegistry.applyDvcAll(enabled, db, smoothing, smoothingMs)
+                result.success(mapOf("ok" to true, "enabled" to enabled, "db" to db, "active" to DspEngineRegistry.activeCount()))
+            }
+            "setLiveDspLimiterConfig" -> {
+                val enabled = call.argument<Boolean>("enabled") ?: true
+                val mode = (call.argument<Number>("mode") ?: 0).toInt().coerceIn(0, 3)
+                val threshold = (call.argument<Number>("thresholdDb") ?: -1.0).toFloat()
+                val release = (call.argument<Number>("releaseMs") ?: 50.0).toFloat()
+                val attack = (call.argument<Number>("attackMs") ?: 0.1).toFloat()
+                val lookahead = (call.argument<Number>("lookaheadMs") ?: 2.0).toFloat()
+                val knee = (call.argument<Number>("kneeDb") ?: 0.0).toFloat()
+                DspEngineRegistry.applyLimiterConfigAll(enabled, mode, threshold, release, attack, lookahead, knee)
+                result.success(mapOf("ok" to true, "enabled" to enabled, "mode" to mode, "active" to DspEngineRegistry.activeCount()))
+            }
+            "setLiveDspDither" -> {
+                val enabled = call.argument<Boolean>("enabled") ?: false
+                val mode = (call.argument<Number>("mode") ?: 1).toInt().coerceIn(0, 2)
+                DspEngineRegistry.applyDitherAll(enabled, mode)
+                result.success(mapOf("ok" to true, "enabled" to enabled, "mode" to mode, "active" to DspEngineRegistry.activeCount()))
+            }
+            "setLiveDspParametricEqBands" -> {
+                val frequencies = (call.argument<List<Number>>("frequenciesHz") ?: emptyList()).map { it.toFloat() }.toFloatArray()
+                val gains = (call.argument<List<Number>>("gainsDb") ?: emptyList()).map { it.toFloat() }.toFloatArray()
+                val qs = (call.argument<List<Number>>("qs") ?: emptyList()).map { it.toFloat() }.toFloatArray()
+                val types = (call.argument<List<Number>>("types") ?: emptyList()).map { it.toInt() }.toIntArray()
+                val ok = DspEngineRegistry.applyParametricEqBandsAll(frequencies, gains, qs, types)
+                result.success(mapOf("ok" to ok, "bands" to frequencies.size, "active" to DspEngineRegistry.activeCount()))
+            }
             "setLiveDspLimiterCeiling" -> {
                 val high = ((call.argument<Number>("highDb") ?: -0.5).toFloat())
-                    .coerceIn(-6.0f, -0.1f)
+                    .coerceIn(-12.0f, -0.05f)
                 val low = ((call.argument<Number>("lowDb") ?: -0.2).toFloat())
-                    .coerceIn(-6.0f, -0.1f)
+                    .coerceIn(-12.0f, -0.05f)
                 DspEngineRegistry.applyLimiterCeilingAll(high, low)
                 result.success(mapOf(
                     "ok" to true,

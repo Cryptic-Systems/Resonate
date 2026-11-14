@@ -6,7 +6,6 @@ import 'package:share_plus/share_plus.dart';
 import '../ui/resonate_glass.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/blur_sheet.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 
 import '../models/intelligence_recommendation.dart';
@@ -99,14 +98,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: Center(
-                  child: Chip(
-                    avatar: Icon(
-                      music.activeEngineLabel == 'A'
-                          ? Icons.looks_one_rounded
-                          : Icons.looks_two_rounded,
-                      size: 17,
+                  child: Tooltip(
+                    message: 'Engine ${music.activeEngineLabel} is the active playback deck',
+                    child: Chip(
+                      avatar: Icon(
+                        music.activeEngineLabel == 'A'
+                            ? Icons.looks_one_rounded
+                            : Icons.looks_two_rounded,
+                        size: 17,
+                      ),
+                      label: Text('Engine ${music.activeEngineLabel}'),
                     ),
-                    label: Text('Engine ${music.activeEngineLabel}'),
                   ),
                 ),
               );
@@ -307,14 +309,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     ),
                   ),
                   const SizedBox(height: 8),
-                  StreamBuilder<PlayerState>(
-                    stream: music.audioPlayer.playerStateStream,
-                    initialData: music.audioPlayer.playerState,
-                    builder: (_, snapshot) {
-                      final state =
-                          snapshot.data ?? music.audioPlayer.playerState;
-                      final playing = state.playing &&
-                          state.processingState != ProcessingState.completed;
+                  Builder(
+                    builder: (_) {
+                      final playing = music.isPlaying;
                       final currentMs = music.currentPosition.inMilliseconds;
 
                       return Row(

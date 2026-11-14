@@ -6,6 +6,7 @@ import android.media.AudioManager
 import android.provider.DocumentsContract
 import com.Aetherion.Resonate.media.PermissionHelper
 import com.Aetherion.Resonate.media.Media3PlaybackBridge
+import com.Aetherion.Resonate.media.AudioCommunicationGuard
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -37,6 +38,10 @@ class MainActivity : AudioServiceActivity() {
                 "requestAudioPermission" -> permissionHelper.requestAudioPermission(result)
                 "requestVisualizationPermission" -> permissionHelper.requestVisualizationPermission(result)
                 "requestNotificationPermission" -> permissionHelper.requestNotificationPermission(result)
+                "isCommunicationActive" -> {
+                    val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+                    result.success(AudioCommunicationGuard.isActive(audioManager.mode))
+                }
                 "getSystemVolume" -> getSystemVolume(result)
                 "setSystemVolume" -> setSystemVolume(call.argument<Double>("value") ?: 1.0, result)
                 "pickFolder" -> pickFolder(result)

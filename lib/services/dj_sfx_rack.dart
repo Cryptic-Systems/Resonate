@@ -1,11 +1,11 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio_effects_bridge.dart';
+import 'playback_engine_session.dart';
+import 'playback_backend.dart';
 import '../dj_engine/core/dj_types.dart';
 import '../dj_engine/core/dj_policy.dart';
 
@@ -52,15 +52,16 @@ class DjSfxRack {
   List<double>? _savedEqGainsA;
   List<double>? _savedEqGainsB;
   bool _eqTouched = false;
-  double _savedOutgoingSpeed = 1.0;
-  AudioPlayer? _outgoing;
-  AudioPlayer? _oneshot;
+  PlaybackEngineSession? _playbackSession;
   int _oneshotGen = 0;
   double _oneshotBaseVolume = 0.0;
+  bool _auxiliaryOneShotActive = false;
   int _delayedSfxGen = 0;
   int _trackFxGen = 0;
   int _engageGen = 0;
   bool _trackActionRunning = false;
+  PlaybackEngineSession? _trackAutomationSession;
+  double _trackAutomationOriginalSpeed = 1.0;
   List<int> _beatMs = const <int>[];
   List<int> _phraseAnchors = const <int>[];
 
@@ -169,96 +170,128 @@ class DjSfxRack {
   Future<void> engage({
     required double energyScore,
     DjSfxPreset? preset,
-    AndroidEqualizer? equalizerA,
-    AndroidEqualizer? equalizerB,
-    AudioPlayer? outgoing,
+    dynamic equalizerA,
+    dynamic equalizerB,
     String? outgoingUri,
     List<int> beatMs = const <int>[],
     List<DjSection> sections = const <DjSection>[],
     DjTransitionKind? transitionKind,
     DjAggressiveness aggressiveness = DjAggressiveness.balanced,
+    PlaybackEngineSession? playbackSession,
   }) async {
     // Do not let two transition effects mutate the same player/EQ at once.
     if (engaged || _eqTouched) {
-      await restore(equalizerA: equalizerA, equalizerB: equalizerB);
+      await restore(
+        equalizerA: equalizerA,
+        equalizerB: equalizerB,
+        playbackSession: _playbackSession,
+      );
     }
+    _playbackSession = playbackSession;
     final generation = ++_engageGen;
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
+    // Media3 session effects are restricted to capabilities implemented by
+    // its canonical service session; track automation uses serialized seek/speed.
     final requested = preset ??
         _pickPhraseAwarePreset(
           energyScore: score,
           transitionKind: transitionKind,
           sections: sections,
-          positionMs: outgoing?.position.inMilliseconds ?? 0,
+          positionMs: playbackSession?.position.inMilliseconds ?? 0,
           aggressiveness: aggressiveness,
         );
 
-    // Repeat/repeat-restart seek the *outgoing player* several times during
-    // the crossfade. That can rewind audible music while the fade clock keeps
-    // advancing, resembling a failed transition followed by a restart. Keep
-    // those track-mutating SFX out of automatic playback for now, including
-    // when a caller explicitly requests one. Use a non-seeking effect instead.
-    final preferred = switch (requested) {
-      DjSfxPreset.repeat || DjSfxPreset.repeatRestart =>
-        aggressiveness == DjAggressiveness.safe
-            ? DjSfxPreset.tightGlue
-            : (score >= 0.75 ? DjSfxPreset.whoosh : DjSfxPreset.echo),
-      _ => requested,
-    };
-    activePreset = _applyUsageFairness(preferred, aggressiveness: aggressiveness);
+    // Legacy repeat/repeat-restart are still kept out of automatic selection
+    // until the user has explicitly opted into track automation. Media3's
+    // serialized session path now owns and cancels those operations.
+    final preferred = playbackSession != null
+        ? requested
+        : switch (requested) {
+            DjSfxPreset.repeat || DjSfxPreset.repeatRestart =>
+              aggressiveness == DjAggressiveness.safe
+                  ? DjSfxPreset.tightGlue
+                  : (score >= 0.75 ? DjSfxPreset.whoosh : DjSfxPreset.echo),
+            _ => requested,
+          };
+    final sessionSafePreset = playbackSession == null
+        ? preferred
+        : (_usesEq(preferred) || _isSample(preferred) ||
+                _usesTrackManipulation(preferred) ||
+                preferred == DjSfxPreset.echo || preferred == DjSfxPreset.dryEcho
+            ? preferred
+            : (transitionKind == DjTransitionKind.outroIntro
+                ? DjSfxPreset.filterClose
+                : DjSfxPreset.filterOpen));
+    activePreset = playbackSession == null
+        ? _applyUsageFairness(sessionSafePreset, aggressiveness: aggressiveness)
+        : sessionSafePreset;
     _usageCounts[activePreset!] = (_usageCounts[activePreset!] ?? 0) + 1;
     engaged = true;
     _eqTouched = false;
-    _outgoing = outgoing;
     _beatMs = List<int>.from(beatMs)..sort();
     _phraseAnchors = _buildPhraseAnchors(_beatMs);
-    _savedOutgoingSpeed = 1.0;
     try {
-      if (outgoing != null) {
-        _savedOutgoingSpeed = outgoing.speed;
+      if (playbackSession == null) {
+        _savedEqGainsA = await _snapshotEq(equalizerA);
+        if (generation != _engageGen || !engaged) return;
+        _savedEqGainsB = await _snapshotEq(equalizerB);
+        if (generation != _engageGen || !engaged) return;
       }
-    } catch (_) {}
-
-    try {
-      _savedEqGainsA = await _snapshotEq(equalizerA);
-      if (generation != _engageGen || !engaged) return;
-      _savedEqGainsB = await _snapshotEq(equalizerB);
-      if (generation != _engageGen || !engaged) return;
-      await AudioEffectsBridge.setBassBoost(0.0);
-      if (generation != _engageGen || !engaged) return;
-      await _applyFxAt(
-        0.0,
-        score,
-        isCurrent: () => generation == _engageGen && engaged,
-      );
-      if (generation != _engageGen || !engaged) return;
+      if (playbackSession == null) {
+        await AudioEffectsBridge.setBassBoost(0.0);
+        if (generation != _engageGen || !engaged) return;
+        await _applyFxAt(
+          0.0,
+          score,
+          isCurrent: () => generation == _engageGen && engaged,
+        );
+        if (generation != _engageGen || !engaged) return;
+      }
       if (_usesEq(activePreset!)) {
         // Mark EQ as touched before the first await so restore can recover even
         // if cancellation arrives between applying the two engine equalizers.
         _eqTouched = true;
-        await _applyEqAt(
-          equalizerA,
-          0.0,
-          isCurrent: () => generation == _engageGen && engaged,
-        );
-        if (generation != _engageGen || !engaged) return;
-        await _applyEqAt(
-          equalizerB,
-          0.0,
-          isCurrent: () => generation == _engageGen && engaged,
-        );
+        if (playbackSession != null) {
+          await _applyDeckEqAt(
+            playbackSession,
+            'active',
+            0.0,
+            isCurrent: () => generation == _engageGen && engaged,
+          );
+          if (generation != _engageGen || !engaged) return;
+          await _applyDeckEqAt(
+            playbackSession,
+            'standby',
+            0.0,
+            isCurrent: () => generation == _engageGen && engaged,
+          );
+        } else {
+          await _applyEqAt(
+            equalizerA,
+            0.0,
+            isCurrent: () => generation == _engageGen && engaged,
+          );
+          if (generation != _engageGen || !engaged) return;
+          await _applyEqAt(
+            equalizerB,
+            0.0,
+            isCurrent: () => generation == _engageGen && engaged,
+          );
+        }
         if (generation != _engageGen || !engaged) return;
       }
-      // Fire one-shot early so it sits over the outgoing fade.
-      if (_isSample(activePreset!)) {
+      // Auxiliary samples and track automation are routed only through the
+      // canonical Media3 session. No secondary Flutter audio player is created.
+      if (playbackSession != null && _isSample(activePreset!)) {
         unawaited(_playOneshot(activePreset!, score));
       }
-      if (_usesTrackManipulation(activePreset!)) {
-        unawaited(_runTrackManipulation(activePreset!));
+      if (playbackSession != null &&
+          (activePreset == DjSfxPreset.echo || activePreset == DjSfxPreset.dryEcho)) {
+        unawaited(_playTrackEchoOnSession(outgoingUri, score));
       }
-      if (activePreset == DjSfxPreset.echo || activePreset == DjSfxPreset.dryEcho) {
-        unawaited(_playTrackEcho(outgoingUri, score));
+      if (playbackSession != null && _usesTrackManipulation(activePreset!)) {
+        unawaited(_runTrackManipulationOnSession(activePreset!, playbackSession));
       }
     } catch (e) {
       debugPrint('DjSfxRack.engage: $e');
@@ -267,80 +300,106 @@ class DjSfxRack {
 
   Future<void> tick(
     double t, {
-    AndroidEqualizer? equalizerA,
-    AndroidEqualizer? equalizerB,
+    dynamic equalizerA,
+    dynamic equalizerB,
     double energyScore = 0.5,
-    AudioPlayer? outgoing,
+    PlaybackEngineSession? playbackSession,
   }) async {
     if (!engaged || activePreset == null) return;
     final generation = _engageGen;
     bool isCurrent() => generation == _engageGen && engaged;
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
-    if (outgoing != null) _outgoing = outgoing;
     try {
-      await _applyFxAt(t, score, isCurrent: isCurrent);
+      final session = playbackSession ?? _playbackSession;
+      if (session == null) {
+        await _applyFxAt(t, score, isCurrent: isCurrent);
+      }
       if (!isCurrent() || activePreset == null) return;
       if (_usesEq(activePreset!)) {
         _eqTouched = true;
-        await _applyEqAt(equalizerA, t, isCurrent: isCurrent);
-        if (!isCurrent()) return;
-        await _applyEqAt(equalizerB, t, isCurrent: isCurrent);
+        if (session != null) {
+          await _applyDeckEqAt(session, 'active', t, isCurrent: isCurrent);
+          if (!isCurrent()) return;
+          await _applyDeckEqAt(session, 'standby', t, isCurrent: isCurrent);
+        } else {
+          await _applyEqAt(equalizerA, t, isCurrent: isCurrent);
+          if (!isCurrent()) return;
+          await _applyEqAt(equalizerB, t, isCurrent: isCurrent);
+        }
         if (!isCurrent()) return;
       }
-      // Duck oneshot under the incoming rise so samples fade with the blend.
-      final shot = _oneshot;
-      if (shot != null && _oneshotBaseVolume > 0) {
+      // Duck the service-owned auxiliary sample under the incoming rise.
+      if (_auxiliaryOneShotActive && _oneshotBaseVolume > 0) {
         final progress = t.clamp(0.0, 1.6);
         final duck = progress <= 1.0
             ? (1.0 - progress * 0.85)
             : (0.15 * (1.6 - progress) / 0.6).clamp(0.0, 0.15);
+        final volume = (_oneshotBaseVolume * duck).clamp(0.0, 0.14);
         try {
-          await shot.setVolume((_oneshotBaseVolume * duck).clamp(0.0, 0.14));
+          final candidate = playbackSession ?? _playbackSession;
+          if (candidate is PlaybackAuxiliaryEffectsBackend) {
+            final auxiliary = candidate as PlaybackAuxiliaryEffectsBackend;
+            await auxiliary.setAuxiliarySoundVolume(volume);
+          }
         } catch (_) {}
       }
     } catch (_) {}
   }
 
+  /// Immediately invalidates an in-flight Media3 track automation sequence.
+  /// The generation is advanced before the first await, so a manual transport
+  /// command queued immediately after this call cannot be followed by a stale
+  /// DJ seek/rate step. The captured playback rate is restored on the same
+  /// serialized session command lane.
+  Future<void> cancelTrackAutomation() async {
+    ++_trackFxGen;
+    _trackActionRunning = false;
+    final session = _trackAutomationSession;
+    _trackAutomationSession = null;
+    if (session == null) return;
+    try {
+      await session.setPlaybackSpeed(_trackAutomationOriginalSpeed);
+    } catch (_) {}
+  }
+
   Future<void> restore({
-    AndroidEqualizer? equalizerA,
-    AndroidEqualizer? equalizerB,
+    dynamic equalizerA,
+    dynamic equalizerB,
+    PlaybackEngineSession? playbackSession,
   }) async {
     ++_delayedSfxGen;
-    ++_trackFxGen;
     ++_oneshotGen;
     ++_engageGen;
-    // A cancelled track action may still be unwinding an awaited seek/delay.
-    // Clear the gate now; its stale finally block must not clear a newer action.
-    _trackActionRunning = false;
+    // Cancel before any effect teardown awaits; stale track automation cannot
+    // enqueue another seek/rate command behind a user's transport operation.
+    await cancelTrackAutomation();
     final hadActiveEffects = engaged || _eqTouched;
     if (!hadActiveEffects) {
       await _stopOneshot();
       return;
     }
     try {
-      final out = _outgoing;
-      if (out != null) {
-        try {
-          await out.setSpeed(_savedOutgoingSpeed.clamp(0.5, 1.5));
-        } catch (_) {
-          try {
-            await out.setSpeed(1.0);
-          } catch (_) {}
-        }
-      }
+      final session = playbackSession ?? _playbackSession;
       await _stopOneshot();
-      final prefs = await SharedPreferences.getInstance();
-      final effectsEnabled = prefs.getBool('effects_enabled') ?? true;
-      final reverb = prefs.getDouble('reverb') ?? 0.0;
-      final virt = prefs.getDouble('virtualizer') ?? 0.0;
-      final bass = prefs.getDouble('bassBoost') ?? 0.0;
-      await AudioEffectsBridge.setBassBoost(effectsEnabled ? bass : 0.0);
-      await AudioEffectsBridge.setReverb(effectsEnabled ? reverb : 0.0);
-      await AudioEffectsBridge.setVirtualizer(effectsEnabled ? virt : 0.0);
+      if (session == null) {
+        final prefs = await SharedPreferences.getInstance();
+        final effectsEnabled = prefs.getBool('effects_enabled') ?? true;
+        final reverb = prefs.getDouble('reverb') ?? 0.0;
+        final virt = prefs.getDouble('virtualizer') ?? 0.0;
+        final bass = prefs.getDouble('bassBoost') ?? 0.0;
+        await AudioEffectsBridge.setBassBoost(effectsEnabled ? bass : 0.0);
+        await AudioEffectsBridge.setReverb(effectsEnabled ? reverb : 0.0);
+        await AudioEffectsBridge.setVirtualizer(effectsEnabled ? virt : 0.0);
+      }
       if (_eqTouched) {
-        await _restoreEq(equalizerA, _savedEqGainsA);
-        await _restoreEq(equalizerB, _savedEqGainsB);
+        if (session != null) {
+          await session.clearDeckEqOverlay(deck: 'active');
+          await session.clearDeckEqOverlay(deck: 'standby');
+        } else {
+          await _restoreEq(equalizerA, _savedEqGainsA);
+          await _restoreEq(equalizerB, _savedEqGainsB);
+        }
       }
     } catch (e) {
       debugPrint('DjSfxRack.restore: $e');
@@ -350,8 +409,7 @@ class DjSfxRack {
       activePreset = null;
       _savedEqGainsA = null;
       _savedEqGainsB = null;
-      _outgoing = null;
-      _savedOutgoingSpeed = 1.0;
+      _playbackSession = null;
       _beatMs = const <int>[];
       _phraseAnchors = const <int>[];
     }
@@ -362,14 +420,14 @@ class DjSfxRack {
     required Duration delay,
     required double energyScore,
     DjSfxPreset? preset,
-    AndroidEqualizer? equalizerA,
-    AndroidEqualizer? equalizerB,
-    AudioPlayer? outgoing,
+    dynamic equalizerA,
+    dynamic equalizerB,
     String? outgoingUri,
     List<int> beatMs = const <int>[],
     List<DjSection> sections = const <DjSection>[],
     DjTransitionKind? transitionKind,
     DjAggressiveness aggressiveness = DjAggressiveness.balanced,
+    PlaybackEngineSession? playbackSession,
   }) async {
     final gen = ++_delayedSfxGen;
     try {
@@ -381,12 +439,12 @@ class DjSfxRack {
         preset: preset,
         equalizerA: equalizerA,
         equalizerB: equalizerB,
-        outgoing: outgoing,
         outgoingUri: outgoingUri,
         beatMs: beatMs,
         sections: sections,
         transitionKind: transitionKind,
         aggressiveness: aggressiveness,
+        playbackSession: playbackSession,
       );
     } catch (e) {
       debugPrint('DjSfxRack.engageDelayed: $e');
@@ -395,131 +453,138 @@ class DjSfxRack {
 
   Future<void> _playOneshot(DjSfxPreset preset, double score) async {
     final asset = sampleAssets[preset];
-    if (asset == null) return;
+    final candidate = _playbackSession;
+    if (asset == null || candidate is! PlaybackAuxiliaryEffectsBackend) return;
+    final auxiliary = candidate as PlaybackAuxiliaryEffectsBackend;
     final gen = ++_oneshotGen;
     try {
       await _stopOneshot();
       if (gen != _oneshotGen || !engaged) return;
-      final player = AudioPlayer();
-      _oneshot = player;
-      // Start quietly and let tick() duck the sample further as the
-      // incoming track rises. Never allow a sample to dominate the music.
       _oneshotBaseVolume = djSfxOneShotVolumeForEnergy(score);
-      await player.setVolume(_oneshotBaseVolume);
-      await player.setAudioSource(AudioSource.asset(asset));
-      if (gen != _oneshotGen) return;
-      await player.play();
-      // Auto-stop after max sample length.
+      final assetUri = Uri.parse('asset:///flutter_assets/$asset');
+      await auxiliary.playAuxiliarySound(assetUri, volume: _oneshotBaseVolume);
+      if (gen != _oneshotGen || !engaged) {
+        await auxiliary.stopAuxiliarySound();
+        return;
+      }
+      _auxiliaryOneShotActive = true;
       Future<void>.delayed(const Duration(milliseconds: 900), () async {
         if (gen != _oneshotGen) return;
         await _stopOneshot();
       });
     } catch (e) {
-      debugPrint('DjSfxRack oneshot $preset: $e');
+      debugPrint('DjSfxRack Media3 oneshot $preset: $e');
     }
   }
 
-  Future<void> _playTrackEcho(String? uri, double score) async {
-    if (uri == null || uri.trim().isEmpty) return;
-    final out = _outgoing;
-    if (out == null) return;
+  Future<void> _playTrackEchoOnSession(String? rawUri, double score) async {
+    final session = _playbackSession;
+    if (session == null) return;
+    if (session is! PlaybackAuxiliaryEffectsBackend) return;
+    if (rawUri == null || rawUri.trim().isEmpty) return;
+    final auxiliary = session as PlaybackAuxiliaryEffectsBackend;
+    final currentMs = session.position.inMilliseconds;
+    final startMs = _musicalEchoStart(currentMs);
+    if (startMs < 0) return;
+    final durationMs = session.duration?.inMilliseconds;
+    final endMs = math.min(durationMs ?? (startMs + 900), startMs + 850);
+    if (endMs <= startMs + 80) return;
+    final trimmed = rawUri.trim();
+    final parsed = Uri.tryParse(trimmed);
+    final sourceUri = parsed != null && parsed.hasScheme ? parsed : Uri.file(trimmed);
     final gen = ++_oneshotGen;
     try {
-      final startMs = _musicalEchoStart(out.position.inMilliseconds);
-      if (startMs < 0) return;
-      final durationMs = out.duration?.inMilliseconds;
-      final endMs = math.min(
-        durationMs ?? (startMs + 900),
-        startMs + 850,
-      );
-      if (endMs <= startMs + 80) return;
-
       await _stopOneshot();
       if (gen != _oneshotGen || !engaged) return;
-      final player = AudioPlayer();
-      _oneshot = player;
-      // Keep samples under the music so they colour the fade, not dominate it.
-      final volume = score >= 0.85 ? 0.08 : (score >= 0.7 ? 0.10 : 0.12);
-      _oneshotBaseVolume = volume.clamp(0.05, 0.14);
-      await player.setVolume(_oneshotBaseVolume);
-      final sourceUri = uri.startsWith('content://') ||
-              uri.startsWith('file://') ||
-              uri.startsWith('http://') ||
-              uri.startsWith('https://')
-          ? Uri.parse(uri)
-          : Uri.file(uri);
-      await player.setAudioSource(
-        ClippingAudioSource(
-          child: AudioSource.uri(sourceUri),
-          start: Duration(milliseconds: startMs),
-          end: Duration(milliseconds: endMs),
-        ),
-      );
-      if (gen != _oneshotGen || !engaged) return;
+      _oneshotBaseVolume = (score >= 0.85 ? 0.08 : (score >= 0.7 ? 0.10 : 0.12)).clamp(0.05, 0.14);
       await Future<void>.delayed(const Duration(milliseconds: 220));
       if (gen != _oneshotGen || !engaged) return;
-      await player.play();
+      await auxiliary.playAuxiliarySound(
+        sourceUri,
+        volume: _oneshotBaseVolume,
+        startPosition: Duration(milliseconds: startMs),
+        endPosition: Duration(milliseconds: endMs),
+      );
+      if (gen != _oneshotGen || !engaged) {
+        await auxiliary.stopAuxiliarySound();
+        return;
+      }
+      _auxiliaryOneShotActive = true;
       Future<void>.delayed(const Duration(milliseconds: 1100), () async {
         if (gen != _oneshotGen) return;
         await _stopOneshot();
       });
     } catch (e) {
-      debugPrint('DjSfxRack track echo: $e');
+      debugPrint('DjSfxRack Media3 track echo: $e');
     }
   }
 
   Future<void> _stopOneshot() async {
-    final p = _oneshot;
-    _oneshot = null;
     _oneshotBaseVolume = 0.0;
-    if (p == null) return;
-    try {
-      await p.stop();
-    } catch (_) {}
-    try {
-      await p.dispose();
-    } catch (_) {}
+    if (_auxiliaryOneShotActive) {
+      _auxiliaryOneShotActive = false;
+      final candidate = _playbackSession;
+      if (candidate is PlaybackAuxiliaryEffectsBackend) {
+        final auxiliary = candidate as PlaybackAuxiliaryEffectsBackend;
+        try {
+          await auxiliary.stopAuxiliarySound();
+        } catch (_) {}
+      }
+    }
   }
 
   bool _usesTrackManipulation(DjSfxPreset p) =>
       p == DjSfxPreset.repeat ||
       p == DjSfxPreset.repeatRestart ||
+      p == DjSfxPreset.vinylStop ||
       p == DjSfxPreset.scratch ||
       p == DjSfxPreset.stutter ||
       p == DjSfxPreset.beatRepeat ||
       p == DjSfxPreset.retrigger ||
       p == DjSfxPreset.brake;
 
-  /// Manipulates the actual outgoing track using just_audio controls.
-  Future<void> _runTrackManipulation(DjSfxPreset preset) async {
-    final out = _outgoing;
-    if (out == null || _trackActionRunning) return;
+  /// Performs DJ track automation through the canonical session only.
+  /// Every seek/rate step is generation-guarded; restore() invalidates the
+  /// sequence and restores the session's captured playback rate.
+  Future<void> _runTrackManipulationOnSession(
+    DjSfxPreset preset,
+    PlaybackEngineSession session,
+  ) async {
+    if (_trackActionRunning) return;
     final gen = ++_trackFxGen;
+    final originalSpeed = session.playbackSpeed.clamp(0.5, 2.0).toDouble();
+    final current = session.position.inMilliseconds;
+    if (current < 120) return;
     _trackActionRunning = true;
+    _trackAutomationSession = session;
+    _trackAutomationOriginalSpeed = originalSpeed;
+    bool currentAction() => gen == _trackFxGen && engaged && identical(_trackAutomationSession, session);
+    Future<void> seekTo(int milliseconds) async {
+      if (!currentAction()) return;
+      await session.seek(Duration(milliseconds: math.max(0, milliseconds)));
+    }
+    Future<void> setSpeed(double speed) async {
+      if (!currentAction()) return;
+      await session.setPlaybackSpeed(speed.clamp(0.5, 2.0).toDouble());
+    }
+    Future<void> pauseFor(int milliseconds) => Future<void>.delayed(Duration(milliseconds: milliseconds));
     try {
-      final originalSpeed = _savedOutgoingSpeed.clamp(0.5, 1.5).toDouble();
-      final current = out.position.inMilliseconds;
-      if (current < 120) return;
-
       if (preset == DjSfxPreset.repeat || preset == DjSfxPreset.repeatRestart) {
         final anchor = _musicalPhraseAnchor(current);
-        final sliceMs = _musicalSliceMs(anchor);
-        final repeatAnchor = math.max(0, anchor - sliceMs);
+        final slice = _musicalSliceMs(anchor);
+        final repeatAnchor = math.max(0, anchor - slice);
         for (var i = 0; i < 3; i++) {
-          if (gen != _trackFxGen || !engaged) return;
-          await out.seek(Duration(milliseconds: repeatAnchor));
-          await out.setSpeed(originalSpeed);
-          await Future<void>.delayed(const Duration(milliseconds: 680));
+          if (!currentAction()) return;
+          await seekTo(repeatAnchor);
+          await setSpeed(originalSpeed);
+          await pauseFor(680);
         }
-        if (preset == DjSfxPreset.repeatRestart &&
-            gen == _trackFxGen &&
-            engaged) {
-          await out.seek(Duration.zero);
-          await out.setSpeed(originalSpeed);
+        if (preset == DjSfxPreset.repeatRestart && currentAction()) {
+          await seekTo(0);
+          await setSpeed(originalSpeed);
         }
         return;
       }
-
       if (preset == DjSfxPreset.stutter || preset == DjSfxPreset.beatRepeat) {
         final anchor = _musicalAnchor(current);
         final beat = _musicalSliceMs(anchor);
@@ -527,52 +592,53 @@ class DjSfxRack {
         final start = math.max(0, anchor - slice);
         final count = preset == DjSfxPreset.stutter ? 5 : 4;
         for (var i = 0; i < count; i++) {
-          if (gen != _trackFxGen || !engaged) return;
-          await out.seek(Duration(milliseconds: start));
-          await out.setSpeed(originalSpeed);
-          await Future<void>.delayed(Duration(milliseconds: slice));
+          if (!currentAction()) return;
+          await seekTo(start);
+          await setSpeed(originalSpeed);
+          await pauseFor(slice);
         }
         return;
       }
-
       if (preset == DjSfxPreset.retrigger) {
         final anchor = _musicalAnchor(current);
         final beat = _musicalSliceMs(anchor);
         final start = math.max(0, anchor - beat);
         for (var i = 0; i < 3; i++) {
-          if (gen != _trackFxGen || !engaged) return;
-          await out.seek(Duration(milliseconds: start));
-          await out.setSpeed(originalSpeed);
-          await Future<void>.delayed(Duration(milliseconds: beat.clamp(250, 1400)));
+          if (!currentAction()) return;
+          await seekTo(start);
+          await setSpeed(originalSpeed);
+          await pauseFor(beat.clamp(250, 1400));
         }
         return;
       }
-
-      if (preset == DjSfxPreset.brake) {
+      if (preset == DjSfxPreset.brake || preset == DjSfxPreset.vinylStop) {
         for (final multiplier in <double>[0.94, 0.82, 0.70, 0.58, 0.50]) {
-          if (gen != _trackFxGen || !engaged) return;
-          await out.setSpeed((originalSpeed * multiplier).clamp(0.5, 1.5));
-          await Future<void>.delayed(const Duration(milliseconds: 110));
+          if (!currentAction()) return;
+          await setSpeed(originalSpeed * multiplier);
+          await pauseFor(110);
         }
-        if (gen == _trackFxGen && engaged) await out.setSpeed(originalSpeed);
         return;
       }
       final center = _musicalPhraseAnchor(current);
       const strokes = <int>[120, -100, 150, -130, 80];
       for (final delta in strokes) {
-        if (gen != _trackFxGen || !engaged) return;
-        final target = math.max(0, center + delta);
-        await out.seek(Duration(milliseconds: target));
-        await out.setSpeed(
-          delta >= 0 ? originalSpeed * 1.55 : originalSpeed * 0.62,
-        );
-        await Future<void>.delayed(const Duration(milliseconds: 115));
+        if (!currentAction()) return;
+        await seekTo(center + delta);
+        await setSpeed(originalSpeed * (delta >= 0 ? 1.55 : 0.62));
+        await pauseFor(115);
       }
-      if (gen == _trackFxGen) await out.setSpeed(originalSpeed);
     } catch (e) {
-      debugPrint('DjSfxRack track manipulation $preset: $e');
+      debugPrint('DjSfxRack Media3 track manipulation $preset: $e');
     } finally {
-      if (gen == _trackFxGen) _trackActionRunning = false;
+      if (gen == _trackFxGen) {
+        if (identical(_trackAutomationSession, session)) {
+          try {
+            await session.setPlaybackSpeed(originalSpeed);
+          } catch (_) {}
+          _trackAutomationSession = null;
+        }
+        _trackActionRunning = false;
+      }
     }
   }
 
@@ -699,10 +765,6 @@ class DjSfxRack {
   bool _usesEq(DjSfxPreset p) =>
       p == DjSfxPreset.filterOpen || p == DjSfxPreset.filterClose;
 
-  bool _usesSpeed(DjSfxPreset p) =>
-      p == DjSfxPreset.vinylStop ||
-      (p == DjSfxPreset.rewind && !_isSample(p));
-
   double _envelope(double t) {
     if (t <= 0) return 0.0;
     if (t < 0.15) return (t / 0.15).clamp(0.0, 1.0);
@@ -774,17 +836,9 @@ class DjSfxRack {
     await AudioEffectsBridge.setReverb(reverb);
     if (!current()) return;
 
-    if (_usesSpeed(p) && _outgoing != null) {
-      final speed = p == DjSfxPreset.vinylStop
-          ? (1.0 - 0.45 * x).clamp(0.55, 1.0)
-          : (1.0 - 0.55 * x).clamp(0.45, 1.0);
-      try {
-        await _outgoing!.setSpeed(speed);
-      } catch (_) {}
-    }
   }
 
-  Future<List<double>?> _snapshotEq(AndroidEqualizer? eq) async {
+  Future<List<double>?> _snapshotEq(dynamic eq) async {
     if (eq == null) return null;
     try {
       final p = await eq.parameters;
@@ -795,7 +849,7 @@ class DjSfxRack {
   }
 
   Future<void> _applyEqAt(
-    AndroidEqualizer? eq,
+    dynamic eq,
     double t, {
     bool Function()? isCurrent,
   }) async {
@@ -833,8 +887,44 @@ class DjSfxRack {
     } catch (_) {}
   }
 
+  /// Applies the same transition filter to a logical Media3 deck. The
+  /// native DSP registry composes this temporary response with the saved EQ,
+  /// so this path never snapshots or overwrites persistent equalizer gains.
+  Future<void> _applyDeckEqAt(
+    PlaybackEngineSession session,
+    String deck,
+    double t, {
+    bool Function()? isCurrent,
+  }) async {
+    bool current() => isCurrent?.call() ?? true;
+    if (!current() || activePreset == null) return;
+    final n = 31;
+    final x = t.clamp(0.0, 1.0);
+    final env = _envelope(t);
+    final centers = List<double>.generate(
+      n,
+      (i) => 20.0 * math.pow(1000.0, i / (n - 1)).toDouble(),
+      growable: false,
+    );
+    final gains = List<double>.generate(n, (i) {
+      final fraction = i / (n - 1);
+      final gain = switch (activePreset!) {
+        DjSfxPreset.filterOpen => -6.0 * (1.0 - x) * fraction,
+        DjSfxPreset.filterClose => -5.5 * (1.0 - x) * (1.0 - fraction),
+        _ => 0.0,
+      };
+      return (gain * env).clamp(-12.0, 12.0).toDouble();
+    }, growable: false);
+    if (!current()) return;
+    await session.setDeckEqOverlay(
+      deck: deck,
+      centersHz: centers,
+      gainsDb: gains,
+    );
+  }
+
   Future<void> _restoreEq(
-    AndroidEqualizer? eq,
+    dynamic eq,
     List<double>? savedGains,
   ) async {
     if (eq == null) return;

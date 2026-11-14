@@ -2,13 +2,70 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+double _clampParametric(double value, double min, double max) =>
+    value.isFinite ? value.clamp(min, max).toDouble() : 0.0.clamp(min, max).toDouble();
+
+/// One native parametric EQ section. Type values match DSP-ENGINE's C ABI:
+/// 0 peak, 1 low shelf, 2 high shelf, 3 low-pass, 4 high-pass.
+class ParametricEqBand {
+  final double frequencyHz;
+  final double gainDb;
+  final double q;
+  final int type;
+
+  const ParametricEqBand({
+    required this.frequencyHz,
+    this.gainDb = 0,
+    this.q = 1,
+    this.type = 0,
+  });
+
+  ParametricEqBand copyWith({
+    double? frequencyHz,
+    double? gainDb,
+    double? q,
+    int? type,
+  }) => ParametricEqBand(
+        frequencyHz: _clampParametric(frequencyHz ?? this.frequencyHz, 20, 20000),
+        gainDb: _clampParametric(gainDb ?? this.gainDb, -24, 24),
+        q: _clampParametric(q ?? this.q, 0.1, 18),
+        type: (type ?? this.type).clamp(0, 4).toInt(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'frequencyHz': frequencyHz,
+        'gainDb': gainDb,
+        'q': q,
+        'type': type,
+      };
+
+  factory ParametricEqBand.fromJson(dynamic value) {
+    if (value is! Map) {
+      throw const FormatException('Invalid parametric EQ band.');
+    }
+    double number(String key, double fallback, double min, double max) {
+      final raw = value[key];
+      if (raw is! num || !raw.toDouble().isFinite) return fallback;
+      return raw.toDouble().clamp(min, max).toDouble();
+    }
+    final rawType = value['type'];
+    final type = rawType is num ? rawType.toInt().clamp(0, 4).toInt() : 0;
+    return ParametricEqBand(
+      frequencyHz: number('frequencyHz', 1000, 20, 20000),
+      gainDb: number('gainDb', 0, -24, 24),
+      q: number('q', 1, 0.1, 18),
+      type: type,
+    );
+  }
+}
+
 /// Canonical, versioned snapshot for Resonate's native DSP user settings.
 ///
 /// Fields remain independent by design: EQ preamp is not DVC, and neither is
 /// the transport/crossfade envelope. Existing preference keys are read as a
 /// migration source; new writes use one JSON document.
 class DspSettings {
-  static const int schemaVersion = 2;
+  static const int schemaVersion = 4;
   static const String preferenceKey = 'resonate_dsp_settings_v1';
   static Future<void> _writeQueue = Future<void>.value();
 
@@ -16,9 +73,24 @@ class DspSettings {
   final bool eqEnabled;
   final String preset;
   final List<double> eqBandGainsDb;
+  final List<ParametricEqBand> parametricEqBands;
   final double preampDb;
   final bool autoEqHeadroom;
   final double dvcDb;
+  final bool dvcEnabled;
+  final bool dvcSmoothing;
+  final double dvcSmoothingMs;
+  final bool limiterEnabled;
+  /// 0 fast, 1 lookahead, 2 true-peak, 3 two-band.
+  final int limiterMode;
+  final double limiterThresholdDb;
+  final double limiterReleaseMs;
+  final double limiterAttackMs;
+  final double limiterLookaheadMs;
+  final double limiterKneeDb;
+  final bool ditherEnabled;
+  /// 0 none, 1 TPDF, 2 shaped.
+  final int ditherMode;
   /// Legacy single-ceiling field retained for old call sites and migrations.
   final double limiterCeilingDb;
   final double limiterHighCeilingDb;
@@ -35,9 +107,22 @@ class DspSettings {
     this.eqEnabled = true,
     this.preset = 'Flat',
     List<double> eqBandGainsDb = const [],
+    List<ParametricEqBand> parametricEqBands = const [],
     this.preampDb = 0,
     this.autoEqHeadroom = false,
     this.dvcDb = 0,
+    this.dvcEnabled = true,
+    this.dvcSmoothing = true,
+    this.dvcSmoothingMs = 15,
+    this.limiterEnabled = true,
+    this.limiterMode = 0,
+    this.limiterThresholdDb = -1,
+    this.limiterReleaseMs = 50,
+    this.limiterAttackMs = 0.1,
+    this.limiterLookaheadMs = 2,
+    this.limiterKneeDb = 0,
+    this.ditherEnabled = false,
+    this.ditherMode = 1,
     this.limiterCeilingDb = -1,
     this.limiterHighCeilingDb = -0.5,
     this.limiterLowCeilingDb = -0.2,
@@ -47,21 +132,37 @@ class DspSettings {
     this.effectsEnabled = true,
     this.reverbAmount = 0,
     this.virtualizerAmount = 0,
-  }) : eqBandGainsDb = List<double>.unmodifiable(
+  })  : eqBandGainsDb = List<double>.unmodifiable(
           eqBandGainsDb.map((v) => _clamp(v, -12, 12)),
+        ),
+        parametricEqBands = List<ParametricEqBand>.unmodifiable(
+          parametricEqBands.take(31).map((band) => band.copyWith()),
         );
 
   static double _clamp(double value, double min, double max) =>
-      value.isFinite ? value.clamp(min, max).toDouble() : 0.0;
+      value.isFinite ? value.clamp(min, max).toDouble() : 0.0.clamp(min, max).toDouble();
 
   DspSettings copyWith({
     bool? masterEnabled,
     bool? eqEnabled,
     String? preset,
     List<double>? eqBandGainsDb,
+    List<ParametricEqBand>? parametricEqBands,
     double? preampDb,
     bool? autoEqHeadroom,
     double? dvcDb,
+    bool? dvcEnabled,
+    bool? dvcSmoothing,
+    double? dvcSmoothingMs,
+    bool? limiterEnabled,
+    int? limiterMode,
+    double? limiterThresholdDb,
+    double? limiterReleaseMs,
+    double? limiterAttackMs,
+    double? limiterLookaheadMs,
+    double? limiterKneeDb,
+    bool? ditherEnabled,
+    int? ditherMode,
     double? limiterCeilingDb,
     double? limiterHighCeilingDb,
     double? limiterLowCeilingDb,
@@ -76,16 +177,29 @@ class DspSettings {
         eqEnabled: eqEnabled ?? this.eqEnabled,
         preset: preset ?? this.preset,
         eqBandGainsDb: eqBandGainsDb ?? this.eqBandGainsDb,
+        parametricEqBands: parametricEqBands ?? this.parametricEqBands,
         preampDb: _clamp(preampDb ?? this.preampDb, -6, 6),
         autoEqHeadroom: autoEqHeadroom ?? this.autoEqHeadroom,
-        dvcDb: _clamp(dvcDb ?? this.dvcDb, -24, 6),
+        dvcDb: _clamp(dvcDb ?? this.dvcDb, -120, 24),
+        dvcEnabled: dvcEnabled ?? this.dvcEnabled,
+        dvcSmoothing: dvcSmoothing ?? this.dvcSmoothing,
+        dvcSmoothingMs: _clamp(dvcSmoothingMs ?? this.dvcSmoothingMs, 0, 200),
+        limiterEnabled: limiterEnabled ?? this.limiterEnabled,
+        limiterMode: (limiterMode ?? this.limiterMode).clamp(0, 3).toInt(),
+        limiterThresholdDb: _clamp(limiterThresholdDb ?? this.limiterThresholdDb, -24, 0),
+        limiterReleaseMs: _clamp(limiterReleaseMs ?? this.limiterReleaseMs, 1, 2000),
+        limiterAttackMs: _clamp(limiterAttackMs ?? this.limiterAttackMs, 0.01, 100),
+        limiterLookaheadMs: _clamp(limiterLookaheadMs ?? this.limiterLookaheadMs, 0, 40),
+        limiterKneeDb: _clamp(limiterKneeDb ?? this.limiterKneeDb, 0, 12),
+        ditherEnabled: ditherEnabled ?? this.ditherEnabled,
+        ditherMode: (ditherMode ?? this.ditherMode).clamp(0, 2).toInt(),
         limiterCeilingDb: _clamp(limiterCeilingDb ?? this.limiterCeilingDb, -12, 0),
         limiterHighCeilingDb: _clamp(
           limiterHighCeilingDb ?? limiterCeilingDb ?? this.limiterHighCeilingDb,
-          -6, -0.1),
+          -12, -0.05),
         limiterLowCeilingDb: _clamp(
           limiterLowCeilingDb ?? limiterCeilingDb ?? this.limiterLowCeilingDb,
-          -6, -0.1),
+          -12, -0.05),
         crossoverHz: _clamp(crossoverHz ?? this.crossoverHz, 80, 200),
         speakerProtectionEnabled: speakerProtectionEnabled ?? this.speakerProtectionEnabled,
         virtualBassAmount: _clamp(virtualBassAmount ?? this.virtualBassAmount, 0, 1),
@@ -100,9 +214,22 @@ class DspSettings {
         'eqEnabled': eqEnabled,
         'preset': preset,
         'eqBandGainsDb': eqBandGainsDb,
+        'parametricEqBands': parametricEqBands.map((band) => band.toJson()).toList(),
         'preampDb': preampDb,
         'autoEqHeadroom': autoEqHeadroom,
         'dvcDb': dvcDb,
+        'dvcEnabled': dvcEnabled,
+        'dvcSmoothing': dvcSmoothing,
+        'dvcSmoothingMs': dvcSmoothingMs,
+        'limiterEnabled': limiterEnabled,
+        'limiterMode': limiterMode,
+        'limiterThresholdDb': limiterThresholdDb,
+        'limiterReleaseMs': limiterReleaseMs,
+        'limiterAttackMs': limiterAttackMs,
+        'limiterLookaheadMs': limiterLookaheadMs,
+        'limiterKneeDb': limiterKneeDb,
+        'ditherEnabled': ditherEnabled,
+        'ditherMode': ditherMode,
         'limiterCeilingDb': limiterCeilingDb,
         'limiterHighCeilingDb': limiterHighCeilingDb,
         'limiterLowCeilingDb': limiterLowCeilingDb,
@@ -116,7 +243,7 @@ class DspSettings {
 
   factory DspSettings.fromJson(Map<String, dynamic> json) {
     final version = json['version'];
-    if (version != 1 && version != schemaVersion) {
+    if (version != 1 && version != 2 && version != 3 && version != schemaVersion) {
       throw const FormatException('Unsupported Resonate DSP settings version.');
     }
     double number(String key, double fallback, double min, double max) {
@@ -129,24 +256,58 @@ class DspSettings {
     final bands = rawBands is List
         ? rawBands.whereType<num>().map((v) => _clamp(v.toDouble(), -12, 12)).toList()
         : <double>[];
+    final rawParametric = json['parametricEqBands'];
+    final parametricBands = rawParametric is List
+        ? rawParametric.map(ParametricEqBand.fromJson).toList()
+        : <ParametricEqBand>[];
+    // Migrate old fixed graphic-EQ gains to peak filters without changing tone.
+    const frequencies = [
+      20.0, 25, 32, 40, 50, 63, 80, 100, 125, 160,
+      200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600,
+      2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000,
+    ];
+    final migratedParametric = rawParametric is List
+        ? parametricBands
+        : [
+            for (var i = 0; i < bands.length && i < frequencies.length; i++)
+              ParametricEqBand(
+                frequencyHz: frequencies[i].toDouble(),
+                gainDb: bands[i],
+                q: 1.0,
+                type: 0,
+              ),
+          ];
     return DspSettings(
       masterEnabled: true, // DSP is a permanent part of the Resonate playback path.
       eqEnabled: true, // EQ is always active in the Resonate playback chain.
       preset: json['preset'] is String ? json['preset'] as String : 'Flat',
       eqBandGainsDb: bands,
+      parametricEqBands: migratedParametric,
       preampDb: number('preampDb', 0, -6, 6),
       autoEqHeadroom: json['autoEqHeadroom'] is bool ? json['autoEqHeadroom'] as bool : false,
-      dvcDb: number('dvcDb', 0, -24, 6),
+      dvcDb: number('dvcDb', 0, -120, 24),
+      dvcEnabled: json['dvcEnabled'] is bool ? json['dvcEnabled'] as bool : true,
+      dvcSmoothing: json['dvcSmoothing'] is bool ? json['dvcSmoothing'] as bool : true,
+      dvcSmoothingMs: number('dvcSmoothingMs', 15, 0, 200),
+      limiterEnabled: json['limiterEnabled'] is bool ? json['limiterEnabled'] as bool : true,
+      limiterMode: (json['limiterMode'] is num ? (json['limiterMode'] as num).toInt() : 0).clamp(0, 3).toInt(),
+      limiterThresholdDb: number('limiterThresholdDb', -1, -24, 0),
+      limiterReleaseMs: number('limiterReleaseMs', 50, 1, 2000),
+      limiterAttackMs: number('limiterAttackMs', 0.1, 0.01, 100),
+      limiterLookaheadMs: number('limiterLookaheadMs', 2, 0, 40),
+      limiterKneeDb: number('limiterKneeDb', 0, 0, 12),
+      ditherEnabled: json['ditherEnabled'] is bool ? json['ditherEnabled'] as bool : false,
+      ditherMode: (json['ditherMode'] is num ? (json['ditherMode'] as num).toInt() : 1).clamp(0, 2).toInt(),
       limiterCeilingDb: number('limiterCeilingDb', -1, -12, 0),
       limiterHighCeilingDb: number(
         'limiterHighCeilingDb',
-        version == 1 ? number('limiterCeilingDb', -0.5, -6, -0.1) : -0.5,
-        -6, -0.1,
+        version == 1 ? number('limiterCeilingDb', -0.5, -12, -0.05) : -0.5,
+        -12, -0.05,
       ),
       limiterLowCeilingDb: number(
         'limiterLowCeilingDb',
-        version == 1 ? number('limiterCeilingDb', -0.2, -6, -0.1) : -0.2,
-        -6, -0.1,
+        version == 1 ? number('limiterCeilingDb', -0.2, -12, -0.05) : -0.2,
+        -12, -0.05,
       ),
       crossoverHz: number('crossoverHz', 120, 80, 200),
       speakerProtectionEnabled: json['speakerProtectionEnabled'] is bool ? json['speakerProtectionEnabled'] as bool : false,

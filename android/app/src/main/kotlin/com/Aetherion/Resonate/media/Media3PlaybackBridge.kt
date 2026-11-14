@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -20,14 +21,17 @@ import java.util.concurrent.Executor
 /**
  * Narrow Flutter boundary for the isolated Media3 prototype.
  *
- * Connection is lazy: merely launching Resonate does not create a second player
- * or bind the experimental service. Native Media3 objects stay native; Flutter
- * receives commands and immutable state snapshots rather than mutable objects.
+ * Native Media3 objects stay native; Flutter receives commands and immutable
+ * state snapshots rather than mutable player objects.
  */
 class Media3PlaybackBridge(
     private val context: Context,
     messenger: BinaryMessenger,
 ) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
+
+    companion object {
+        private const val POSITION_UPDATE_INTERVAL_MS = 250L
+    }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val mainExecutor = Executor { command -> mainHandler.post(command) }
     private val methodChannel = MethodChannel(messenger, "com.aetherion.resonate/media3")
@@ -37,10 +41,37 @@ class Media3PlaybackBridge(
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var released = false
 
+    private val positionTicker = object : Runnable {
+        override fun run() {
+            val player = controller
+            if (released || eventSink == null || player == null || !player.isPlaying) {
+                return
+            }
+            publishState()
+            mainHandler.postDelayed(this, POSITION_UPDATE_INTERVAL_MS)
+        }
+    }
+
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             publishState()
+            if (player.isPlaying) {
+                schedulePositionUpdates()
+            } else {
+                stopPositionUpdates()
+            }
         }
+    }
+
+    private fun schedulePositionUpdates() {
+        stopPositionUpdates()
+        if (!released && eventSink != null && controller?.isPlaying == true) {
+            mainHandler.postDelayed(positionTicker, POSITION_UPDATE_INTERVAL_MS)
+        }
+    }
+
+    private fun stopPositionUpdates() {
+        mainHandler.removeCallbacks(positionTicker)
     }
 
     init {
@@ -65,19 +96,237 @@ class Media3PlaybackBridge(
     ) {
         try {
             when (call.method) {
+                "setQueue" -> {
+                    val rawItems = call.argument<List<Map<String, Any?>>>("items")
+                    val startIndex = call.argument<Number>("startIndex")?.toInt() ?: 0
+                    if (rawItems.isNullOrEmpty()) {
+                        result.error("INVALID_QUEUE", "At least one playable queue item is required.", null)
+                        return
+                    }
+                    if (startIndex !in rawItems.indices) {
+                        result.error("INVALID_QUEUE_INDEX", "startIndex must identify an item in the queue.", null)
+                        return
+                    }
+                    val items = mutableListOf<MediaItem>()
+                    for (raw in rawItems) {
+                        val source = raw["uri"] as? String
+                        if (source.isNullOrBlank()) {
+                            result.error("INVALID_QUEUE", "Every queue item needs a non-empty URI.", null)
+                            return
+                        }
+                        val uri = Uri.parse(source)
+                        val title = (raw["title"] as? String)?.takeIf { it.isNotBlank() }
+                            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+                            ?: "Unknown track"
+                        val metadata = MediaMetadata.Builder()
+                            .setTitle(title)
+                            .setArtist(raw["artist"] as? String)
+                            .setAlbumTitle(raw["album"] as? String)
+                            .apply {
+                                val artwork = raw["artworkUri"] as? String
+                                if (!artwork.isNullOrBlank()) setArtworkUri(Uri.parse(artwork))
+                            }
+                            .build()
+                        items += MediaItem.Builder()
+                            .setMediaId((raw["id"] as? String)?.takeIf { it.isNotBlank() } ?: source)
+                            .setUri(uri)
+                            .setMediaMetadata(metadata)
+                            .build()
+                    }
+                    // A previous standby deck must not survive queue replacement.
+                    Media3PlaybackService.instance?.clearPreload()
+                    connected.setMediaItems(items, startIndex, 0L)
+                    connected.prepare()
+                    result.success(true)
+                }
+                "synchronizeQueue" -> {
+                    val rawItems = call.argument<List<Map<String, Any?>>>("items")
+                    if (rawItems.isNullOrEmpty()) {
+                        Media3PlaybackService.instance?.clearPreload()
+                        connected.stop()
+                        connected.clearMediaItems()
+                        result.success(true)
+                        return
+                    }
+                    val items = mutableListOf<MediaItem>()
+                    for (raw in rawItems) {
+                        val source = raw["uri"] as? String
+                        if (source.isNullOrBlank()) {
+                            result.error("INVALID_QUEUE", "Every queue item needs a non-empty URI.", null)
+                            return
+                        }
+                        val uri = Uri.parse(source)
+                        val title = (raw["title"] as? String)?.takeIf { it.isNotBlank() }
+                            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+                            ?: "Unknown track"
+                        val metadata = MediaMetadata.Builder()
+                            .setTitle(title)
+                            .setArtist(raw["artist"] as? String)
+                            .setAlbumTitle(raw["album"] as? String)
+                            .apply {
+                                val artwork = raw["artworkUri"] as? String
+                                if (!artwork.isNullOrBlank()) setArtworkUri(Uri.parse(artwork))
+                            }
+                            .build()
+                        items += MediaItem.Builder()
+                            .setMediaId((raw["id"] as? String)?.takeIf { it.isNotBlank() } ?: source)
+                            .setUri(uri)
+                            .setMediaMetadata(metadata)
+                            .build()
+                    }
+
+                    Media3PlaybackService.instance?.clearPreload()
+                    val oldIndex = connected.currentMediaItemIndex
+                    val oldItem = connected.currentMediaItem
+                    val oldPosition = connected.currentPosition.coerceAtLeast(0L)
+                    val oldPlayIntent = connected.playWhenReady
+                    if (oldItem == null || connected.mediaItemCount == 0 || oldIndex !in 0 until connected.mediaItemCount) {
+                        connected.setMediaItems(items, 0, 0L)
+                        connected.prepare()
+                        if (oldPlayIntent) connected.play()
+                        result.success(true)
+                        return
+                    }
+
+                    val oldIdentity = Media3QueueEntryIdentity(
+                        mediaId = oldItem.mediaId,
+                        uri = oldItem.localConfiguration?.uri?.toString().orEmpty(),
+                    )
+                    val reconciliation = Media3QueueReconciliationPolicy.resolve(
+                        newQueue = items.map { item ->
+                            Media3QueueEntryIdentity(
+                                mediaId = item.mediaId,
+                                uri = item.localConfiguration?.uri?.toString().orEmpty(),
+                            )
+                        },
+                        oldIndex = oldIndex,
+                        oldItem = oldIdentity,
+                    )
+                    val targetIndex = reconciliation.targetIndex
+
+                    // Keep the active deck attached to the player while rebuilding the
+                    // surrounding playlist. This avoids resetting the whole player for
+                    // append/remove/reorder edits and invalidates stale crossfade preload.
+                    connected.removeMediaItems(oldIndex + 1, connected.mediaItemCount)
+                    connected.removeMediaItems(0, oldIndex)
+                    connected.replaceMediaItem(0, items[targetIndex])
+                    if (targetIndex > 0) {
+                        connected.addMediaItems(0, items.subList(0, targetIndex))
+                    }
+                    if (targetIndex < items.lastIndex) {
+                        connected.addMediaItems(targetIndex + 1, items.subList(targetIndex + 1, items.size))
+                    }
+                    // A removed current track must not carry its old timestamp
+                    // into the fallback track. Keep the exact position only when
+                    // the same media occurrence survives the queue edit.
+                    connected.seekTo(targetIndex, reconciliation.targetPosition(oldPosition))
+                    result.success(true)
+                }
+                "clearQueue" -> {
+                    Media3PlaybackService.instance?.clearPreload()
+                    connected.stop()
+                    connected.clearMediaItems()
+                    result.success(true)
+                }
+                "skipToNext" -> {
+                    val accepted = Media3PlaybackService.instance?.skipToNext() == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "MEDIA3_TRANSPORT_UNAVAILABLE",
+                        "The active Media3 deck could not advance the queue.",
+                        null,
+                    )
+                }
+                "skipToPrevious" -> {
+                    val accepted = Media3PlaybackService.instance?.skipToPrevious() == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "MEDIA3_TRANSPORT_UNAVAILABLE",
+                        "The active Media3 deck could not return in the queue.",
+                        null,
+                    )
+                }
+                "setRepeatMode" -> {
+                    val mode = call.argument<String>("mode")
+                    val nativeMode = when (mode) {
+                        "one" -> Player.REPEAT_MODE_ONE
+                        "all" -> Player.REPEAT_MODE_ALL
+                        "off" -> Player.REPEAT_MODE_OFF
+                        else -> {
+                            result.error("INVALID_REPEAT_MODE", "mode must be off, one, or all.", null)
+                            return
+                        }
+                    }
+                    val accepted = Media3PlaybackService.instance?.setRepeatMode(nativeMode) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_TRANSPORT_UNAVAILABLE", "Media3 repeat policy is unavailable.", null)
+                }
+                "setShuffleMode" -> {
+                    val enabled = call.argument<Boolean>("enabled")
+                    if (enabled == null) {
+                        result.error("INVALID_SHUFFLE_MODE", "enabled must be a boolean.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setShuffleMode(enabled) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_TRANSPORT_UNAVAILABLE", "Media3 shuffle policy is unavailable.", null)
+                }
                 "setSource" -> {
                     val source = call.argument<String>("uri")
                     if (source.isNullOrBlank()) {
                         result.error("INVALID_URI", "A non-empty media URI is required.", null)
                         return
                     }
-                    connected.setMediaItem(MediaItem.fromUri(Uri.parse(source)))
+                    val uri = Uri.parse(source)
+                    val title = uri.lastPathSegment?.substringAfterLast('/')
+                        ?.takeIf { it.isNotBlank() }
+                        ?: "Media3 Engine Lab test audio"
+                    val item = MediaItem.Builder()
+                        .setUri(uri)
+                        .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build())
+                        .build()
+                    // Single-source loads also invalidate any old incoming deck.
+                    Media3PlaybackService.instance?.clearPreload()
+                    connected.setMediaItem(item)
                     connected.prepare()
                     result.success(true)
                 }
-                "play" -> { connected.play(); result.success(true) }
-                "pause" -> { connected.pause(); result.success(true) }
-                "stop" -> { connected.stop(); result.success(true) }
+                "play" -> {
+                    val service = Media3PlaybackService.instance
+                    if (service?.isCommunicationActive() == true) {
+                        result.error(
+                            "PLAYBACK_BLOCKED_DURING_COMMUNICATION",
+                            "Playback is paused while a phone or communication session is active.",
+                            null,
+                        )
+                        return
+                    }
+                    if (service?.setAudioFocusHandling(true) != true) {
+                        result.error(
+                            "MEDIA3_FOCUS_UNAVAILABLE",
+                            "Media3 could not safely acquire audio focus.",
+                            null,
+                        )
+                        return
+                    }
+                    connected.play()
+                    service.resumeCrossfade()
+                    result.success(true)
+                }
+                "pause" -> {
+                    // Stop both physical Media3 decks, including a standby
+                    // deck that may be preparing outside an active fade.
+                    Media3PlaybackService.instance?.pauseAllDecks()
+                    Media3PlaybackService.instance?.stopAuxiliarySound()
+                    connected.pause()
+                    result.success(true)
+                }
+                "stop" -> {
+                    Media3PlaybackService.instance?.clearPreload()
+                    Media3PlaybackService.instance?.stopAuxiliarySound()
+                    connected.stop()
+                    result.success(true)
+                }
                 "seekTo" -> {
                     val positionMs = call.argument<Number>("positionMs")?.toLong()
                     if (positionMs == null || positionMs < 0L) {
@@ -87,15 +336,236 @@ class Media3PlaybackBridge(
                     connected.seekTo(positionMs)
                     result.success(true)
                 }
+                "setPlaybackSpeed" -> {
+                    val speed = call.argument<Number>("speed")?.toFloat()
+                    if (speed == null || !speed.isFinite() || speed !in 0.5f..2.0f) {
+                        result.error("INVALID_PLAYBACK_SPEED", "speed must be finite and between 0.5 and 2.0.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setPlaybackSpeed(speed) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_TRANSPORT_UNAVAILABLE", "Media3 playback speed is unavailable.", null)
+                }
+                "setPlaybackPitch" -> {
+                    val pitch = call.argument<Number>("pitch")?.toFloat()
+                    if (pitch == null || !pitch.isFinite() || pitch !in 0.5f..2.0f) {
+                        result.error("INVALID_PLAYBACK_PITCH", "pitch must be finite and between 0.5 and 2.0.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setPlaybackPitch(pitch) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_TRANSPORT_UNAVAILABLE", "Media3 playback pitch is unavailable.", null)
+                }
+                "setDeckPlaybackSpeeds" -> {
+                    val active = call.argument<Number>("activeSpeed")?.toFloat()
+                    val standby = call.argument<Number>("standbySpeed")?.toFloat()
+                    if (active == null || standby == null ||
+                        !active.isFinite() || active !in 0.5f..2.0f ||
+                        !standby.isFinite() || standby !in 0.5f..2.0f
+                    ) {
+                        result.error(
+                            "INVALID_DECK_PLAYBACK_SPEED",
+                            "Both deck speeds must be finite and between 0.5 and 2.0.",
+                            null,
+                        )
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance
+                        ?.setDeckPlaybackSpeeds(active, standby) == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "MEDIA3_TRANSPORT_UNAVAILABLE",
+                        "Independent Media3 deck speed control is unavailable.",
+                        null,
+                    )
+                }
+                "setDeckEqOverlay" -> {
+                    val deck = call.argument<String>("deck")
+                    val centers = call.argument<List<Number>>("centersHz")?.map { it.toDouble() }
+                    val gains = call.argument<List<Number>>("gainsDb")?.map { it.toDouble() }
+                    if (deck == null || deck !in setOf("active", "standby") ||
+                        centers.isNullOrEmpty() || gains.isNullOrEmpty() ||
+                        centers.size != gains.size || centers.size > 31 ||
+                        centers.any { !it.isFinite() || it !in 20.0..20000.0 } ||
+                        gains.any { !it.isFinite() || it !in -12.0..12.0 } ||
+                        centers.zipWithNext().any { it.first >= it.second }
+                    ) {
+                        result.error(
+                            "INVALID_DECK_EQ_OVERLAY",
+                            "A valid active/standby deck and 1–31 EQ bands are required; frequency must be 20–20000 Hz and gain -12–12 dB.",
+                            null,
+                        )
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDeckEqOverlay(
+                        deck!!,
+                        centers.toDoubleArray(),
+                        gains.toDoubleArray(),
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_DSP_UNAVAILABLE", "The deck EQ overlay could not be applied.", null)
+                }
+                "clearDeckEqOverlay" -> {
+                    val deck = call.argument<String>("deck")
+                    if (deck == null || deck !in setOf("active", "standby")) {
+                        result.error("INVALID_DECK_EQ_OVERLAY", "deck must be active or standby.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.clearDeckEqOverlay(deck!!) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_DSP_UNAVAILABLE", "The deck EQ overlay could not be cleared.", null)
+                }
+                "playAuxiliarySound" -> {
+                    val source = call.argument<String>("uri")
+                    val volume = call.argument<Number>("volume")?.toFloat()
+                    val startPositionMs = call.argument<Number>("startPositionMs")?.toLong() ?: 0L
+                    val endPositionMs = call.argument<Number>("endPositionMs")?.toLong()
+                    val uri = source?.takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
+                    if (uri == null || uri.scheme !in setOf("asset", "file", "content", "http", "https") ||
+                        volume == null || !volume.isFinite() || volume !in 0f..1f ||
+                        startPositionMs < 0L || (endPositionMs != null && endPositionMs <= startPositionMs)
+                    ) {
+                        result.error("INVALID_AUXILIARY_SOUND", "A supported URI and volume from 0 to 1 are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.playAuxiliarySound(uri, volume, startPositionMs, endPositionMs) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_AUXILIARY_UNAVAILABLE", "The auxiliary Media3 player is unavailable.", null)
+                }
+                "setAuxiliarySoundVolume" -> {
+                    val volume = call.argument<Number>("volume")?.toFloat()
+                    if (volume == null || !volume.isFinite() || volume !in 0f..1f) {
+                        result.error("INVALID_AUXILIARY_VOLUME", "Volume must be finite and between 0 and 1.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setAuxiliarySoundVolume(volume) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_AUXILIARY_UNAVAILABLE", "The auxiliary Media3 player is unavailable.", null)
+                }
+                "stopAuxiliarySound" -> {
+                    val accepted = Media3PlaybackService.instance?.stopAuxiliarySound() == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_AUXILIARY_UNAVAILABLE", "The auxiliary Media3 player is unavailable.", null)
+                }
+                "setAudioFocusHandling" -> {
+                    val enabled = call.argument<Boolean>("enabled")
+                    if (enabled == null) {
+                        result.error("INVALID_AUDIO_FOCUS_POLICY", "An enabled boolean is required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setAudioFocusHandling(enabled) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_FOCUS_UNAVAILABLE", "Media3 audio-focus policy is unavailable.", null)
+                }
                 "setVolume" -> {
                     val volume = call.argument<Number>("value")?.toFloat()
                     if (volume == null || !volume.isFinite()) {
                         result.error("INVALID_VOLUME", "A finite volume value is required.", null)
                         return
                     }
-                    connected.volume = volume.coerceIn(0f, 1f)
-                    result.success(true)
+                    val accepted = Media3PlaybackService.instance?.setMasterVolume(
+                        volume.coerceIn(0f, 1f),
+                    ) ?: run {
+                        // Defensive fallback if the service is being torn down.
+                        connected.volume = volume.coerceIn(0f, 1f)
+                        true
+                    }
+                    result.success(accepted)
                 }
+                "setGainFactors" -> {
+                    val trackLevel = call.argument<Number>("trackLevel")?.toFloat()
+                    val preamp = call.argument<Number>("preamp")?.toFloat()
+                    val sleepFade = call.argument<Number>("sleepFade")?.toFloat()
+                    val focusDuck = call.argument<Number>("focusDuck")?.toFloat()
+                    val normalizedFactors = listOf(trackLevel, sleepFade, focusDuck)
+                    if (normalizedFactors.any { it == null || !it.isFinite() || it !in 0f..1f } ||
+                        preamp == null || !preamp.isFinite() || preamp !in 0f..4f
+                    ) {
+                        result.error(
+                            "INVALID_GAIN_FACTORS",
+                            "Track level, sleep fade, and focus duck must be 0–1; preamp must be 0–4.",
+                            null,
+                        )
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setGainFactors(
+                        trackLevel = trackLevel!!,
+                        preamp = preamp!!,
+                        sleepFade = sleepFade!!,
+                        focusDuck = focusDuck!!,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_GAIN_UNAVAILABLE", "Media3 gain policy is unavailable.", null)
+                }
+                "preloadNext" -> {
+                    val raw = call.argument<Map<String, Any?>>("item")
+                    val source = raw?.get("uri") as? String
+                    if (raw == null || source.isNullOrBlank()) {
+                        result.error("INVALID_URI", "An incoming queue item with a URI is required.", null)
+                        return
+                    }
+                    val rawItems = call.argument<List<Map<String, Any?>>>("items")
+                    val startIndex = call.argument<Number>("startIndex")?.toInt() ?: 0
+                    val startPositionMs = call.argument<Number>("positionMs")?.toLong() ?: 0L
+                    val descriptors = rawItems ?: listOf(raw)
+                    if (descriptors.isEmpty() || startIndex !in descriptors.indices) {
+                        result.error("INVALID_QUEUE", "Incoming queue must not be empty and must have a valid start index.", null)
+                        return
+                    }
+                    if (startPositionMs < 0L) {
+                        result.error("INVALID_PRELOAD_POSITION", "Incoming start position must not be negative.", null)
+                        return
+                    }
+                    val items = mutableListOf<MediaItem>()
+                    for (descriptor in descriptors) {
+                        val descriptorUri = descriptor["uri"] as? String
+                        if (descriptorUri.isNullOrBlank()) {
+                            result.error("INVALID_QUEUE", "Every incoming queue item needs a URI.", null)
+                            return
+                        }
+                        val metadata = MediaMetadata.Builder()
+                            .setTitle((descriptor["title"] as? String)?.takeIf { it.isNotBlank() } ?: "Unknown track")
+                            .setArtist(descriptor["artist"] as? String)
+                            .setAlbumTitle(descriptor["album"] as? String)
+                            .apply {
+                                val artwork = descriptor["artworkUri"] as? String
+                                if (!artwork.isNullOrBlank()) setArtworkUri(Uri.parse(artwork))
+                            }
+                            .build()
+                        items += MediaItem.Builder()
+                            .setMediaId((descriptor["id"] as? String)?.takeIf { it.isNotBlank() } ?: descriptorUri)
+                            .setUri(Uri.parse(descriptorUri))
+                            .setMediaMetadata(metadata)
+                            .build()
+                    }
+                    val incoming = items[startIndex]
+                    if (incoming.mediaId != ((raw["id"] as? String)?.takeIf { it.isNotBlank() } ?: source) ||
+                        incoming.localConfiguration?.uri?.toString() != source
+                    ) {
+                        result.error("INVALID_QUEUE_INDEX", "The selected queue occurrence must match the incoming item.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.preloadNext(
+                        items,
+                        startIndex,
+                        startPositionMs,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_PRELOAD_FAILED", "The incoming deck could not be prepared.", null)
+                }
+                "crossfade" -> {
+                    val durationMs = call.argument<Number>("durationMs")?.toLong()
+                    if (durationMs == null || durationMs !in 250L..15000L) {
+                        result.error("INVALID_CROSSFADE_DURATION", "Crossfade duration must be 250–15000 ms.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.startCrossfade(durationMs) == true
+                    if (accepted) result.success(true)
+                    else result.error("CROSSFADE_NOT_READY", "Load an incoming track and wait until it is ready.", null)
+                }
+                "cancelCrossfade" -> result.success(Media3PlaybackService.instance?.cancelCrossfade() == true)
+                "crossfadeState" -> result.success(Media3PlaybackService.instance?.crossfadeState()
+                    ?: mapOf("status" to "service_unavailable"))
                 "getState" -> result.success(stateSnapshot(connected))
                 else -> result.notImplemented()
             }
@@ -148,6 +618,7 @@ class Media3PlaybackBridge(
                     eventSink?.error("MEDIA3_NOT_READY", "Could not connect to the native Media3 session.", null)
                 } else {
                     publishState()
+                    schedulePositionUpdates()
                 }
             }
         }
@@ -155,6 +626,7 @@ class Media3PlaybackBridge(
 
     override fun onCancel(arguments: Any?) {
         eventSink = null
+        stopPositionUpdates()
     }
 
     private fun publishState() {
@@ -162,21 +634,48 @@ class Media3PlaybackBridge(
         eventSink?.success(stateSnapshot(player))
     }
 
-    private fun stateSnapshot(player: Player): Map<String, Any?> = mapOf(
+    private fun stateSnapshot(player: Player): Map<String, Any?> {
+        val crossfade = Media3PlaybackService.instance?.crossfadeState()
+            ?: mapOf<String, Any?>("status" to "idle", "progress" to 0f,
+                "activeVolume" to player.volume, "incomingVolume" to 0f)
+        return mapOf(
         "connected" to true,
         "isPlaying" to player.isPlaying,
         "playbackState" to player.playbackState,
         "playWhenReady" to player.playWhenReady,
         "positionMs" to player.currentPosition.coerceAtLeast(0L),
+        "bufferedPositionMs" to player.bufferedPosition.coerceAtLeast(0L),
+        "isBuffering" to (player.playbackState == Player.STATE_BUFFERING),
+        "isCompleted" to (player.playbackState == Player.STATE_ENDED),
         "durationMs" to player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L),
         "mediaId" to player.currentMediaItem?.mediaId,
+        "title" to player.mediaMetadata.title?.toString(),
+        "artist" to player.mediaMetadata.artist?.toString(),
+        "album" to player.mediaMetadata.albumTitle?.toString(),
+        "currentMediaItemIndex" to player.currentMediaItemIndex,
+        "mediaItemCount" to player.mediaItemCount,
+        "repeatMode" to when (player.repeatMode) {
+            Player.REPEAT_MODE_ONE -> "one"
+            Player.REPEAT_MODE_ALL -> "all"
+            else -> "off"
+        },
+        "shuffleModeEnabled" to player.shuffleModeEnabled,
         "volume" to player.volume,
+        "audioSessionId" to (Media3PlaybackService.instance?.activeAudioSessionId() ?: 0),
+        "standbyAudioSessionId" to (Media3PlaybackService.instance?.standbyAudioSessionId() ?: 0),
+        "activeDeckId" to (Media3PlaybackService.instance?.activeDeckId() ?: "A"),
+        "crossfadeStatus" to (crossfade["status"] ?: "idle"),
+        "crossfadeProgress" to (crossfade["progress"] ?: 0f),
+        "activeDeckVolume" to (crossfade["activeVolume"] ?: player.volume),
+        "standbyDeckVolume" to (crossfade["incomingVolume"] ?: 0f),
         "hasError" to (player.playerError != null),
         "error" to player.playerError?.message,
-    )
+        )
+    }
 
     fun release() {
         released = true
+        stopPositionUpdates()
         methodChannel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
         eventSink = null

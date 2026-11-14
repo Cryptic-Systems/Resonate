@@ -4,8 +4,8 @@ extension MusicProviderDjHandoff on MusicProvider {
 
   /// Step 2–3: optional beat seek + tempo stretch for the incoming handoff.
   Future<void> _prepareDjHandoff({
-    required AudioPlayer outgoing,
-    required AudioPlayer incoming,
+    required dynamic outgoing,
+    required dynamic incoming,
     required Song? outgoingSong,
     required Song incomingSong,
   }) async {
@@ -255,8 +255,8 @@ extension MusicProviderDjHandoff on MusicProvider {
   }
 
   Future<void> _applyV2DjHandoff({
-    required AudioPlayer outgoing,
-    required AudioPlayer incoming,
+    required dynamic outgoing,
+    required dynamic incoming,
     required Song outgoingSong,
     required Song incomingSong,
     required DjTrackProfile profileA,
@@ -354,7 +354,266 @@ extension MusicProviderDjHandoff on MusicProvider {
     );
   }
 
+  /// Builds a player-agnostic DJ handoff for the injected Media3 session.
+  /// The incoming phrase offset and independent deck rates are applied during
+  /// standby preload, before the native equal-power crossfade is armed.
+  Future<Media3DjTransitionPreparation> _prepareMedia3DjHandoff({
+    required Song outgoingSong,
+    required Song incomingSong,
+    required int outgoingPositionMs,
+  }) async {
+    _lastDjCrossfadeBiasMs = 0;
+    _activeDjExecutionPlan = null;
+    _lastDjIncomingBeatMs = const <int>[];
+    _lastDjIncomingBpm = null;
+    if (!_djHandoffsLive || _djAnalysis == null) {
+      return const Media3DjTransitionPreparation();
+    }
+
+    try {
+      final profiles = await Future.wait<DjTrackProfile?>([
+        _djAnalysis!.getProfile(outgoingSong.id),
+        _djAnalysis!.getProfile(incomingSong.id),
+      ]);
+      final profileA = profiles[0];
+      final profileB = profiles[1];
+      if (profileA != null && profileB != null) {
+        final candidate = await _djAutopilotPlanner.choose(
+          outgoing: profileA,
+          incoming: profileB,
+          outgoingPositionMs: outgoingPositionMs,
+          preferredDurationMs: _crossfadeDurationMs,
+          maxDurationMs: 6500,
+          policy: _djPolicy,
+        );
+        final execution = _djEngine.execution.plan(
+          outgoing: profileA,
+          incoming: profileB,
+          candidate: candidate,
+          policy: _djPolicy,
+        );
+        if (!execution.fallback) {
+          _activeDjExecutionPlan = execution;
+          _lastDjCrossfadeBiasMs = execution.steps
+              .where((step) => step.action == 'extend_crossfade')
+              .map((step) => (step.parameters['durationMs'] as num?)?.toInt())
+              .whereType<int>()
+              .fold<int>(0, (bias, duration) =>
+                  (duration - candidate.durationMs).clamp(-4000, 8000).toInt());
+          _lastDjEnergyScore =
+              (candidate.scores['energy'] ?? 0.5).clamp(0.0, 1.0).toDouble();
+          _lastDjIncomingBeatMs = profileB.beatGrid.beatMs;
+          _lastDjIncomingBpm = profileB.beatGrid.bpm;
+          var activeSpeed = 1.0;
+          var standbySpeed = 1.0;
+          if (_djTempoMatchActive &&
+              profileA.beatGrid.bpm != null &&
+              profileB.beatGrid.bpm != null) {
+            final stretch = computeTempoStretch(
+              bpmA: profileA.beatGrid.bpm!,
+              bpmB: profileB.beatGrid.bpm!,
+              maxStretchPercent: _djMaxStretchPercent,
+            );
+            if (stretch != null) {
+              activeSpeed = stretch.speedOutgoing;
+              standbySpeed = stretch.speedIncoming;
+              _djStretchSpeedOut = activeSpeed;
+              _djStretchSpeedIn = standbySpeed;
+            }
+          }
+          final seekMs = candidate.incomingStartMs
+              .clamp(0, incomingSong.duration.inMilliseconds > 0
+                  ? incomingSong.duration.inMilliseconds
+                  : candidate.incomingStartMs)
+              .toInt();
+          _lastDjHandoffAt = DateTime.now();
+          _lastDjFromId = outgoingSong.id;
+          _lastDjToId = incomingSong.id;
+          _lastDjStrategy = candidate.kind.name;
+          _lastDjTransitionScore = candidate.score;
+          _lastDjTransitionConfidence = candidate.confidence;
+          _lastDjTransitionRisks =
+              candidate.risks.map((risk) => risk.name).toList();
+          _lastDjTransitionDurationMs = candidate.durationMs;
+          _lastDjRecoveryAttempts = 0;
+          await ResonateDiagnostics.recordDj(
+            stage: 'media3_handoff_prepare',
+            outcome: 'prepared',
+            reason: execution.reason,
+            songId: incomingSong.id,
+            extra: {
+              'kind': candidate.kind.name,
+              'incomingStartMs': seekMs,
+              'durationMs': candidate.durationMs,
+              'activeSpeed': activeSpeed,
+              'standbySpeed': standbySpeed,
+              'crossfadeBiasMs': _lastDjCrossfadeBiasMs,
+              'risks': _lastDjTransitionRisks,
+            },
+          );
+          notifyListeners();
+          return Media3DjTransitionPreparation(
+            incomingStartPosition: Duration(milliseconds: seekMs),
+            activeSpeed: activeSpeed,
+            standbySpeed: standbySpeed,
+            outgoingProfile: profileA,
+            transitionKind: candidate.kind,
+          );
+        }
+      }
+    } catch (error) {
+      await ResonateDiagnostics.recordDj(
+        stage: 'media3_handoff_prepare',
+        outcome: 'fallback',
+        reason: 'profile_planning: $error',
+        songId: incomingSong.id,
+      );
+    }
+
+    // The legacy analysis planner remains a safe, player-agnostic fallback.
+    try {
+      final results = await Future.wait<DjAnalysis>([
+        _djAnalysis!.analyzeSongCachedFirst(outgoingSong),
+        _djAnalysis!.analyzeSongCachedFirst(incomingSong),
+      ]).timeout(const Duration(milliseconds: 2200));
+      if (results.length == 2) {
+        final analysisA = results[0];
+        final analysisB = results[1];
+        final plan = await planDjTransitionLearned(
+          analysisA: analysisA,
+          analysisB: analysisB,
+          tempoMatchActive: _djTempoMatchActive,
+          beatAlignActive: _djBeatAlignActive,
+          maxStretchPercent: _djMaxStretchPercent,
+          fromSongId: outgoingSong.id,
+          toSongId: incomingSong.id,
+          outgoingPositionMs: outgoingPositionMs,
+          outgoingDurationMs: outgoingSong.duration.inMilliseconds > 0
+              ? outgoingSong.duration.inMilliseconds
+              : analysisA.durationMs,
+        );
+        _lastDjCrossfadeBiasMs = plan.crossfadeBiasMs;
+        _lastDjEnergyScore = plan.energyScore.isFinite
+            ? plan.energyScore.clamp(0.0, 1.0).toDouble()
+            : 0.5;
+        var seekMs = 0;
+        if (plan.attemptBeatAlign &&
+            plan.bpmA != null &&
+            plan.bpmB != null) {
+          final stretch = plan.stretch;
+          final effectiveBpmB = stretch?.effectiveBpm ?? plan.bpmB!;
+          final target = plan.usePhraseGrid
+              ? computePhraseAlignedSeekMs(
+                  bpmA: stretch?.effectiveBpm ?? plan.bpmA!,
+                  beatOffsetMsA: analysisA.beatOffsetMs ?? 0,
+                  bpmB: effectiveBpmB,
+                  beatOffsetMsB: analysisB.beatOffsetMs ?? 0,
+                  outgoingPositionMs: outgoingPositionMs,
+                  beatsPerPhrase: plan.phraseBeats,
+                  maxRelativeDelta: stretch != null ? 0.22 : 0.09,
+                )
+              : computeBeatAlignedSeekMs(
+                  bpmA: stretch?.effectiveBpm ?? plan.bpmA!,
+                  beatOffsetMsA: analysisA.beatOffsetMs ?? 0,
+                  bpmB: effectiveBpmB,
+                  beatOffsetMsB: analysisB.beatOffsetMs ?? 0,
+                  outgoingPositionMs: outgoingPositionMs,
+                  maxRelativeDelta: stretch != null ? 0.22 : 0.09,
+                );
+          if (target != null) seekMs = target.inMilliseconds;
+        }
+        final safeSeekMs = seekMs.clamp(
+          0,
+          incomingSong.duration.inMilliseconds > 0
+              ? incomingSong.duration.inMilliseconds
+              : seekMs,
+        ).toInt();
+        final stretch = plan.stretch;
+        final activeSpeed = stretch?.speedOutgoing ?? 1.0;
+        final standbySpeed = stretch?.speedIncoming ?? 1.0;
+        _lastDjIncomingBeatMs = const <int>[];
+        _lastDjIncomingBpm = plan.bpmB;
+        _djStretchSpeedOut = activeSpeed;
+        _djStretchSpeedIn = standbySpeed;
+        _lastDjHandoffAt = DateTime.now();
+        _lastDjFromId = outgoingSong.id;
+        _lastDjToId = incomingSong.id;
+        _lastDjStrategy = plan.strategy;
+        _lastDjTransitionConfidence =
+            math.min(plan.confidenceA, plan.confidenceB);
+        _lastDjTransitionDurationMs = null;
+        _lastDjRecoveryAttempts = 0;
+        await ResonateDiagnostics.recordDj(
+          stage: 'media3_handoff_prepare',
+          outcome: 'prepared',
+          reason: plan.strategy,
+          songId: incomingSong.id,
+          bpmA: plan.bpmA,
+          bpmB: plan.bpmB,
+          extra: {
+            ...plan.toDiagExtra(),
+            'incomingStartMs': safeSeekMs,
+            'activeSpeed': activeSpeed,
+            'standbySpeed': standbySpeed,
+          },
+        );
+        notifyListeners();
+        return Media3DjTransitionPreparation(
+          incomingStartPosition: Duration(milliseconds: safeSeekMs),
+          activeSpeed: activeSpeed,
+          standbySpeed: standbySpeed,
+        );
+      }
+    } catch (error) {
+      await ResonateDiagnostics.recordDj(
+        stage: 'media3_handoff_prepare',
+        outcome: 'fallback',
+        reason: 'analysis_planning: $error',
+        songId: incomingSong.id,
+      );
+    }
+    return const Media3DjTransitionPreparation();
+  }
+
   Future<void> _recoverDjEngineState({String reason = 'recover'}) async {
+    // Media3 owns both physical decks and its own focus/gain policy after
+    // provider cutover. Never recover through the retired EnginePair or
+    // reactivate the legacy AudioSession: doing so can interrupt or duck the
+    // canonical Media3 output when the DJ master toggle is changed.
+    final media3 = _media3ProviderSessionActive ? _media3ProviderSession : null;
+    if (media3 != null) {
+      final recoveryTransportEpoch = _userTransportEpoch;
+      bool wasPreempted() => recoveryTransportEpoch != _userTransportEpoch;
+      try {
+        await _restoreDjTransitionSfx();
+        if (wasPreempted()) return;
+        await media3.setDeckPlaybackSpeeds(activeSpeed: 1.0, standbySpeed: 1.0);
+        if (wasPreempted()) return;
+        await media3.setGainFactors(
+          trackLevel: _trackLevelingScale,
+          preamp: _eqPreampUserScale,
+          sleepFade: _sleepFadeScale,
+          focusDuck: _isDucked
+              ? (_audioFocusLevel == 1 ? 0.18 : MusicProvider._duckLevel)
+              : 1.0,
+        );
+        if (wasPreempted()) return;
+        await ResonateDiagnostics.recordDj(
+          stage: 'engine_recover',
+          outcome: 'applied',
+          reason: reason,
+          extra: {
+            'engine': 'Media3',
+            'activeDeck': _media3ShadowState?.activeDeckId ?? 'A',
+            'playing': media3.isPlaying,
+            'positionMs': media3.position.inMilliseconds,
+          },
+        );
+      } catch (error) {
+        debugPrint('Media3 DJ engine recover failed: $error');
+      }
+      return;
+    }
     // Recovery is asynchronous and may overlap a manual track selection. It
     // must never restore master volume on an engine captured before that
     // selection, or it can make the old track audible again.
@@ -409,4 +668,22 @@ extension MusicProviderDjHandoff on MusicProvider {
       debugPrint('DJ engine recover failed: $e');
     }
   }
+}
+
+
+/// Immutable output of DJ planning for a Media3 active/standby pair.
+class Media3DjTransitionPreparation {
+  const Media3DjTransitionPreparation({
+    this.incomingStartPosition = Duration.zero,
+    this.activeSpeed = 1.0,
+    this.standbySpeed = 1.0,
+    this.outgoingProfile,
+    this.transitionKind,
+  });
+
+  final Duration incomingStartPosition;
+  final double activeSpeed;
+  final double standbySpeed;
+  final DjTrackProfile? outgoingProfile;
+  final DjTransitionKind? transitionKind;
 }

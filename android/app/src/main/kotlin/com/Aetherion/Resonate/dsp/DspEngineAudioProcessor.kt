@@ -9,14 +9,14 @@ import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Live path: PCM16 from one ExoPlayer sink → JNI → dsp_process.
+ * Live path: PCM16 from one ExoPlayer sink → JNI → dsp_process_pcm16 (DSP-ENGINE).
  *
  * Dual-engine rule: one processor + one native handle per player (A or B).
  * Fail-open: any native trouble → pass-through. Native resources are released
  * when a processor is demoted so a failed engine cannot leak across a sink
  * lifecycle.
  */
-class DspEngineAudioProcessor : BaseAudioProcessor() {
+class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProcessor() {
 
     internal interface NativeDspApi {
         fun create(sampleRate: Double, channels: Int): Long
@@ -43,6 +43,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
         const val MAX_FRAMES = 4096
         const val MAX_BYTES = MAX_FRAMES * 2 * 2
         private const val MAX_PROCESS_ERRORS = 8
+        private const val MAX_SUPPORTED_CHANNELS = 2
 
         private val nextId = AtomicInteger(1)
     }
@@ -84,7 +85,10 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
         }
 
         val rate = inputAudioFormat.sampleRate
-        val ch = inputAudioFormat.channelCount.coerceIn(1, 2)
+        // DSP-ENGINE currently supports mono/stereo only. Never clamp a
+        // multichannel format to stereo: that would reinterpret interleaved
+        // surround samples as unrelated left/right frames and corrupt routing.
+        val ch = inputAudioFormat.channelCount
 
         if (engineHandle != 0L && (rate != configuredRate || ch != configuredChannels)) {
             Log.i(TAG, "id=$processorId format change $configuredRate/$configuredChannels → $rate/$ch")
@@ -95,12 +99,18 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
         configuredRate = rate
         configuredChannels = ch
 
+        if (ch !in 1..MAX_SUPPORTED_CHANNELS) {
+            Log.i(TAG, "id=$processorId channels=$ch unsupported by DSP; preserving PCM pass-through")
+            return inputAudioFormat
+        }
+
         maybeCreateEngine()
         return inputAudioFormat
     }
 
     private fun maybeCreateEngine() {
         if (!nativeProcessEnabled) return
+        if (configuredChannels !in 1..MAX_SUPPORTED_CHANNELS) return
         if (!DspSessionGate.isNativeAllowed()) {
             nativeProcessEnabled = false
             return
@@ -118,7 +128,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
             }
 
             engineHandle = h
-            if (!DspEngineRegistry.register(processorId, h)) {
+            if (!DspEngineRegistry.register(processorId, h, deckId)) {
                 Log.w(TAG, "id=$processorId registry rejected handle=$h — pass-through")
                 try {
                     nativeApi.destroy(h)

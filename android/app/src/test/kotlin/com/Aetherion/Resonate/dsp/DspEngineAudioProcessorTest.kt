@@ -123,6 +123,30 @@ class DspEngineAudioProcessorTest {
     }
 
     @Test
+    fun multichannel_pcm_stays_bit_exact_and_stereo_reconfiguration_enables_dsp() {
+        val processor = DspEngineAudioProcessor()
+        processor.setNativeProcessEnabled(true)
+        processor.configure(
+            AudioProcessor.AudioFormat(44100, 6, C.ENCODING_PCM_16BIT)
+        )
+
+        assertEquals(0, api.createCalls)
+        val surround = ByteArray(24) { (it * 7 + 3).toByte() }
+        processor.queueInput(ByteBuffer.allocateDirect(surround.size).apply {
+            put(surround)
+            flip()
+        })
+        assertTrue(outputBytes(processor).contentEquals(surround))
+
+        // A later stereo format on the same processor is eligible for DSP.
+        processor.configure(
+            AudioProcessor.AudioFormat(44100, 2, C.ENCODING_PCM_16BIT)
+        )
+        assertEquals(1, api.createCalls)
+        assertEquals(1, DspEngineRegistry.activeCount())
+    }
+
+    @Test
     fun native_process_error_restores_exact_original_pcm() {
         val processor = configure()
         api.processResult = -17

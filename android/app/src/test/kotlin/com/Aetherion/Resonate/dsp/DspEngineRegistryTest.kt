@@ -48,6 +48,31 @@ class DspEngineRegistryTest {
         override fun setCrossoverHz(handle: Long, freqHz: Float) {
             calls += "crossover:" + handle + ":" + freqHz
         }
+
+        override fun setParametricEqBands(
+            handle: Long, frequenciesHz: FloatArray, gainsDb: FloatArray,
+            qs: FloatArray, types: IntArray, enabled: Boolean
+        ) {
+            calls += "parametric:" + handle + ":" + frequenciesHz.size + ":" +
+                qs.firstOrNull() + ":" + types.firstOrNull()
+            setEqBands(handle, frequenciesHz.map { it.toDouble() }.toDoubleArray(),
+                gainsDb.map { it.toDouble() }.toDoubleArray(), enabled)
+        }
+
+        override fun setDvc(handle: Long, enabled: Boolean, gainDb: Float, smoothing: Boolean, smoothingMs: Float) {
+            calls += "dvc:" + handle + ":" + enabled + ":" + gainDb + ":" + smoothing + ":" + smoothingMs
+        }
+
+        override fun setLimiterConfig(
+            handle: Long, enabled: Boolean, mode: Int, thresholdDb: Float,
+            releaseMs: Float, attackMs: Float, lookaheadMs: Float, kneeDb: Float
+        ) {
+            calls += "limiter-config:" + handle + ":" + enabled + ":" + mode + ":" + thresholdDb
+        }
+
+        override fun setDither(handle: Long, enabled: Boolean, mode: Int) {
+            calls += "dither:" + handle + ":" + enabled + ":" + mode
+        }
     }
 
     private lateinit var fake: FakeApi
@@ -89,6 +114,40 @@ class DspEngineRegistryTest {
         assertTrue(fake.calls.any { it == "preamp:2002:1.35" })
         assertTrue(fake.calls.any { it == "limiter:2002:-0.8:-0.3" })
         assertTrue(fake.calls.any { it == "crossover:2002:140.0" })
+    }
+
+    @Test
+    fun advanced_dsp_profile_is_sticky_and_applied_to_new_engine() {
+        DspEngineRegistry.applyDvcAll(false, -6f, false, 28f)
+        DspEngineRegistry.applyLimiterConfigAll(true, 3, -2f, 120f, 1f, 5f, 2f)
+        DspEngineRegistry.applyDitherAll(true, 2)
+        assertTrue(DspEngineRegistry.applyParametricEqBandsAll(
+            floatArrayOf(40f, 1000f, 12000f),
+            floatArrayOf(4f, -1f, 2f),
+            floatArrayOf(0.8f, 1.2f, 2f),
+            intArrayOf(1, 0, 2),
+        ))
+
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.register(11, 11011L))
+
+        assertTrue(fake.calls.any { it == "dvc:11011:false:-6.0:false:28.0" })
+        assertTrue(fake.calls.any { it == "limiter-config:11011:true:3:-2.0" })
+        assertTrue(fake.calls.any { it == "dither:11011:true:2" })
+        assertTrue(fake.calls.any { it == "parametric:11011:3:0.8:1" })
+    }
+
+    @Test
+    fun master_volume_remains_effective_when_dvc_is_bypassed() {
+        DspEngineRegistry.applyPreampAll(1.0)
+        DspEngineRegistry.applyDvcAll(false, -6f, true, 15f)
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.register(12, 12012L))
+        assertTrue(fake.calls.any { it.startsWith("preamp:12012:0.501") })
+
+        fake.calls.clear()
+        DspEngineRegistry.applyVolumeAll(0.25)
+        assertTrue(fake.calls.any { it == "preamp:12012:0.25" })
     }
 
     @Test
@@ -270,15 +329,148 @@ class DspEngineRegistryTest {
         DspEngineRegistry.applyLimiterCeilingAll(-99f, 1f)
         DspEngineRegistry.applyCrossoverHzAll(900f)
 
-        assertTrue(fake.calls.contains("limiter:1001:-6.0:-0.1"))
-        assertTrue(fake.calls.contains("limiter:2002:-6.0:-0.1"))
+        assertTrue(fake.calls.contains("limiter:1001:-12.0:-0.05"))
+        assertTrue(fake.calls.contains("limiter:2002:-12.0:-0.05"))
         assertTrue(fake.calls.contains("crossover:1001:200.0"))
         assertTrue(fake.calls.contains("crossover:2002:200.0"))
 
         fake.calls.clear()
         assertTrue(DspEngineRegistry.register(3, 3003L))
-        assertTrue(fake.calls.contains("limiter:3003:-6.0:-0.1"))
+        assertTrue(fake.calls.contains("limiter:3003:-12.0:-0.05"))
         assertTrue(fake.calls.contains("crossover:3003:200.0"))
+    }
+
+    @Test
+    fun legacy_just_audio_reflection_hook_keeps_its_no_argument_entrypoint() {
+        val hook = Class.forName("com.aetherion.resonate.dsp.DspEngineSinkHook")
+        val method = hook.getMethod("createProcessors")
+        assertEquals(0, method.parameterCount)
+    }
+
+    @Test
+    fun temporary_eq_overlay_targets_only_the_requested_logical_deck() {
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        assertTrue(DspEngineRegistry.register(2, 2002L, "B"))
+        DspEngineRegistry.setActiveDeck("A")
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(100.0, 1000.0, 10000.0),
+            doubleArrayOf(-6.0, 0.0, 6.0),
+        ))
+
+        assertTrue(fake.calls.any { it.startsWith("eq:1001:") })
+        assertFalse(fake.calls.any { it.startsWith("eq:2002:") })
+    }
+
+    @Test
+    fun media3_deck_overlay_does_not_touch_legacy_just_audio_processors() {
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        assertTrue(DspEngineRegistry.register(9, 9009L, "legacy"))
+        DspEngineRegistry.setActiveDeck("A")
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(100.0, 1000.0),
+            doubleArrayOf(-3.0, 3.0),
+        ))
+
+        assertTrue(fake.calls.any { it.startsWith("eq:1001:") })
+        assertFalse(fake.calls.any { it.startsWith("eq:9009:") })
+    }
+
+    @Test
+    fun standby_overlay_targets_the_inactive_physical_deck_and_role_follows_promotion() {
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        assertTrue(DspEngineRegistry.register(2, 2002L, "B"))
+        DspEngineRegistry.setActiveDeck("A")
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.setTemporaryEqOverlay(
+            "standby",
+            doubleArrayOf(80.0, 8000.0),
+            doubleArrayOf(-4.0, 4.0),
+        ))
+        assertTrue(fake.calls.any { it.startsWith("eq:2002:") })
+        assertFalse(fake.calls.any { it.startsWith("eq:1001:") })
+
+        DspEngineRegistry.setActiveDeck("B")
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(80.0, 8000.0),
+            doubleArrayOf(3.0, -3.0),
+        ))
+        assertTrue(fake.calls.any { it.startsWith("eq:2002:") })
+        assertFalse(fake.calls.any { it.startsWith("eq:1001:") })
+    }
+
+    @Test
+    fun temporary_overlay_composes_with_persistent_eq_and_clear_restores_base_curve() {
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        DspEngineRegistry.setActiveDeck("A")
+        DspEngineRegistry.applyEqBandsAll(
+            doubleArrayOf(100.0, 1000.0, 10000.0),
+            doubleArrayOf(1.0, 2.0, 3.0),
+            true,
+        )
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(100.0, 1000.0, 10000.0),
+            doubleArrayOf(-2.0, 0.0, 2.0),
+        ))
+        assertTrue(fake.calls.contains("eq:1001:-1.0,2.0,5.0:true"))
+
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.clearTemporaryEqOverlay("active"))
+        assertTrue(fake.calls.contains("eq:1001:1.0,2.0,3.0:true"))
+    }
+
+    @Test
+    fun persistent_eq_updates_retain_active_deck_overlay() {
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        DspEngineRegistry.setActiveDeck("A")
+        assertTrue(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(100.0, 1000.0, 10000.0),
+            doubleArrayOf(1.0, 2.0, 3.0),
+        ))
+        fake.calls.clear()
+
+        DspEngineRegistry.applyEqBandsAll(
+            doubleArrayOf(100.0, 1000.0, 10000.0),
+            doubleArrayOf(4.0, 5.0, 6.0),
+            true,
+        )
+        assertTrue(fake.calls.contains("eq:1001:5.0,7.0,9.0:true"))
+    }
+
+    @Test
+    fun overlay_rejects_malformed_or_out_of_range_curves() {
+        assertFalse(DspEngineRegistry.setTemporaryEqOverlay(
+            "unknown",
+            doubleArrayOf(100.0),
+            doubleArrayOf(1.0),
+        ))
+        assertFalse(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(100.0, 200.0),
+            doubleArrayOf(1.0),
+        ))
+        assertFalse(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(10.0),
+            doubleArrayOf(1.0),
+        ))
+        assertFalse(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(100.0),
+            doubleArrayOf(13.0),
+        ))
     }
 
 }

@@ -28,6 +28,10 @@ import '../services/resonate_diagnostics.dart';
 import '../services/library_visibility_store.dart';
 import '../services/audio_effects_bridge.dart';
 import '../services/dj_sfx_rack.dart';
+import '../services/playback_engine_session.dart';
+import '../services/media3_provider_state_bridge.dart';
+import '../services/media3_music_provider_adapter.dart';
+import '../services/playback_backend.dart';
 import '../services/audio_effects_controller.dart';
 import '../services/loudness_service.dart';
 import '../services/playback_coordinator.dart';
@@ -61,6 +65,7 @@ import '../modes/services/podcast_session_bridge.dart';
 
 part 'music_provider_crossfade.dart';
 part 'music_provider_transport.dart';
+part 'music_provider_media3.dart';
 part 'music_provider_dj_handoff.dart';
 part 'music_provider_audio_effects_lifecycle.dart';
 
@@ -86,31 +91,69 @@ class MusicProvider extends ChangeNotifier {
   final PlaybackAuthority _authority = PlaybackAuthority.instance;
   final PlaybackIntentGate _playbackIntentGate = PlaybackIntentGate();
   final PlaybackCoordinator _playbackCoordinator = PlaybackCoordinator();
+  /// Optional provider-owned Media3 session. The app composition root prepares
+  /// it after provider restoration, then hands canonical observation, transport,
+  /// recovery, and completion authority to this session.
+  final PlaybackEngineSession? _media3ProviderSession;
+  StreamSubscription<int?>? _media3AudioSessionSub;
+  StreamSubscription<Media3ProviderState>? _media3StateSub;
+  Media3ProviderState? _media3ShadowState;
+  Media3ProviderState? get media3ShadowState => _media3ShadowState;
+  Future<void>? _playbackSettingsLoad;
+  Future<void>? _queueRestore;
+  Future<void>? _media3HandoffFuture;
+  bool _media3ProviderSessionPrepared = false;
+  bool _media3ProviderSessionActive = false;
+  bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
+  bool get media3ProviderSessionActive => _media3ProviderSessionActive;
+  @visibleForTesting
+  bool get debugLegacyEngineConstructed => _engines != null;
+  /// The exact session that owns canonical playback after provider handoff.
+  /// Consumers such as DSP/effects must observe this session rather than the
+  /// retired legacy EnginePair audio-session IDs.
+  PlaybackEngineSession? get media3PlaybackSession => _media3ProviderSession;
   final PodcastSessionBridge _podcastSession = PodcastSessionBridge();
   final AudiobookSessionBridge _audiobookSession = AudiobookSessionBridge();
   ModeProvider? _modes;
-  late final AudioEffectsController _audioEffectsController;
   final LibraryVisibilityStore _visibility = LibraryVisibilityStore.instance;
-  final EnginePair _engines = EnginePair();
-  /// Compatibility aliases — dual engines live in [_engines].
-  AudioPlayer get _playerA => _engines.playerA;
-  AudioPlayer get _playerB => _engines.playerB;
-  AndroidEqualizer get _equalizerA => _engines.equalizerA;
-  AndroidEqualizer get _equalizerB => _engines.equalizerB;
-  AndroidLoudnessEnhancer get _loudnessA => _engines.loudnessA;
-  AndroidLoudnessEnhancer get _loudnessB => _engines.loudnessB;
-  bool get _activeIsA => _engines.activeIsA;
-  set _activeIsA(bool value) => _engines.activeIsA = value;
-  AudioPlayer get audioPlayer => _engines.active;
-  /// Both players own independent Android audio sessions; session-based
-  /// auxiliary effects must be reapplied to either engine across handoffs.
+  EnginePair? _engines;
+  bool _legacyEngineObserversInitialized = false;
+  EnginePair get _legacyEngines {
+    if (_legacyEnginesRetired || _media3ProviderSessionActive ||
+        (_media3ProviderSession != null)) {
+      throw StateError('Legacy just_audio engines are unavailable while Media3 owns or is preparing playback.');
+    }
+    return _engines ??= EnginePair();
+  }
+  late final AudioEffectsController _audioEffectsController =
+      AudioEffectsController(
+    equalizerA: _legacyEngines.equalizerA,
+    equalizerB: _legacyEngines.equalizerB,
+    loudnessA: _legacyEngines.loudnessA,
+    loudnessB: _legacyEngines.loudnessB,
+  );
+  AudioPlayer get _playerA => _legacyEngines.playerA;
+  AudioPlayer get _playerB => _legacyEngines.playerB;
+  AndroidEqualizer get _equalizerA => _legacyEngines.equalizerA;
+  AndroidEqualizer get _equalizerB => _legacyEngines.equalizerB;
+  AndroidLoudnessEnhancer get _loudnessA => _legacyEngines.loudnessA;
+  AndroidLoudnessEnhancer get _loudnessB => _legacyEngines.loudnessB;
+  bool get _activeIsA => _media3ProviderSession != null
+      ? (_media3ShadowState?.activeDeckId ?? 'A') != 'B'
+      : _legacyEngines.activeIsA;
+  set _activeIsA(bool value) {
+    if (_media3ProviderSession == null && !_legacyEnginesRetired) {
+      _legacyEngines.activeIsA = value;
+    }
+  }
+  AudioPlayer get audioPlayer => _legacyEngines.active;
   List<AudioPlayer> get audioSessionPlayers => [_playerA, _playerB];
-  AudioPlayer get inactivePlayer => _engines.inactive;
-  AndroidEqualizer get equalizer => _engines.equalizer;
-  AndroidLoudnessEnhancer get loudnessEnhancer => _engines.loudnessEnhancer;
-  AndroidEqualizer get inactiveEqualizer => _engines.inactiveEqualizer;
+  AudioPlayer get inactivePlayer => _legacyEngines.inactive;
+  AndroidEqualizer get equalizer => _legacyEngines.equalizer;
+  AndroidLoudnessEnhancer get loudnessEnhancer => _legacyEngines.loudnessEnhancer;
+  AndroidEqualizer get inactiveEqualizer => _legacyEngines.inactiveEqualizer;
   AndroidLoudnessEnhancer get inactiveLoudnessEnhancer =>
-      _engines.inactiveLoudnessEnhancer;
+      _legacyEngines.inactiveLoudnessEnhancer;
 
   Song? currentSong;
   bool isPlaying = false;
@@ -140,11 +183,17 @@ class MusicProvider extends ChangeNotifier {
   /// Sleep-timer fade multiplier (1.0 = full, 0.0 = silent). Applied on top of preamp.
   double get _sleepFadeScale => _volumeFacade.sleepFadeScale;
   set _sleepFadeScale(double value) => _volumeFacade.setSleepFadeScale(value);
+  /// Current Android audio session from the active playback backend.
+  /// Consumers must not reach through to a concrete just_audio player to read it.
+  int? _activeAndroidAudioSessionId;
+  int? get activeAudioSessionId => _activeAndroidAudioSessionId;
+
   /// Optional listener for Android audio session (Resonate native DSP).
   void Function(int sessionId)? onAndroidSession;
   StreamSubscription<int?>? _sessionASub;
   StreamSubscription<int?>? _sessionBSub;
   bool _disposed = false;
+  bool _legacyEnginesRetired = false;
   final QueueStore _queueStore = QueueStore();
   /// Compatibility aliases — queue state lives in [_queueStore].
   List<Song> get _queue => _queueStore.songs;
@@ -238,6 +287,21 @@ class MusicProvider extends ChangeNotifier {
   bool get _djSfxEngaged => _djHandoff.sfxEngaged;
   set _djSfxEngaged(bool value) => _djHandoff.sfxEngaged = value;
   final DjSfxRack _djSfxRack = DjSfxRack();
+  // Optional migration seam for Media3's per-deck DJ EQ overlays. This is
+  // deliberately not wired by default: attach only when a Media3 session is
+  // the authoritative playback session. It does not migrate transport,
+  // audio focus, notifications, or the remaining legacy DJ effects.
+  PlaybackEngineSession? _djSfxMedia3OverlaySession;
+  Media3DjTransitionPreparation? _media3DjTransitionPreparation;
+
+  /// Opts DJ transition EQ into Media3's active/standby deck overlays.
+  ///
+  /// Passing null keeps the existing AndroidEqualizer implementation. The
+  /// rack retains the session captured at engage time so a later detach or
+  /// replacement cannot strand an overlay on the previous session.
+  void attachMedia3DjOverlaySession(PlaybackEngineSession? session) {
+    _djSfxMedia3OverlaySession = session;
+  }
   DjAnalysisService? _djAnalysis;
   final DjEngine _djEngine = const DjEngine();
   final DjAutopilotPlanner _djAutopilotPlanner = const DjAutopilotPlanner();
@@ -324,6 +388,9 @@ class MusicProvider extends ChangeNotifier {
   Timer? _systemVolumePollTimer;
   Timer? _endOfTrackWatchdog;
   String? _lastCompletionSongId;
+  String? _pendingMedia3CompletionSongId;
+  String? _pendingMedia3CompletionDeckId;
+  int? _pendingMedia3CompletionTransportEpoch;
   final PlayerStreamBinder _playerStreamBinder = PlayerStreamBinder();
   StreamSubscription<int?>? _currentIndexSubscription;
   StreamSubscription<double>? _volumeSubscription;
@@ -454,7 +521,7 @@ class MusicProvider extends ChangeNotifier {
           !_repeatSelfHandoffInFlight &&
           !_transportInFlight &&
           !_loadingSource) {
-        await audioPlayer.setVolume(_effectiveCrossfadeMaster);
+        await _applyActiveMasterVolume();
       }
     } catch (_) {}
   }
@@ -516,7 +583,10 @@ class MusicProvider extends ChangeNotifier {
       return false;
     }
     if (currentSong == null || currentSong!.filePath.trim().isEmpty) return false;
-    if (!audioPlayer.playing && !_userWantsPlaying) return false;
+    final playing = _media3ProviderSession != null
+        ? _media3ProviderSession!.isPlaying
+        : audioPlayer.playing;
+    if (!playing && !_userWantsPlaying) return false;
     return true;
   }
 
@@ -537,7 +607,54 @@ class MusicProvider extends ChangeNotifier {
   bool get crossfadeEnabled => _crossfadeEnabled;
   int get crossfadeDurationMs => _crossfadeDurationMs;
   String get crossfadeFadeType => _crossfadeFadeType;
-  String get activeEngineLabel => _authority.engineLabel(this);
+  String get activeEngineLabel => _media3ProviderSessionActive
+      ? (_media3ShadowState?.activeDeckId ?? 'A')
+      : _authority.engineLabel(this);
+
+  /// Engine-neutral playback feature commands. The Media3 session is the
+  /// only supported backend when it has been injected; never instantiate a
+  /// legacy just_audio player merely to apply a feature during handoff.
+  Future<void> setPlaybackSpeedForFeatures(double value) async {
+    final session = _media3ProviderSession;
+    if (session != null) {
+      final activeSession = (await _ensureMedia3ProviderSessionActive())!;
+      await activeSession.setPlaybackSpeed(value);
+      return;
+    }
+    await audioPlayer.setSpeed(value);
+  }
+
+  Future<void> setPlaybackPitchForFeatures(double value) async {
+    final session = _media3ProviderSession;
+    if (session != null) {
+      final activeSession = (await _ensureMedia3ProviderSessionActive())!;
+      try {
+        await activeSession.setPlaybackPitch(value);
+      } on UnsupportedError {
+        // Older/test session implementations may not expose pitch yet.
+        // Keep Media3 authoritative; never fall back to a second player.
+      }
+      return;
+    }
+    await audioPlayer.setPitch(value);
+  }
+
+  Future<void> setNormalizationForFeatures({
+    required double targetGainMillibels,
+    required bool enabled,
+    required double trackLevel,
+  }) async {
+    final session = _media3ProviderSession;
+    if (session != null) {
+      final activeSession = (await _ensureMedia3ProviderSessionActive())!;
+      await activeSession.setGainFactors(trackLevel: enabled ? trackLevel : 1.0);
+      return;
+    }
+    await loudnessEnhancer.setTargetGain(
+      targetGainMillibels.clamp(-1000.0, 0.0),
+    );
+    await loudnessEnhancer.setEnabled(enabled);
+  }
 
   /// Last DJ handoff snapshot for Now Playing "why this transition" chip.
   DateTime? get lastDjHandoffAt => _lastDjHandoffAt;
@@ -553,7 +670,7 @@ class MusicProvider extends ChangeNotifier {
 
   /// Phase 2: normal listening is always Engine A. Engine B is only for an
   /// in-progress crossfade (or a track that was handed off via crossfade).
-  bool get isEngineA => _activeIsA;
+  bool get isEngineA => activeEngineLabel == 'A';
 
   /// True when we have a saved mid-track position for the current queue song.
   bool get canContinueListening {
@@ -598,6 +715,7 @@ class MusicProvider extends ChangeNotifier {
   /// Switch active engine to A and rebind streams if we were on B.
   /// Safe to call at the start of any non-crossfade play path.
   void _ensureEngineA({String reason = 'default'}) {
+    if (_media3ProviderSession != null || _legacyEnginesRetired) return;
     if (_activeIsA) return;
     _activeIsA = true;
     _bindActivePlayerStreams();
@@ -626,30 +744,15 @@ class MusicProvider extends ChangeNotifier {
   static const _repeatModeKey = 'playback_repeat_mode';
   static const MethodChannel _systemVolumeChannel = MethodChannel('com.aetherion.resonate/media_store');
 
-  MusicProvider({this.audioHandler}) {
-    // Players + Android effects are constructed by [EnginePair].
-    _audioEffectsController = AudioEffectsController(
-      equalizerA: _equalizerA,
-      equalizerB: _equalizerB,
-      loudnessA: _loudnessA,
-      loudnessB: _loudnessB,
-    );
-    _sessionASub = _playerA.androidAudioSessionIdStream.listen((id) {
-      if (_disposed) return;
-      try {
-        if (id != null && id > 0 && _activeIsA) onAndroidSession?.call(id);
-      } catch (e) {
-        debugPrint('onAndroidSession A failed: $e');
-      }
-    }, onError: (e) => debugPrint('sessionA stream error: $e'));
-    _sessionBSub = _playerB.androidAudioSessionIdStream.listen((id) {
-      if (_disposed) return;
-      try {
-        if (id != null && id > 0 && !_activeIsA) onAndroidSession?.call(id);
-      } catch (e) {
-        debugPrint('onAndroidSession B failed: $e');
-      }
-    }, onError: (e) => debugPrint('sessionB stream error: $e'));
+  MusicProvider({
+    this.audioHandler,
+    PlaybackEngineSession? media3ProviderSession,
+  }) : _media3ProviderSession = media3ProviderSession {
+    // A Media3-backed provider must not construct Flutter audio players at
+    // startup. Initialize legacy decks only when the explicit fallback is used.
+    if (_media3ProviderSession == null) {
+      _initializeLegacyEngineObservers();
+    }
     if (audioHandler is AudioServiceHandler) {
       (audioHandler! as AudioServiceHandler).bindPlaybackController(
         // CRITICAL: onPlay must never toggle. If isPlaying was optimistic-true
@@ -663,11 +766,216 @@ class MusicProvider extends ChangeNotifier {
         onPrevious: () => this.previousSong(source: 'audio_service'),
       );
     }
+    _playbackSettingsLoad = _loadPlaybackSettings();
+    unawaited(_playbackSettingsLoad!);
+    _systemVolumePollTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => unawaited(_syncSystemVolume()));
+    _queueRestore = _restoreQueue();
+    unawaited(_queueRestore!);
+  }
+
+  void _initializeLegacyEngineObservers() {
+    if (_legacyEngineObserversInitialized || _disposed ||
+        _legacyEnginesRetired || _media3ProviderSessionActive ||
+        (_media3ProviderSession != null)) return;
+    _legacyEngineObserversInitialized = true;
+    final playerA = _playerA;
+    final playerB = _playerB;
+    _sessionASub = playerA.androidAudioSessionIdStream.listen((id) {
+      if (_disposed || _media3ProviderSessionActive || _legacyEnginesRetired) return;
+      try {
+        if (!_activeIsA) return;
+        _activeAndroidAudioSessionId = id != null && id > 0 ? id : null;
+        final sessionId = _activeAndroidAudioSessionId;
+        if (sessionId != null) onAndroidSession?.call(sessionId);
+      } catch (e) {
+        debugPrint('onAndroidSession A failed: $e');
+      }
+    }, onError: (e) => debugPrint('sessionA stream error: $e'));
+    _sessionBSub = playerB.androidAudioSessionIdStream.listen((id) {
+      if (_disposed || _media3ProviderSessionActive || _legacyEnginesRetired) return;
+      try {
+        if (_activeIsA) return;
+        _activeAndroidAudioSessionId = id != null && id > 0 ? id : null;
+        final sessionId = _activeAndroidAudioSessionId;
+        if (sessionId != null) onAndroidSession?.call(sessionId);
+      } catch (e) {
+        debugPrint('onAndroidSession B failed: $e');
+      }
+    }, onError: (e) => debugPrint('sessionB stream error: $e'));
     _bindActivePlayerStreams();
     unawaited(_configureAudioSession());
-    unawaited(_loadPlaybackSettings());
-    _systemVolumePollTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => unawaited(_syncSystemVolume()));
-    unawaited(_restoreQueue());
+  }
+
+  /// Starts the injected Media3 session, restores the provider queue/settings,
+  /// attaches canonical state and audio-session observers, and commits the
+  /// transport/focus handoff after both legacy decks have stopped. The app
+  /// composition root invokes this after provider restoration. A failed start
+  /// leaves the legacy engine authoritative.
+  Future<void> prepareMedia3ProviderSession() {
+    if (_media3ProviderSessionActive) return Future<void>.value();
+    return _media3HandoffFuture ??= _prepareMedia3ProviderSession();
+  }
+
+  /// Ensures an injected Media3 session becomes the sole playback authority
+  /// before transport commands run. Never fall through to lazy just_audio
+  /// construction when a production session has been supplied.
+  Future<PlaybackEngineSession?> _ensureMedia3ProviderSessionActive() async {
+    final session = _media3ProviderSession;
+    if (session == null) return null;
+    if (!_media3ProviderSessionActive) {
+      await prepareMedia3ProviderSession();
+    }
+    if (!_media3ProviderSessionActive) {
+      throw StateError('The injected Media3 playback session did not become active.');
+    }
+    return session;
+  }
+
+  Future<void> _prepareMedia3ProviderSession() async {
+    final session = _media3ProviderSession;
+    if (session == null) {
+      throw StateError('No Media3ProviderSession was supplied to MusicProvider.');
+    }
+    if (_disposed) throw StateError('MusicProvider is disposed.');
+    await _playbackSettingsLoad;
+    await _queueRestore;
+    if (_disposed) throw StateError('MusicProvider is disposed.');
+    // Subscribe before native startup/queue preparation so the first Android
+    // AudioTrack session cannot be missed by broadcast-only implementations.
+    _activeAndroidAudioSessionId = null;
+    await _media3AudioSessionSub?.cancel();
+    _media3AudioSessionSub = session.audioSessionIdStream.listen((id) {
+      if (_disposed) return;
+      _activeAndroidAudioSessionId = id != null && id > 0 ? id : null;
+      final sessionId = _activeAndroidAudioSessionId;
+      if (sessionId == null) return;
+      try {
+        onAndroidSession?.call(sessionId);
+      } catch (e) {
+        debugPrint('Media3 onAndroidSession callback failed: $e');
+      }
+    }, onError: (Object error) {
+      debugPrint('Media3 audio session stream error: $error');
+    });
+    await session.start();
+    // Restore rate and pitch directly onto the canonical Media3 session before
+    // handoff. PlaybackFeaturesProvider may have loaded these preferences while
+    // the injected session was still starting, when feature commands are held.
+    final featurePrefs = await SharedPreferences.getInstance();
+    final restoredSpeed = (featurePrefs.getDouble('playback_speed') ?? 1.0)
+        .clamp(0.5, 2.0).toDouble();
+    final restoredPitch = (featurePrefs.getDouble('playback_pitch') ?? 1.0)
+        .clamp(0.5, 2.0).toDouble();
+    await session.setPlaybackSpeed(restoredSpeed);
+    try {
+      await session.setPlaybackPitch(restoredPitch);
+    } on UnsupportedError {
+      // A session without pitch support remains usable; retain the preference
+      // so a capable production session can apply it on the next startup.
+    }
+    // The legacy engine remains the current owner during this migration stage.
+    await session.setAudioFocusHandling(false);
+    if (_queue.isEmpty) {
+      await session.clearQueue();
+    } else {
+      await session.loadQueue(_queue, startIndex: _queueIndex);
+      // Queue restoration also restores the last useful position in Dart.
+      // Install that position on the newly-created native player before the
+      // provider commits Media3 as the sole observation/transport authority.
+      if (currentPosition > Duration.zero) {
+        await session.seek(currentPosition);
+      }
+    }
+    await session.setRepeatMode(switch (_repeatMode) {
+      PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
+      PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
+      PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
+    });
+    await session.setShuffleMode(_shuffleEnabled);
+    await session.setVolume(1.0);
+    await session.setGainFactors(
+      trackLevel: _trackLevelingScale,
+      preamp: _eqPreampScale,
+      sleepFade: _sleepFadeScale,
+      focusDuck: _isDucked ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel) : 1.0,
+    );
+    await _media3StateSub?.cancel();
+    _media3StateSub = session.stateStream.listen((state) {
+      if (_disposed) return;
+      _media3ShadowState = state;
+      if (_media3ProviderSessionActive) this._acceptMedia3ProviderState(state);
+    }, onError: (Object error) {
+      debugPrint('Media3 provider state stream error: $error');
+    });
+    // Release legacy DJ automation and any Media3 auxiliary sample before
+    // disposing EnginePair. The DJ rack no longer creates independent audio
+    // players, but its queued session effects still need an explicit teardown.
+    await _restoreDjTransitionSfx();
+
+    // Commit the handoff only after the session has the provider queue,
+    // repeat/shuffle/volume policy, and both observation subscriptions.
+    // Media3 becomes the sole transport and recovery owner from this point.
+    await session.setAudioFocusHandling(true);
+    final legacyEngines = _engines;
+    if (legacyEngines != null) {
+      try { await legacyEngines.playerA.stop(); } catch (_) {}
+      try { await legacyEngines.playerB.stop(); } catch (_) {}
+      if (legacyEngines.playerA.playing || legacyEngines.playerB.playing) {
+        await session.setAudioFocusHandling(false);
+        throw StateError(
+          'Cannot hand off to Media3 while a legacy playback deck is still active.',
+        );
+      }
+    }
+    _crossfadeInProgress = false;
+    _automaticCrossfadeInFlight = false;
+    _repeatSelfHandoffInFlight = false;
+    _completionObservedDuringCrossfade = false;
+    _crossfadePreloadInFlight = false;
+    _preloadedNextSongId = null;
+    _endOfTrackWatchdog?.cancel();
+    _endOfTrackWatchdog = null;
+    try {
+      final audioSession = await AudioSession.instance;
+      await audioSession.setActive(false);
+    } catch (_) {}
+    attachMedia3DjOverlaySession(session);
+    _media3ProviderSessionPrepared = true;
+    _media3ProviderSessionActive = true;
+
+    // The legacy EnginePair is no longer a fallback after this point. Stop
+    // every listener first, then dispose both just_audio players so no delayed
+    // stream-recovery future can keep an independent audio engine alive.
+    _legacyEnginesRetired = true;
+    _playerStreamBinder.cancel();
+    _currentIndexSubscription?.cancel();
+    _currentIndexSubscription = null;
+    _volumeSubscription?.cancel();
+    _volumeSubscription = null;
+    await _sessionASub?.cancel();
+    _sessionASub = null;
+    await _sessionBSub?.cancel();
+    _sessionBSub = null;
+    if (legacyEngines != null) await legacyEngines.dispose();
+    await ResonateDiagnostics.record('legacy_just_audio_engines_retired', {
+      'disposed': true,
+      'reason': 'media3_handoff',
+    });
+
+    final initialState = _media3ShadowState;
+    if (initialState != null) {
+      this._acceptMedia3ProviderState(initialState);
+    } else {
+      this._reconcileMedia3ProviderSession();
+    }
+    unawaited(ResonateDiagnostics.record('media3_provider_session_handoff_enabled', {
+      'queueLength': _queue.length,
+      'queueIndex': _queueIndex,
+      'focusEnabled': true,
+      'transportAuthority': 'media3_provider_session',
+      'legacyEnginesStopped': true,
+      'legacyEnginesDisposed': _legacyEnginesRetired,
+    }));
   }
 
   Future<void> _loadPlaybackSettings() async {
@@ -712,7 +1020,14 @@ class MusicProvider extends ChangeNotifier {
     if (enabled) {
       _queueStore.shuffleUpcoming();
     }
-    await _persistPlaybackModes(); await _persistQueue(); notifyListeners();
+    await _persistPlaybackModes();
+    await _persistQueue();
+    if (_media3ProviderSession != null) {
+      final session = (await _ensureMedia3ProviderSessionActive())!;
+      await session.setShuffleMode(enabled);
+      await session.synchronizeQueue(_queue);
+    }
+    notifyListeners();
   }
 
   Future<void> setRepeatMode(PlaybackRepeatMode mode) async {
@@ -727,6 +1042,14 @@ class MusicProvider extends ChangeNotifier {
     // that stale operation can commit or fall back to replaying the old track.
     if (transitionActive) _cancelAutomaticPlaybackWork();
     _repeatMode = mode;
+    if (_media3ProviderSession != null) {
+      final session = (await _ensureMedia3ProviderSessionActive())!;
+      await session.setRepeatMode(switch (mode) {
+        PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
+        PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
+        PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
+      });
+    }
     await _persistPlaybackModes();
     unawaited(_synchronizeModePlaybackBoundary());
     notifyListeners();
@@ -768,6 +1091,15 @@ class MusicProvider extends ChangeNotifier {
 
   /// If UI says playing but engine volume is near zero outside a crossfade, unstick.
   void _maybeRecoverSilentPlayback() {
+    // An injected session is authoritative even before its handoff completes.
+    // Never fall through to audioPlayer here: that getter can construct the
+    // retired just_audio EnginePair while Media3 is still preparing.
+    if (_media3ProviderSession != null) {
+      if (_media3ProviderSessionActive) {
+        this._recoverMedia3ProviderPlayback();
+      }
+      return;
+    }
     _forceClearStuckTransition(reason: 'silent_recover_probe');
     if (_crossfadeInProgress ||
         _automaticCrossfadeInFlight ||
@@ -806,10 +1138,9 @@ class MusicProvider extends ChangeNotifier {
       }
       _lastSilentRecoverAt = now;
       unawaited(() async {
-        try {
-          final session = await AudioSession.instance;
-          await session.setActive(true);
-        } catch (_) {}
+        if (!await _claimAudioFocus(
+          reason: mutedWhilePlaying ? 'silent_watchdog_muted' : 'silent_watchdog_stopped',
+        )) return;
         await _recoverDjEngineState(reason: mutedWhilePlaying
             ? 'silent_watchdog'
             : 'silent_watchdog_not_playing');
@@ -876,6 +1207,18 @@ class MusicProvider extends ChangeNotifier {
   /// without this, Audiobook's LoopMode.one can leak into Normal mode.
   Future<void> _synchronizeModePlaybackBoundary() async {
     final generation = ++_modeBoundaryGeneration;
+    if (_media3ProviderSession != null && !_media3ProviderSessionActive &&
+        _media3ProviderSession != null) return;
+    if (_media3ProviderSessionActive) {
+      final session = _media3ProviderSession!;
+      await session.setRepeatMode(switch (_repeatMode) {
+        PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
+        PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
+        PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
+      });
+      await session.setShuffleMode(_shuffleEnabled && _modeShuffleAllowed);
+      return;
+    }
     // A policy update must never pause an engine after a new handoff has
     // started. Re-check ownership after each await, not only at method exit.
     if (_crossfadeInProgress ||
@@ -957,36 +1300,143 @@ class MusicProvider extends ChangeNotifier {
 
   /// Public: re-claim focus and restore volume if playback went silent while UI moved.
   Future<void> ensureAudiblePlayback() async {
+    final media3Session = _media3ProviderSession;
+    final transportEpoch = _userTransportEpoch;
+    bool stillOwnsAudibleRecovery() =>
+        !_disposed &&
+        transportEpoch == _userTransportEpoch &&
+        _userWantsPlaying &&
+        !_recentlyUserPaused &&
+        _sleepFadeScale >= 0.999 &&
+        identical(media3Session, _media3ProviderSession) &&
+        (media3Session == null || _media3ProviderSessionActive);
+
     try {
-      if (_recentlyUserPaused) return;
-      if (!_userWantsPlaying) return;
-      // Do not fight an active sleep-timer fade-out.
-      if (_sleepFadeScale < 0.999) return;
-      await _claimAudioFocus(reason: 'ensure_audible');
+      // An injected session blocks legacy fallback even before handoff. Do not
+      // let this best-effort recovery path lazily construct the just_audio pair.
+      if (media3Session != null && !_media3ProviderSessionActive) return;
+      if (!stillOwnsAudibleRecovery()) return;
+      if (!await _claimAudioFocus(reason: 'ensure_audible')) return;
+
+      // Focus acquisition may yield while Pause, Stop, or a track change runs.
+      // Revalidate the transport generation before touching either engine.
+      if (!stillOwnsAudibleRecovery()) return;
+      if (media3Session != null) {
+        await _applyActiveMasterVolume();
+        if (!stillOwnsAudibleRecovery()) return;
+        if (!media3Session.isPlaying) await media3Session.play();
+        return;
+      }
+
       final vol = (_eqPreampScale * _sleepFadeScale).clamp(0.05, 1.0);
       if (audioPlayer.volume < vol * 0.85) {
         await audioPlayer.setVolume(vol);
       }
-      if (_userWantsPlaying && !audioPlayer.playing) {
-        await audioPlayer.play();
-      }
+      if (!stillOwnsAudibleRecovery()) return;
+      if (!audioPlayer.playing) await audioPlayer.play();
     } catch (e) {
       debugPrint('ensureAudiblePlayback: $e');
     }
   }
 
-  /// Claim media focus before any intentional play. Safe to call often.
-  Future<void> _claimAudioFocus({String reason = 'play'}) async {
+  /// Android call/communication mode takes precedence over media playback.
+  /// This check must happen before setActive(true), otherwise Resonate can
+  /// steal focus from the call or another communication app.
+  Future<bool> _isCommunicationActive() async {
+    try {
+      return await _systemVolumeChannel.invokeMethod<bool>(
+            'isCommunicationActive',
+          ) ??
+          false;
+    } catch (e) {
+      debugPrint('isCommunicationActive check failed: $e');
+      return false;
+    }
+  }
+
+  /// Claim media focus only when Android is not in a call/communication mode.
+  Future<bool> _claimAudioFocus({String reason = 'play'}) async {
+    if (await _isCommunicationActive()) {
+      unawaited(ResonateDiagnostics.record('audio_focus_blocked_communication', {
+        'reason': reason,
+        'songId': currentSong?.id,
+        'userWantsPlaying': _userWantsPlaying,
+      }));
+      return false;
+    }
+    final media3Session = _media3ProviderSession;
+    if (media3Session != null) {
+      try {
+        // An injected session owns focus policy before as well as after the
+        // explicit handoff. Activating it here prevents a pre-handoff focus
+        // request from falling through to Flutter AudioSession and creating
+        // a second, competing focus authority.
+        final session = await _ensureMedia3ProviderSessionActive();
+
+        // Session startup/handoff is asynchronous. A call or VoIP session can
+        // begin after the first communication check above, so re-check before
+        // enabling Media3 focus handling. Also fail closed if the provider was
+        // disposed or the injected session ceased to be authoritative meanwhile.
+        if (_disposed ||
+            !identical(media3Session, _media3ProviderSession) ||
+            !_media3ProviderSessionActive ||
+            await _isCommunicationActive()) {
+          unawaited(ResonateDiagnostics.record(
+            'audio_focus_blocked_after_media3_activation',
+            {
+              'reason': reason,
+              'songId': currentSong?.id,
+              'disposed': _disposed,
+              'sessionActive': _media3ProviderSessionActive,
+            },
+          ));
+          return false;
+        }
+
+        await session!.setAudioFocusHandling(true);
+
+        // Communication can begin during the platform focus request itself.
+        // Recheck after that await and immediately relinquish Media3 focus;
+        // otherwise audible recovery can race a newly active call.
+        if (_disposed ||
+            !identical(media3Session, _media3ProviderSession) ||
+            !_media3ProviderSessionActive ||
+            await _isCommunicationActive()) {
+          try {
+            await session.setAudioFocusHandling(false);
+          } catch (_) {}
+          unawaited(ResonateDiagnostics.record(
+            'audio_focus_released_after_media3_focus_race',
+            {
+              'reason': reason,
+              'songId': currentSong?.id,
+              'disposed': _disposed,
+              'sessionActive': _media3ProviderSessionActive,
+            },
+          ));
+          return false;
+        }
+        return true;
+      } catch (error) {
+        debugPrint('Media3 focus policy ($reason): $error');
+        return false;
+      }
+    }
     try {
       final session = await AudioSession.instance;
+      // Recheck immediately before requesting focus to close the race between
+      // the initial policy check and asynchronous AudioSession initialization.
+      if (await _isCommunicationActive()) return false;
       await session.setActive(true);
       unawaited(ResonateDiagnostics.record('audio_focus_claim', {
         'reason': reason,
         'songId': currentSong?.id,
         'userWantsPlaying': _userWantsPlaying,
       }));
+      return true;
     } catch (e) {
       debugPrint('claimAudioFocus ($reason): $e');
+      return true;
     }
   }
 
@@ -1101,6 +1551,13 @@ class MusicProvider extends ChangeNotifier {
       return;
     }
     _lastRouteRecoverAt = now;
+    final routeTransportEpoch = _userTransportEpoch;
+    bool stillOwnsRouteRecovery() =>
+        !_disposed &&
+        _userWantsPlaying &&
+        routeTransportEpoch == _userTransportEpoch &&
+        !_crossfadeInProgress &&
+        !_automaticCrossfadeInFlight;
     try {
       await ResonateDiagnostics.record('audio_route_changed', {
         'userWantsPlaying': _userWantsPlaying,
@@ -1109,42 +1566,78 @@ class MusicProvider extends ChangeNotifier {
         'songId': currentSong?.id,
       });
     } catch (_) {}
-    if (_disposed || !_userWantsPlaying) return;
-    if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
-    try {
-      final session = await AudioSession.instance;
-      if (_disposed) return;
+    if (!stillOwnsRouteRecovery()) return;
+
+    // An injected session is authoritative even before the explicit startup
+    // handoff. Activate it here, then keep every route-recovery operation on
+    // that same session; never fall through to legacy AudioPlayer access.
+    final injectedSession = _media3ProviderSession;
+    if (injectedSession != null) {
+      PlaybackEngineSession session;
       try {
-        await session.setActive(true);
-      } catch (_) {}
-      if (_disposed) return;
-    } catch (_) {}
-    if (_disposed) return;
+        session = (await _ensureMedia3ProviderSessionActive())!;
+        if (!stillOwnsRouteRecovery()) return;
+        if (await _isCommunicationActive()) return;
+        await session.setAudioFocusHandling(true);
+      } catch (error) {
+        await ResonateDiagnostics.record('audio_route_recover_failed', {
+          'engine': 'media3_provider_session',
+          'stage': 'activate',
+          'error': error.toString(),
+        });
+        return;
+      }
+
+      for (final delayMs in <int>[200, 700, 1600, 3200]) {
+        await Future<void>.delayed(Duration(milliseconds: delayMs));
+        if (!stillOwnsRouteRecovery()) return;
+        if (await _isCommunicationActive()) return;
+        try {
+          await session.setGainFactors(
+            trackLevel: _trackLevelingScale,
+            preamp: _eqPreampUserScale,
+            sleepFade: _sleepFadeScale,
+            focusDuck: _isDucked
+                ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel)
+                : 1.0,
+          );
+          if (!stillOwnsRouteRecovery()) return;
+          if (!session.isPlaying) {
+            await session.play();
+          }
+        } catch (_) {}
+      }
+      await ResonateDiagnostics.record('audio_route_recover_done', {
+        'playing': session.isPlaying,
+        'positionMs': session.position.inMilliseconds,
+        'songId': currentSong?.id,
+        'engine': 'media3_provider_session',
+      });
+      return;
+    }
+
+    if (!await _claimAudioFocus(reason: 'audio_route_changed')) return;
+    if (!stillOwnsRouteRecovery()) return;
     for (final delayMs in <int>[200, 700, 1600, 3200]) {
       await Future<void>.delayed(Duration(milliseconds: delayMs));
-      if (_disposed || !_userWantsPlaying) return;
-      if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
+      if (!stillOwnsRouteRecovery()) return;
       try {
         await _recoverDjEngineState(reason: 'audio_route_changed');
       } catch (_) {}
-      if (_disposed) return;
+      if (!stillOwnsRouteRecovery()) return;
       try {
         final active = audioPlayer;
         final vol = _effectiveCrossfadeMaster.clamp(0.0, 1.0).toDouble();
         // Route recovery must respect the same master envelope as ordinary
-        // playback: EQ/leveling, sleep fade, and any active focus duck. A hard
-        // minimum volume here can undo a deliberate fade or notification duck.
+        // playback: EQ/leveling, sleep fade, and any active focus duck.
         await active.setVolume(vol);
-        if (_disposed) return;
-        if (_userWantsPlaying && !active.playing) {
-          try {
-            await active.play();
-          } catch (_) {}
+        if (!stillOwnsRouteRecovery()) return;
+        if (!active.playing) {
+          await active.play();
         }
       } catch (_) {}
-      if (_disposed) return;
     }
-    if (_disposed) return;
+    if (!stillOwnsRouteRecovery()) return;
     try {
       await ResonateDiagnostics.record('audio_route_recover_done', {
         'playing': audioPlayer.playing,
@@ -1198,6 +1691,23 @@ class MusicProvider extends ChangeNotifier {
 
   /// Apply current master gain (preamp × sleep fade × duck) to the active engine.
   Future<void> _applyActiveMasterVolume() async {
+    if (_media3ProviderSession != null && !_media3ProviderSessionActive &&
+        _media3ProviderSession != null) return;
+    if (_media3ProviderSessionActive) {
+      try {
+        await _media3ProviderSession!.setGainFactors(
+          trackLevel: _trackLevelingScale,
+          preamp: _eqPreampUserScale,
+          sleepFade: _sleepFadeScale,
+          focusDuck: _isDucked
+              ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel)
+              : 1.0,
+        );
+      } catch (error) {
+        debugPrint('Media3 gain-factor update failed: $error');
+      }
+      return;
+    }
     try {
       await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
     } catch (_) {}
@@ -1205,6 +1715,9 @@ class MusicProvider extends ChangeNotifier {
 
   /// Silence the idle (non-active) engine. Safe during transitions.
   Future<void> _silenceIdleEngine() async {
+    if (_media3ProviderSession != null && !_media3ProviderSessionActive &&
+        _media3ProviderSession != null) return;
+    if (_media3ProviderSessionActive) return;
     try {
       await inactivePlayer.setVolume(0.0);
     } catch (_) {}
@@ -1232,6 +1745,15 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _duckForInterruption() async {
+    if (await _isCommunicationActive()) {
+      // Calls/VoIP must never be treated as a soft-duck request. Pause both
+      // decks and invalidate any pending automatic resume instead.
+      _userWantsPlaying = false;
+      _focusResumeGeneration++;
+      _focusLostAt = DateTime.now();
+      await this.pause(source: 'system');
+      return;
+    }
     _unduckPendingAfterCrossfade = false;
     if (_crossfadeInProgress || _automaticCrossfadeInFlight) {
       // Let the crossfade own volumes; mark ducked so we restore after.
@@ -1239,6 +1761,14 @@ class MusicProvider extends ChangeNotifier {
       return;
     }
     _isDucked = true;
+    if (_media3ProviderSessionActive) {
+      await _applyActiveMasterVolume();
+      unawaited(ResonateDiagnostics.record('audio_focus_duck', {
+        'level': _audioFocusLevel == 1 ? 0.18 : _duckLevel,
+        'engine': 'media3_provider_session',
+      }));
+      return;
+    }
     final duck = _audioFocusLevel == 1 ? 0.18 : _duckLevel;
     final target = (duck * _eqPreampScale).clamp(0.05, 0.45);
     try {
@@ -1268,6 +1798,30 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _unduckAfterInterruption() async {
+    if (_media3ProviderSession != null) {
+      final session = (await _ensureMedia3ProviderSessionActive())!;
+      if (!_isDucked) return;
+      if (_transitionLive) {
+        _unduckPendingAfterCrossfade = true;
+        return;
+      }
+      final focusGeneration = _focusInterruption.focusEventGeneration;
+      _isDucked = false;
+      await session.setGainFactors(
+        trackLevel: _trackLevelingScale,
+        preamp: _eqPreampUserScale,
+        sleepFade: _sleepFadeScale,
+        focusDuck: 1.0,
+      );
+      if (_focusInterruption.ownsFocusEventGeneration(focusGeneration)) {
+        unawaited(ResonateDiagnostics.record('audio_focus_unduck', {
+          'level': _effectiveCrossfadeMaster,
+          'engine': 'media3_provider_session',
+          'fadeCancelledOrIncomplete': false,
+        }));
+      }
+      return;
+    }
     if (!_isDucked && audioPlayer.volume >= _effectiveCrossfadeMaster * 0.9) {
       _unduckPendingAfterCrossfade = false;
       return;
@@ -1331,6 +1885,14 @@ class MusicProvider extends ChangeNotifier {
     // can reclaim focus from another music app that has just taken ownership.
     await Future<void>.delayed(const Duration(milliseconds: 1200));
     if (generation != _focusResumeGeneration || !_userWantsPlaying) return;
+    if (_media3ProviderSession != null) {
+      _isDucked = false;
+      await this.resumePlayback(source: 'system');
+      if (generation == _focusResumeGeneration && _userWantsPlaying) {
+        await _applyActiveMasterVolume();
+      }
+      return;
+    }
     _isDucked = false;
     try {
       await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
@@ -1370,10 +1932,12 @@ class MusicProvider extends ChangeNotifier {
       currentSong = _queue[_queueIndex];
       unawaited(_refreshTrackLevelingFor(currentSong));
       currentDuration = currentSong!.duration;
-      // Restore last known position for the current song (if any).
-      if (_modePreciseResume &&
-          _resumeSongId == currentSong!.id &&
-          _resumePositionMs > 1500) {
+      // Process-death recovery is independent of the active playback mode:
+      // when the app is relaunched, restore the saved queue's current track
+      // position even if the user is in the ordinary (start-from-zero on
+      // manual selection) mode. _modePreciseResume governs explicit song
+      // selections, not restoration of the interrupted app session.
+      if (_resumeSongId == currentSong!.id && _resumePositionMs > 1500) {
         final cap = currentDuration?.inMilliseconds ?? _resumePositionMs;
         final ms = _resumePositionMs.clamp(0, cap).toInt();
         // Don't resume at the very end — treat as finished.
@@ -1397,21 +1961,73 @@ class MusicProvider extends ChangeNotifier {
   void _publishServiceState({bool positionOnly = false}) {
     final handler = audioHandler;
     if (handler is! AudioServiceHandler) return;
-    Duration pos = currentPosition;
+
+    // After the provider handoff, Media3 is the only playback authority.
+    // Reading position/buffered position from the compatibility EnginePair
+    // here would publish stale (often zero) values to Android's audio_service
+    // notification even while the Media3 deck is progressing normally.
+    // An injected Media3 session is the canonical observation source from
+    // construction onward, including the short pre-handoff window. Never
+    // publish stale legacy EnginePair position while Media3 is preparing.
+    final session = _media3ProviderSession;
+    Duration pos;
     Duration? buffered;
-    try { pos = audioPlayer.position; buffered = audioPlayer.bufferedPosition; } catch (_) { buffered = currentPosition; }
+    if (session != null) {
+      pos = session.position;
+      buffered = session.bufferedPosition;
+    } else if (_engines != null && !_legacyEnginesRetired) {
+      pos = _engines!.active.position;
+      buffered = _engines!.active.bufferedPosition;
+    } else {
+      pos = currentPosition;
+      buffered = currentPosition;
+    }
+
+    // Keep Android's media notification aligned with the canonical
+    // playback rate. Hard-coding 1.0 makes system controls/metadata disagree
+    // with Media3 whenever the user changes playback speed.
+    final speed = _media3ProviderSession != null
+        ? _media3ProviderSession!.playbackSpeed
+        : (_engines?.active.speed ?? 1.0);
     if (positionOnly) {
-      handler.publishPositionTick(playing: isPlaying, position: pos, bufferedPosition: buffered, speed: 1.0);
+      handler.publishPositionTick(
+        playing: isPlaying,
+        position: pos,
+        bufferedPosition: buffered,
+        speed: speed,
+      );
       return;
     }
-    handler.publishPlayback(song: currentSong, playing: isPlaying, position: pos, duration: currentDuration ?? currentSong?.duration, speed: 1.0, bufferedPosition: buffered, playbackQueue: _queue, queueIndex: _queueIndex);
+    handler.publishPlayback(
+      song: currentSong,
+      playing: isPlaying,
+      position: pos,
+      duration: currentDuration ?? currentSong?.duration,
+      speed: speed,
+      bufferedPosition: buffered,
+      playbackQueue: _queue,
+      queueIndex: _queueIndex,
+    );
   }
 
   void _bindActivePlayerStreams() {
+    // An injected Media3 session is authoritative from construction onward,
+    // including the pre-handoff window. Do not bind compatibility AudioPlayer
+    // streams during that window: their getters are intentionally unavailable,
+    // and their events must never compete with Media3 state observation.
+    if (_media3ProviderSession != null ||
+        _media3ProviderSessionActive ||
+        _legacyEnginesRetired) return;
     _playerStreamBinder.cancel(); _currentIndexSubscription?.cancel(); _volumeSubscription?.cancel();
     final player = audioPlayer;
+    _activeAndroidAudioSessionId =
+        player.androidAudioSessionId != null && player.androidAudioSessionId! > 0
+            ? player.androidAudioSessionId
+            : null;
+    final currentSessionId = _activeAndroidAudioSessionId;
+    if (currentSessionId != null) onAndroidSession?.call(currentSessionId);
     _playerStreamBinder.bindPlayerState(player.playerStateStream, (state) {
-      if (_disposed) return;
+      if (_disposed || _media3ProviderSessionActive) return;
       final completed = state.processingState == ProcessingState.completed;
       final loading = state.processingState == ProcessingState.loading ||
           state.processingState == ProcessingState.buffering;
@@ -1451,16 +2067,27 @@ class MusicProvider extends ChangeNotifier {
         if (due) {
           _lastPlayKickAt = now;
           isPlaying = true;
+          final recoveryEpoch = _userTransportEpoch;
+          bool stillOwnsLegacyRecovery() =>
+              !_disposed &&
+              !_legacyEnginesRetired &&
+              !_media3ProviderSessionActive &&
+              _userTransportEpoch == recoveryEpoch &&
+              _userWantsPlaying &&
+              !_recentlyUserPaused &&
+              !_transitionLive &&
+              identical(player, audioPlayer);
           unawaited(() async {
-            // Do not re-claim focus mid-crossfade — it can reset OEM volume/routing mid-ramp.
-            if (_transitionLive) return;
-            try {
-              final session = await AudioSession.instance;
-              await session.setActive(true);
-            } catch (_) {}
+            // This listener belongs only to the legacy backend. Recheck after
+            // every await: Media3 handoff or a newer Pause may have happened
+            // while audio focus / seek was pending.
+            if (!stillOwnsLegacyRecovery()) return;
+            if (!await _claimAudioFocus(reason: 'player_stream_recovery')) return;
+            if (!stillOwnsLegacyRecovery()) return;
             try {
               await player.seek(player.position);
             } catch (_) {}
+            if (!stillOwnsLegacyRecovery()) return;
             try {
               await player.play();
             } catch (_) {}
@@ -1524,7 +2151,7 @@ class MusicProvider extends ChangeNotifier {
     });
     _currentIndexSubscription?.cancel();
     _currentIndexSubscription = player.currentIndexStream.listen((index) {
-      if (_disposed) return;
+      if (_disposed || _media3ProviderSessionActive) return;
       if (index == null || _crossfadeEnabled || _crossfadeInProgress) return;
       if (!_gaplessWindow.active || _transportInFlight) return;
       if (index < 0 || index >= _gaplessWindow.songIds.length) return;
@@ -1551,7 +2178,7 @@ class MusicProvider extends ChangeNotifier {
     });
 
     _playerStreamBinder.bindPosition(player.positionStream, (position) {
-      if (_disposed) return;
+      if (_disposed || _media3ProviderSessionActive) return;
       if (currentPosition != position) {
         currentPosition = position;
       _forceClearStuckTransition(reason: 'position_tick');
@@ -1566,7 +2193,7 @@ class MusicProvider extends ChangeNotifier {
       _maybeStartAutomaticCrossfade(position);
       _armEndOfTrackWatchdog();
     });
-    _playerStreamBinder.bindDuration(player.durationStream, (duration) { if (_disposed) return; if (duration != null && currentDuration != duration) { currentDuration = duration; notifyListeners(); _publishServiceState(); } });
+    _playerStreamBinder.bindDuration(player.durationStream, (duration) { if (_disposed || _media3ProviderSessionActive) return; if (duration != null && currentDuration != duration) { currentDuration = duration; notifyListeners(); _publishServiceState(); } });
     // App volume is sourced from Android STREAM_MUSIC. Do not mirror the player's
     // internal gain into _volume or it will overwrite the system-volume value.
   }
@@ -1588,7 +2215,7 @@ class MusicProvider extends ChangeNotifier {
       songId: song.id,
       positionMs: raw,
       durationMs: cap,
-      force: force,
+      force: force || _resumeSongId != song.id,
     );
     if (shouldWrite) unawaited(_resumeStore.persist());
   }
@@ -1605,7 +2232,15 @@ class MusicProvider extends ChangeNotifier {
   int? resumePositionFor(String songId) => _resumeStore.positionFor(songId);
 
   void _maybeStartAutomaticCrossfade(Duration position) {
-    if (!effectiveCrossfadeEnabled || !audioPlayer.playing) return;
+    // The injected session is authoritative from construction onward. During
+    // startup it may not own playback yet, so do not fall through to a lazy
+    // just_audio getter while waiting for the Media3 handoff to complete.
+    if (_media3ProviderSession != null && !_media3ProviderSessionActive) return;
+    final media3Session = _media3ProviderSessionActive
+        ? _media3ProviderSession
+        : null;
+    final activePlaying = media3Session?.isPlaying ?? audioPlayer.playing;
+    if (!effectiveCrossfadeEnabled || !activePlaying) return;
     if (_userTransportPending) return;
     // Never arm auto-crossfade while the user is driving transport or loading.
     if (_transportInFlight || _loadingSource) return;
@@ -1617,7 +2252,7 @@ class MusicProvider extends ChangeNotifier {
     // Only the active engine's loaded-source duration is trustworthy for
     // crossfade timing. currentDuration may be metadata or belong to the prior
     // source after a background/route transition, so never use it to arm a fade.
-    final duration = audioPlayer.duration;
+    final duration = media3Session?.duration ?? audioPlayer.duration;
     if (duration == null || duration <= Duration.zero) {
       final songId = currentSong?.id;
       if (songId != null && _lastCrossfadeDurationUnavailableSongId != songId) {
@@ -1627,19 +2262,45 @@ class MusicProvider extends ChangeNotifier {
           'positionMs': position.inMilliseconds,
           'metadataDurationMs': currentDuration?.inMilliseconds,
           'engine': _activeIsA ? 'A' : 'B',
-          'playing': audioPlayer.playing,
+          'playing': media3Session?.isPlaying ?? (_engines?.active.playing ?? false),
           'reason': 'active_engine_duration_unavailable',
         }));
       }
       return;
     }
     _lastCrossfadeDurationUnavailableSongId = null;
-    final remaining = duration - position;
+    final activePosition = media3Session?.position ?? position;
+    final remaining = duration - activePosition;
     if (remaining <= Duration.zero) return;
 
     // Repeat-one + crossfade: dual-engine A→B self-handoff (same song).
     // Soft single-engine loop is the fallback if the idle engine load times out.
     if (_repeatMode == PlaybackRepeatMode.one) {
+      if (_media3ProviderSessionActive) {
+        if (!effectiveCrossfadeEnabled ||
+            _repeatSelfHandoffInFlight ||
+            _transportInFlight ||
+            _crossfadeInProgress) {
+          return;
+        }
+        if (currentSong == null) return;
+        // Repeat-one deliberately uses the standby physical deck. Keep the
+        // same queue occurrence and start the incoming copy at zero.
+        final loopMs = _crossfadeDurationMs.clamp(1600, 4000).toInt();
+        final triggerMs = (loopMs + 500).clamp(1500, 4500).toInt();
+        if (remaining > Duration(milliseconds: triggerMs) ||
+            remaining < const Duration(milliseconds: 1200)) {
+          return;
+        }
+        _repeatSelfHandoffInFlight = true;
+        _automaticCrossfadeInFlight = true;
+        _transitionArmedAt = DateTime.now();
+        unawaited(_runMedia3RepeatSelfCrossfade(
+          loopMs: loopMs,
+          remainingMs: remaining.inMilliseconds,
+        ));
+        return;
+      }
       if (!effectiveCrossfadeEnabled ||
           _repeatSelfHandoffInFlight ||
           _transportInFlight ||
@@ -1813,10 +2474,10 @@ class MusicProvider extends ChangeNotifier {
         await incoming.seek(Duration.zero);
       } catch (_) {}
       await incoming.setVolume(0.0);
-      try {
-        final session = await AudioSession.instance;
-        await session.setActive(true);
-      } catch (_) {}
+      if (!await _claimAudioFocus(reason: 'repeat_self_handoff')) {
+        await _abortRepeatSelfEngine(incoming);
+        return false;
+      }
       try {
         incoming.play();
       } catch (_) {}
@@ -2082,10 +2743,10 @@ class MusicProvider extends ChangeNotifier {
       } catch (_) {}
       await incoming.setVolume(0.0);
 
-      try {
-        final session = await AudioSession.instance;
-        await session.setActive(true);
-      } catch (_) {}
+      if (!await _claimAudioFocus(reason: 'repeat_self_native_handoff')) {
+        _userWantsPlaying = false;
+        return false;
+      }
 
       try {
         await incoming.play();
@@ -2217,6 +2878,25 @@ class MusicProvider extends ChangeNotifier {
 
     _endOfTrackWatchdog = Timer(remaining + Duration(milliseconds: graceMs), () {
       if (currentSong == null || _completionAdvanceInProgress) return;
+      if (_media3ProviderSessionActive) {
+        final session = _media3ProviderSession!;
+        if (currentSong?.id != expectedSongId || _queueIndex != expectedIndex) return;
+        final atMedia3End = session.isCompleted ||
+            (!session.isPlaying &&
+                session.position >= duration - const Duration(milliseconds: 400));
+        final canMedia3Advance = _queueIndex < _queue.length - 1 ||
+            _repeatMode != PlaybackRepeatMode.off;
+        if (atMedia3End && canMedia3Advance) {
+          unawaited(ResonateDiagnostics.record('media3_end_of_track_watchdog_fired', {
+            'songId': currentSong?.id,
+            'queueIndex': _queueIndex,
+            'isPlaying': session.isPlaying,
+            'positionMs': session.position.inMilliseconds,
+          }));
+          unawaited(onTrackEnded(currentSong!.id));
+        }
+        return;
+      }
       // Already moved on (successful crossfade or manual next).
       if (currentSong?.id != expectedSongId || _queueIndex != expectedIndex) return;
 
@@ -2360,7 +3040,9 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _advanceAfterCompletion(String completedSongId) {
-    if (_completionAdvanceInProgress) return Future<void>.value();
+    if (_completionAdvanceInProgress || !_userWantsPlaying || _disposed) {
+      return Future<void>.value();
+    }
     // Already moved past this track — do not double-advance.
     if (CompletionOwnershipPolicy.shouldIgnoreStaleCompletion(
       currentSongId: currentSong?.id,
@@ -2381,7 +3063,10 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _advanceAfterCompletionInternal(String completedSongId, int intentToken) async {
-    if (_completionAdvanceInProgress) return;
+    bool ownsCompletionAdvance() =>
+        !_disposed &&
+        _playbackIntentGate.isCurrent(intentToken);
+    if (_completionAdvanceInProgress || !ownsCompletionAdvance()) return;
     // Accept if this is the song that just completed (by id match).
     if (completedSongId.isEmpty) return;
     if (currentSong?.id != completedSongId &&
@@ -2389,19 +3074,20 @@ class MusicProvider extends ChangeNotifier {
       return;
     }
     _completionAdvanceInProgress = true;
-    _userWantsPlaying = true;
     final fromSongId = completedSongId;
     final fromIndex = _queueIndex;
-    await ResonateDiagnostics.record('completion_advance_attempt', {
-      'fromSongId': fromSongId,
-      'queueIndex': fromIndex,
-      'queueLength': _queue.length,
-      'repeatMode': _repeatMode.name,
-    });
     try {
+      await ResonateDiagnostics.record('completion_advance_attempt', {
+        'fromSongId': fromSongId,
+        'queueIndex': fromIndex,
+        'queueLength': _queue.length,
+        'repeatMode': _repeatMode.name,
+      });
+      if (!ownsCompletionAdvance()) return;
       _podcastSession.onCompleted(currentPosition);
-    _audiobookSession.onCompleted(currentPosition);
+      _audiobookSession.onCompleted(currentPosition);
       await _finishHistoryEvent(completed: true);
+      if (!ownsCompletionAdvance()) return;
       if (_repeatMode == PlaybackRepeatMode.one && currentSong != null) {
         // Only defer while soft-loop is *actually* running (not stuck flags).
         if (_repeatSelfHandoffInFlight) {
@@ -2421,16 +3107,31 @@ class MusicProvider extends ChangeNotifier {
         if (currentSong != null) {
           _resumeStore.clearSong(currentSong!.id);
         }
-        try {
-          await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0));
-        } catch (_) {}
-        await audioPlayer.seek(Duration.zero);
-        try {
-          audioPlayer.play();
-        } catch (_) {}
-        isPlaying = true;
-        _userWantsPlaying = true;
+        if (_media3ProviderSessionActive) {
+          final session = _media3ProviderSession!;
+          if (!ownsCompletionAdvance()) return;
+          await session.seek(Duration.zero);
+          if (!ownsCompletionAdvance()) return;
+          await session.play();
+          if (!ownsCompletionAdvance()) {
+            await session.pause();
+            return;
+          }
+          currentPosition = session.position;
+          isPlaying = session.isPlaying;
+        } else {
+          try {
+            await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0));
+          } catch (_) {}
+          if (!ownsCompletionAdvance()) return;
+          await audioPlayer.seek(Duration.zero);
+          if (!ownsCompletionAdvance()) return;
+          try { audioPlayer.play(); } catch (_) {}
+          isPlaying = true;
+        }
+        if (!ownsCompletionAdvance()) return;
         await _startHistoryEvent(currentSong!);
+        if (!ownsCompletionAdvance()) return;
         _publishServiceState();
         notifyListeners();
         await ResonateDiagnostics.record('completion_advance_result', {
@@ -2447,6 +3148,7 @@ class MusicProvider extends ChangeNotifier {
       var scanFromIndex = fromIndex;
       var skippedFailedTracks = 0;
       for (var attempt = 0; attempt < _queue.length; attempt++) {
+        if (!ownsCompletionAdvance()) return;
         if (_queue.isEmpty) break;
         var candidateIndex = -1;
 
@@ -2474,28 +3176,40 @@ class MusicProvider extends ChangeNotifier {
 
         final candidate = _queue[candidateIndex];
         attemptedSongIds.add(candidate.id);
-        _userWantsPlaying = true;
+        if (!ownsCompletionAdvance()) return;
         final ok = await _playSongInternal(
           candidate,
           queue: _queue,
           startIndex: candidateIndex,
           playbackIntentToken: intentToken,
         );
+        if (!ownsCompletionAdvance()) return;
 
         if (ok) {
           // Guarantee an audible start after auto-advance (no user gesture).
-          if (!audioPlayer.playing && _userWantsPlaying) {
-            try {
-              final session = await AudioSession.instance;
-              await session.setActive(true);
-            } catch (_) {}
-            try {
-              await audioPlayer.seek(Duration.zero);
-            } catch (_) {}
-            try {
-              audioPlayer.play();
-            } catch (_) {}
-            isPlaying = audioPlayer.playing || _userWantsPlaying;
+          final sessionPlaying = _media3ProviderSessionActive
+              ? (_media3ProviderSession?.isPlaying ?? false)
+              : audioPlayer.playing;
+          if (!sessionPlaying && _userWantsPlaying) {
+            if (_media3ProviderSessionActive) {
+              if (!ownsCompletionAdvance()) return;
+              await _media3ProviderSession!.setAudioFocusHandling(true);
+              if (!ownsCompletionAdvance()) return;
+              await _media3ProviderSession!.play();
+              if (!ownsCompletionAdvance()) {
+                await _media3ProviderSession!.pause();
+                return;
+              }
+              isPlaying = _media3ProviderSession!.isPlaying;
+            } else {
+              if (!await _claimAudioFocus(reason: 'completion_auto_advance')) {
+                _userWantsPlaying = false;
+                return;
+              }
+              try { await audioPlayer.seek(Duration.zero); } catch (_) {}
+              try { audioPlayer.play(); } catch (_) {}
+              isPlaying = audioPlayer.playing || _userWantsPlaying;
+            }
             _publishServiceState();
             notifyListeners();
           }
@@ -2510,7 +3224,9 @@ class MusicProvider extends ChangeNotifier {
             'toSongId': currentSong?.id,
             'queueIndex': _queueIndex,
             'failedTrackCount': skippedFailedTracks,
-            'playing': audioPlayer.playing,
+            'playing': _media3ProviderSessionActive
+                ? _media3ProviderSession!.isPlaying
+                : audioPlayer.playing,
           });
           return;
         }
@@ -2524,13 +3240,18 @@ class MusicProvider extends ChangeNotifier {
           'failedTrackCount': skippedFailedTracks,
           'queueIndex': _queueIndex,
         });
+        if (!ownsCompletionAdvance()) return;
         // _playSongInternal marks user intent false on failure; auto-advance
         // still owns the transport and may try the next distinct queue item.
         _userWantsPlaying = true;
       }
+      if (!ownsCompletionAdvance()) return;
       isPlaying = false;
       _userWantsPlaying = false;
       currentPosition = currentDuration ?? currentPosition;
+      if (_media3ProviderSessionActive) {
+        await _media3ProviderSession!.stop();
+      }
       await _persistQueue();
       _publishServiceState();
       notifyListeners();
@@ -2629,6 +3350,44 @@ class MusicProvider extends ChangeNotifier {
     }
     final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
     if (song.filePath.trim().isEmpty) return false;
+    if (_media3ProviderSession != null && !_media3ProviderSessionActive) {
+      try {
+        await prepareMedia3ProviderSession();
+      } catch (error, stack) {
+        // The production composition root injects Media3 as the playback
+        // authority. Do not silently construct a second just_audio engine when
+        // native startup or focus handoff fails; fail this request closed and
+        // leave the failure visible in diagnostics.
+        _userWantsPlaying = false;
+        _lastUserPauseAt = null;
+        isPlaying = false;
+        _loadingSource = false;
+        await ResonateDiagnostics.record('media3_provider_handoff_failed', {
+          'stage': 'play_song',
+          'error': error.toString(),
+          'stack': stack.toString(),
+          'legacyFallbackStarted': false,
+        });
+        notifyListeners();
+        return false;
+      }
+    }
+    if (_media3ProviderSessionActive) {
+      return this._playSongOnMedia3ProviderSession(
+        song,
+        queue: queue,
+        startIndex: startIndex,
+        resume: resume,
+        intentToken: intentToken,
+      );
+    }
+    _initializeLegacyEngineObservers();
+    if (!await _claimAudioFocus(reason: 'play_song_internal')) {
+      _userWantsPlaying = false;
+      isPlaying = false;
+      _loadingSource = false;
+      return false;
+    }
 
     // Clear any leftover DJ stretch / muted-engine state before a normal play.
     try {
@@ -2644,7 +3403,6 @@ class MusicProvider extends ChangeNotifier {
 
     _loadingSource = true;
     _userWantsPlaying = true;
-    await _claimAudioFocus(reason: 'play_song_internal');
 
     Future<void> step(String name, [Map<String, Object?> extra = const {}]) async {
       await ResonateDiagnostics.record('playback_play_step', {
@@ -2746,13 +3504,6 @@ class MusicProvider extends ChangeNotifier {
       currentPosition = Duration.zero;
       notifyListeners();
       _publishServiceState();
-
-      try {
-        final session = await AudioSession.instance;
-        await session.setActive(true);
-      } catch (e) {
-        debugPrint('AudioSession setActive (pre-source) failed: $e');
-      }
 
       final loopMode = (!effectiveCrossfadeEnabled)
           ? switch (_repeatMode) {
@@ -2857,10 +3608,13 @@ class MusicProvider extends ChangeNotifier {
       // Effects after source is up — never block play on effects failure/slowness.
       unawaited(_enableEffects(target, targetEq, targetLoud));
 
-      try {
-        final session = await AudioSession.instance;
-        await session.setActive(true);
-      } catch (_) {}
+      if (await _isCommunicationActive()) {
+        _userWantsPlaying = false;
+        isPlaying = false;
+        _loadingSource = false;
+        await step('play_blocked_communication');
+        return false;
+      }
 
       await step('play_loop_start', {'processingState': target.processingState.name});
 
@@ -2908,11 +3662,11 @@ class MusicProvider extends ChangeNotifier {
       if (!target.playing) {
         final kickSongId = selectedSong.id;
         unawaited(Future<void>.delayed(const Duration(milliseconds: 200), () async {
-          if (!_userWantsPlaying || currentSong?.id != kickSongId) return;
-          try {
-            final session = await AudioSession.instance;
-            await session.setActive(true);
-          } catch (_) {}
+          if (!_userWantsPlaying ||
+              currentSong?.id != kickSongId ||
+              !await _claimAudioFocus(reason: 'deferred_play_kick')) {
+            return;
+          }
           try {
             await target.seek(Duration.zero);
           } catch (_) {}
@@ -3023,19 +3777,46 @@ class MusicProvider extends ChangeNotifier {
     });
   }
 
-  Future<bool> enqueueSongs(List<Song> songs) async { await _visibility.load(); final additions = songs.where((s) => _visibility.isVisible(s.id) && s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList(); if (additions.isEmpty) return false; if (effectiveShuffleEnabled && additions.length > 1) additions.shuffle(math.Random()); _queue.addAll(additions); await _persistQueue(); notifyListeners(); return true; }
+  Future<bool> enqueueSongs(List<Song> songs) async { await _visibility.load(); final additions = songs.where((s) => _visibility.isVisible(s.id) && s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList(); if (additions.isEmpty) return false; if (effectiveShuffleEnabled && additions.length > 1) additions.shuffle(math.Random()); _queue.addAll(additions); await _persistQueue(); await this._syncMedia3ProviderQueue(); notifyListeners(); return true; }
   Future<bool> addToQueue(Song song) => enqueueSongs([song]);
-  Future<bool> playNext(Song song) async { await _visibility.load(); if (!_visibility.isVisible(song.id) || song.filePath.trim().isEmpty || currentSong?.id == song.id || _queue.any((q) => q.id == song.id)) return false; final insertAt = (_queueIndex + 1).clamp(0, _queue.length).toInt(); _queue.insert(insertAt, song); await _persistQueue(); notifyListeners(); return true; }
+  Future<bool> playNext(Song song) async { await _visibility.load(); if (!_visibility.isVisible(song.id) || song.filePath.trim().isEmpty || currentSong?.id == song.id || _queue.any((q) => q.id == song.id)) return false; final insertAt = (_queueIndex + 1).clamp(0, _queue.length).toInt(); _queue.insert(insertAt, song); await _persistQueue(); await this._syncMedia3ProviderQueue(); notifyListeners(); return true; }
   Future<bool> removeFromQueue(int index) async {
     if (index < 0 || index >= _queue.length || index == _queueIndex) return false;
     _queue.removeAt(index);
     if (index < _queueIndex) _queueIndex -= 1;
     await _persistQueue();
+    await this._syncMedia3ProviderQueue();
     notifyListeners();
     return true;
   }
-  Future<bool> reorderQueue(int oldIndex, int newIndex) async { if (oldIndex <= _queueIndex || oldIndex >= _queue.length) return false; if (newIndex > oldIndex) newIndex--; newIndex = newIndex.clamp(_queueIndex + 1, _queue.length - 1).toInt(); final item = _queue.removeAt(oldIndex); _queue.insert(newIndex, item); await _persistQueue(); notifyListeners(); return true; }
-  void clearUpcomingQueue() { if (_queueIndex >= _queue.length - 1) return; _queue = [..._queue.take(_queueIndex + 1)]; unawaited(_persistQueue()); notifyListeners(); }
+  Future<bool> reorderQueue(int oldIndex, int newIndex) async { if (oldIndex <= _queueIndex || oldIndex >= _queue.length) return false; if (newIndex > oldIndex) newIndex--; newIndex = newIndex.clamp(_queueIndex + 1, _queue.length - 1).toInt(); final item = _queue.removeAt(oldIndex); _queue.insert(newIndex, item); await _persistQueue(); await this._syncMedia3ProviderQueue(); notifyListeners(); return true; }
+  Future<void> clearUpcomingQueue() async {
+    if (_queueIndex >= _queue.length - 1) return;
+
+    final previousQueue = List<Song>.of(_queue);
+    final previousIndex = _queueIndex;
+    _queue = previousQueue.take(previousIndex + 1).toList(growable: true);
+
+    try {
+      await _persistQueue();
+      await this._syncMedia3ProviderQueue();
+    } catch (_) {
+      // Keep the provider, persisted queue and native session aligned when
+      // either side rejects the edit. Best-effort restoration must not mask
+      // the original persistence/synchronization failure.
+      _queue = previousQueue;
+      _queueIndex = previousIndex;
+      try {
+        await _persistQueue();
+      } catch (_) {}
+      try {
+        await this._syncMedia3ProviderQueue();
+      } catch (_) {}
+      rethrow;
+    }
+
+    notifyListeners();
+  }
 
   Future<void> _loadSingle(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud, Song song, {bool start = true}) async {
     await player.setLoopMode(LoopMode.off);
@@ -3099,7 +3880,9 @@ class MusicProvider extends ChangeNotifier {
     }
     int posMs = 0;
     try {
-      posMs = audioPlayer.position.inMilliseconds;
+      posMs = _media3ProviderSessionActive
+          ? (_media3ProviderSession?.position.inMilliseconds ?? currentPosition.inMilliseconds)
+          : audioPlayer.position.inMilliseconds;
     } catch (_) {}
     var best = ideal;
     var bestDist = 1 << 30;
@@ -3122,6 +3905,9 @@ class MusicProvider extends ChangeNotifier {
     DjTrackProfile? outgoingProfile,
   }) async {
     if (!_djSfxActive) return;
+    final media3Session = _media3ProviderSessionActive
+        ? _media3ProviderSession
+        : null;
     try {
       final profile = outgoingProfile;
       final beatMs = profile?.beatGrid.beatMs ?? const <int>[];
@@ -3136,14 +3922,14 @@ class MusicProvider extends ChangeNotifier {
             await _djSfxRack.engageDelayed(
               delay: delay,
               energyScore: energyScore,
-              equalizerA: _equalizerA,
-              equalizerB: _equalizerB,
-              outgoing: audioPlayer,
+              equalizerA: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerA,
+              equalizerB: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerB,
               outgoingUri: currentSong?.filePath,
               beatMs: beatMs,
               sections: sections,
               transitionKind: transitionKind,
               aggressiveness: _djPolicy.aggressiveness,
+              playbackSession: media3Session ?? _djSfxMedia3OverlaySession,
             );
             if (_djSfxRack.engaged && _djSfxActive) {
               _djSfxEngaged = true;
@@ -3166,14 +3952,14 @@ class MusicProvider extends ChangeNotifier {
       } else {
         await _djSfxRack.engage(
           energyScore: energyScore,
-          equalizerA: _equalizerA,
-          equalizerB: _equalizerB,
-          outgoing: audioPlayer,
+          equalizerA: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerA,
+          equalizerB: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerB,
           outgoingUri: currentSong?.filePath,
           beatMs: beatMs,
           sections: sections,
           transitionKind: transitionKind,
           aggressiveness: _djPolicy.aggressiveness,
+          playbackSession: media3Session ?? _djSfxMedia3OverlaySession,
         );
         _djSfxEngaged = true;
         await ResonateDiagnostics.record('dj_transition_sfx', {
@@ -3192,32 +3978,44 @@ class MusicProvider extends ChangeNotifier {
     if (!_djSfxEngaged) return;
     await _djSfxRack.tick(
       t,
-      equalizerA: _equalizerA,
-      equalizerB: _equalizerB,
+      equalizerA: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerA,
+      equalizerB: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerB,
       energyScore: _lastDjEnergyScore,
-      outgoing: audioPlayer,
+      playbackSession: _media3ProviderSessionActive
+          ? _media3ProviderSession
+          : _djSfxMedia3OverlaySession,
     );
   }
 
   Future<void> _restoreDjTransitionSfx() async {
     if (!_djSfxEngaged && !_djSfxActive && !_djSfxRack.engaged) return;
     try {
+      // Invalidate track seek/rate automation before the soft-release awaits.
+      // This is important for manual transport preemption and deck promotion:
+      // no stale DJ command may run after the user's/new deck's command.
+      await _djSfxRack.cancelTrackAutomation();
       // Soft release gap so SFX bridges the two songs instead of cutting at t=1.
       for (final t in <double>[1.15, 1.30, 1.45, 1.60]) {
         try {
           await _djSfxRack.tick(
             t,
-            equalizerA: _equalizerA,
-            equalizerB: _equalizerB,
+            equalizerA: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerA,
+            equalizerB: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerB,
             energyScore: _lastDjEnergyScore,
+            playbackSession: _media3ProviderSessionActive
+                ? _media3ProviderSession
+                : _djSfxMedia3OverlaySession,
           );
         } catch (_) {}
         await Future<void>.delayed(const Duration(milliseconds: 70));
       }
       final preset = _djSfxRack.presetName;
       await _djSfxRack.restore(
-        equalizerA: _equalizerA,
-        equalizerB: _equalizerB,
+        equalizerA: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerA,
+        equalizerB: (_media3ProviderSessionActive || _djSfxMedia3OverlaySession != null) ? null : _equalizerB,
+        playbackSession: _media3ProviderSessionActive
+            ? _media3ProviderSession
+            : _djSfxMedia3OverlaySession,
       );
       _djSfxEngaged = false;
       await ResonateDiagnostics.record('dj_transition_sfx', {
@@ -3257,10 +4055,30 @@ class MusicProvider extends ChangeNotifier {
     _repeatSelfHandoffInFlight = false;
     _repeatSelfTargetSongId = null;
     unawaited(_restoreDjTransitionSfx());
-    unawaited(() async {
-      try {
-        final idle = inactivePlayer;
-        final active = audioPlayer;
+    if (_media3ProviderSessionActive && _media3ProviderSession != null) {
+      final session = _media3ProviderSession!;
+      unawaited(() async {
+        try {
+          await session.cancelCrossfade();
+          await session.setDeckPlaybackSpeeds(
+            activeSpeed: 1.0,
+            standbySpeed: 1.0,
+          );
+        } catch (error) {
+          await ResonateDiagnostics.record('media3_crossfade_cancel_failed', {
+            'reason': 'manual_transport_preemption',
+            'error': error.toString(),
+          });
+        }
+      }());
+      _preloadedNextSongId = null;
+      _media3DjTransitionPreparation = null;
+    }
+    if (!_media3ProviderSessionActive) {
+      unawaited(() async {
+        try {
+          final idle = inactivePlayer;
+          final active = audioPlayer;
         try {
           await idle.pause();
         } catch (_) {}
@@ -3281,8 +4099,9 @@ class MusicProvider extends ChangeNotifier {
             await active.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
           } catch (_) {}
         }
-      } catch (_) {}
-    }());
+        } catch (_) {}
+      }());
+    }
   }
 
   bool get _recentlyUserPaused {
@@ -3307,6 +4126,10 @@ class MusicProvider extends ChangeNotifier {
     // before releasing the flags so all stale continuations fail their guards.
     final invalidatedGeneration = _automaticTransitionGeneration;
     _automaticTransitionGeneration++;
+    if (_media3ProviderSessionActive && _media3ProviderSession != null) {
+      unawaited(_media3ProviderSession!.cancelCrossfade());
+      _media3DjTransitionPreparation = null;
+    }
     _preloadedNextSongId = null;
     _crossfadePreloadInFlight = false;
     unawaited(ResonateDiagnostics.record('stuck_transition_cleared', {
@@ -3325,6 +4148,9 @@ class MusicProvider extends ChangeNotifier {
     _repeatSelfHandoffInFlight = false;
     _transitionArmedAt = null;
     unawaited(_restoreDjTransitionSfx());
+    // Media3 cancellation above owns the native decks. Do not touch the
+    // retired Flutter EnginePair from this watchdog cleanup.
+    if (_media3ProviderSessionActive || _legacyEnginesRetired) return;
     unawaited(() async {
       try {
         await inactivePlayer.pause();
@@ -3387,7 +4213,11 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Stream<Duration?> get durationStream => audioPlayer.durationStream;
+  Stream<Duration?> get durationStream {
+    if (_media3ProviderSession != null) return _media3ProviderSession!.durationStream;
+    if (_engines != null && !_legacyEnginesRetired) return _engines!.active.durationStream;
+    return Stream<Duration?>.value(currentDuration);
+  }
   @override
   void dispose() {
     if (_disposed) return;
@@ -3409,7 +4239,16 @@ class MusicProvider extends ChangeNotifier {
     _sessionASub = null;
     _sessionBSub?.cancel();
     _sessionBSub = null;
-    unawaited(_engines.dispose());
+    _media3AudioSessionSub?.cancel();
+    _media3AudioSessionSub = null;
+    _media3StateSub?.cancel();
+    _media3StateSub = null;
+    _media3ShadowState = null;
+    _activeAndroidAudioSessionId = null;
+    final media3Session = _media3ProviderSession;
+    if (media3Session != null) unawaited(media3Session.dispose());
+    final legacyEngines = _engines;
+    if (legacyEngines != null) unawaited(legacyEngines.dispose());
     super.dispose();
   }
 }

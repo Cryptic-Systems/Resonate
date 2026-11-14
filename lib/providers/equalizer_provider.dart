@@ -5,7 +5,6 @@ import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/dsp_settings.dart';
@@ -20,8 +19,8 @@ import '../services/equalizer_dvc_sync.dart';
 /// One band in the app's fixed 10-band software curve (source of truth).
 class StudioBand {
   final int index;
-  final double frequencyHz;
-  final String label;
+  double frequencyHz;
+  String label;
   double gainDb;
 
   StudioBand({
@@ -32,7 +31,7 @@ class StudioBand {
   });
 }
 
-/// Hardware band exposed by AndroidEqualizer (device-dependent count).
+/// Hardware band exposed by legacy hardware equalizer (device-dependent count).
 class EqualizerBandState {
   final int index;
   final double centerFrequency;
@@ -79,15 +78,16 @@ class EqualizerPreset {
 
 /// Software 10-band equalizer model.
 ///
-/// Android's [AndroidEqualizer] only exposes as many bands as the device DSP
+/// Android's [legacy hardware equalizer] only exposes as many bands as the device DSP
 /// provides (often 5). This provider always owns a fixed 10-band studio curve
 /// and maps it onto hardware bands. Preamp is applied via
-/// [AndroidLoudnessEnhancer] when available.
+/// [legacy hardware loudness enhancer] when available.
 class EqualizerProvider extends ChangeNotifier {
-  AndroidEqualizer? _androidEqualizer;
-  AndroidLoudnessEnhancer? _loudnessEnhancer;
+  dynamic _androidEqualizer;
+  dynamic _loudnessEnhancer;
 
   final List<StudioBand> studioBands = [];
+  List<ParametricEqBand> parametricEqBands = <ParametricEqBand>[];
   final List<EqualizerBandState> bandStates = []; // hardware mirror
   final Map<String, double> bands = {}; // label → gain for legacy callers
 
@@ -98,8 +98,9 @@ class EqualizerProvider extends ChangeNotifier {
   String? activeSongId;
   List<EqualizerPreset> customPresets = [];
 
-  /// 31-band studio model (ISO-ish centers). Mapped onto device hardware EQ;
-  /// true per-band software DSP is a later native step.
+  /// 31-band studio control model. The live curve is processed by the
+  /// native DSP-ENGINE AudioProcessor in each Media3 deck; Android hardware EQ
+  /// remains a read-only capability mirror and is not stacked into playback.
   static const List<double> studioFrequencies = [
     20, 25, 32, 40, 50, 63, 80, 100, 125, 160,
     200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600,
@@ -154,8 +155,8 @@ class EqualizerProvider extends ChangeNotifier {
   final ResonateDspPipeline _dspPipeline = ResonateDspPipeline();
 
   EqualizerProvider({
-    AndroidEqualizer? equalizer,
-    AndroidLoudnessEnhancer? loudnessEnhancer,
+    dynamic equalizer,
+    dynamic loudnessEnhancer,
     MusicProvider? music,
     BluetoothProvider? bluetooth,
   })  : _androidEqualizer = equalizer,
@@ -174,8 +175,12 @@ class EqualizerProvider extends ChangeNotifier {
     // enabled it. Hardware EQ still binds after playback has been running.
     _music?.onAndroidSession = (sessionId) {
       unawaited(attachNativeSession(sessionId));
-    unawaited(AudioOutputRouteService.instance.refreshNow());
+      unawaited(AudioOutputRouteService.instance.refreshNow());
     };
+    final currentSessionId = _music?.activeAudioSessionId;
+    if (currentSessionId != null && currentSessionId > 0) {
+      unawaited(attachNativeSession(currentSessionId));
+    }
   }
 
   bool get learnedEqEnabled => _learnedEqEnabled;
@@ -273,7 +278,7 @@ class EqualizerProvider extends ChangeNotifier {
     // Persisted master state must be applied to the registry even when no sink
     // exists yet; the registry carries it forward to future A/B engines.
     await ResonateNativeDspBridge.setEnabled(true);
-    final sid = _music?.audioPlayer.androidAudioSessionId;
+    final sid = _music?.activeAudioSessionId;
     if (sid != null && sid > 0) unawaited(attachNativeSession(sid));
     notifyListeners();
   }
@@ -491,8 +496,8 @@ class EqualizerProvider extends ChangeNotifier {
 
   /// Re-bind when MusicProvider switches active engine (A/B).
   void attachHardware({
-    AndroidEqualizer? equalizer,
-    AndroidLoudnessEnhancer? loudnessEnhancer,
+    dynamic equalizer,
+    dynamic loudnessEnhancer,
   }) {
     _androidEqualizer = equalizer;
     _loudnessEnhancer = loudnessEnhancer;
@@ -562,7 +567,7 @@ class EqualizerProvider extends ChangeNotifier {
 
   Future<void> _initialize() async {
     try {
-      // Do NOT await AndroidEqualizer.parameters here. That completer finishes
+      // Do NOT await legacy hardware equalizer.parameters here. That completer finishes
       // at first play and then setEnabled/setGain races session attach.
       final prefs = await SharedPreferences.getInstance();
       final canonical = await DspSettings.load();
@@ -575,6 +580,30 @@ class EqualizerProvider extends ChangeNotifier {
       await DspSettings.update((settings) => settings.copyWith(masterEnabled: true, eqEnabled: true));
       preamp = canonical.preampDb;
       autoEqHeadroom = canonical.autoEqHeadroom;
+      final restoredParametric = canonical.parametricEqBands;
+      if (restoredParametric.isNotEmpty) {
+        parametricEqBands = List<ParametricEqBand>.generate(
+          studioBands.length,
+          (index) => index < restoredParametric.length
+              ? restoredParametric[index].copyWith()
+              : ParametricEqBand(
+                  frequencyHz: studioBands[index].frequencyHz,
+                  gainDb: studioBands[index].gainDb,
+                  q: 1,
+                  type: 0,
+                ),
+          growable: true,
+        );
+        for (var i = 0; i < studioBands.length; i++) {
+          final band = parametricEqBands[i];
+          studioBands[i]
+            ..frequencyHz = band.frequencyHz
+            ..label = _labelForFrequency(band.frequencyHz)
+            ..gainDb = band.gainDb;
+        }
+      } else {
+        parametricEqBands = <ParametricEqBand>[];
+      }
       await _loadCustomPresets(prefs);
 
       // Restore studio curve from prefs if present.
@@ -618,13 +647,8 @@ class EqualizerProvider extends ChangeNotifier {
       // Restore the full active native profile immediately. These registry
       // calls update sticky state even if playback has not created a sink yet.
       await _applyPreamp();
-      await _pushLiveDspCurve(dvcDb: canonical.dvcDb);
-      await AudioEffectsBridge.setLiveDspLimiterCeiling(
-        highDb: canonical.limiterHighCeilingDb,
-        lowDb: canonical.limiterLowCeilingDb,
-      );
-      await AudioEffectsBridge.setLiveDspCrossoverHz(canonical.crossoverHz);
-      final sessionId = _music?.audioPlayer.androidAudioSessionId;
+      await _pushLiveDspCurve(settings: canonical);
+      final sessionId = _music?.activeAudioSessionId;
       if (sessionId != null && sessionId > 0) {
         unawaited(attachNativeSession(sessionId));
       }
@@ -719,16 +743,31 @@ class EqualizerProvider extends ChangeNotifier {
   /// The native DSP processor is the single audio-path owner for EQ. Android's
   /// device Equalizer/DynamicsProcessing APIs are intentionally not written here;
   /// doing so would stack a second EQ on the same PCM stream.
+  List<ParametricEqBand> _effectiveParametricBands() {
+    if (parametricEqBands.length == studioBands.length) {
+      return parametricEqBands.map((band) => band.copyWith()).toList(growable: false);
+    }
+    return studioBands.map((band) => ParametricEqBand(
+      frequencyHz: band.frequencyHz,
+      gainDb: band.gainDb,
+      q: 1,
+      type: 0,
+    )).toList(growable: false);
+  }
+
+  void _ensureParametricBands() {
+    if (parametricEqBands.length == studioBands.length) return;
+    parametricEqBands = _effectiveParametricBands().toList(growable: true);
+  }
+
   Future<void> _pushToHardware() async {
     try {
-      final centers = studioBands.map((b) => b.frequencyHz).toList();
-      final gains = studioBands.map((b) => b.gainDb).toList();
-      // Await the native write so repeated on/off changes are applied in order.
-      // A fire-and-forget write could finish after a newer toggle and restore
-      // the stale EQ state.
-      await syncStudioBandsToNativeEq(
-        centersHz: centers,
-        gainsDb: gains,
+      final filters = _effectiveParametricBands();
+      await AudioEffectsBridge.setLiveDspParametricEqBands(
+        frequenciesHz: filters.map((band) => band.frequencyHz).toList(),
+        gainsDb: filters.map((band) => band.gainDb).toList(),
+        qs: filters.map((band) => band.q).toList(),
+        types: filters.map((band) => band.type).toList(),
         enabled: true,
       );
     } catch (e) {
@@ -736,7 +775,48 @@ class EqualizerProvider extends ChangeNotifier {
     }
   }
 
-  /// Attach native Resonate DSP to a just_audio Android session id.
+  Future<void> setParametricEqBands(
+    List<ParametricEqBand> filters, {
+    bool markCustom = true,
+  }) async {
+    if (filters.length != studioBands.length) return;
+    final safe = filters.map((band) => band.copyWith()).toList(growable: true);
+    if (markCustom) _manualPresetRevision++;
+    parametricEqBands = safe;
+    for (var i = 0; i < safe.length; i++) {
+      studioBands[i]
+        ..frequencyHz = safe[i].frequencyHz
+        ..label = _labelForFrequency(safe[i].frequencyHz)
+        ..gainDb = safe[i].gainDb;
+      bands[studioBands[i].label] = safe[i].gainDb;
+    }
+    if (markCustom) preset = 'Custom';
+    await _pushToHardware();
+    await _applyPreamp();
+    await _save();
+    notifyListeners();
+  }
+
+  Future<void> setParametricEqBand(int index, ParametricEqBand band) async {
+    if (index < 0 || index >= studioBands.length) return;
+    _manualPresetRevision++;
+    _ensureParametricBands();
+    final safe = band.copyWith();
+    parametricEqBands[index] = safe;
+    studioBands[index]
+      ..frequencyHz = safe.frequencyHz
+      ..label = _labelForFrequency(safe.frequencyHz)
+      ..gainDb = safe.gainDb;
+    bands[studioBands[index].label] = safe.gainDb;
+    preset = 'Custom';
+    await _pushToHardware();
+    await _applyPreamp();
+    await _save();
+    notifyListeners();
+  }
+
+  /// Refresh native Resonate DSP status for the active Android playback session.
+  /// The PCM processor itself is injected into each Media3 deck's audio sink.
   Future<void> attachNativeSession(int sessionId) async {
     // Always attach Resonate DSP to each active Android playback session.
     try {
@@ -748,7 +828,8 @@ class EqualizerProvider extends ChangeNotifier {
     } catch (e, st) {
       debugPrint('attachNativeSession failed: $e');
       debugPrint('$st');
-      // Stay on hardware EQ only — never rethrow (prevents Activity death).
+      // Keep playback fail-open; native sink processors remain pass-through
+      // if unavailable. Never rethrow across the Flutter activity boundary.
     }
   }
 
@@ -778,6 +859,15 @@ class EqualizerProvider extends ChangeNotifier {
     }
   }
 
+  void _syncParametricGainsFromStudio() {
+    if (parametricEqBands.length != studioBands.length) return;
+    for (var i = 0; i < studioBands.length; i++) {
+      parametricEqBands[i] = parametricEqBands[i].copyWith(
+        gainDb: studioBands[i].gainDb,
+      );
+    }
+  }
+
   void _applyStudioGains(List<double> gains) {
     final expanded = expandGainsToStudio(gains);
     for (var i = 0; i < studioBands.length; i++) {
@@ -785,26 +875,49 @@ class EqualizerProvider extends ChangeNotifier {
       studioBands[i].gainDb = g.clamp(studioMinDb, studioMaxDb);
       bands[studioBands[i].label] = studioBands[i].gainDb;
     }
+    _syncParametricGainsFromStudio();
   }
 
 
-  Future<void> _pushLiveDspCurve({double? dvcDb}) async {
+  Future<void> _pushLiveDspCurve({DspSettings? settings}) async {
     try {
-      final centers = studioBands.map((b) => b.frequencyHz).toList();
-      final gains = studioBands.map((b) => b.gainDb).toList();
+      final canonical = settings ?? await DspSettings.load();
+      final filters = _effectiveParametricBands();
 
       // Master bypass, EQ enable, preamp, and DVC are independent stages.
       // Apply the canonical master state even before the first sink registers.
       await ResonateNativeDspBridge.setEnabled(true);
-      await AudioEffectsBridge.setLiveDspEqBands(
-        centersHz: centers,
-        gainsDb: gains,
-        // Send the EQ preference independently; the native registry combines
-        // it with master DSP state for each live and newly registered engine.
+      await AudioEffectsBridge.setLiveDspParametricEqBands(
+        frequenciesHz: filters.map((band) => band.frequencyHz).toList(),
+        gainsDb: filters.map((band) => band.gainDb).toList(),
+        qs: filters.map((band) => band.q).toList(),
+        types: filters.map((band) => band.type).toList(),
         enabled: true,
       );
-      final resolvedDvcDb = dvcDb ?? (await DspSettings.load()).dvcDb;
-      await AudioEffectsBridge.setLiveDspDvcDb(resolvedDvcDb);
+      await AudioEffectsBridge.setLiveDspDvc(
+        enabled: canonical.dvcEnabled,
+        db: canonical.dvcDb,
+        smoothing: canonical.dvcSmoothing,
+        smoothingMs: canonical.dvcSmoothingMs,
+      );
+      await AudioEffectsBridge.setLiveDspLimiterConfig(
+        enabled: canonical.limiterEnabled,
+        mode: canonical.limiterMode,
+        thresholdDb: canonical.limiterThresholdDb,
+        releaseMs: canonical.limiterReleaseMs,
+        attackMs: canonical.limiterAttackMs,
+        lookaheadMs: canonical.limiterLookaheadMs,
+        kneeDb: canonical.limiterKneeDb,
+      );
+      await AudioEffectsBridge.setLiveDspLimiterCeiling(
+        highDb: canonical.limiterHighCeilingDb,
+        lowDb: canonical.limiterLowCeilingDb,
+      );
+      await AudioEffectsBridge.setLiveDspCrossoverHz(canonical.crossoverHz);
+      await AudioEffectsBridge.setLiveDspDither(
+        enabled: canonical.ditherEnabled,
+        mode: canonical.ditherMode,
+      );
 
       // _applyPreamp() owns the effective gain, including automatic headroom.
       // Do not write raw [preamp] here afterwards: that would undo headroom.
@@ -823,6 +936,15 @@ class EqualizerProvider extends ChangeNotifier {
     if (index < 0 || index >= studioBands.length) return;
     _manualPresetRevision++;
     studioBands[index].gainDb = gainDb.clamp(studioMinDb, studioMaxDb);
+    _ensureParametricBands();
+    final existingFilter = parametricEqBands[index];
+    parametricEqBands[index] = existingFilter.copyWith(
+      gainDb: studioBands[index].gainDb,
+      // The graphic EQ gain slider cannot alter a low/high-pass response;
+      // convert that band back to a peak filter so the visible control works.
+      type: existingFilter.type >= 3 ? 0 : existingFilter.type,
+      q: existingFilter.type >= 3 ? 1 : existingFilter.q,
+    );
     bands[studioBands[index].label] = studioBands[index].gainDb;
     preset = 'Custom';
     await _pushToHardware();
@@ -919,6 +1041,7 @@ class EqualizerProvider extends ChangeNotifier {
       band.gainDb = 0.0;
       bands[band.label] = 0.0;
     }
+    _syncParametricGainsFromStudio();
     preset = 'Custom';
     await _save();
     await _pushToHardware();
@@ -1135,6 +1258,7 @@ class EqualizerProvider extends ChangeNotifier {
         eqEnabled: true,
         preset: preset,
         eqBandGainsDb: studioBands.map((band) => band.gainDb).toList(),
+        parametricEqBands: _effectiveParametricBands(),
         preampDb: preamp,
         autoEqHeadroom: autoEqHeadroom,
       ));
