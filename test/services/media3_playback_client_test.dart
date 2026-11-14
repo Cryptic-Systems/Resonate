@@ -135,6 +135,20 @@ void main() {
       channel.setMockMethodCallHandler(null);
     });
 
+    test('sends a validated playback pitch to native Media3', () async {
+      MethodCall? captured;
+      channel.setMockMethodCallHandler((call) async {
+        captured = call;
+        return true;
+      });
+
+      await client.setPlaybackPitch(0.9);
+      expect(captured?.method, 'setPlaybackPitch');
+      expect((captured?.arguments as Map)['pitch'], 0.9);
+      await expectLater(client.setPlaybackPitch(2.1), throwsArgumentError);
+      await expectLater(client.setPlaybackPitch(double.nan), throwsArgumentError);
+    });
+
     test('sends validated independent deck speeds to native Media3', () async {
       MethodCall? captured;
       channel.setMockMethodCallHandler((call) async {
