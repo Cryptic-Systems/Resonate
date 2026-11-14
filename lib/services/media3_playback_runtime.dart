@@ -402,6 +402,19 @@ class Media3PlaybackRuntime {
     return _run(() => speedBackend.setPlaybackSpeed(speed));
   }
 
+  Future<void> setPlaybackPitch(double pitch) {
+    _ensureAlive();
+    if (!pitch.isFinite || pitch < 0.5 || pitch > 2.0) {
+      throw ArgumentError.value(pitch, 'pitch', 'Must be finite and between 0.5 and 2.0.');
+    }
+    final backend = _backend;
+    if (backend is! PlaybackPitchBackend) {
+      throw UnsupportedError('The active playback backend does not support pitch changes.');
+    }
+    final pitchBackend = backend as PlaybackPitchBackend;
+    return _run(() => pitchBackend.setPlaybackPitch(pitch));
+  }
+
   Future<void> setDeckPlaybackSpeeds({
     required double activeSpeed,
     required double standbySpeed,
