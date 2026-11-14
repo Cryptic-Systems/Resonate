@@ -90,3 +90,19 @@ abstract interface class PlaybackEngineSession
 abstract interface class PlaybackPitchSession {
   Future<void> setPlaybackPitch(double pitch);
 }
+
+
+/// Capability adapter for consumers that hold the common session contract.
+/// This keeps pitch optional for non-Media3 sessions while avoiding reliance
+/// on flow promotion across unrelated interface types in older Dart analyzers.
+extension PlaybackEngineSessionPitch on PlaybackEngineSession {
+  Future<void> setPlaybackPitch(double pitch) {
+    final session = this;
+    if (session is PlaybackPitchSession) {
+      return (session as PlaybackPitchSession).setPlaybackPitch(pitch);
+    }
+    throw UnsupportedError(
+      'The active playback session does not support pitch changes.',
+    );
+  }
+}
