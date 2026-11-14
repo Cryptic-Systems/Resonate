@@ -19,6 +19,18 @@ void main() {
         preampDb: -4,
         autoEqHeadroom: true,
         dvcDb: 2.5,
+        dvcEnabled: false,
+        dvcSmoothing: false,
+        dvcSmoothingMs: 28,
+        limiterEnabled: false,
+        limiterMode: 3,
+        limiterThresholdDb: -4,
+        limiterReleaseMs: 240,
+        limiterAttackMs: 1.5,
+        limiterLookaheadMs: 5,
+        limiterKneeDb: 2,
+        ditherEnabled: true,
+        ditherMode: 2,
         limiterCeilingDb: -3,
         limiterHighCeilingDb: -2.5,
         limiterLowCeilingDb: -1.5,
@@ -38,6 +50,18 @@ void main() {
       expect(restored.preampDb, -4);
       expect(restored.autoEqHeadroom, isTrue);
       expect(restored.dvcDb, 2.5);
+      expect(restored.dvcEnabled, isFalse);
+      expect(restored.dvcSmoothing, isFalse);
+      expect(restored.dvcSmoothingMs, 28);
+      expect(restored.limiterEnabled, isFalse);
+      expect(restored.limiterMode, 3);
+      expect(restored.limiterThresholdDb, -4);
+      expect(restored.limiterReleaseMs, 240);
+      expect(restored.limiterAttackMs, 1.5);
+      expect(restored.limiterLookaheadMs, 5);
+      expect(restored.limiterKneeDb, 2);
+      expect(restored.ditherEnabled, isTrue);
+      expect(restored.ditherMode, 2);
       expect(restored.limiterCeilingDb, -3);
       expect(restored.limiterHighCeilingDb, -2.5);
       expect(restored.limiterLowCeilingDb, -1.5);
@@ -104,6 +128,14 @@ void main() {
       final settings = DspSettings().copyWith(
         preampDb: 20,
         dvcDb: -50,
+        dvcSmoothingMs: 500,
+        limiterMode: 9,
+        limiterThresholdDb: -30,
+        limiterReleaseMs: 5000,
+        limiterAttackMs: 0,
+        limiterLookaheadMs: 100,
+        limiterKneeDb: 20,
+        ditherMode: 9,
         limiterCeilingDb: -30,
         limiterHighCeilingDb: -30,
         limiterLowCeilingDb: 2,
@@ -113,6 +145,14 @@ void main() {
       );
       expect(settings.preampDb, 6);
       expect(settings.dvcDb, -24);
+      expect(settings.dvcSmoothingMs, 200);
+      expect(settings.limiterMode, 3);
+      expect(settings.limiterThresholdDb, -24);
+      expect(settings.limiterReleaseMs, 2000);
+      expect(settings.limiterAttackMs, 0.01);
+      expect(settings.limiterLookaheadMs, 40);
+      expect(settings.limiterKneeDb, 12);
+      expect(settings.ditherMode, 2);
       expect(settings.limiterCeilingDb, -12);
       expect(settings.limiterHighCeilingDb, -6);
       expect(settings.limiterLowCeilingDb, -0.1);
