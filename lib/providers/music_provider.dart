@@ -3652,7 +3652,33 @@ class MusicProvider extends ChangeNotifier {
     return true;
   }
   Future<bool> reorderQueue(int oldIndex, int newIndex) async { if (oldIndex <= _queueIndex || oldIndex >= _queue.length) return false; if (newIndex > oldIndex) newIndex--; newIndex = newIndex.clamp(_queueIndex + 1, _queue.length - 1).toInt(); final item = _queue.removeAt(oldIndex); _queue.insert(newIndex, item); await _persistQueue(); await this._syncMedia3ProviderQueue(); notifyListeners(); return true; }
-  void clearUpcomingQueue() { if (_queueIndex >= _queue.length - 1) return; _queue = [..._queue.take(_queueIndex + 1)]; unawaited(_persistQueue()); unawaited(this._syncMedia3ProviderQueue()); notifyListeners(); }
+  Future<void> clearUpcomingQueue() async {
+    if (_queueIndex >= _queue.length - 1) return;
+
+    final previousQueue = List<Song>.of(_queue);
+    final previousIndex = _queueIndex;
+    _queue = previousQueue.take(previousIndex + 1).toList(growable: true);
+
+    try {
+      await _persistQueue();
+      await this._syncMedia3ProviderQueue();
+    } catch (_) {
+      // Keep the provider, persisted queue and native session aligned when
+      // either side rejects the edit. Best-effort restoration must not mask
+      // the original persistence/synchronization failure.
+      _queue = previousQueue;
+      _queueIndex = previousIndex;
+      try {
+        await _persistQueue();
+      } catch (_) {}
+      try {
+        await this._syncMedia3ProviderQueue();
+      } catch (_) {}
+      rethrow;
+    }
+
+    notifyListeners();
+  }
 
   Future<void> _loadSingle(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud, Song song, {bool start = true}) async {
     await player.setLoopMode(LoopMode.off);
