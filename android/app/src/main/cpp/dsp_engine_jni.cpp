@@ -329,7 +329,7 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetEqBands(
         env->GetDoubleArrayRegion(centersHz, 0, count, centers);
     DspEqBand bands[kMaxEqBands]{};
     for (int i = 0; i < count; ++i) {
-        bands[i].freq_hz = centersHz ? static_cast<float>(centers[i])
+        bands[i].freq_hz = hasCenters ? static_cast<float>(centers[i])
                                      : static_cast<float>(20.0 * std::pow(1000.0, i / static_cast<double>(std::max(1, count - 1))));
         bands[i].gain_db = static_cast<float>(gains[i]);
         bands[i].q = 1.f;
