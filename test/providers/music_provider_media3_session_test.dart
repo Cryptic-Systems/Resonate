@@ -516,6 +516,47 @@ void main() {
       }
     });
 
+    test('pause supersedes seek while Media3 activation is pending', () async {
+      const communicationChannel =
+          MethodChannel('com.aetherion.resonate/media_store');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(communicationChannel, (call) async => false);
+
+      final session = _FakePlaybackSession();
+      session.durationValue = const Duration(minutes: 3);
+      final startGate = Completer<void>();
+      session.startGate = startGate;
+      final provider = MusicProvider(media3ProviderSession: session);
+
+      try {
+        final seek = provider.seek(const Duration(seconds: 5));
+        for (var attempt = 0;
+            attempt < 80 && !session.calls.contains('start');
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        expect(session.calls, contains('start'),
+            reason: 'The test must hold Media3 activation before it completes.');
+
+        final pause = provider.pause();
+        startGate.complete();
+        await Future.wait(<Future<void>>[seek, pause]);
+
+        expect(session.calls, isNot(contains('seek:5000')),
+            reason: 'A superseded seek must not run after pause takes ownership.');
+        expect(session.calls, contains('pause'));
+        expect(provider.debugLegacyEngineConstructed, isFalse,
+            reason: 'A stale Media3 seek must never fall through to just_audio.');
+      } finally {
+        provider.dispose();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(communicationChannel, null);
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
     test('pause supersedes resume while Media3 activation is pending', () async {
       const communicationChannel =
           MethodChannel('com.aetherion.resonate/media_store');
