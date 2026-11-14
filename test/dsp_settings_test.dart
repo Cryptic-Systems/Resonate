@@ -161,8 +161,8 @@ void main() {
       expect(settings.limiterKneeDb, 12);
       expect(settings.ditherMode, 2);
       expect(settings.limiterCeilingDb, -12);
-      expect(settings.limiterHighCeilingDb, -6);
-      expect(settings.limiterLowCeilingDb, -0.1);
+      expect(settings.limiterHighCeilingDb, -12);
+      expect(settings.limiterLowCeilingDb, -0.05);
       expect(settings.crossoverHz, 200);
       expect(settings.virtualBassAmount, 1);
       expect(settings.reverbAmount, 0);
