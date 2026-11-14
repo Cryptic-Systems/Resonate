@@ -604,6 +604,45 @@ class MusicProvider extends ChangeNotifier {
       ? (_media3ShadowState?.activeDeckId ?? 'A')
       : _authority.engineLabel(this);
 
+  /// Engine-neutral playback feature commands. The Media3 session is the
+  /// only supported backend when it has been injected; never instantiate a
+  /// legacy just_audio player merely to apply a feature during handoff.
+  Future<void> setPlaybackSpeedForFeatures(double value) async {
+    final session = _media3ProviderSession;
+    if (session != null) {
+      if (_media3ProviderSessionActive) await session.setPlaybackSpeed(value);
+      return;
+    }
+    await audioPlayer.setSpeed(value);
+  }
+
+  Future<void> setPlaybackPitchForFeatures(double value) async {
+    final session = _media3ProviderSession;
+    if (session != null) {
+      if (_media3ProviderSessionActive) await session.setPlaybackPitch(value);
+      return;
+    }
+    await audioPlayer.setPitch(value);
+  }
+
+  Future<void> setNormalizationForFeatures({
+    required double targetGainMillibels,
+    required bool enabled,
+    required double trackLevel,
+  }) async {
+    final session = _media3ProviderSession;
+    if (session != null) {
+      if (_media3ProviderSessionActive) {
+        await session.setGainFactors(trackLevel: enabled ? trackLevel : 1.0);
+      }
+      return;
+    }
+    await loudnessEnhancer.setTargetGain(
+      targetGainMillibels.clamp(-1000.0, 0.0),
+    );
+    await loudnessEnhancer.setEnabled(enabled);
+  }
+
   /// Last DJ handoff snapshot for Now Playing "why this transition" chip.
   DateTime? get lastDjHandoffAt => _lastDjHandoffAt;
   String? get lastDjStrategy => _lastDjStrategy;
