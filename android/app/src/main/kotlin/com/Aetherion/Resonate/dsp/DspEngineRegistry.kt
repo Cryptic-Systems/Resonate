@@ -535,9 +535,16 @@ object DspEngineRegistry {
         val base = state.gainsDb
         val overlay = temporaryEqOverlays[deckId]
         if (overlay == null) {
-            if (base != null && base.isNotEmpty()) {
-                nativeApi.setParametricEqBands(handle, state.centersHz?.map { it.toFloat() }?.toFloatArray() ?: defaultCenters(base.size).map { it.toFloat() }.toFloatArray(), base.map { it.toFloat() }.toFloatArray(), state.eqQ ?: FloatArray(base.size) { 1f }, state.eqTypes ?: IntArray(base.size), true)
-            }
+            val count = base?.size ?: 0
+            nativeApi.setParametricEqBands(
+                handle,
+                state.centersHz?.map { it.toFloat() }?.toFloatArray()
+                    ?: defaultCenters(count).map { it.toFloat() }.toFloatArray(),
+                base?.map { it.toFloat() }?.toFloatArray() ?: FloatArray(0),
+                state.eqQ ?: FloatArray(count) { 1f },
+                state.eqTypes ?: IntArray(count),
+                true,
+            )
             return
         }
         if (base == null || base.isEmpty()) {
@@ -579,6 +586,7 @@ object DspEngineRegistry {
     private fun applyStickyToHandle(handle: Long, deckId: String): Boolean {
         val state = stickyState
         try {
+            nativeApi.setVolume(handle, state.linearGain)
             nativeApi.setProcessingEnabled(handle, state.dspEnabled)
             nativeApi.setDvc(handle, state.dvcEnabled, state.dvcDb, state.dvcSmoothing, state.dvcSmoothingMs)
             val gains = state.gainsDb
