@@ -119,24 +119,13 @@ class QueueStore {
 
   Future<void> _persistTail = Future<void>.value();
 
-  /// Persist an immutable snapshot in invocation order. Queue state can change
-  /// while SharedPreferences is being initialized or while an earlier write
-  /// is pending; reading [_songs] only after an await could otherwise write a
-  /// newer queue from an older operation, or allow writes to complete out of
-  /// order and restore stale playback state after process death.
-  Future<void> persist() {
-    final ids = _songs.map((song) => song.id).toList(growable: false);
-    final index = _index;
+  /// Queue and shuffle preference writes share one ordered lane. Every write
+  /// captures its value at invocation so a delayed preferences initialization
+  /// cannot persist a later mutation on behalf of an earlier operation.
+  Future<void> _enqueuePersistence(Future<void> Function() write) {
     final operation = _persistTail.then((_) async {
       try {
-        final prefs = await SharedPreferences.getInstance();
-        if (ids.isEmpty) {
-          await prefs.remove(savedQueueIdsKey);
-          await prefs.remove(savedQueueIndexKey);
-        } else {
-          await prefs.setStringList(savedQueueIdsKey, ids);
-          await prefs.setInt(savedQueueIndexKey, index);
-        }
+        await write();
       } catch (e) {
         debugPrint('Playback queue persistence failed: $e');
       }
@@ -145,13 +134,28 @@ class QueueStore {
     return operation;
   }
 
-  Future<void> persistShuffleFlag() async {
-    try {
+  /// Persist an immutable snapshot in invocation order.
+  Future<void> persist() {
+    final ids = _songs.map((song) => song.id).toList(growable: false);
+    final index = _index;
+    return _enqueuePersistence(() async {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(shuffleEnabledKey, shuffleEnabled);
-    } catch (e) {
-      debugPrint('Playback shuffle save failed: $e');
-    }
+      if (ids.isEmpty) {
+        await prefs.remove(savedQueueIdsKey);
+        await prefs.remove(savedQueueIndexKey);
+      } else {
+        await prefs.setStringList(savedQueueIdsKey, ids);
+        await prefs.setInt(savedQueueIndexKey, index);
+      }
+    });
+  }
+
+  Future<void> persistShuffleFlag() {
+    final enabled = shuffleEnabled;
+    return _enqueuePersistence(() async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(shuffleEnabledKey, enabled);
+    });
   }
 
   Future<void> loadShuffleFlag() async {
