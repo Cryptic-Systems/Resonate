@@ -218,8 +218,8 @@ Future<void> nextSong({String source = 'normal_player'}) {
         } catch (_) {}
         _transportInFlight = true;
         try {
-          if (_media3ProviderSessionActive) {
-            final session = _media3ProviderSession!;
+          if (_media3ProviderSession != null) {
+            final session = (await _ensureMedia3ProviderSessionActive())!;
             for (var i = 0; i < steps.clamp(1, 12); i++) {
               if (!_playbackIntentGate.isCurrent(intentToken)) break;
               await session.next();
@@ -293,8 +293,8 @@ Future<void> previousSong({String source = 'normal_player'}) {
       () async {
         _transportInFlight = true;
         try {
-          if (_media3ProviderSessionActive) {
-            final session = _media3ProviderSession!;
+          if (_media3ProviderSession != null) {
+            final session = (await _ensureMedia3ProviderSessionActive())!;
             await session.previous();
             this._reconcileMedia3ProviderSession();
             isPlaying = session.isPlaying;
@@ -341,17 +341,20 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
       () async {
         if (!_playbackIntentGate.isCurrent(intentToken)) return;
         try {
-          final duration = _media3ProviderSessionActive
-              ? (_media3ProviderSession!.duration ?? currentDuration ?? Duration.zero)
+          final session = _media3ProviderSession == null
+              ? null
+              : await _ensureMedia3ProviderSessionActive();
+          final duration = session != null
+              ? (session.duration ?? currentDuration ?? Duration.zero)
               : (audioPlayer.duration ?? currentDuration ?? Duration.zero);
           final fromMs = currentPosition.inMilliseconds;
           final safe = Duration(
             milliseconds: position.inMilliseconds.clamp(0, duration.inMilliseconds).toInt(),
           );
-          if (_media3ProviderSessionActive) {
-            await _media3ProviderSession!.seek(safe);
-            currentPosition = _media3ProviderSession!.position;
-            isPlaying = _media3ProviderSession!.isPlaying;
+          if (session != null) {
+            await session.seek(safe);
+            currentPosition = session.position;
+            isPlaying = session.isPlaying;
           } else {
             await audioPlayer.seek(safe);
             currentPosition = safe;
