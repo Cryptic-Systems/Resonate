@@ -930,7 +930,14 @@ class EqualizerProvider extends ChangeNotifier {
     _manualPresetRevision++;
     studioBands[index].gainDb = gainDb.clamp(studioMinDb, studioMaxDb);
     _ensureParametricBands();
-    parametricEqBands[index] = parametricEqBands[index].copyWith(gainDb: studioBands[index].gainDb);
+    final existingFilter = parametricEqBands[index];
+    parametricEqBands[index] = existingFilter.copyWith(
+      gainDb: studioBands[index].gainDb,
+      // The graphic EQ gain slider cannot alter a low/high-pass response;
+      // convert that band back to a peak filter so the visible control works.
+      type: existingFilter.type >= 3 ? 0 : existingFilter.type,
+      q: existingFilter.type >= 3 ? 1 : existingFilter.q,
+    );
     bands[studioBands[index].label] = studioBands[index].gainDb;
     preset = 'Custom';
     await _pushToHardware();
