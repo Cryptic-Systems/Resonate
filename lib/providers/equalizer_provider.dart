@@ -98,8 +98,9 @@ class EqualizerProvider extends ChangeNotifier {
   String? activeSongId;
   List<EqualizerPreset> customPresets = [];
 
-  /// 31-band studio model (ISO-ish centers). Mapped onto device hardware EQ;
-  /// true per-band software DSP is a later native step.
+  /// 31-band studio control model. The live curve is processed by the
+  /// native DSP-ENGINE AudioProcessor in each Media3 deck; Android hardware EQ
+  /// remains a read-only capability mirror and is not stacked into playback.
   static const List<double> studioFrequencies = [
     20, 25, 32, 40, 50, 63, 80, 100, 125, 160,
     200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600,
@@ -814,7 +815,8 @@ class EqualizerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Attach native Resonate DSP to a just_audio Android session id.
+  /// Refresh native Resonate DSP status for the active Android playback session.
+  /// The PCM processor itself is injected into each Media3 deck's audio sink.
   Future<void> attachNativeSession(int sessionId) async {
     // Always attach Resonate DSP to each active Android playback session.
     try {
@@ -826,7 +828,8 @@ class EqualizerProvider extends ChangeNotifier {
     } catch (e, st) {
       debugPrint('attachNativeSession failed: $e');
       debugPrint('$st');
-      // Stay on hardware EQ only — never rethrow (prevents Activity death).
+      // Keep playback fail-open; native sink processors remain pass-through
+      // if unavailable. Never rethrow across the Flutter activity boundary.
     }
   }
 
