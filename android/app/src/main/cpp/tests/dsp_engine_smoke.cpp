@@ -80,15 +80,9 @@ static bool verify_midrange_boost(float frequency_hz) {
     ok &= ratio > 1.75 && ratio < 2.25;
     dsp_destroy(engine);
 
-    // Guard the full low-mid / presence region against silent or missing
-    // parametric sections in the native PCM16 path.
-    for (const float frequency : {250.f, 400.f, 630.f, 1000.f, 1600.f, 2500.f, 3150.f}) {
-        ok &= verify_midrange_boost(frequency);
-    }
-
     if (!ok) {
         std::fprintf(stderr,
-            "Midrange EQ response failed at %.0f Hz (measured gain %.2f dB)\\n",
+            "Midrange EQ response failed at %.0f Hz (measured gain %.2f dB)\n",
             frequency_hz, ratio > 0.0 ? 20.0 * std::log10(ratio) : -120.0);
     }
     return ok;
@@ -170,6 +164,13 @@ int main() {
     ok &= dsp_speaker_is_enabled(engine) == 1;
 
     dsp_destroy(engine);
+
+    // Guard the full low-mid / presence region against silent or missing
+    // parametric sections in the native PCM16 path.
+    for (const float frequency : {250.f, 400.f, 630.f, 1000.f, 1600.f, 2500.f, 3150.f}) {
+        ok &= verify_midrange_boost(frequency);
+    }
+
     if (!ok) {
         std::fprintf(stderr, "DSP v0.4 integration smoke test failed\n");
         return 2;
