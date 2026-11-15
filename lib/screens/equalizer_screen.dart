@@ -679,6 +679,27 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
     );
   }
 
+  Future<void> _applySoundProfile(
+    BuildContext context,
+    ResonateSoundProfile profile,
+  ) async {
+    try {
+      // Update session-bound effects first, then publish the complete sticky
+      // DSP snapshot so both current and future A/B decks inherit it.
+      await context.read<AudioEffectsProvider>().applySoundProfileSettings(profile.settings);
+      await context.read<EqualizerProvider>().applySoundProfile(profile);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Applied sound: ${profile.name}')),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not apply sound profile: $error')),
+      );
+    }
+  }
+
   Future<void> _saveCustom(BuildContext context) async {
     final controller = TextEditingController();
     final name = await showDialog<String>(
@@ -705,8 +726,11 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
       ),
     );
     if (name == null || name.trim().isEmpty || !context.mounted) return;
-    final savedName =
-        await context.read<EqualizerProvider>().saveCustomPreset(name);
+    final eq = context.read<EqualizerProvider>();
+    final savedName = await eq.saveCustomPreset(name);
+    if (savedName != null) {
+      await eq.saveCustomSoundProfile(savedName);
+    }
     if (!context.mounted || savedName == null) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Saved “$savedName”')),
