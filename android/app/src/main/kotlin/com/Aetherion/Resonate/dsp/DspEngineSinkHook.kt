@@ -2,6 +2,8 @@ package com.aetherion.resonate.dsp
 
 import androidx.media3.common.audio.AudioProcessor
 import android.util.Log
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArraySet
 
 /**
  * Factory for native DSP AudioProcessors installed in Media3 DefaultAudioSink.
@@ -24,6 +26,7 @@ object DspEngineSinkHook {
      * Requires libdsp_engine.so in the APK and ABI-matched JNI.
      */
     private const val ENABLE_NATIVE_LIVE_DSP = true
+    private val processorsByDeck = ConcurrentHashMap<String, CopyOnWriteArraySet<DspEngineAudioProcessor>>()
 
     /** Compatibility overload used only by the legacy just_audio sink patch. */
     @JvmStatic
@@ -35,6 +38,8 @@ object DspEngineSinkHook {
             val allow = ENABLE_NATIVE_LIVE_DSP && DspSessionGate.isNativeAllowed()
             val proc = DspEngineAudioProcessor(deckId)
             proc.setNativeProcessEnabled(allow)
+            proc.setDeckActive(deckId == "legacy" || DspEngineRegistry.isActiveDeck(deckId))
+            processorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(proc)
             val active = DspEngineRegistry.activeCount()
             if (allow) {
                 Log.i(
@@ -54,5 +59,17 @@ object DspEngineSinkHook {
             Log.e(TAG, "Failed to create DspEngineAudioProcessor", t)
             emptyArray()
         }
+    }
+
+    /** Activates a deck's native handle immediately before it is allowed to output. */
+    @JvmStatic
+    fun activateDeck(deckId: String) {
+        processorsByDeck[deckId]?.forEach { it.setDeckActive(true) }
+    }
+
+    /** Releases a deck's native handle while its ExoPlayer remains reusable as standby. */
+    @JvmStatic
+    fun suspendDeck(deckId: String) {
+        processorsByDeck[deckId]?.forEach { it.setDeckActive(false) }
     }
 }
