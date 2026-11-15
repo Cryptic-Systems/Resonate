@@ -41,6 +41,10 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
         'Resonate Focus' => 'Keep voices and detail clear at a calm level.',
         'Resonate Speaker' => 'A modest balance for small speaker playback.',
         'Resonate Vocal Presence' => 'Put vocals closer without over-brightening.',
+        'Resonate Subforge' => 'Sub-bass extension, kick impact and a defined upper-mid edge.',
+        'Resonate Midrange Atlas' => 'More body, vocal fundamentals and clear presence across the mids.',
+        'Resonate Titan Pulse' => 'A powerful low end with forward, energetic mids.',
+        'Resonate Velvet Drive' => 'Warm low-mid weight and smooth instrument body.',
         _ => 'A Resonate-crafted listening profile.',
       };
 
@@ -55,6 +59,10 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
         'Resonate Focus' => Icons.center_focus_strong_rounded,
         'Resonate Speaker' => Icons.speaker_rounded,
         'Resonate Vocal Presence' => Icons.mic_rounded,
+        'Resonate Subforge' => Icons.waves_rounded,
+        'Resonate Midrange Atlas' => Icons.graphic_eq_rounded,
+        'Resonate Titan Pulse' => Icons.bolt_rounded,
+        'Resonate Velvet Drive' => Icons.album_rounded,
         _ => Icons.graphic_eq_rounded,
       };
 
@@ -69,6 +77,10 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
         'Resonate Focus' => const Color(0xFF70B8A5),
         'Resonate Speaker' => const Color(0xFFB38AFF),
         'Resonate Vocal Presence' => const Color(0xFFFF78A8),
+        'Resonate Subforge' => const Color(0xFF4B91E8),
+        'Resonate Midrange Atlas' => const Color(0xFF42B9A5),
+        'Resonate Titan Pulse' => const Color(0xFFFF765F),
+        'Resonate Velvet Drive' => const Color(0xFFB88A64),
         _ => _cBlue,
       };
 
@@ -259,98 +271,6 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                     ),
                     const SizedBox(height: 14),
 
-                    // —— Curve ——
-                    _GlassCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Frequency response',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 10),
-                          SizedBox(
-                            height: 112,
-                            child: CustomPaint(
-                              painter: _ResponseCurvePainter(
-                                points: eq.responseCurvePoints(),
-                                minDb: EqualizerProvider.studioMinDb,
-                                maxDb: EqualizerProvider.studioMaxDb,
-                                color: _cBlue,
-                                accent: _cPink,
-                                gridColor: scheme.outlineVariant
-                                    .withValues(alpha: 0.4),
-                                enabled: eq.isEnabled,
-                              ),
-                              child: const SizedBox.expand(),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text('Bass', style: Theme.of(context).textTheme.labelSmall),
-                              Text('Mids', style: Theme.of(context).textTheme.labelSmall),
-                              Text('Treble', style: Theme.of(context).textTheme.labelSmall),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-
-                    // —— Preamp ——
-                    _GlassCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(Icons.volume_up_rounded,
-                                  size: 20, color: _cOrange),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Preamp',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                              const Spacer(),
-                              Text(
-                                '${eq.preamp >= 0 ? '+' : ''}${eq.preamp.toStringAsFixed(1)} dB',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelLarge
-                                    ?.copyWith(
-                                      color: _cOrange,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                            ],
-                          ),
-                          Slider(
-                            value: eq.preamp.clamp(-6.0, 6.0),
-                            min: -6,
-                            max: 6,
-                            divisions: 24,
-                            activeColor: _cOrange,
-                            onChanged: eq.isEnabled ? eq.setPreamp : null,
-                          ),
-                          Text(
-                            'Overall loudness before the bands. 0 is neutral. '
-                            'Cuts stay gentle; boosts are limited so the phone does not crackle.',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-
-                    // —— Resonate sound identities ——
                     Padding(
                       padding: const EdgeInsets.fromLTRB(2, 2, 2, 8),
                       child: Column(
@@ -456,7 +376,112 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                     const SizedBox(height: 10),
 
 
-                    // —— Studio bands ——
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Theme(
+                        data: Theme.of(context).copyWith(
+                          dividerColor: Colors.transparent,
+                        ),
+                        child: ExpansionTile(
+                          tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+                          childrenPadding: EdgeInsets.zero,
+                          title: const Text(
+                            'Fine tune',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: const Text(
+                            'Frequency response, preamp and the full 31-band studio EQ',
+                          ),
+                          children: [
+                    _GlassCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Frequency response',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            height: 112,
+                            child: CustomPaint(
+                              painter: _ResponseCurvePainter(
+                                points: eq.responseCurvePoints(),
+                                minDb: EqualizerProvider.studioMinDb,
+                                maxDb: EqualizerProvider.studioMaxDb,
+                                color: _cBlue,
+                                accent: _cPink,
+                                gridColor: scheme.outlineVariant
+                                    .withValues(alpha: 0.4),
+                                enabled: eq.isEnabled,
+                              ),
+                              child: const SizedBox.expand(),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Bass', style: Theme.of(context).textTheme.labelSmall),
+                              Text('Mids', style: Theme.of(context).textTheme.labelSmall),
+                              Text('Treble', style: Theme.of(context).textTheme.labelSmall),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    _GlassCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.volume_up_rounded,
+                                  size: 20, color: _cOrange),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Preamp',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              const Spacer(),
+                              Text(
+                                '${eq.preamp >= 0 ? '+' : ''}${eq.preamp.toStringAsFixed(1)} dB',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelLarge
+                                    ?.copyWith(
+                                      color: _cOrange,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                              ),
+                            ],
+                          ),
+                          Slider(
+                            value: eq.preamp.clamp(-6.0, 6.0),
+                            min: -6,
+                            max: 6,
+                            divisions: 24,
+                            activeColor: _cOrange,
+                            onChanged: eq.isEnabled ? eq.setPreamp : null,
+                          ),
+                          Text(
+                            'Overall loudness before the bands. 0 is neutral. '
+                            'Cuts stay gentle; boosts are limited so the phone does not crackle.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
                     _GlassCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -513,6 +538,12 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                     ),
                     const SizedBox(height: 14),
 
+
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
 
                     // —— Custom profiles —— 
                     _GlassCard(
