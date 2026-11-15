@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/dsp_settings.dart';
+import '../models/resonate_sound_profile.dart';
 import '../services/eq_lean_store.dart';
 import '../services/resonate_dsp_pipeline.dart';
 import 'music_provider.dart';
@@ -97,6 +98,7 @@ class EqualizerProvider extends ChangeNotifier {
   bool autoEqHeadroom = false;
   String? activeSongId;
   List<EqualizerPreset> customPresets = [];
+  List<ResonateSoundProfile> customSoundProfiles = [];
 
   /// 31-band studio control model. The live curve is processed by the
   /// native DSP-ENGINE AudioProcessor in each Media3 deck; Android hardware EQ
@@ -483,6 +485,39 @@ class EqualizerProvider extends ChangeNotifier {
         ...customPresets,
       ];
 
+  /// Complete DSP snapshots built from the established Resonate tone curves.
+  /// Other processing stages retain the conservative canonical DSP defaults.
+  List<ResonateSoundProfile> get builtInSoundProfiles => resonatePresets.map((item) {
+        final gains = expandGainsToStudio(item.gains);
+        final filters = [
+          for (var i = 0; i < studioFrequencies.length; i++)
+            ParametricEqBand(
+              frequencyHz: studioFrequencies[i],
+              gainDb: gains[i],
+              q: 1,
+              type: 0,
+            ),
+        ];
+        final slug = item.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+        return ResonateSoundProfile(
+          id: 'resonate:$slug',
+          name: item.name,
+          description: 'Resonate tone curve with the standard DSP safety configuration.',
+          category: item.category,
+          isBuiltIn: true,
+          settings: DspSettings().copyWith(
+            preset: item.name,
+            eqBandGainsDb: gains,
+            parametricEqBands: filters,
+          ),
+        );
+      }).toList(growable: false);
+
+  List<ResonateSoundProfile> get allSoundProfiles => [
+        ...builtInSoundProfiles,
+        ...customSoundProfiles,
+      ];
+
   List<String> get categories {
     final set = <String>{};
     for (final p in allPresets) {
@@ -605,6 +640,7 @@ class EqualizerProvider extends ChangeNotifier {
         parametricEqBands = <ParametricEqBand>[];
       }
       await _loadCustomPresets(prefs);
+      await _loadCustomSoundProfiles(prefs);
 
       // Restore studio curve from prefs if present.
       var restoredStudio = false;
