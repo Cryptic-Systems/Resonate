@@ -343,6 +343,20 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
     );
   }
 
+  Widget _advancedSection(String title, String description, List<Widget> children) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: Text(description, maxLines: 2, overflow: TextOverflow.ellipsis),
+        children: children,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = _settings;
@@ -387,208 +401,247 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
               : ListView(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
                   children: [
-                    _statusCard(),
-                    _section('Preamp', 'Gain before DVC and limiting. EQ headroom remains managed by the Equalizer screen.', [
-                      _valueSlider(
-                        label: 'Preamp gain',
-                        value: settings.preampDb,
-                        min: -6,
-                        max: 6,
-                        suffix: 'dB',
-                        divisions: 48,
-                        onChanged: (v) => _changeSettings((s) => s.copyWith(preampDb: v)),
-                        onChangeEnd: (_) => _commit(),
-                      ),
-                    ]),
-                    _section('Direct Volume Control', 'A dedicated, smoothed digital gain stage independent of EQ preamp and Android media volume. Keep positive gain conservative to preserve headroom.', [
-                      _valueSlider(
-                        label: 'DVC gain',
-                        value: settings.dvcDb,
-                        min: -24,
-                        max: 6,
-                        suffix: 'dB',
-                        divisions: 60,
-                        onChanged: (v) => _changeSettings((s) => s.copyWith(dvcDb: v)),
-                        onChangeEnd: (_) => _commit(),
-                      ),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Enable DVC'),
-                        value: settings.dvcEnabled,
-                        onChanged: (v) {
-                          _changeSettings((s) => s.copyWith(dvcEnabled: v));
-                          _commit();
-                        },
-                      ),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Smooth gain transitions'),
-                        value: settings.dvcSmoothing,
-                        onChanged: (v) {
-                          _changeSettings((s) => s.copyWith(dvcSmoothing: v));
-                          _commit();
-                        },
-                      ),
-                      _valueSlider(
-                        label: 'Smoothing time',
-                        value: settings.dvcSmoothingMs,
-                        min: 0,
-                        max: 200,
-                        suffix: 'ms',
-                        divisions: 200,
-                        onChanged: (v) => _changeSettings((s) => s.copyWith(dvcSmoothingMs: v)),
-                        onChangeEnd: (_) => _commit(),
-                      ),
-                    ]),
-                    _section('Limiter', 'Peak protection with fast, lookahead, true-peak and two-band modes.', [
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Enable limiter'),
-                        value: settings.limiterEnabled,
-                        onChanged: (v) {
-                          _changeSettings((s) => s.copyWith(limiterEnabled: v));
-                          _commit();
-                        },
-                      ),
-                      DropdownButtonFormField<int>(
-                        value: settings.limiterMode,
-                        decoration: const InputDecoration(labelText: 'Limiter mode'),
-                        items: List.generate(_limiterNames.length, (i) =>
-                          DropdownMenuItem(value: i, child: Text(_limiterNames[i]))),
-                        onChanged: (v) {
-                          if (v == null) return;
-                          _changeSettings((s) => s.copyWith(limiterMode: v));
-                          _commit();
-                        },
-                      ),
-                      _valueSlider(
-                        label: 'Threshold',
-                        value: settings.limiterThresholdDb,
-                        min: -24,
-                        max: 0,
-                        suffix: 'dB',
-                        divisions: 96,
-                        onChanged: (v) => _changeSettings((s) => s.copyWith(limiterThresholdDb: v)),
-                        onChangeEnd: (_) => _commit(),
-                      ),
-                      _valueSlider(
-                        label: 'Release',
-                        value: settings.limiterReleaseMs,
-                        min: 1,
-                        max: 2000,
-                        suffix: 'ms',
-                        divisions: 1999,
-                        onChanged: (v) => _changeSettings((s) => s.copyWith(limiterReleaseMs: v)),
-                        onChangeEnd: (_) => _commit(),
-                      ),
-                      _valueSlider(
-                        label: 'Attack',
-                        value: settings.limiterAttackMs,
-                        min: 0.01,
-                        max: 100,
-                        suffix: 'ms',
-                        divisions: 999,
-                        onChanged: (v) => _changeSettings((s) => s.copyWith(limiterAttackMs: v)),
-                        onChangeEnd: (_) => _commit(),
-                      ),
-                      _valueSlider(
-                        label: 'Lookahead',
-                        value: settings.limiterLookaheadMs,
-                        min: 0,
-                        max: 40,
-                        suffix: 'ms',
-                        divisions: 80,
-                        onChanged: (v) => _changeSettings((s) => s.copyWith(limiterLookaheadMs: v)),
-                        onChangeEnd: (_) => _commit(),
-                      ),
-                      _valueSlider(
-                        label: 'Soft knee',
-                        value: settings.limiterKneeDb,
-                        min: 0,
-                        max: 12,
-                        suffix: 'dB',
-                        divisions: 48,
-                        onChanged: (v) => _changeSettings((s) => s.copyWith(limiterKneeDb: v)),
-                        onChangeEnd: (_) => _commit(),
-                      ),
-                      _valueSlider(
-                        label: 'High-band ceiling',
-                        value: settings.limiterHighCeilingDb,
-                        min: -12,
-                        max: -0.05,
-                        suffix: 'dBFS',
-                        divisions: 1195,
-                        onChanged: (v) => _changeSettings((s) => s.copyWith(limiterHighCeilingDb: v)),
-                        onChangeEnd: (_) => _commit(),
-                      ),
-                      _valueSlider(
-                        label: 'Low-band ceiling',
-                        value: settings.limiterLowCeilingDb,
-                        min: -6,
-                        max: -0.1,
-                        suffix: 'dBFS',
-                        divisions: 59,
-                        onChanged: (v) => _changeSettings((s) => s.copyWith(limiterLowCeilingDb: v)),
-                        onChangeEnd: (_) => _commit(),
-                      ),
-                      _valueSlider(
-                        label: 'Two-band crossover',
-                        value: settings.crossoverHz,
-                        min: 80,
-                        max: 200,
-                        suffix: 'Hz',
-                        divisions: 120,
-                        onChanged: (v) => _changeSettings((s) => s.copyWith(crossoverHz: v)),
-                        onChangeEnd: (_) => _commit(),
-                      ),
-                    ]),
-                    _section('Speaker delivery', 'High-pass protection and optional virtual-bass harmonics for small speakers. Output-route safety policy may reapply these values when the audio route changes.', [
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Speaker protection'),
-                        value: settings.speakerProtectionEnabled,
-                        onChanged: (v) {
-                          _changeSettings((s) => s.copyWith(speakerProtectionEnabled: v));
-                          _commit(pushSpeaker: true);
-                        },
-                      ),
-                      _valueSlider(
-                        label: 'Virtual bass',
-                        value: settings.virtualBassAmount,
-                        min: 0,
-                        max: 1,
-                        suffix: 'level',
-                        divisions: 100,
-                        onChanged: (v) => _changeSettings((s) => s.copyWith(virtualBassAmount: v)),
-                        onChangeEnd: (_) => _commit(pushSpeaker: true),
-                      ),
-                    ]),
-                    _section('Dither', 'Noise shaping for PCM16 output quantization.', [
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Enable dither'),
-                        value: settings.ditherEnabled,
-                        onChanged: (v) {
-                          _changeSettings((s) => s.copyWith(ditherEnabled: v));
-                          _commit();
-                        },
-                      ),
-                      DropdownButtonFormField<int>(
-                        value: settings.ditherMode,
-                        decoration: const InputDecoration(labelText: 'Dither mode'),
-                        items: List.generate(_ditherNames.length, (i) =>
-                          DropdownMenuItem(value: i, child: Text(_ditherNames[i]))),
-                        onChanged: (v) {
-                          if (v == null) return;
-                          _changeSettings((s) => s.copyWith(ditherMode: v));
-                          _commit();
-                        },
-                      ),
-                    ]),
-                    _section('31-band parametric EQ', 'Each band exposes frequency, gain, Q and filter topology. Changes apply to both Media3 decks.', [
-                      for (var i = 0; i < _bands.length; i++)
-                        _parametricBandTile(i, _bands[i]),
-                    ]),
+                    _section(
+                      'Everyday controls',
+                      'Quick controls for overall level and safe peak handling. Choose a sound profile on the Equalizer screen for the biggest tonal changes.',
+                      [
+                        _valueSlider(
+                          label: 'DVC gain',
+                          value: settings.dvcDb,
+                          min: -24,
+                          max: 6,
+                          suffix: 'dB',
+                          divisions: 60,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(dvcDb: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Enable Direct Volume Control'),
+                          subtitle: const Text('Applies a separate, smoothed digital gain stage. Positive gain reduces available headroom.'),
+                          value: settings.dvcEnabled,
+                          onChanged: (v) {
+                            _changeSettings((s) => s.copyWith(dvcEnabled: v));
+                            _commit();
+                          },
+                        ),
+                        const Divider(height: 20),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Enable peak limiter'),
+                          subtitle: const Text('Catches peaks to reduce clipping. Leave enabled for a safer default.'),
+                          value: settings.limiterEnabled,
+                          onChanged: (v) {
+                            _changeSettings((s) => s.copyWith(limiterEnabled: v));
+                            _commit();
+                          },
+                        ),
+                        ExpansionTile(
+                          tilePadding: EdgeInsets.zero,
+                          title: const Text('DVC response'),
+                          subtitle: const Text('Advanced gain smoothing'),
+                          children: [
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Smooth gain transitions'),
+                              subtitle: const Text('Prevents abrupt level changes when DVC is adjusted.'),
+                              value: settings.dvcSmoothing,
+                              onChanged: (v) {
+                                _changeSettings((s) => s.copyWith(dvcSmoothing: v));
+                                _commit();
+                              },
+                            ),
+                            _valueSlider(
+                              label: 'Smoothing time',
+                              value: settings.dvcSmoothingMs,
+                              min: 0,
+                              max: 200,
+                              suffix: 'ms',
+                              divisions: 200,
+                              onChanged: (v) => _changeSettings((s) => s.copyWith(dvcSmoothingMs: v)),
+                              onChangeEnd: (_) => _commit(),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    _advancedSection(
+                      'Preamp and headroom',
+                      'Digital gain before DVC and limiting. Use negative preamp when applying strong EQ boosts.',
+                      [
+                        _valueSlider(
+                          label: 'Preamp gain',
+                          value: settings.preampDb,
+                          min: -6,
+                          max: 6,
+                          suffix: 'dB',
+                          divisions: 48,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(preampDb: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                      ],
+                    ),
+                    _advancedSection(
+                      'Limiter configuration',
+                      'Fine control over limiter timing, character and output ceilings. The everyday limiter switch remains above.',
+                      [
+                        DropdownButtonFormField<int>(
+                          value: settings.limiterMode,
+                          decoration: const InputDecoration(labelText: 'Limiter mode'),
+                          items: List.generate(_limiterNames.length, (i) =>
+                            DropdownMenuItem(value: i, child: Text(_limiterNames[i]))),
+                          onChanged: (v) {
+                            if (v == null) return;
+                            _changeSettings((s) => s.copyWith(limiterMode: v));
+                            _commit();
+                          },
+                        ),
+                        _valueSlider(
+                          label: 'Threshold',
+                          value: settings.limiterThresholdDb,
+                          min: -24,
+                          max: 0,
+                          suffix: 'dB',
+                          divisions: 96,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(limiterThresholdDb: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                        _valueSlider(
+                          label: 'Release',
+                          value: settings.limiterReleaseMs,
+                          min: 1,
+                          max: 2000,
+                          suffix: 'ms',
+                          divisions: 1999,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(limiterReleaseMs: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                        _valueSlider(
+                          label: 'Attack',
+                          value: settings.limiterAttackMs,
+                          min: 0.01,
+                          max: 100,
+                          suffix: 'ms',
+                          divisions: 999,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(limiterAttackMs: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                        _valueSlider(
+                          label: 'Lookahead',
+                          value: settings.limiterLookaheadMs,
+                          min: 0,
+                          max: 40,
+                          suffix: 'ms',
+                          divisions: 80,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(limiterLookaheadMs: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                        _valueSlider(
+                          label: 'Soft knee',
+                          value: settings.limiterKneeDb,
+                          min: 0,
+                          max: 12,
+                          suffix: 'dB',
+                          divisions: 48,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(limiterKneeDb: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                        _valueSlider(
+                          label: 'High-band ceiling',
+                          value: settings.limiterHighCeilingDb,
+                          min: -12,
+                          max: -0.05,
+                          suffix: 'dBFS',
+                          divisions: 1195,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(limiterHighCeilingDb: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                        _valueSlider(
+                          label: 'Low-band ceiling',
+                          value: settings.limiterLowCeilingDb,
+                          min: -6,
+                          max: -0.1,
+                          suffix: 'dBFS',
+                          divisions: 59,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(limiterLowCeilingDb: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                        _valueSlider(
+                          label: 'Two-band crossover',
+                          value: settings.crossoverHz,
+                          min: 80,
+                          max: 200,
+                          suffix: 'Hz',
+                          divisions: 120,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(crossoverHz: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                      ],
+                    ),
+                    _advancedSection(
+                      'Speaker delivery',
+                      'Route-oriented high-pass protection and optional virtual-bass harmonics. Not a headphone calibration feature.',
+                      [
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Speaker protection'),
+                          subtitle: const Text('Applies protective filtering for speaker playback routes.'),
+                          value: settings.speakerProtectionEnabled,
+                          onChanged: (v) {
+                            _changeSettings((s) => s.copyWith(speakerProtectionEnabled: v));
+                            _commit(pushSpeaker: true);
+                          },
+                        ),
+                        _valueSlider(
+                          label: 'Virtual bass',
+                          value: settings.virtualBassAmount,
+                          min: 0,
+                          max: 1,
+                          suffix: 'level',
+                          divisions: 100,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(virtualBassAmount: v)),
+                          onChangeEnd: (_) => _commit(pushSpeaker: true),
+                        ),
+                      ],
+                    ),
+                    _advancedSection(
+                      'Dither',
+                      'Noise shaping for PCM16 output quantization. Most listeners can leave this at its default.',
+                      [
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Enable dither'),
+                          value: settings.ditherEnabled,
+                          onChanged: (v) {
+                            _changeSettings((s) => s.copyWith(ditherEnabled: v));
+                            _commit();
+                          },
+                        ),
+                        DropdownButtonFormField<int>(
+                          value: settings.ditherMode,
+                          decoration: const InputDecoration(labelText: 'Dither mode'),
+                          items: List.generate(_ditherNames.length, (i) =>
+                            DropdownMenuItem(value: i, child: Text(_ditherNames[i]))),
+                          onChanged: (v) {
+                            if (v == null) return;
+                            _changeSettings((s) => s.copyWith(ditherMode: v));
+                            _commit();
+                          },
+                        ),
+                      ],
+                    ),
+                    _advancedSection(
+                      '31-band parametric EQ',
+                      'Studio-level control of frequency, gain, Q and filter topology. For normal listening, start with a Resonate sound profile.',
+                      [
+                        ...List.generate(_bands.length, (i) => _parametricBandTile(i, _bands[i])),
+                      ],
+                    ),
+                    _advancedSection(
+                      'Live engine diagnostics',
+                      'Read-only per-deck processing and PCM diagnostics.',
+                      [_statusCard()],
+                    ),
                     ValueListenableBuilder<bool>(
                       valueListenable: _saving,
                       builder: (context, saving, child) => saving
@@ -602,7 +655,6 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                 ),
     );
   }
-}
 
 
 /// Keeps high-frequency slider drag updates local to the control. The screen
