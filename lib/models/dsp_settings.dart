@@ -16,7 +16,7 @@ class ParametricEqBand {
   const ParametricEqBand({
     required this.frequencyHz,
     this.gainDb = 0,
-    this.q = 1,
+    this.q = 4.3,
     this.type = 0,
   });
 
@@ -53,7 +53,7 @@ class ParametricEqBand {
     return ParametricEqBand(
       frequencyHz: number('frequencyHz', 1000, 20, 20000),
       gainDb: number('gainDb', 0, -24, 24),
-      q: number('q', 1, 0.1, 18),
+      q: number('q', 4.3, 0.1, 18),
       type: type,
     );
   }
@@ -273,7 +273,7 @@ class DspSettings {
               ParametricEqBand(
                 frequencyHz: frequencies[i].toDouble(),
                 gainDb: bands[i],
-                q: 1.0,
+                q: 4.3,
                 type: 0,
               ),
           ];
