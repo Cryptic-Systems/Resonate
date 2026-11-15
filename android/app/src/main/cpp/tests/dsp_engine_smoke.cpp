@@ -5,7 +5,8 @@
 #include <cstdio>
 #include <vector>
 
-static bool verify_midrange_boost(float frequency_hz) {
+static bool verify_midrange_boost(float frequency_hz, float probe_hz = -1.f) {
+    if (probe_hz <= 0.f) probe_hz = frequency_hz;
     DspConfig config{};
     config.sample_rate = 48000.f;
     config.channels = 2;
@@ -30,7 +31,7 @@ static bool verify_midrange_boost(float frequency_hz) {
     DspEqBand band{};
     band.freq_hz = frequency_hz;
     band.gain_db = 6.f;
-    band.q = 1.f;
+    band.q = 4.3f;
     band.type = 0;
 
     bool ok = dsp_eq_set_bands(engine, &band, 1) == DSP_OK;
@@ -52,7 +53,7 @@ static bool verify_midrange_boost(float frequency_hz) {
         for (int i = 0; i < frames; ++i) {
             const int sample_index = block * frames + i;
             const float input = 0.06f * std::sin(
-                2.f * 3.14159265f * frequency_hz * sample_index / 48000.f);
+                2.f * 3.14159265f * probe_hz * sample_index / 48000.f);
             const auto value = static_cast<int16_t>(input * 32767.f);
             pcm[i * 2] = value;
             pcm[i * 2 + 1] = value;
@@ -65,7 +66,7 @@ static bool verify_midrange_boost(float frequency_hz) {
             for (int i = 0; i < frames * 2; ++i) {
                 const double input = static_cast<double>(
                     0.06f * std::sin(
-                        2.f * 3.14159265f * frequency_hz *
+                        2.f * 3.14159265f * probe_hz *
                         (block * frames + i / 2) / 48000.f));
                 const double output = static_cast<double>(pcm[i]);
                 input_energy += input * input * 32767.0 * 32767.0;
@@ -77,7 +78,8 @@ static bool verify_midrange_boost(float frequency_hz) {
     const double ratio = input_energy > 0.0
         ? std::sqrt(output_energy / input_energy)
         : 0.0;
-    ok &= ratio > 1.75 && ratio < 2.25;
+    const bool centerProbe = std::fabs(probe_hz - frequency_hz) < 0.5f;
+    ok &= centerProbe ? (ratio > 1.75 && ratio < 2.25) : (ratio < 1.25);
     dsp_destroy(engine);
 
     if (!ok) {
@@ -170,6 +172,9 @@ int main() {
     for (const float frequency : {250.f, 400.f, 630.f, 1000.f, 1600.f, 2500.f, 3150.f}) {
         ok &= verify_midrange_boost(frequency);
     }
+
+    // A one-third-octave neighbor should not inherit most of a band's boost.
+    ok &= verify_midrange_boost(1000.f, 1250.f);
 
     if (!ok) {
         std::fprintf(stderr, "DSP v0.4 integration smoke test failed\n");
