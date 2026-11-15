@@ -446,7 +446,7 @@ object DspEngineRegistry {
             dspEnabled = true,
             centersHz = centersHz?.copyOf(),
             gainsDb = gainsDb.copyOf(),
-            eqQ = FloatArray(gainsDb.size) { 1f },
+            eqQ = defaultEqQ(gainsDb.size),
             eqTypes = IntArray(gainsDb.size) { 0 },
         )
         val state = stickyState
@@ -523,12 +523,12 @@ object DspEngineRegistry {
             try {
                 val gains = state.gainsDb
                 if (gains != null && gains.isNotEmpty()) {
-                    nativeApi.setParametricEqBands(engine.handle, state.centersHz?.map { it.toFloat() }?.toFloatArray() ?: defaultCenters(gains.size).map { it.toFloat() }.toFloatArray(), gains.map { it.toFloat() }.toFloatArray(), state.eqQ ?: FloatArray(gains.size) { 1f }, state.eqTypes ?: IntArray(gains.size), true)
+                    nativeApi.setParametricEqBands(engine.handle, state.centersHz?.map { it.toFloat() }?.toFloatArray() ?: defaultCenters(gains.size).map { it.toFloat() }.toFloatArray(), gains.map { it.toFloat() }.toFloatArray(), state.eqQ ?: defaultEqQ(gains.size), state.eqTypes ?: IntArray(gains.size), true)
                 } else {
                     // Restore a neutral 31-band curve when there is no saved
                     // user curve, rather than leaving the last DJ filter active.
                     val centers = defaultCenters(31)
-                    nativeApi.setParametricEqBands(engine.handle, centers.map { it.toFloat() }.toFloatArray(), FloatArray(31), FloatArray(31) { 1f }, IntArray(31), true)
+                    nativeApi.setParametricEqBands(engine.handle, centers.map { it.toFloat() }.toFloatArray(), FloatArray(31), defaultEqQ(31), IntArray(31), true)
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, "clearTemporaryEqOverlay failed deck=$deckRole handle=${engine.handle}", t)
@@ -559,14 +559,14 @@ object DspEngineRegistry {
                 state.centersHz?.map { it.toFloat() }?.toFloatArray()
                     ?: defaultCenters(count).map { it.toFloat() }.toFloatArray(),
                 base?.map { it.toFloat() }?.toFloatArray() ?: FloatArray(0),
-                state.eqQ ?: FloatArray(count) { 1f },
+                state.eqQ ?: defaultEqQ(count),
                 state.eqTypes ?: IntArray(count),
                 true,
             )
             return
         }
         if (base == null || base.isEmpty()) {
-            nativeApi.setParametricEqBands(handle, overlay.centersHz.map { it.toFloat() }.toFloatArray(), overlay.gainsDb.map { it.toFloat() }.toFloatArray(), FloatArray(overlay.gainsDb.size) { 1f }, IntArray(overlay.gainsDb.size), true)
+            nativeApi.setParametricEqBands(handle, overlay.centersHz.map { it.toFloat() }.toFloatArray(), overlay.gainsDb.map { it.toFloat() }.toFloatArray(), defaultEqQ(overlay.gainsDb.size), IntArray(overlay.gainsDb.size), true)
             return
         }
         val persistentGains = base
@@ -596,6 +596,9 @@ object DspEngineRegistry {
         return 0.0
     }
 
+    private fun defaultEqQ(count: Int): FloatArray =
+        FloatArray(count) { if (count >= 24) 4.3f else 1.4f }
+
     private fun defaultCenters(count: Int): DoubleArray =
         DoubleArray(count) { index ->
             20.0 * 1000.0.pow(index.toDouble() / (count - 1).coerceAtLeast(1))
@@ -623,7 +626,7 @@ object DspEngineRegistry {
                         handle,
                         overlay.centersHz.map { it.toFloat() }.toFloatArray(),
                         overlay.gainsDb.map { it.toFloat() }.toFloatArray(),
-                        FloatArray(overlay.gainsDb.size) { 1f },
+                        defaultEqQ(overlay.gainsDb.size),
                         IntArray(overlay.gainsDb.size),
                         true,
                     )
