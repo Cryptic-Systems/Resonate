@@ -575,7 +575,7 @@ object DspEngineRegistry {
         val combined = DoubleArray(persistentGains.size) { index ->
             (persistentGains[index] + interpolateDb(overlay, centers[index])).coerceIn(-24.0, 24.0)
         }
-        nativeApi.setParametricEqBands(handle, centers.map { it.toFloat() }.toFloatArray(), combined.map { it.toFloat() }.toFloatArray(), state.eqQ ?: FloatArray(combined.size) { 1f }, state.eqTypes ?: IntArray(combined.size), true)
+        nativeApi.setParametricEqBands(handle, centers.map { it.toFloat() }.toFloatArray(), combined.map { it.toFloat() }.toFloatArray(), state.eqQ ?: defaultEqQ(combined.size), state.eqTypes ?: IntArray(combined.size), true)
     }
 
     private fun interpolateDb(overlay: EqOverlay, frequencyHz: Double): Double {
