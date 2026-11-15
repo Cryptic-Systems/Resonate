@@ -270,6 +270,48 @@ void main() {
       expect(restored.virtualizerAmount, 0.6);
     });
 
+    test('DVC and limiter settings survive repeated field updates and reload', () async {
+      await DspSettings.save(DspSettings(
+        dvcDb: -3.5,
+        dvcEnabled: false,
+        dvcSmoothing: false,
+        dvcSmoothingMs: 42,
+        limiterEnabled: true,
+        limiterMode: 3,
+        limiterThresholdDb: -5,
+        limiterAttackMs: 0.8,
+        limiterReleaseMs: 180,
+        limiterLookaheadMs: 4,
+        limiterKneeDb: 3,
+        limiterHighCeilingDb: -1.2,
+        limiterLowCeilingDb: -2.4,
+        crossoverHz: 150,
+      ));
+
+      await Future.wait([
+        DspSettings.update((s) => s.copyWith(dvcDb: 2.0)),
+        DspSettings.update((s) => s.copyWith(limiterEnabled: false)),
+        DspSettings.update((s) => s.copyWith(dvcSmoothingMs: 64)),
+        DspSettings.update((s) => s.copyWith(limiterHighCeilingDb: -0.8)),
+      ]);
+
+      final restored = await DspSettings.load();
+      expect(restored.dvcDb, 2);
+      expect(restored.dvcEnabled, isFalse);
+      expect(restored.dvcSmoothing, isFalse);
+      expect(restored.dvcSmoothingMs, 64);
+      expect(restored.limiterEnabled, isFalse);
+      expect(restored.limiterMode, 3);
+      expect(restored.limiterThresholdDb, -5);
+      expect(restored.limiterAttackMs, 0.8);
+      expect(restored.limiterReleaseMs, 180);
+      expect(restored.limiterLookaheadMs, 4);
+      expect(restored.limiterKneeDb, 3);
+      expect(restored.limiterHighCeilingDb, -0.8);
+      expect(restored.limiterLowCeilingDb, -2.4);
+      expect(restored.crossoverHz, 150);
+    });
+
     test('non-finite EQ band values fall back safely', () {
       final settings = DspSettings(eqBandGainsDb: [double.infinity, 20, -20]);
       expect(settings.eqBandGainsDb, [0, 12, -12]);
