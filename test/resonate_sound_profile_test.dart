@@ -101,14 +101,14 @@ void main() {
       expect(
         () => ResonateSoundProfile.fromJson({
           ...base,
-          'name': 'x' * 65,
+          'name': List<String>.filled(65, 'x').join(),
         }),
         throwsFormatException,
       );
       expect(
         () => ResonateSoundProfile.fromJson({
           ...base,
-          'description': 'x' * 281,
+          'description': List<String>.filled(281, 'x').join(),
         }),
         throwsFormatException,
       );
