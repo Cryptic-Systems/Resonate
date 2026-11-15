@@ -289,86 +289,29 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                           const SizedBox(height: 12),
-                          SizedBox(
-                            height: 326,
-                            child: GridView.builder(
-                              scrollDirection: Axis.horizontal,
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                mainAxisExtent: 174,
-                                mainAxisSpacing: 10,
-                                crossAxisSpacing: 10,
-                              ),
-                              itemCount: eq.builtInSoundProfiles.length,
-                              itemBuilder: (context, index) {
-                                final profile = eq.builtInSoundProfiles[index];
-                                final accent = _profileColor(profile.name);
-                                final selected = eq.preset == profile.name;
-                                return Material(
-                                  color: Colors.transparent,
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(20),
-                                    onTap: eq.isEnabled
-                                        ? () => _applySoundProfile(context, profile)
-                                        : null,
-                                    child: Ink(
-                                      padding: const EdgeInsets.all(13),
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(20),
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
-                                          colors: [
-                                            accent.withValues(alpha: selected ? 0.34 : 0.20),
-                                            Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
-                                          ],
-                                        ),
-                                        border: Border.all(
-                                          color: selected ? accent : accent.withValues(alpha: 0.38),
-                                          width: selected ? 1.8 : 1,
-                                        ),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Container(
-                                                width: 34,
-                                                height: 34,
-                                                decoration: BoxDecoration(
-                                                  color: accent.withValues(alpha: 0.20),
-                                                  borderRadius: BorderRadius.circular(11),
-                                                ),
-                                                child: Icon(_profileIcon(profile.name), color: accent, size: 20),
-                                              ),
-                                              const Spacer(),
-                                              if (selected)
-                                                Icon(Icons.check_circle_rounded, color: accent, size: 20),
-                                            ],
-                                          ),
-                                          const Spacer(),
-                                          Text(
-                                            profile.name.replaceFirst('Resonate ', ''),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            _profileDescription(profile.name),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context).textTheme.bodySmall,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
+                          _buildProfileGrid(
+                            context,
+                            eq,
+                            eq.builtInSoundProfiles
+                                .where((profile) => profile.category != 'Resonate Advanced')
+                                .toList(),
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            'Advanced sound profiles',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Full 31-band parametric shaping with tighter filter focus, automatic headroom and peak control.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 12),
+                          _buildProfileGrid(
+                            context,
+                            eq,
+                            eq.advancedSoundProfiles,
                           ),
                         ],
                       ),
@@ -805,6 +748,95 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildProfileGrid(
+    BuildContext context,
+    EqualizerProvider eq,
+    List<ResonateSoundProfile> profiles,
+  ) {
+    return SizedBox(
+      height: 326,
+      child: GridView.builder(
+        scrollDirection: Axis.horizontal,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisExtent: 174,
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+        ),
+        itemCount: profiles.length,
+        itemBuilder: (context, index) {
+          final profile = profiles[index];
+          final accent = _profileColor(profile.name);
+          final selected = eq.preset == profile.name;
+          return Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: eq.isEnabled
+                  ? () => _applySoundProfile(context, profile)
+                  : null,
+              child: Ink(
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      accent.withValues(alpha: selected ? 0.34 : 0.20),
+                      Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
+                    ],
+                  ),
+                  border: Border.all(
+                    color: selected ? accent : accent.withValues(alpha: 0.38),
+                    width: selected ? 1.8 : 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.20),
+                            borderRadius: BorderRadius.circular(11),
+                          ),
+                          child: Icon(_profileIcon(profile.name), color: accent, size: 20),
+                        ),
+                        const Spacer(),
+                        if (selected)
+                          Icon(Icons.check_circle_rounded, color: accent, size: 20),
+                      ],
+                    ),
+                    const Spacer(),
+                    Text(
+                      profile.name.replaceFirst('Resonate ', ''),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _profileDescription(profile.name),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
