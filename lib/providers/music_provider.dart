@@ -607,6 +607,15 @@ class MusicProvider extends ChangeNotifier {
   bool get crossfadeEnabled => _crossfadeEnabled;
   int get crossfadeDurationMs => _crossfadeDurationMs;
   String get crossfadeFadeType => _crossfadeFadeType;
+
+  /// Re-evaluates the current track after crossfade preferences are restored
+  /// or changed. This closes the startup race where the first position events
+  /// arrive before the persisted feature flag has been hydrated.
+  void onCrossfadeSettingsRestored() {
+    if (_disposed) return;
+    if (_media3ProviderSession != null && !_media3ProviderSessionActive) return;
+    _maybeStartAutomaticCrossfade(currentPosition);
+  }
   String get activeEngineLabel => _media3ProviderSessionActive
       ? (_media3ShadowState?.activeDeckId ?? 'A')
       : _authority.engineLabel(this);
@@ -968,6 +977,9 @@ class MusicProvider extends ChangeNotifier {
     } else {
       this._reconcileMedia3ProviderSession();
     }
+    // The canonical session may have been playing while crossfade preference
+    // hydration was still in flight. Re-evaluate immediately after handoff.
+    onCrossfadeSettingsRestored();
     unawaited(ResonateDiagnostics.record('media3_provider_session_handoff_enabled', {
       'queueLength': _queue.length,
       'queueIndex': _queueIndex,
@@ -1285,11 +1297,13 @@ class MusicProvider extends ChangeNotifier {
     }
 
     unawaited(_synchronizeModePlaybackBoundary());
+    if (enabled) onCrossfadeSettingsRestored();
     notifyListeners();
   }
 
   Future<void> setCrossfadeDuration(int milliseconds) async {
     _crossfadeSettings.setDurationMs(milliseconds);
+    onCrossfadeSettingsRestored();
     notifyListeners();
   }
 
@@ -2252,7 +2266,13 @@ class MusicProvider extends ChangeNotifier {
     // Only the active engine's loaded-source duration is trustworthy for
     // crossfade timing. currentDuration may be metadata or belong to the prior
     // source after a background/route transition, so never use it to arm a fade.
-    final duration = media3Session?.duration ?? audioPlayer.duration;
+    // Once Media3 is injected, its duration is authoritative even while
+    // temporarily unavailable during startup/resume. Falling back through
+    // audioPlayer here can touch the retired just_audio deck and arm a fade
+    // against stale duration/position data.
+    final duration = media3Session != null
+        ? media3Session.duration
+        : audioPlayer.duration;
     if (duration == null || duration <= Duration.zero) {
       final songId = currentSong?.id;
       if (songId != null && _lastCrossfadeDurationUnavailableSongId != songId) {
