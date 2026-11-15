@@ -1366,8 +1366,7 @@ class EqualizerProvider extends ChangeNotifier {
   Future<void> _loadCustomSoundProfiles(SharedPreferences prefs) async {
     try {
       final raw = prefs.getString('resonate_custom_sound_profiles_v1');
-      if (raw == null || raw.isEmpty) return;
-      final decoded = jsonDecode(raw);
+      final decoded = raw == null || raw.isEmpty ? const <dynamic>[] : jsonDecode(raw);
       if (decoded is! List) throw const FormatException('Invalid sound profile list.');
       final loaded = <ResonateSoundProfile>[];
       final occupied = builtInSoundProfiles.map((p) => p.name.toLowerCase()).toSet();
@@ -1384,8 +1383,41 @@ class EqualizerProvider extends ChangeNotifier {
           settings: profile.settings,
         ));
       }
+
+      // Migrate older EQ-only custom presets without discarding the rest of
+      // the user's current DSP configuration. Their old curves become the EQ
+      // stage of a complete profile; all other stages retain current values.
+      final current = await DspSettings.load();
+      for (final legacy in customPresets) {
+        if (occupied.contains(legacy.name.toLowerCase())) continue;
+        final gains = normalizePresetGains(legacy.gains);
+        final filters = [
+          for (var i = 0; i < studioFrequencies.length; i++)
+            ParametricEqBand(
+              frequencyHz: studioFrequencies[i],
+              gainDb: gains[i],
+              q: 1,
+              type: 0,
+            ),
+        ];
+        final slug = legacy.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+        loaded.add(ResonateSoundProfile(
+          id: 'custom:$slug',
+          name: legacy.name,
+          description: 'Migrated from an earlier EQ-only custom preset.',
+          category: 'Custom',
+          settings: current.copyWith(
+            preset: legacy.name,
+            eqBandGainsDb: gains,
+            parametricEqBands: filters,
+          ),
+        ));
+        occupied.add(legacy.name.toLowerCase());
+      }
       customSoundProfiles = loaded;
-      if (loaded.length != decoded.length) await _saveCustomSoundProfiles();
+      if (raw == null || loaded.length != decoded.length) {
+        await _saveCustomSoundProfiles();
+      }
     } catch (e) {
       debugPrint('custom sound profiles load failed: $e');
       customSoundProfiles = [];
