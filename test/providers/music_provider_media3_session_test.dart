@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:resonate/models/song.dart';
 import 'package:resonate/playback/queue_store.dart';
 import 'package:resonate/providers/music_provider.dart';
+import 'package:resonate/providers/crossfade_provider.dart';
 import 'package:resonate/services/audio_service_handler.dart';
 import 'package:resonate/services/playback_backend.dart';
 import 'package:resonate/services/playback_engine_session.dart';
@@ -1064,6 +1065,103 @@ void main() {
       expect(session.calls, contains('stop'));
       expect(provider.isPlaying, isFalse);
       expect(provider.media3ProviderSessionActive, isTrue);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('restores persisted crossfade and arms Media3 without a UI toggle', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'crossfade_enabled': true,
+        'crossfade_duration': 500.0,
+        'crossfade_fade_type': 'ease_in_out',
+      });
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('restored-fade-out');
+      final second = _song('restored-fade-in');
+
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
+      session.positionValue = const Duration(milliseconds: 177600);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(session.preloadedSong, isNull,
+          reason: 'Crossfade preferences have not been hydrated yet.');
+
+      final crossfade = CrossfadeProvider(music: provider);
+      try {
+        await crossfade.ready;
+        expect(crossfade.isEnabled, isTrue);
+        expect(crossfade.duration, 500.0);
+        expect(provider.crossfadeEnabled, isTrue);
+        expect(provider.crossfadeDurationMs, 500);
+        expect(provider.crossfadeFadeType, 'ease_in_out');
+
+        for (var attempt = 0;
+            attempt < 40 && session.preloadedSong == null;
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(session.preloadedSong?.id, second.id,
+            reason: 'Restored settings must immediately arm the current track preload.');
+
+        session.positionValue = const Duration(milliseconds: 178000);
+        session.states.add(_state(
+          song: first,
+          queueIndex: 0,
+          playing: true,
+          playWhenReady: true,
+          position: session.positionValue,
+        ));
+        for (var attempt = 0;
+            attempt < 60 && session.crossfadeDuration == null;
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(session.crossfadeDuration, const Duration(milliseconds: 500));
+        expect(provider.currentSong?.id, second.id);
+      } finally {
+        crossfade.dispose();
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('does not consult retired just_audio duration when Media3 duration is unavailable', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('duration-unavailable-out');
+      final second = _song('duration-unavailable-in');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
+      await provider.setCrossfadeDuration(500);
+
+      session.durationValue = null;
+      session.positionValue = const Duration(seconds: 178);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      expect(session.preloadedSong, isNull);
+      expect(session.crossfadeDuration, isNull);
+      expect(provider.debugLegacyEngineConstructed, isFalse,
+          reason: 'Media3 duration unavailability must not fall back to a retired legacy player.');
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
