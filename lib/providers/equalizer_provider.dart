@@ -1363,6 +1363,47 @@ class EqualizerProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _loadCustomSoundProfiles(SharedPreferences prefs) async {
+    try {
+      final raw = prefs.getString('resonate_custom_sound_profiles_v1');
+      if (raw == null || raw.isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) throw const FormatException('Invalid sound profile list.');
+      final loaded = <ResonateSoundProfile>[];
+      final occupied = builtInSoundProfiles.map((p) => p.name.toLowerCase()).toSet();
+      for (final item in decoded) {
+        if (item is! Map) continue;
+        final profile = ResonateSoundProfile.fromJson(Map<String, dynamic>.from(item));
+        if (profile.isBuiltIn || occupied.contains(profile.name.toLowerCase())) continue;
+        occupied.add(profile.name.toLowerCase());
+        loaded.add(ResonateSoundProfile(
+          id: profile.id,
+          name: profile.name,
+          description: profile.description,
+          category: 'Custom',
+          settings: profile.settings,
+        ));
+      }
+      customSoundProfiles = loaded;
+      if (loaded.length != decoded.length) await _saveCustomSoundProfiles();
+    } catch (e) {
+      debugPrint('custom sound profiles load failed: $e');
+      customSoundProfiles = [];
+    }
+  }
+
+  Future<void> _saveCustomSoundProfiles() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'resonate_custom_sound_profiles_v1',
+        jsonEncode(customSoundProfiles.map((profile) => profile.toJson()).toList()),
+      );
+    } catch (e) {
+      debugPrint('custom sound profiles save failed: $e');
+    }
+  }
+
   Future<void> _saveCustomPresets() async {
     try {
       final prefs = await SharedPreferences.getInstance();
