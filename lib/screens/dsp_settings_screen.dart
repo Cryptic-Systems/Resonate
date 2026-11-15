@@ -47,14 +47,6 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
   Future<void> _load() async {
     final canonical = await DspSettings.load();
     if (!mounted) return;
-    final liveStatus = await AudioEffectsBridge.getLiveDspStatus();
-    if (!mounted) return;
-    final resolvedSettings = canonical.copyWith(
-      speakerProtectionEnabled:
-          liveStatus?['speakerMode'] as bool? ?? canonical.speakerProtectionEnabled,
-      virtualBassAmount:
-          (liveStatus?['virtualBass'] as num?)?.toDouble() ?? canonical.virtualBassAmount,
-    );
     final eq = context.read<EqualizerProvider>();
     final restored = canonical.parametricEqBands;
     final bands = List<ParametricEqBand>.generate(
@@ -70,7 +62,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
     );
     if (!mounted) return;
     setState(() {
-      _settings = resolvedSettings;
+      _settings = canonical;
       _bands = bands;
       _loading = false;
     });
