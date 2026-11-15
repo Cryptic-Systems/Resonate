@@ -125,18 +125,32 @@ class EqualizerProvider extends ChangeNotifier {
     if (gains.isEmpty) {
       return List<double>.filled(studioFrequencies.length, 0.0);
     }
+    if (gains.length == 1) {
+      return List<double>.filled(
+        studioFrequencies.length,
+        gains.first.clamp(studioMinDb, studioMaxDb).toDouble(),
+      );
+    }
+    // EQ frequency axes are logarithmic. Interpolating in linear Hz bends
+    // legacy curves toward the upper edge of each octave and under-shapes
+    // the lower-mid / presence region between the old ten-band centers.
     final srcHz = gains.length == 10 ? _legacy10Hz : [
       for (var i = 0; i < gains.length; i++)
-        studioFrequencies.first +
-            (studioFrequencies.last - studioFrequencies.first) *
-                (i / (gains.length - 1).clamp(1, 1000)),
+        math.exp(
+          math.log(studioFrequencies.first) +
+              (math.log(studioFrequencies.last) -
+                      math.log(studioFrequencies.first)) *
+                  (i / (gains.length - 1)),
+        ),
     ];
     double at(double hz) {
       if (hz <= srcHz.first) return gains.first;
       if (hz >= srcHz.last) return gains.last;
+      final logHz = math.log(hz);
       for (var i = 0; i < srcHz.length - 1; i++) {
         if (hz >= srcHz[i] && hz <= srcHz[i + 1]) {
-          final t = (hz - srcHz[i]) / (srcHz[i + 1] - srcHz[i]);
+          final t = (logHz - math.log(srcHz[i])) /
+              (math.log(srcHz[i + 1]) - math.log(srcHz[i]));
           return gains[i] + (gains[i + 1] - gains[i]) * t;
         }
       }
@@ -485,33 +499,175 @@ class EqualizerProvider extends ChangeNotifier {
         ...customPresets,
       ];
 
-  /// Complete DSP snapshots built from the established Resonate tone curves.
-  /// Other processing stages retain the conservative canonical DSP defaults.
-  List<ResonateSoundProfile> get builtInSoundProfiles => resonatePresets.map((item) {
-        final gains = expandGainsToStudio(item.gains);
-        final filters = [
-          for (var i = 0; i < studioFrequencies.length; i++)
-            ParametricEqBand(
-              frequencyHz: studioFrequencies[i],
-              gainDb: gains[i],
-              q: 1,
-              type: 0,
-            ),
-        ];
-        final slug = item.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
-        return ResonateSoundProfile(
-          id: 'resonate:$slug',
-          name: item.name,
-          description: 'Resonate tone curve with the standard DSP safety configuration.',
-          category: item.category,
-          isBuiltIn: true,
-          settings: DspSettings().copyWith(
-            preset: item.name,
-            eqBandGainsDb: gains,
-            parametricEqBands: filters,
+  ResonateSoundProfile _advancedProfile({
+    required String name,
+    required String description,
+    required Map<double, double> gains,
+    Map<double, double> qValues = const {},
+    Map<double, int> filterTypes = const {},
+    double preampDb = -3.0,
+    int limiterMode = 2,
+    double limiterThresholdDb = -1.2,
+    double limiterReleaseMs = 75,
+    double limiterAttackMs = 0.5,
+    double limiterLookaheadMs = 4,
+    double limiterKneeDb = 2,
+    double crossoverHz = 120,
+  }) {
+    final filters = [
+      for (final hz in studioFrequencies)
+        ParametricEqBand(
+          frequencyHz: hz,
+          gainDb: gains[hz] ?? 0,
+          q: qValues[hz] ?? 1.0,
+          type: filterTypes[hz] ?? 0,
+        ),
+    ];
+    return ResonateSoundProfile(
+      id: 'resonate:${name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-') }',
+      name: name,
+      description: description,
+      category: 'Resonate Advanced',
+      isBuiltIn: true,
+      settings: DspSettings(
+        preset: name,
+        eqBandGainsDb: filters.map((band) => band.gainDb).toList(),
+        parametricEqBands: filters,
+        preampDb: preampDb,
+        autoEqHeadroom: true,
+        dvcEnabled: true,
+        dvcDb: 0,
+        dvcSmoothing: true,
+        dvcSmoothingMs: 18,
+        limiterEnabled: true,
+        limiterMode: limiterMode,
+        limiterThresholdDb: limiterThresholdDb,
+        limiterReleaseMs: limiterReleaseMs,
+        limiterAttackMs: limiterAttackMs,
+        limiterLookaheadMs: limiterLookaheadMs,
+        limiterKneeDb: limiterKneeDb,
+        limiterHighCeilingDb: -0.6,
+        limiterLowCeilingDb: -0.4,
+        crossoverHz: crossoverHz,
+      ),
+    );
+  }
+
+  /// More assertive, deliberately engineered profiles. Each uses the complete
+  /// 31-section parametric bank plus headroom and true-peak protection.
+  /// These are creative starting points, not headphone-specific corrections.
+  List<ResonateSoundProfile> get advancedSoundProfiles => [
+        _advancedProfile(
+          name: 'Resonate Subforge',
+          description: 'Deep sub-bass, physical kick weight and a clear upper-mid edge.',
+          gains: {
+            20: 2.0, 25: 3.0, 32: 4.2, 40: 4.8, 50: 5.0, 63: 4.6,
+            80: 3.8, 100: 3.0, 125: 2.2, 160: 1.2, 200: 0.3,
+            250: -0.8, 315: -1.2, 400: -0.8, 500: -0.2,
+            800: 0.5, 1000: 0.8, 1250: 1.0, 1600: 1.4,
+            2000: 1.8, 2500: 1.8, 3150: 1.4, 4000: 0.8,
+          },
+          qValues: {40: 0.72, 63: 0.85, 100: 0.95, 250: 1.15, 315: 1.2, 2000: 1.1},
+          filterTypes: {40: 1},
+          preampDb: -5.5,
+          limiterMode: 2,
+          limiterThresholdDb: -1.4,
+          limiterReleaseMs: 90,
+          limiterAttackMs: 0.4,
+          limiterLookaheadMs: 5,
+        ),
+        _advancedProfile(
+          name: 'Resonate Midrange Atlas',
+          description: 'Fills low-mid body, vocal fundamentals and upper-mid presence without a treble spike.',
+          gains: {
+            63: 0.4, 80: 0.8, 100: 1.0, 125: 1.2, 160: 1.0, 200: 0.8,
+            250: 0.6, 315: 1.2, 400: 1.6, 500: 2.0, 630: 2.2,
+            800: 2.4, 1000: 2.6, 1250: 2.8, 1600: 2.8, 2000: 2.6,
+            2500: 2.2, 3150: 1.8, 4000: 1.2, 5000: 0.6,
+          },
+          qValues: {
+            315: 1.25, 400: 1.3, 500: 1.35, 630: 1.4, 800: 1.45,
+            1000: 1.5, 1250: 1.5, 1600: 1.45, 2000: 1.35, 2500: 1.25,
+          },
+          preampDb: -3.8,
+          limiterMode: 2,
+          limiterThresholdDb: -1.3,
+          limiterReleaseMs: 65,
+          limiterAttackMs: 0.35,
+          limiterLookaheadMs: 4,
+        ),
+        _advancedProfile(
+          name: 'Resonate Titan Pulse',
+          description: 'High-impact bass and forward mids for dense, energetic mixes.',
+          gains: {
+            20: 1.5, 25: 2.4, 32: 3.5, 40: 4.2, 50: 4.4, 63: 4.1,
+            80: 3.6, 100: 3.2, 125: 2.7, 160: 2.0, 200: 1.2,
+            250: 0.2, 315: -0.8, 400: -0.5, 500: 0.4,
+            630: 0.9, 800: 1.4, 1000: 1.8, 1250: 2.2,
+            1600: 2.5, 2000: 2.8, 2500: 2.6, 3150: 2.1,
+            4000: 1.4, 5000: 0.8,
+          },
+          qValues: {40: 0.75, 63: 0.85, 100: 0.95, 315: 1.2, 2000: 1.3},
+          filterTypes: {40: 1},
+          preampDb: -5.8,
+          limiterMode: 2,
+          limiterThresholdDb: -1.5,
+          limiterReleaseMs: 85,
+          limiterAttackMs: 0.3,
+          limiterLookaheadMs: 5,
+        ),
+        _advancedProfile(
+          name: 'Resonate Velvet Drive',
+          description: 'Dense, warm low mids with a smooth vocal and instrument body.',
+          gains: {
+            32: 0.8, 40: 1.2, 50: 1.6, 63: 2.0, 80: 2.3, 100: 2.5,
+            125: 2.4, 160: 2.2, 200: 1.8, 250: 1.5, 315: 1.3,
+            400: 1.2, 500: 1.2, 630: 1.1, 800: 1.0, 1000: 0.9,
+            1250: 0.8, 1600: 0.6, 2000: 0.4, 2500: 0.2,
+          },
+          qValues: {80: 0.9, 125: 1.0, 250: 1.1, 400: 1.15, 630: 1.2, 1000: 1.2},
+          filterTypes: {63: 1},
+          preampDb: -3.2,
+          limiterMode: 3,
+          limiterThresholdDb: -1.4,
+          limiterReleaseMs: 100,
+          limiterAttackMs: 0.7,
+          limiterLookaheadMs: 2,
+          limiterKneeDb: 3,
+          crossoverHz: 150,
+        ),
+      ];
+
+  /// Complete DSP snapshots built from Resonate's original tone curves.
+  /// Other processing stages retain the conservative canonical defaults.
+  List<ResonateSoundProfile> get builtInSoundProfiles {
+    final core = resonatePresets.map((item) {
+      final gains = expandGainsToStudio(item.gains);
+      final filters = [
+        for (var i = 0; i < studioFrequencies.length; i++)
+          ParametricEqBand(
+            frequencyHz: studioFrequencies[i],
+            gainDb: gains[i],
+            q: 1,
+            type: 0,
           ),
-        );
-      }).toList(growable: false);
+      ];
+      final slug = item.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+      return ResonateSoundProfile(
+        id: 'resonate:$slug',
+        name: item.name,
+        description: 'Resonate tone curve with the standard DSP safety configuration.',
+        category: item.category,
+        isBuiltIn: true,
+        settings: DspSettings().copyWith(
+          preset: item.name,
+          eqBandGainsDb: gains,
+          parametricEqBands: filters,
+        ),
+      );
+    }).toList(growable: false);
+    return [...core, ...advancedSoundProfiles];
+  }
 
   List<ResonateSoundProfile> get allSoundProfiles => [
         ...builtInSoundProfiles,
