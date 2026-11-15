@@ -38,11 +38,6 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
     _load();
   }
 
-  void _refreshStatus() {
-    if (!mounted) return;
-    setState(() => _statusFuture = AudioEffectsBridge.getLiveDspStatus());
-  }
-
   Future<void> _load() async {
     final canonical = await DspSettings.load();
     if (!mounted) return;
@@ -191,7 +186,12 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
   }
 
   void _changeBand(int index, ParametricEqBand band) {
-    setState(() => _bands[index] = band.copyWith());
+    final next = band.copyWith();
+    if (_localSliderChangeDepth > 0) {
+      _bands[index] = next;
+    } else {
+      setState(() => _bands[index] = next);
+    }
   }
 
   double _frequencyToPosition(double hz) =>
@@ -319,11 +319,20 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
             ),
           ],
         ),
-        Text('Frequency · ' + band.frequencyHz.toStringAsFixed(0) + ' Hz'),
-        Slider(
-          value: _frequencyToPosition(band.frequencyHz),
-          onChanged: (position) => _changeBand(
-            index, band.copyWith(frequencyHz: _positionToFrequency(position))),
+        _DspFrequencySlider(
+          frequencyHz: band.frequencyHz,
+          position: _frequencyToPosition(band.frequencyHz),
+          onChanged: (position) {
+            _localSliderChangeDepth++;
+            try {
+              _changeBand(
+                index,
+                band.copyWith(frequencyHz: _positionToFrequency(position)),
+              );
+            } finally {
+              _localSliderChangeDepth--;
+            }
+          },
           onChangeEnd: (_) => _commit(pushBands: true),
         ),
         if (band.type < 3)
@@ -658,6 +667,59 @@ class _DspValueSliderState extends State<_DspValueSlider> {
           divisions: widget.divisions,
           onChanged: (next) {
             setState(() => _value = next);
+            widget.onChanged(next);
+          },
+          onChangeEnd: widget.onChangeEnd,
+        ),
+      ],
+    );
+  }
+}
+
+
+class _DspFrequencySlider extends StatefulWidget {
+  const _DspFrequencySlider({
+    required this.frequencyHz,
+    required this.position,
+    required this.onChanged,
+    required this.onChangeEnd,
+  });
+
+  final double frequencyHz;
+  final double position;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onChangeEnd;
+
+  @override
+  State<_DspFrequencySlider> createState() => _DspFrequencySliderState();
+}
+
+class _DspFrequencySliderState extends State<_DspFrequencySlider> {
+  late double _position;
+
+  @override
+  void initState() {
+    super.initState();
+    _position = widget.position;
+  }
+
+  @override
+  void didUpdateWidget(covariant _DspFrequencySlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.position != widget.position) _position = widget.position;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hz = 20.0 * math.pow(1000.0, _position).toDouble();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Frequency · ' + hz.toStringAsFixed(0) + ' Hz'),
+        Slider(
+          value: _position.clamp(0.0, 1.0).toDouble(),
+          onChanged: (next) {
+            setState(() => _position = next);
             widget.onChanged(next);
           },
           onChangeEnd: widget.onChangeEnd,
