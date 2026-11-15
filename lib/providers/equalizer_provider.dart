@@ -745,6 +745,7 @@ class EqualizerProvider extends ChangeNotifier {
     final occupied = <String>{
       ...builtInPresets.map((item) => item.name.toLowerCase()),
       ...resonatePresets.map((item) => item.name.toLowerCase()),
+      ...advancedSoundProfileCatalog.map((item) => item.name.toLowerCase()),
       ...existingCustomPresets
           .where((item) => item.name != replacingName)
           .map((item) => item.name.toLowerCase()),
