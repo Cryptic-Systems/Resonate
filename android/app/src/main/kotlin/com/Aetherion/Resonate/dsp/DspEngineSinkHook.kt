@@ -65,7 +65,6 @@ object DspEngineSinkHook {
     @JvmStatic
     fun forgetProcessor(processor: DspEngineAudioProcessor) {
         processorsByDeck.values.forEach { it.remove(processor) }
-        processorsByDeck.entries.removeIf { it.value.isEmpty() }
     }
 
     /** Activates a deck's native handle immediately before it is allowed to output. */
