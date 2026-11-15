@@ -95,8 +95,6 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
     final equalizer = context.read<EqualizerProvider>();
     _saving.value = true;
     try {
-      final liveStatus = await AudioEffectsBridge.getLiveDspStatus();
-      if (!mounted) return;
       if (pushBands) {
         await equalizer.setParametricEqBands(
           bandsSnapshot,
@@ -370,7 +368,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                   (i) => ParametricEqBand(
                     frequencyHz: EqualizerProvider.studioFrequencies[i],
                     gainDb: 0,
-                    q: 1,
+                    q: 4.3,
                     type: 0,
                   ),
                 );
