@@ -591,7 +591,7 @@ class Media3PlaybackService : MediaSessionService() {
             return true
         }
         if (crossfadeStatus == "waiting_ready" || crossfadeStatus == "ready") {
-            standbyPlayer.pause()
+            standbyPlayer?.pause()
             DspEngineSinkHook.suspendDeck(standbyDeckId())
             // Keep waiting_ready while preparation is incomplete. The standby
             // readiness listener must remain armed so it can finish the
@@ -647,7 +647,7 @@ class Media3PlaybackService : MediaSessionService() {
 
     /** Same promotion-safe transport barrier as [skipToNext]. */
     fun skipToPrevious(): Boolean {
-        if (!::activePlayer.isInitialized || !::standbyPlayer.isInitialized) return false
+        if (!::activePlayer.isInitialized) return false
         clearPreload()
         activePlayer.seekToPreviousMediaItem()
         return true
