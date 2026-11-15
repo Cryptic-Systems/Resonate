@@ -527,7 +527,7 @@ class Media3PlaybackService : MediaSessionService() {
                 )
                 applyDeckVolumes()
                 if (progress >= 1f) {
-                    val incomingPlayer = standbyPlayer ?: return@Runnable
+                    val incomingPlayer = standbyPlayer ?: return
                     val oldPlayer = activePlayer
                     // Close the outgoing output before changing the gain policy.
                     // At the end of the ramp it is still playing; resetting the
