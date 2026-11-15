@@ -651,7 +651,7 @@ class EqualizerProvider extends ChangeNotifier {
           ParametricEqBand(
             frequencyHz: studioFrequencies[i],
             gainDb: gains[i],
-            q: 1,
+            q: 4.3,
             type: 0,
           ),
       ];
@@ -783,7 +783,7 @@ class EqualizerProvider extends ChangeNotifier {
               : ParametricEqBand(
                   frequencyHz: studioBands[index].frequencyHz,
                   gainDb: studioBands[index].gainDb,
-                  q: 1,
+                  q: 4.3,
                   type: 0,
                 ),
           growable: true,
@@ -945,7 +945,7 @@ class EqualizerProvider extends ChangeNotifier {
     return studioBands.map((band) => ParametricEqBand(
       frequencyHz: band.frequencyHz,
       gainDb: band.gainDb,
-      q: 1,
+      q: 4.3,
       type: 0,
     )).toList(growable: false);
   }
@@ -1442,7 +1442,7 @@ class EqualizerProvider extends ChangeNotifier {
               ParametricEqBand(
                 frequencyHz: studioFrequencies[i],
                 gainDb: i < source.eqBandGainsDb.length ? source.eqBandGainsDb[i] : 0,
-                q: 1,
+                q: 4.3,
                 type: 0,
               ),
           ];
@@ -1669,7 +1669,7 @@ class EqualizerProvider extends ChangeNotifier {
             ParametricEqBand(
               frequencyHz: studioFrequencies[i],
               gainDb: gains[i],
-              q: 1,
+              q: 4.3,
               type: 0,
             ),
         ];
