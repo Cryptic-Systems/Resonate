@@ -118,8 +118,40 @@ void main() {
       expect(restored.parametricEqBands, hasLength(31));
       expect(restored.parametricEqBands[17].frequencyHz, 1000);
       expect(restored.parametricEqBands[17].gainDb, 5);
-      expect(restored.parametricEqBands[17].q, 1);
+      expect(restored.parametricEqBands[17].q, 4.3);
       expect(restored.parametricEqBands[17].type, 0);
+    });
+
+    test('schema v4 broad studio filters migrate but tuned parametric Q is preserved', () {
+      const frequencies = [
+        20.0, 25, 32, 40, 50, 63, 80, 100, 125, 160,
+        200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600,
+        2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000,
+      ];
+      final oldStudioBank = DspSettings.fromJson({
+        'version': 4,
+        'parametricEqBands': [
+          for (final hz in frequencies)
+            {'frequencyHz': hz, 'gainDb': 0, 'q': 1, 'type': 0},
+        ],
+      });
+      expect(oldStudioBank.parametricEqBands.every((band) => band.q == 4.3), isTrue);
+      expect(oldStudioBank.toJson()['version'], 5);
+
+      final customBank = DspSettings.fromJson({
+        'version': 4,
+        'parametricEqBands': [
+          for (var i = 0; i < frequencies.length; i++)
+            {
+              'frequencyHz': frequencies[i],
+              'gainDb': 0,
+              'q': i == 17 ? 1.0 : 2.5,
+              'type': 0,
+            },
+        ],
+      });
+      expect(customBank.parametricEqBands[17].q, 1.0);
+      expect(customBank.parametricEqBands[16].q, 2.5);
     });
 
     test('an explicitly empty parametric list stays empty', () {
