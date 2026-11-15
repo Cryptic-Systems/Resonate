@@ -90,6 +90,60 @@ void main() {
       );
     });
 
+    test('rejects oversized and malformed portable profile data', () {
+      final base = {
+        'format': ResonateSoundProfile.format,
+        'version': ResonateSoundProfile.schemaVersion,
+        'id': 'profile:test',
+        'name': 'Test',
+        'settings': DspSettings().toJson(),
+      };
+      expect(
+        () => ResonateSoundProfile.fromJson({
+          ...base,
+          'name': 'x' * 65,
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => ResonateSoundProfile.fromJson({
+          ...base,
+          'description': 'x' * 281,
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => ResonateSoundProfile.fromJson({
+          ...base,
+          'settings': {
+            ...DspSettings().toJson(),
+            'parametricEqBands': List.generate(
+              32,
+              (index) => {
+                'frequencyHz': 100 + index,
+                'gainDb': 0,
+                'q': 1,
+                'type': 0,
+              },
+            ),
+          },
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => ResonateSoundProfile.fromJson({
+          ...base,
+          'settings': {
+            ...DspSettings().toJson(),
+            'parametricEqBands': [
+              {'frequencyHz': 100, 'gainDb': 0, 'q': 1, 'type': 8},
+            ],
+          },
+        }),
+        throwsFormatException,
+      );
+    });
+
     test('retains built-in metadata without allowing it to alter DSP schema', () {
       final profile = ResonateSoundProfile(
         id: 'resonate:signature',
