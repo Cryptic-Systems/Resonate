@@ -200,6 +200,21 @@ class AudioEffectsProvider extends ChangeNotifier {
     }
   }
 
+  /// Synchronize the session-bound effects represented by a full sound profile.
+  /// The method reuses the serialized A/B session queue so both decks receive
+  /// the same settings before either can become audible.
+  Future<void> applySoundProfileSettings(DspSettings settings) async {
+    effectsEnabled = settings.effectsEnabled;
+    reverb = settings.reverbAmount.clamp(0.0, 1.0).toDouble();
+    virtualizer = settings.virtualizerAmount.clamp(0.0, 1.0).toDouble();
+    bassBoost = 0.0;
+    loudness = 0.0;
+    await _disableLegacyBassBoost();
+    await _applyNative();
+    await _save();
+    notifyListeners();
+  }
+
   Future<void> reset() async {
     effectsEnabled = true;
     reverb = 0.0;
