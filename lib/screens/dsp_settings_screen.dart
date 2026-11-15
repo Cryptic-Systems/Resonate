@@ -18,7 +18,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
   DspSettings? _settings;
   List<ParametricEqBand> _bands = <ParametricEqBand>[];
   bool _loading = true;
-  bool _saving = false;
+  final ValueNotifier<bool> _saving = ValueNotifier<bool>(false);
   Future<void> _commitTail = Future<void>.value();
   late Future<Map<String, dynamic>?> _statusFuture;
   int _localSliderChangeDepth = 0;
@@ -36,6 +36,12 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
     super.initState();
     _statusFuture = AudioEffectsBridge.getLiveDspStatus();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _saving.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -94,7 +100,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
     if (!mounted || current == null) return;
     final bandsSnapshot = _bands.map((band) => band.copyWith()).toList();
     final equalizer = context.read<EqualizerProvider>();
-    setState(() => _saving = true);
+    _saving.value = true;
     try {
       final liveStatus = await AudioEffectsBridge.getLiveDspStatus();
       final liveLinearGain = (liveStatus?['linearGain'] as num?)?.toDouble();
@@ -170,7 +176,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) _saving.value = false;
     }
   }
 
@@ -385,10 +391,15 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
               _commit(pushBands: true);
             },
           ),
-          IconButton(
-            tooltip: 'Apply DSP settings',
-            icon: const Icon(Icons.check_rounded),
-            onPressed: settings == null || _saving ? null : () => _commit(pushBands: true),
+          ValueListenableBuilder<bool>(
+            valueListenable: _saving,
+            builder: (context, saving, child) => IconButton(
+              tooltip: 'Apply DSP settings',
+              icon: const Icon(Icons.check_rounded),
+              onPressed: settings == null || saving
+                  ? null
+                  : () => _commit(pushBands: true),
+            ),
           ),
         ],
       ),
@@ -591,11 +602,15 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                       for (var i = 0; i < _bands.length; i++)
                         _parametricBandTile(i, _bands[i]),
                     ]),
-                    if (_saving)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 8),
-                        child: LinearProgressIndicator(),
-                      ),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _saving,
+                      builder: (context, saving, child) => saving
+                          ? const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: LinearProgressIndicator(),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
                   ],
                 ),
     );
