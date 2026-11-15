@@ -1155,8 +1155,15 @@ class EqualizerProvider extends ChangeNotifier {
       parametricEqBands: _effectiveParametricBands(),
     );
     final slug = uniqueName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+    var profileId = existing?.id ?? 'custom:$slug';
+    var idSuffix = 2;
+    while (existing == null &&
+        customSoundProfiles.any((profile) => profile.id == profileId)) {
+      profileId = 'custom:$slug-$idSuffix';
+      idSuffix++;
+    }
     final profile = ResonateSoundProfile(
-      id: existing?.id ?? 'custom:$slug',
+      id: profileId,
       name: uniqueName,
       description: existing?.description ?? 'User-created complete Resonate DSP configuration.',
       category: 'Custom',
@@ -1231,6 +1238,7 @@ class EqualizerProvider extends ChangeNotifier {
       ...customSoundProfiles.map((profile) => profile.name.toLowerCase()),
     };
     final staged = <ResonateSoundProfile>[];
+    final occupiedIds = customSoundProfiles.map((profile) => profile.id).toSet();
     for (final profile in incoming) {
       final baseName = profile.name.trim();
       var name = baseName;
@@ -1242,8 +1250,15 @@ class EqualizerProvider extends ChangeNotifier {
       }
       occupied.add(name.toLowerCase());
       final slug = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+      var profileId = 'custom:$slug';
+      var idSuffix = 2;
+      while (occupiedIds.contains(profileId)) {
+        profileId = 'custom:$slug-$idSuffix';
+        idSuffix++;
+      }
+      occupiedIds.add(profileId);
       staged.add(ResonateSoundProfile(
-        id: 'custom:$slug',
+        id: profileId,
         name: name,
         description: profile.description,
         category: 'Custom',
