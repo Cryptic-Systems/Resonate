@@ -341,7 +341,7 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetEqBands(
         bands[i].freq_hz = hasCenters ? static_cast<float>(centers[i])
                                      : static_cast<float>(20.0 * std::pow(1000.0, i / static_cast<double>(std::max(1, count - 1))));
         bands[i].gain_db = static_cast<float>(gains[i]);
-        bands[i].q = 1.f;
+        bands[i].q = count >= 24 ? 4.3f : 1.4f;
         bands[i].type = 0;
     }
     setEqBands(h, bands, count, enabled == JNI_TRUE);
