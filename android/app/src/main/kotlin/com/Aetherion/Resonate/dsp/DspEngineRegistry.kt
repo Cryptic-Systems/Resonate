@@ -142,6 +142,11 @@ object DspEngineRegistry {
     @Synchronized
     fun activeCount(): Int = handles.size
 
+    /** True when this physical deck currently owns the canonical MediaSession role. */
+    @JvmStatic
+    @Synchronized
+    fun isActiveDeck(deckId: String): Boolean = deckId == activeDeckId
+
     @JvmStatic
     @Synchronized
     fun snapshotHandles(): List<Long> = handles.values.map { it.handle }.filter { it != 0L }
