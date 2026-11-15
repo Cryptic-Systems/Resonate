@@ -11,9 +11,10 @@ class CrossfadeProvider extends ChangeNotifier {
   bool isEnabled = false;
   String fadeType = 'linear';
   bool _userChangedSettings = false;
+  late final Future<void> ready;
 
   CrossfadeProvider({required this.music}) {
-    unawaited(_load());
+    ready = _load();
   }
 
   Future<void> setDuration(double value) async {
@@ -89,6 +90,10 @@ class CrossfadeProvider extends ChangeNotifier {
         fadeType = 'linear';
       }
       await _syncPlayerSettings();
+      // Restored settings can arrive after playback has already started. Ask
+      // the canonical player to evaluate its current position immediately;
+      // do not wait for the next user toggle or track-state event.
+      music.onCrossfadeSettingsRestored();
       notifyListeners();
     } catch (e) {
       debugPrint('Crossfade settings load failed: $e');
