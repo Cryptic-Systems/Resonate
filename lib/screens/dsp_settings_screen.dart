@@ -21,6 +21,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
   bool _saving = false;
   Future<void> _commitTail = Future<void>.value();
   late Future<Map<String, dynamic>?> _statusFuture;
+  int _localSliderChangeDepth = 0;
 
   static const _filterNames = <String>[
     'Peak', 'Low shelf', 'High shelf', 'Low-pass', 'High-pass',
@@ -181,7 +182,12 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
   void _changeSettings(DspSettings Function(DspSettings) update) {
     final current = _settings;
     if (current == null) return;
-    setState(() => _settings = update(current));
+    final next = update(current);
+    if (_localSliderChangeDepth > 0) {
+      _settings = next;
+    } else {
+      setState(() => _settings = next);
+    }
   }
 
   void _changeBand(int index, ParametricEqBand band) {
@@ -223,25 +229,22 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
     required ValueChanged<double> onChangeEnd,
     int? divisions,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(child: Text(label)),
-            Text(value.toStringAsFixed(1) + ' ' + suffix,
-                style: Theme.of(context).textTheme.labelLarge),
-          ],
-        ),
-        Slider(
-          value: value.clamp(min, max).toDouble(),
-          min: min,
-          max: max,
-          divisions: divisions,
-          onChanged: onChanged,
-          onChangeEnd: onChangeEnd,
-        ),
-      ],
+    return _DspValueSlider(
+      label: label,
+      value: value,
+      min: min,
+      max: max,
+      suffix: suffix,
+      divisions: divisions,
+      onChanged: (next) {
+        _localSliderChangeDepth++;
+        try {
+          onChanged(next);
+        } finally {
+          _localSliderChangeDepth--;
+        }
+      },
+      onChangeEnd: onChangeEnd,
     );
   }
 
@@ -586,6 +589,80 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                       ),
                   ],
                 ),
+    );
+  }
+}
+
+
+/// Keeps high-frequency slider drag updates local to the control. The screen
+/// model is still updated synchronously, but unrelated DSP sections and live
+/// diagnostics are not rebuilt for every pointer movement.
+class _DspValueSlider extends StatefulWidget {
+  const _DspValueSlider({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.suffix,
+    required this.onChanged,
+    required this.onChangeEnd,
+    this.divisions,
+  });
+
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final String suffix;
+  final int? divisions;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onChangeEnd;
+
+  @override
+  State<_DspValueSlider> createState() => _DspValueSliderState();
+}
+
+class _DspValueSliderState extends State<_DspValueSlider> {
+  late double _value;
+
+  @override
+  void initState() {
+    super.initState();
+    _value = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(covariant _DspValueSlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value) _value = widget.value;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text(widget.label)),
+            Text(
+              _value.toStringAsFixed(1) + ' ' + widget.suffix,
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+          ],
+        ),
+        Slider(
+          value: _value.clamp(widget.min, widget.max).toDouble(),
+          min: widget.min,
+          max: widget.max,
+          divisions: widget.divisions,
+          onChanged: (next) {
+            setState(() => _value = next);
+            widget.onChanged(next);
+          },
+          onChangeEnd: widget.onChangeEnd,
+        ),
+      ],
     );
   }
 }
