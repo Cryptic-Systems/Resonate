@@ -98,6 +98,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
     }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        DspEngineSinkHook.trackProcessor(this, deckId)
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) {
             throw UnhandledAudioFormatException(inputAudioFormat)
         }
