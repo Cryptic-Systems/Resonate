@@ -169,7 +169,7 @@ inline double process_biquad(const BiquadCoeffs& c, BiquadState& s, double x) {
 struct EqBandParam {
     double freq_hz = 1000.0;
     double gain_db = 0.0;
-    double q = 1.4;
+    double q = 4.3;
     int    type = EQ_PEAK;
     bool   active = false;
 };
@@ -207,7 +207,7 @@ public:
         reset_state();
     }
 
-    static double q_for_freq(double hz) {
+    static double q_for_freq(double /*hz*/) {
         // The Resonate 31-band grid is spaced at one-third-octave intervals.
         // Q≈4.3 gives each band a useful, mostly independent footprint.
         return 4.3;
