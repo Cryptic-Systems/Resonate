@@ -742,6 +742,8 @@ class Media3PlaybackService : MediaSessionService() {
         DspEngineSinkHook.suspendDeck("B")
         if (::activePlayer.isInitialized) activePlayer.release()
         if (::standbyPlayer.isInitialized) standbyPlayer.release()
+        DspEngineSinkHook.forgetDeck("A")
+        DspEngineSinkHook.forgetDeck("B")
         auxiliaryPlayer?.release()
         auxiliaryPlayer = null
         if (instance === this) instance = null
