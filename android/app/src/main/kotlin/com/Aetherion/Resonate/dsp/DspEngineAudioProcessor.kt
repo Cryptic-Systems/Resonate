@@ -65,6 +65,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
     private var configuredRate: Int = 44100
     private var configuredChannels: Int = 2
     private var createAttempted = false
+    private var formatConfigured = false
     private var consecutiveProcessErrors = 0
 
     fun setNativeProcessEnabled(enabled: Boolean) = synchronized(engineLock) {
@@ -80,7 +81,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
                 Log.w(TAG, "id=$processorId failed to re-enable native DSP", t)
                 demoteToPassThrough("enable_exception")
             }
-        } else if (deckActive) {
+        } else if (deckActive && formatConfigured) {
             maybeCreateEngineLocked()
         }
     }
@@ -115,6 +116,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
 
         configuredRate = rate
         configuredChannels = ch
+        formatConfigured = true
 
         if (ch !in 1..MAX_SUPPORTED_CHANNELS) {
             Log.i(TAG, "id=$processorId channels=$ch unsupported by DSP; preserving PCM pass-through")
@@ -262,6 +264,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
         destroyEngine()
         createAttempted = false
         consecutiveProcessErrors = 0
+        DspEngineSinkHook.forgetProcessor(this)
     }
 
     private fun destroyEngine() = synchronized(engineLock) {
