@@ -150,6 +150,10 @@ void main() {
         'resonate signature',
       );
       expect(collide, 'resonate signature (Custom)');
+      expect(
+        EqualizerProvider.uniqueCustomPresetName('Resonate Subforge'),
+        'Resonate Subforge (Custom)',
+      );
 
       final second = EqualizerProvider.uniqueCustomPresetName(
         'resonate signature',
