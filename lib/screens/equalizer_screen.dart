@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/audio_effects_provider.dart';
 import '../providers/equalizer_provider.dart';
+import '../models/resonate_sound_profile.dart';
 import '../providers/music_provider.dart';
 import '../services/audio_effects_bridge.dart';
 import 'dsp_settings_screen.dart';
@@ -346,9 +347,9 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                                 mainAxisSpacing: 10,
                                 crossAxisSpacing: 10,
                               ),
-                              itemCount: EqualizerProvider.resonatePresets.length,
+                              itemCount: eq.builtInSoundProfiles.length,
                               itemBuilder: (context, index) {
-                                final profile = EqualizerProvider.resonatePresets[index];
+                                final profile = eq.builtInSoundProfiles[index];
                                 final accent = _profileColor(profile.name);
                                 final selected = eq.preset == profile.name;
                                 return Material(
@@ -357,7 +358,7 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(20),
                                     onTap: eq.isEnabled
-                                        ? () => eq.applyPreset(profile.name)
+                                        ? () => _applySoundProfile(context, profile)
                                         : null,
                                     child: Ink(
                                       padding: const EdgeInsets.all(13),
@@ -491,20 +492,20 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                                 ?.copyWith(fontWeight: FontWeight.w700)),
                           const SizedBox(height: 4),
                           Text(
-                            'Save the Studio bands you shape with the bookmark button. Your profiles stay available here.',
+                            'Saved profiles preserve your complete DSP configuration, not just the EQ curve.',
                             style: Theme.of(context).textTheme.bodySmall),
-                          if (eq.customPresets.isNotEmpty) ...[
+                          if (eq.customSoundProfiles.isNotEmpty) ...[
                             const SizedBox(height: 12),
                             Wrap(
                               spacing: 8,
                               runSpacing: 8,
                               children: [
-                                for (final profile in eq.customPresets)
+                                for (final profile in eq.customSoundProfiles)
                                   FilterChip(
                                     label: Text(profile.name),
                                     selected: eq.preset == profile.name,
                                     onSelected: eq.isEnabled
-                                        ? (_) => eq.applyPreset(profile.name)
+                                        ? (_) => _applySoundProfile(context, profile)
                                         : null,
                                     onDeleted: () => eq.deleteCustomPreset(profile.name),
                                     deleteIcon: const Icon(Icons.close, size: 16),
@@ -514,7 +515,7 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                           ] else ...[
                             const SizedBox(height: 10),
                             const Text(
-                              'No custom profiles yet. Shape the bands, then tap the bookmark icon to save one.'),
+                              'No custom profiles yet. Tune your sound and tap the bookmark icon to save a complete profile.'),
                           ],
                         ],
                       ),
