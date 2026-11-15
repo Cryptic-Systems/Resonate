@@ -47,7 +47,6 @@ static bool verify_midrange_boost(float frequency_hz) {
     std::vector<int16_t> pcm(frames * 2);
     double input_energy = 0.0;
     double output_energy = 0.0;
-    int measured_samples = 0;
 
     for (int block = 0; block < warmup_blocks + measured_blocks; ++block) {
         for (int i = 0; i < frames; ++i) {
@@ -71,7 +70,6 @@ static bool verify_midrange_boost(float frequency_hz) {
                 const double output = static_cast<double>(pcm[i]);
                 input_energy += input * input * 32767.0 * 32767.0;
                 output_energy += output * output;
-                ++measured_samples;
             }
         }
     }
