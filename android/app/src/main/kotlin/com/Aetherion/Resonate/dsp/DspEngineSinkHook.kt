@@ -61,6 +61,18 @@ object DspEngineSinkHook {
         }
     }
 
+    /** Re-registers a processor if Media3 resets and later reconfigures its sink. */
+    @JvmStatic
+    fun trackProcessor(processor: DspEngineAudioProcessor, deckId: String) {
+        processorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(processor)
+    }
+
+    /** Drops all processor references when the owning ExoPlayer is released. */
+    @JvmStatic
+    fun forgetDeck(deckId: String) {
+        processorsByDeck.remove(deckId)
+    }
+
     /** Removes released processor instances so a stale deck cannot be reactivated. */
     @JvmStatic
     fun forgetProcessor(processor: DspEngineAudioProcessor) {
