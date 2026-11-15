@@ -1135,7 +1135,8 @@ class EqualizerProvider extends ChangeNotifier {
     if (builtInNames.contains(uniqueName.toLowerCase())) {
       var suffix = 2;
       do {
-        uniqueName = '$trimmed (Custom $suffix)';
+        final marker = ' (Custom $suffix)';
+        uniqueName = '${trimmed.substring(0, math.max(1, 64 - marker.length)).trimRight()}$marker';
         suffix++;
       } while (builtInNames.contains(uniqueName.toLowerCase()));
     }
@@ -1235,7 +1236,8 @@ class EqualizerProvider extends ChangeNotifier {
       var name = baseName;
       var suffix = 1;
       while (occupied.contains(name.toLowerCase())) {
-        name = suffix == 1 ? '$baseName (Imported)' : '$baseName (Imported $suffix)';
+        final marker = suffix == 1 ? ' (Imported)' : ' (Imported $suffix)';
+        name = '${baseName.substring(0, math.max(1, 64 - marker.length)).trimRight()}$marker';
         suffix++;
       }
       occupied.add(name.toLowerCase());
