@@ -368,6 +368,7 @@ class ResonateApp extends StatelessWidget {
           },
         ),
         ChangeNotifierProvider(
+          lazy: false,
           create: (context) =>
               CrossfadeProvider(music: context.read<MusicProvider>()),
         ),
