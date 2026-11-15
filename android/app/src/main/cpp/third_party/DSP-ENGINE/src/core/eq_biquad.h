@@ -208,10 +208,9 @@ public:
     }
 
     static double q_for_freq(double hz) {
-        if (hz < 100.0) return 0.9;
-        if (hz < 500.0) return 1.2;
-        if (hz < 4000.0) return 1.6;
-        return 1.3;
+        // The Resonate 31-band grid is spaced at one-third-octave intervals.
+        // Q≈4.3 gives each band a useful, mostly independent footprint.
+        return 4.3;
     }
 
     void set_enabled(bool on) { enabled_.store(on, std::memory_order_release); }
