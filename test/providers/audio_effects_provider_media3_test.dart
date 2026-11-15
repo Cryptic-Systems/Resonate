@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:resonate/models/dsp_settings.dart';
 import 'package:resonate/providers/audio_effects_provider.dart';
 import 'package:resonate/services/playback_engine_session.dart';
 import 'package:resonate/services/media3_provider_state_bridge.dart';
@@ -179,6 +180,39 @@ void main() {
       calls.where((call) => call.method == 'attachToSession'),
       isEmpty,
     );
+
+    provider.dispose();
+    await session.close();
+  });
+
+  test('sound profile effects are applied to both active and standby sessions', () async {
+    final session = _FakePlaybackSession();
+    final provider = AudioEffectsProvider(playbackSession: session);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    session.emitState(711, 712);
+    await settleProvider(provider);
+    calls.clear();
+
+    await provider.applySoundProfileSettings(DspSettings(
+      effectsEnabled: true,
+      reverbAmount: 0.35,
+      virtualizerAmount: 0.6,
+    ));
+
+    final reverbCalls = calls.where((call) => call.method == 'setReverb').toList();
+    final virtualizerCalls =
+        calls.where((call) => call.method == 'setVirtualizer').toList();
+    expect(reverbCalls, hasLength(2));
+    expect(virtualizerCalls, hasLength(2));
+    expect(reverbCalls.every((call) =>
+        (call.arguments as Map)['strength'] == -585), isTrue);
+    expect(virtualizerCalls.every((call) =>
+        (call.arguments as Map)['strength'] == 600), isTrue);
+
+    final saved = await DspSettings.load();
+    expect(saved.reverbAmount, 0.35);
+    expect(saved.virtualizerAmount, 0.6);
+    expect(saved.effectsEnabled, isTrue);
 
     provider.dispose();
     await session.close();
