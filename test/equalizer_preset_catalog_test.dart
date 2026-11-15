@@ -72,6 +72,17 @@ void main() {
       expect(EqualizerProvider.normalizePresetGains(studio), studio);
     });
 
+    test('legacy ten-band curves interpolate on a logarithmic frequency axis', () {
+      final curve = [
+        0.0, 0.0, 0.0, 0.0, 10.0,
+        10.0, 10.0, 10.0, 10.0, 10.0,
+      ];
+      final expanded = EqualizerProvider.normalizePresetGains(curve);
+      final at315 = expanded[EqualizerProvider.studioFrequencies.indexOf(315)];
+      // 315 Hz is one third of the way from 250 Hz to 500 Hz in log space.
+      expect(at315, closeTo(3.4, 0.15));
+    });
+
     test('rejects malformed or unsafe preset curves', () {
       expect(
         () => EqualizerProvider.normalizePresetGains([1, 2, 3]),
