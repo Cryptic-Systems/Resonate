@@ -1125,19 +1125,25 @@ class EqualizerProvider extends ChangeNotifier {
   Future<String?> saveCustomSoundProfile(String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return null;
-    final occupied = <String>{
-      ...builtInSoundProfiles.map((profile) => profile.name.toLowerCase()),
-      ...customSoundProfiles.map((profile) => profile.name.toLowerCase()),
-    };
+    if (trimmed.length > 64) {
+      throw const FormatException('Profile names must be 64 characters or fewer.');
+    }
+    final builtInNames = builtInSoundProfiles
+        .map((profile) => profile.name.toLowerCase())
+        .toSet();
     var uniqueName = trimmed;
-    if (occupied.contains(uniqueName.toLowerCase())) {
+    if (builtInNames.contains(uniqueName.toLowerCase())) {
       var suffix = 2;
       do {
         uniqueName = '$trimmed (Custom $suffix)';
         suffix++;
-      } while (occupied.contains(uniqueName.toLowerCase()));
+      } while (builtInNames.contains(uniqueName.toLowerCase()));
     }
 
+    final existingIndex = customSoundProfiles.indexWhere(
+      (profile) => profile.name.toLowerCase() == uniqueName.toLowerCase(),
+    );
+    final existing = existingIndex >= 0 ? customSoundProfiles[existingIndex] : null;
     await _save();
     final current = await DspSettings.load();
     final snapshot = current.copyWith(
@@ -1148,16 +1154,105 @@ class EqualizerProvider extends ChangeNotifier {
       parametricEqBands: _effectiveParametricBands(),
     );
     final slug = uniqueName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
-    customSoundProfiles.add(ResonateSoundProfile(
-      id: 'custom:$slug',
+    final profile = ResonateSoundProfile(
+      id: existing?.id ?? 'custom:$slug',
       name: uniqueName,
-      description: 'User-created complete Resonate DSP configuration.',
+      description: existing?.description ?? 'User-created complete Resonate DSP configuration.',
       category: 'Custom',
       settings: snapshot,
-    ));
+    );
+    if (existingIndex >= 0) {
+      customSoundProfiles[existingIndex] = profile;
+    } else {
+      customSoundProfiles.add(profile);
+    }
     await _saveCustomSoundProfiles();
     notifyListeners();
     return uniqueName;
+  }
+
+  /// Exports complete user-created profiles. Built-in profiles remain part of
+  /// the app catalog and are not duplicated into personal backups.
+  String exportSoundProfilesJson() {
+    if (customSoundProfiles.isEmpty) {
+      throw StateError('There are no custom sound profiles to export yet.');
+    }
+    return const JsonEncoder.withIndent('  ').convert({
+      'format': 'resonate-sound-profiles',
+      'version': 1,
+      'exportedAt': DateTime.now().toUtc().toIso8601String(),
+      'profiles': customSoundProfiles.map((profile) => profile.toJson()).toList(),
+    });
+  }
+
+  /// Validates the entire bundle before writing anything. Name collisions are
+  /// preserved as distinct profiles with an "(Imported)" suffix.
+  Future<int> importSoundProfilesJson(String source) async {
+    if (source.length > 1024 * 1024) {
+      throw const FormatException('Sound profile files must be smaller than 1 MB.');
+    }
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(source);
+    } on FormatException {
+      throw const FormatException('This file is not valid JSON.');
+    }
+    if (decoded is! Map) {
+      throw const FormatException('Expected a Resonate sound profile bundle.');
+    }
+    final bundle = Map<String, dynamic>.from(decoded);
+    final rawProfiles = bundle['profiles'];
+    if (bundle['format'] != 'resonate-sound-profiles' ||
+        bundle['version'] != 1 ||
+        rawProfiles is! List ||
+        rawProfiles.isEmpty ||
+        rawProfiles.length > 100) {
+      throw const FormatException('Unsupported or empty Resonate sound profile bundle.');
+    }
+
+    // Parse and validate every item before mutating the in-memory catalog.
+    final incoming = <ResonateSoundProfile>[];
+    for (final item in rawProfiles) {
+      if (item is! Map) {
+        throw const FormatException('A sound profile entry is malformed.');
+      }
+      final profile = ResonateSoundProfile.fromJson(Map<String, dynamic>.from(item));
+      if (profile.name.length > 64 || profile.description.length > 280 ||
+          profile.settings.eqBandGainsDb.length > studioBands.length ||
+          profile.settings.parametricEqBands.length > studioBands.length) {
+        throw const FormatException('A sound profile exceeds supported field limits.');
+      }
+      incoming.add(profile);
+    }
+
+    final occupied = <String>{
+      ...builtInSoundProfiles.map((profile) => profile.name.toLowerCase()),
+      ...customSoundProfiles.map((profile) => profile.name.toLowerCase()),
+    };
+    final staged = <ResonateSoundProfile>[];
+    for (final profile in incoming) {
+      final baseName = profile.name.trim();
+      var name = baseName;
+      var suffix = 1;
+      while (occupied.contains(name.toLowerCase())) {
+        name = suffix == 1 ? '$baseName (Imported)' : '$baseName (Imported $suffix)';
+        suffix++;
+      }
+      occupied.add(name.toLowerCase());
+      final slug = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+      staged.add(ResonateSoundProfile(
+        id: 'custom:$slug',
+        name: name,
+        description: profile.description,
+        category: 'Custom',
+        settings: profile.settings.copyWith(preset: name),
+      ));
+    }
+
+    customSoundProfiles.addAll(staged);
+    await _saveCustomSoundProfiles();
+    notifyListeners();
+    return staged.length;
   }
 
   /// Apply one complete profile snapshot. Route-based speaker protection still
