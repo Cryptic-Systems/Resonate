@@ -655,7 +655,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                 ),
     );
   }
-
+}
 
 /// Keeps high-frequency slider drag updates local to the control. The screen
 /// model is still updated synchronously, but unrelated DSP sections and live
