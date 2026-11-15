@@ -147,6 +147,31 @@ class DspEngineAudioProcessorTest {
     }
 
     @Test
+    fun standby_deck_creates_native_engine_only_when_activated_and_releases_when_suspended() {
+        val processor = DspEngineAudioProcessor("B")
+        processor.setNativeProcessEnabled(true)
+        processor.setDeckActive(false)
+        processor.configure(
+            AudioProcessor.AudioFormat(44100, 2, C.ENCODING_PCM_16BIT)
+        )
+
+        assertEquals(0, api.createCalls)
+        assertEquals(0, DspEngineRegistry.activeCount())
+
+        processor.setDeckActive(true)
+        assertEquals(1, api.createCalls)
+        assertEquals(1, DspEngineRegistry.activeCount())
+
+        processor.setDeckActive(false)
+        assertEquals(1, api.destroyCalls)
+        assertEquals(0, DspEngineRegistry.activeCount())
+
+        processor.setDeckActive(true)
+        assertEquals(2, api.createCalls)
+        assertEquals(1, DspEngineRegistry.activeCount())
+    }
+
+    @Test
     fun native_process_error_restores_exact_original_pcm() {
         val processor = configure()
         api.processResult = -17
