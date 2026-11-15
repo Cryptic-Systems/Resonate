@@ -65,7 +65,7 @@ class ParametricEqBand {
 /// the transport/crossfade envelope. Existing preference keys are read as a
 /// migration source; new writes use one JSON document.
 class DspSettings {
-  static const int schemaVersion = 4;
+  static const int schemaVersion = 5;
   static const String preferenceKey = 'resonate_dsp_settings_v1';
   static Future<void> _writeQueue = Future<void>.value();
 
@@ -243,7 +243,7 @@ class DspSettings {
 
   factory DspSettings.fromJson(Map<String, dynamic> json) {
     final version = json['version'];
-    if (version != 1 && version != 2 && version != 3 && version != schemaVersion) {
+    if (version != 1 && version != 2 && version != 3 && version != 4 && version != schemaVersion) {
       throw const FormatException('Unsupported Resonate DSP settings version.');
     }
     double number(String key, double fallback, double min, double max) {
@@ -266,8 +266,21 @@ class DspSettings {
       200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600,
       2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000,
     ];
+    // Schema v4 and earlier stored the 31 one-third-octave studio
+    // controls with Q=1.0. That is too broad for this spacing and causes
+    // adjacent bands to overlap excessively. Migrate only the recognizable
+    // untouched studio bank; preserve intentionally tuned parametric Q values.
+    final isLegacyBroadStudioBank = version < schemaVersion &&
+        rawParametric is List &&
+        parametricBands.length == frequencies.length &&
+        parametricBands.asMap().entries.every((entry) =>
+            (entry.value.frequencyHz - frequencies[entry.key]).abs() < 0.1 &&
+            (entry.value.q - 1.0).abs() < 0.05 &&
+            entry.value.type == 0);
     final migratedParametric = rawParametric is List
-        ? parametricBands
+        ? (isLegacyBroadStudioBank
+            ? parametricBands.map((band) => band.copyWith(q: 4.3)).toList()
+            : parametricBands)
         : [
             for (var i = 0; i < bands.length && i < frequencies.length; i++)
               ParametricEqBand(
