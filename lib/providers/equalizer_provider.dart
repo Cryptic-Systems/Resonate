@@ -1118,6 +1118,106 @@ class EqualizerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Save the current complete DSP state as a user-owned sound profile.
+  /// The legacy EQ-only preset remains available for older import/export flows.
+  Future<String?> saveCustomSoundProfile(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return null;
+    final occupied = <String>{
+      ...builtInSoundProfiles.map((profile) => profile.name.toLowerCase()),
+      ...customSoundProfiles.map((profile) => profile.name.toLowerCase()),
+    };
+    var uniqueName = trimmed;
+    if (occupied.contains(uniqueName.toLowerCase())) {
+      var suffix = 2;
+      do {
+        uniqueName = '$trimmed (Custom $suffix)';
+        suffix++;
+      } while (occupied.contains(uniqueName.toLowerCase()));
+    }
+
+    await _save();
+    final current = await DspSettings.load();
+    final snapshot = current.copyWith(
+      masterEnabled: true,
+      eqEnabled: true,
+      preset: uniqueName,
+      eqBandGainsDb: studioBands.map((band) => band.gainDb).toList(),
+      parametricEqBands: _effectiveParametricBands(),
+    );
+    final slug = uniqueName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+    customSoundProfiles.add(ResonateSoundProfile(
+      id: 'custom:$slug',
+      name: uniqueName,
+      description: 'User-created complete Resonate DSP configuration.',
+      category: 'Custom',
+      settings: snapshot,
+    ));
+    await _saveCustomSoundProfiles();
+    notifyListeners();
+    return uniqueName;
+  }
+
+  /// Apply one complete profile snapshot. Route-based speaker protection still
+  /// takes precedence over profile preferences for safe device operation.
+  Future<void> applySoundProfile(ResonateSoundProfile profile) async {
+    final source = profile.settings;
+    final filters = source.parametricEqBands.length == studioBands.length
+        ? source.parametricEqBands.map((band) => band.copyWith()).toList(growable: true)
+        : <ParametricEqBand>[
+            for (var i = 0; i < studioBands.length; i++)
+              ParametricEqBand(
+                frequencyHz: studioFrequencies[i],
+                gainDb: i < source.eqBandGainsDb.length ? source.eqBandGainsDb[i] : 0,
+                q: 1,
+                type: 0,
+              ),
+          ];
+    final gains = filters.map((band) => band.gainDb).toList(growable: false);
+    final snapshot = source.copyWith(
+      masterEnabled: true,
+      eqEnabled: true,
+      preset: profile.name,
+      eqBandGainsDb: gains,
+      parametricEqBands: filters,
+    );
+
+    _manualPresetRevision++;
+    preset = profile.name;
+    preamp = snapshot.preampDb;
+    autoEqHeadroom = snapshot.autoEqHeadroom;
+    parametricEqBands = filters;
+    for (var i = 0; i < studioBands.length; i++) {
+      final band = filters[i];
+      studioBands[i]
+        ..frequencyHz = band.frequencyHz
+        ..label = _labelForFrequency(band.frequencyHz)
+        ..gainDb = band.gainDb;
+      bands[studioBands[i].label] = band.gainDb;
+    }
+
+    // Persist before pushing to the sticky native registry, so new A/B
+    // processors inherit the same complete snapshot.
+    await DspSettings.save(snapshot);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('equalizer_enabled', true);
+    await prefs.setString('equalizer_preset', profile.name);
+    await prefs.setDouble('equalizer_preamp', preamp);
+    for (var i = 0; i < studioBands.length; i++) {
+      await prefs.setDouble('eq_studio_band_$i', studioBands[i].gainDb);
+    }
+    await _pushToHardware();
+    await _applyPreamp();
+    await _pushLiveDspCurve(settings: snapshot);
+    notifyListeners();
+  }
+
+  Future<void> deleteCustomSoundProfile(String id) async {
+    customSoundProfiles.removeWhere((profile) => profile.id == id);
+    await _saveCustomSoundProfiles();
+    notifyListeners();
+  }
+
   /// Portable, versioned JSON backup for user EQ presets.
   String exportPresetsJson() {
     final presetsToExport = List<EqualizerPreset>.from(customPresets);
