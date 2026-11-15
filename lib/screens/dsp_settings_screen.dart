@@ -49,14 +49,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
     if (!mounted) return;
     final liveStatus = await AudioEffectsBridge.getLiveDspStatus();
     if (!mounted) return;
-    final liveLinearGain = (liveStatus?['linearGain'] as num?)?.toDouble();
-    final liveDvcDb = liveLinearGain == null
-        ? canonical.dvcDb
-        : liveLinearGain <= 1.0e-6
-            ? -120.0
-            : 20.0 * math.log(liveLinearGain) / math.ln10;
     final resolvedSettings = canonical.copyWith(
-      dvcDb: liveDvcDb,
       speakerProtectionEnabled:
           liveStatus?['speakerMode'] as bool? ?? canonical.speakerProtectionEnabled,
       virtualBassAmount:
@@ -71,7 +64,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
           : ParametricEqBand(
               frequencyHz: eq.studioBands[index].frequencyHz,
               gainDb: eq.studioBands[index].gainDb,
-              q: 1,
+              q: 4.3,
               type: 0,
             ),
     );
@@ -103,12 +96,6 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
     _saving.value = true;
     try {
       final liveStatus = await AudioEffectsBridge.getLiveDspStatus();
-      final liveLinearGain = (liveStatus?['linearGain'] as num?)?.toDouble();
-      final liveDvcDb = liveLinearGain == null
-          ? current.dvcDb
-          : liveLinearGain <= 1.0e-6
-              ? -120.0
-              : 20.0 * math.log(liveLinearGain) / math.ln10;
       if (!mounted) return;
       if (pushBands) {
         await equalizer.setParametricEqBands(
@@ -121,7 +108,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
             parametricEqBands: bandsSnapshot,
             preampDb: current.preampDb,
             dvcEnabled: current.dvcEnabled,
-            dvcDb: liveDvcDb,
+            dvcDb: current.dvcDb,
             dvcSmoothing: current.dvcSmoothing,
             dvcSmoothingMs: current.dvcSmoothingMs,
             limiterEnabled: current.limiterEnabled,
@@ -143,7 +130,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
       if (!mounted) return;
       await AudioEffectsBridge.setLiveDspDvc(
         enabled: current.dvcEnabled,
-        db: liveDvcDb,
+        db: current.dvcDb,
         smoothing: current.dvcSmoothing,
         smoothingMs: current.dvcSmoothingMs,
       );
@@ -423,7 +410,17 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                         onChangeEnd: (_) => _commit(),
                       ),
                     ]),
-                    _section('Direct Volume Control', 'A dedicated, smoothed gain stage independent of EQ preamp. The player volume control drives its gain; when bypassed, master volume remains active through the preamp path.', [
+                    _section('Direct Volume Control', 'A dedicated, smoothed digital gain stage independent of EQ preamp and Android media volume. Keep positive gain conservative to preserve headroom.', [
+                      _valueSlider(
+                        label: 'DVC gain',
+                        value: settings.dvcDb,
+                        min: -24,
+                        max: 6,
+                        suffix: 'dB',
+                        divisions: 60,
+                        onChanged: (v) => _changeSettings((s) => s.copyWith(dvcDb: v)),
+                        onChangeEnd: (_) => _commit(),
+                      ),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: const Text('Enable DVC'),
