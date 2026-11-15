@@ -499,7 +499,7 @@ class EqualizerProvider extends ChangeNotifier {
         ...customPresets,
       ];
 
-  ResonateSoundProfile _advancedProfile({
+  static ResonateSoundProfile _advancedProfile({
     required String name,
     required String description,
     required Map<double, double> gains,
@@ -556,7 +556,7 @@ class EqualizerProvider extends ChangeNotifier {
   /// More assertive, deliberately engineered profiles. Each uses the complete
   /// 31-section parametric bank plus headroom and true-peak protection.
   /// These are creative starting points, not headphone-specific corrections.
-  List<ResonateSoundProfile> get advancedSoundProfiles => [
+  static List<ResonateSoundProfile> get advancedSoundProfileCatalog => [
         _advancedProfile(
           name: 'Resonate Subforge',
           description: 'Deep sub-bass, physical kick weight and a clear upper-mid edge.',
@@ -637,6 +637,9 @@ class EqualizerProvider extends ChangeNotifier {
           crossoverHz: 150,
         ),
       ];
+
+  List<ResonateSoundProfile> get advancedSoundProfiles =>
+      advancedSoundProfileCatalog;
 
   /// Complete DSP snapshots built from Resonate's original tone curves.
   /// Other processing stages retain the conservative canonical defaults.
