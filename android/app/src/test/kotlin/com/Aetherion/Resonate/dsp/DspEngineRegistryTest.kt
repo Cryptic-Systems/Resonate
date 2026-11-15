@@ -138,6 +138,27 @@ class DspEngineRegistryTest {
     }
 
     @Test
+    fun default_q_tracks_the_spacing_of_studio_and_legacy_eq_banks() {
+        DspEngineRegistry.applyEqBandsAll(
+            DoubleArray(31) { 20.0 + it },
+            DoubleArray(31),
+            true,
+        )
+        assertTrue(DspEngineRegistry.register(31, 31031L))
+        assertTrue(fake.calls.any { it == "parametric:31031:31:4.3:0" })
+
+        DspEngineRegistry.unregister(31)
+        fake.calls.clear()
+        DspEngineRegistry.applyEqBandsAll(
+            DoubleArray(10) { 100.0 + it * 100.0 },
+            DoubleArray(10),
+            true,
+        )
+        assertTrue(DspEngineRegistry.register(10, 10010L))
+        assertTrue(fake.calls.any { it == "parametric:10010:10:1.4:0" })
+    }
+
+    @Test
     fun master_volume_remains_effective_when_dvc_is_bypassed() {
         DspEngineRegistry.applyPreampAll(1.0)
         DspEngineRegistry.applyDvcAll(false, -6f, true, 15f)
