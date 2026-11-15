@@ -43,6 +43,7 @@ class Media3PlaybackService : MediaSessionService() {
     // isPlaying. ExoPlayer's play() request can precede audible output startup.
     private var startingCrossfadeDurationMs: Long? = null
     private var activeDeckId = "A"
+    private fun standbyDeckId(): String = if (activeDeckId == "A") "B" else "A"
     // ExoPlayer focus handling is opt-in at the migration boundary. The legacy
     // audio_session owner remains untouched until an explicit provider cutover.
     // Focus is acquired only after an explicit play request. Creating or
@@ -257,6 +258,7 @@ class Media3PlaybackService : MediaSessionService() {
         standbyPlayer = newPlayer(handleAudioFocus = false, deckId = "B")
         activeDeckId = "A"
         DspEngineRegistry.setActiveDeck(activeDeckId)
+        DspEngineSinkHook.activateDeck(activeDeckId)
         mediaSession = MediaSession.Builder(this, activePlayer).build()
         applyDeckVolumes()
     }
@@ -497,6 +499,9 @@ class Media3PlaybackService : MediaSessionService() {
         crossfadeStatus = "starting"
         gainPolicy.resetDecks()
         applyDeckVolumes()
+        // The standby processor remains pass-through while merely preloaded.
+        // Create/inherit its native DSP state only when it is about to join the fade.
+        DspEngineSinkHook.activateDeck(standbyDeckId())
         standbyPlayer.play()
         // isPlaying may already be true for an immediately-starting local
         // source. Handle that synchronously as well as through the listener.
@@ -533,10 +538,13 @@ class Media3PlaybackService : MediaSessionService() {
                     // to full level. Muting is safe before the reference swap
                     // because volume changes do not emit transport callbacks.
                     oldPlayer.volume = 0f
+                    val outgoingDeckId = activeDeckId
                     activePlayer = standbyPlayer
                     standbyPlayer = oldPlayer
                     activeDeckId = if (activeDeckId == "A") "B" else "A"
                     DspEngineRegistry.setActiveDeck(activeDeckId)
+                    DspEngineSinkHook.activateDeck(activeDeckId)
+                    DspEngineSinkHook.suspendDeck(outgoingDeckId)
                     DspEngineRegistry.clearAllTemporaryEqOverlays()
                     // The promoted deck keeps its transition rate. Reset the
                     // now-standby deck so the next preload starts from the new
@@ -591,11 +599,13 @@ class Media3PlaybackService : MediaSessionService() {
             pendingCrossfadeDurationMs = startingCrossfadeDurationMs
             startingCrossfadeDurationMs = null
             standbyPlayer.pause()
+            DspEngineSinkHook.suspendDeck(standbyDeckId())
             crossfadeStatus = "ready"
             return true
         }
         if (crossfadeStatus == "waiting_ready" || crossfadeStatus == "ready") {
             standbyPlayer.pause()
+            DspEngineSinkHook.suspendDeck(standbyDeckId())
             // Keep waiting_ready while preparation is incomplete. The standby
             // readiness listener must remain armed so it can finish the
             // deferred transition after a pause/resume cycle.
@@ -605,6 +615,7 @@ class Media3PlaybackService : MediaSessionService() {
         if (!crossfadeClock.pause(android.os.SystemClock.elapsedRealtime())) return false
         fadeRunnable?.let(mainHandler::removeCallbacks)
         standbyPlayer.pause()
+        DspEngineSinkHook.suspendDeck(standbyDeckId())
         return true
     }
 
@@ -626,6 +637,7 @@ class Media3PlaybackService : MediaSessionService() {
     fun resumeCrossfade(): Boolean {
         if (crossfadeStatus != "fading" || fadeRunnable == null) return false
         if (!crossfadeClock.resume(android.os.SystemClock.elapsedRealtime())) return false
+        DspEngineSinkHook.activateDeck(standbyDeckId())
         standbyPlayer.play()
         mainHandler.post(fadeRunnable!!)
         return true
@@ -684,6 +696,7 @@ class Media3PlaybackService : MediaSessionService() {
             gainPolicy.resetDecks()
             applyDeckVolumes()
             standbyPlayer.pause()
+            DspEngineSinkHook.suspendDeck(standbyDeckId())
             if (resetStandbySpeed) {
                 standbyPlayer.playbackParameters = activePlayer.playbackParameters
             }
@@ -725,6 +738,8 @@ class Media3PlaybackService : MediaSessionService() {
         mainHandler.removeCallbacksAndMessages(null)
         mediaSession?.release()
         mediaSession = null
+        DspEngineSinkHook.suspendDeck("A")
+        DspEngineSinkHook.suspendDeck("B")
         if (::activePlayer.isInitialized) activePlayer.release()
         if (::standbyPlayer.isInitialized) standbyPlayer.release()
         auxiliaryPlayer?.release()
