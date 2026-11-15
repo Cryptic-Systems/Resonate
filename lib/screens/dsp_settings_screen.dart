@@ -20,6 +20,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
   bool _loading = true;
   bool _saving = false;
   Future<void> _commitTail = Future<void>.value();
+  late Future<Map<String, dynamic>?> _statusFuture;
 
   static const _filterNames = <String>[
     'Peak', 'Low shelf', 'High shelf', 'Low-pass', 'High-pass',
@@ -32,7 +33,13 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
   @override
   void initState() {
     super.initState();
+    _statusFuture = AudioEffectsBridge.getLiveDspStatus();
     _load();
+  }
+
+  void _refreshStatus() {
+    if (!mounted) return;
+    setState(() => _statusFuture = AudioEffectsBridge.getLiveDspStatus());
   }
 
   Future<void> _load() async {
@@ -240,7 +247,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
 
   Widget _statusCard() {
     return FutureBuilder<Map<String, dynamic>?>(
-      future: AudioEffectsBridge.getLiveDspStatus(),
+      future: _statusFuture,
       builder: (context, snapshot) {
         final status = snapshot.data;
         final engines = (status?['activeEngines'] as num?)?.toInt() ?? 0;
