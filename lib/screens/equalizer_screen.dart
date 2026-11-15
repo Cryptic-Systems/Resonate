@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/audio_effects_provider.dart';
@@ -141,6 +142,37 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
             tooltip: 'How to use',
             icon: const Icon(Icons.help_outline_rounded),
             onPressed: () => _showHelp(context),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Sound profile backup',
+            icon: const Icon(Icons.import_export_rounded),
+            onSelected: (action) {
+              if (action == 'export') {
+                _exportSoundProfiles(context);
+              } else if (action == 'import') {
+                _importSoundProfiles(context);
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'export',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.copy_rounded),
+                  title: Text('Copy profile backup JSON'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'import',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.content_paste_rounded),
+                  title: Text('Import profile backup JSON'),
+                ),
+              ),
+            ],
           ),
           IconButton(
             tooltip: 'Save custom profile',
@@ -609,6 +641,73 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _exportSoundProfiles(BuildContext context) async {
+    final eq = context.read<EqualizerProvider>();
+    try {
+      final json = eq.exportSoundProfilesJson();
+      await Clipboard.setData(ClipboardData(text: json));
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Copied ${eq.customSoundProfiles.length} complete profile(s) as JSON')),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))),
+      );
+    }
+  }
+
+  Future<void> _importSoundProfiles(BuildContext context) async {
+    final controller = TextEditingController();
+    final source = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Import sound profiles'),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: TextField(
+              controller: controller,
+              autofocus: true,
+              minLines: 8,
+              maxLines: 14,
+              keyboardType: TextInputType.multiline,
+              decoration: const InputDecoration(
+                hintText: 'Paste a Resonate sound profile JSON backup',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (source == null || source.trim().isEmpty || !context.mounted) return;
+    try {
+      final count = await context.read<EqualizerProvider>().importSoundProfilesJson(source);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Imported $count complete sound profile(s)')),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not import profiles: $error')),
+      );
+    }
   }
 
   void _showHelp(BuildContext context) {
