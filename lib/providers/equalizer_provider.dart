@@ -1112,8 +1112,10 @@ class EqualizerProvider extends ChangeNotifier {
 
   Future<void> deleteCustomPreset(String name) async {
     customPresets.removeWhere((p) => p.name == name);
+    customSoundProfiles.removeWhere((profile) => profile.name == name);
     if (preset == name) preset = 'Custom';
     await _saveCustomPresets();
+    await _saveCustomSoundProfiles();
     await _save();
     notifyListeners();
   }
