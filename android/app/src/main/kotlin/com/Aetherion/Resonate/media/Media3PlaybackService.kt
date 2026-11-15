@@ -483,9 +483,10 @@ class Media3PlaybackService : MediaSessionService() {
 
     /** Start the native equal-power ramp only after standby is actually ready. */
     private fun beginCrossfade(durationMs: Long): Boolean {
+        val standby = standbyPlayer ?: return false
         if (durationMs !in 250L..15000L || !activePlayer.isPlaying ||
-            standbyPlayer?.mediaItemCount != 0 ||
-            standbyPlayer?.playbackState != Player.STATE_READY
+            standby.mediaItemCount == 0 ||
+            standby.playbackState != Player.STATE_READY
         ) return false
         pendingCrossfadeDurationMs = null
         cancelCrossfade(clearOverlays = false, resetStandbySpeed = false)
