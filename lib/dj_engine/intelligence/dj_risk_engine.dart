@@ -11,6 +11,13 @@ class DjRiskEngine {
     final risks = <DjRiskType>[...candidate.risks];
     if (candidate.durationMs < 2500) risks.add(DjRiskType.structureCollision);
 
+    // Defence in depth: never trust a silence score without matching,
+    // high-confidence late-track PCM evidence near the proposed anchor.
+    if ((candidate.scores['silence'] ?? 0.5) > 0.5 &&
+        !_hasTrustedSilenceNear(outgoing, candidate.outgoingStartMs)) {
+      risks.add(DjRiskType.silenceEvidenceMismatch);
+    }
+
     final outEnergy = outgoing.energyAt(candidate.outgoingStartMs);
     final inEnergy = incoming.energyAt(candidate.incomingStartMs);
     if ((outEnergy - inEnergy).abs() > 0.5) risks.add(DjRiskType.energyShock);
@@ -39,6 +46,27 @@ class DjRiskEngine {
     return risks.toSet().toList();
   }
 
+  bool _hasTrustedSilenceNear(DjTrackProfile profile, int anchorMs) {
+    final duration = profile.durationMs;
+    if (duration == null || duration <= 0) return false;
+    for (final region in profile.silenceRegions) {
+      if (region.confidence < 0.78 ||
+          region.durationMs < 2000 ||
+          region.minimumDbfs > -48.0 ||
+          region.startMs < duration * 0.75 ||
+          region.endMs < duration * 0.90) {
+        continue;
+      }
+      final distance = anchorMs < region.startMs
+          ? region.startMs - anchorMs
+          : anchorMs > region.endMs
+              ? anchorMs - region.endMs
+              : 0;
+      if (distance <= 12000) return true;
+    }
+    return false;
+  }
+
   double severity(Iterable<DjRiskType> risks) {
     var value = 0.0;
     for (final risk in risks) {
@@ -49,6 +77,7 @@ class DjRiskEngine {
         DjRiskType.structureCollision => 0.70,
         DjRiskType.tempoInstability => 0.60,
         DjRiskType.lowConfidence => 0.25,
+        DjRiskType.silenceEvidenceMismatch => 0.35,
       };
     }
     return value.clamp(0.0, 1.0).toDouble();
