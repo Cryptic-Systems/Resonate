@@ -313,7 +313,24 @@ class DjAnalysisService {
       if (isCancelled?.call() ?? false) return null;
     }
 
-    if (windows.isEmpty) return legacy;
+    if (windows.isEmpty) {
+      if (legacy == null || legacy.outroHintMs == null) return legacy;
+      return DjBpmEstimate(
+        bpm: legacy.bpm,
+        confidence: legacy.confidence,
+        beatOffsetMs: legacy.beatOffsetMs,
+        source: legacy.source,
+        keyRoot: legacy.keyRoot,
+        keyMode: legacy.keyMode,
+        keyConfidence: legacy.keyConfidence,
+        energy: legacy.energy,
+        loudness: legacy.loudness,
+        introHintMs: legacy.introHintMs,
+        outroHintMs: (durationMs - legacy.outroHintMs!)
+            .clamp(0, durationMs),
+        sectionHint: legacy.sectionHint,
+      );
+    }
 
     final profile = _profileAnalyzer.analyze(
       songId: song.id,
@@ -357,7 +374,10 @@ class DjAnalysisService {
               profile.energyCurve.length
           : legacy?.loudness,
       introHintMs: profile.transitions.bestIntroMs ?? legacy?.introHintMs,
-      outroHintMs: profile.transitions.bestOutroMs ?? legacy?.outroHintMs,
+      outroHintMs: profile.transitions.bestOutroMs ??
+          (legacy?.outroHintMs == null
+              ? null
+              : (durationMs - legacy!.outroHintMs!).clamp(0, durationMs)),
       sectionHint: profile.sections.isNotEmpty
           ? (profile.sections
                 .toList()
