@@ -64,13 +64,16 @@ class DjApprovedMix {
     required List<Song> songs,
     required this.sourceScope,
     required this.revision,
-  }) : songs = List.unmodifiable(songs);
+    required List<DjSessionTransition> transitions,
+  })  : songs = List.unmodifiable(songs),
+        transitions = List.unmodifiable(transitions);
 
   /// The approved sequence for a caller to hand off explicitly to playback.
   /// Creating this value still does not alter the active queue.
   final List<Song> songs;
   final DjSessionScope sourceScope;
   final int revision;
+  final List<DjSessionTransition> transitions;
 }
 
 /// Coordinates Auto-Select and adjacent-track transition planning into a
@@ -181,6 +184,7 @@ class DjSessionCoordinator {
       songs: mix.orderedSongs,
       sourceScope: mix.scope,
       revision: mix.revision,
+      transitions: mix.transitions,
     );
   }
 
