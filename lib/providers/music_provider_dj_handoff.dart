@@ -366,7 +366,15 @@ extension MusicProviderDjHandoff on MusicProvider {
     _activeDjExecutionPlan = null;
     _lastDjIncomingBeatMs = const <int>[];
     _lastDjIncomingBpm = null;
-    if (!_djHandoffsLive || _djAnalysis == null) {
+    final hasApprovedPlan = _approvedDjTransitions.containsKey(
+      '${outgoingSong.id}\\u0000${incomingSong.id}',
+    );
+    // Explicit approval of a DJ Suggestion Mix authorizes its reviewed cue
+    // plan even when optional always-on DJ Mode features remain disabled.
+    // Mode restrictions still retain authority over whether a crossfade may run.
+    if ((!_djHandoffsLive && !hasApprovedPlan) ||
+        !_modeCrossfadeAllowed ||
+        _djAnalysis == null) {
       return const Media3DjTransitionPreparation();
     }
 
