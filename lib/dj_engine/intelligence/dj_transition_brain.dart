@@ -50,7 +50,7 @@ class DjTransitionBrain {
     final baseDuration = preferredDurationMs.clamp(2000, maxDurationMs).toInt();
 
     void add(DjTransitionKind kind, int inMs, int duration, Map<String, double> scores) {
-      final risk = _risks(outgoing, incoming, outgoingPositionMs, inMs);
+      final risk = _risks(outgoing, incoming, outgoingAnchor, inMs);
       final confidence = _confidence(outgoing, incoming, scores);
       final score = (_weightedScore(scores, policy: policy)
               - _riskPenalty(risk) * policy.riskPenaltyScale
