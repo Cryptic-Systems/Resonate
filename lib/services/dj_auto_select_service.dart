@@ -223,8 +223,8 @@ class DjAutoSelectService {
         // when BPM/key/energy compatibility already reaches 1.0. Unknown cue
         // data contributes zero after centering at neutral.
         final cueCompatibility = _introOutroCompatibility(
-          analyses[previous.id] ?? _emptyAnalysis(previous.id),
-          analyses[candidate.id] ?? _emptyAnalysis(candidate.id),
+          analyses[previous.id],
+          analyses[candidate.id],
         );
         final cuePreference = cueCompatibility == null
             ? 0.0
@@ -372,7 +372,11 @@ class DjAutoSelectService {
     return (1.0 - distance / (period / 2.0)).clamp(0.0, 1.0).toDouble();
   }
 
-  static double? _introOutroCompatibility(DjAnalysis outgoing, DjAnalysis incoming) {
+  static double? _introOutroCompatibility(
+    DjAnalysis? outgoing,
+    DjAnalysis? incoming,
+  ) {
+    if (outgoing == null || incoming == null) return null;
     final intro = incoming.introHintMs;
     final outro = outgoing.outroHintMs;
     if (intro == null ||
