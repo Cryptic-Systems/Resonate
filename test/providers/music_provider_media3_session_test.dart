@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:resonate/models/song.dart';
+import 'package:resonate/dj_engine/core/dj_types.dart';
 import 'package:resonate/playback/queue_store.dart';
 import 'package:resonate/providers/music_provider.dart';
 import 'package:resonate/providers/crossfade_provider.dart';
@@ -1448,6 +1449,38 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       await session.audioSessions.close();
       await failing.audioSessions.close();
+    });
+
+    test('approved Media3 DJ transition lookup consumes the exact adjacent pair once', () {
+      final provider = MusicProvider();
+      const candidate = DjTransitionCandidate(
+        kind: DjTransitionKind.phraseBlend,
+        outgoingStartMs: 160000,
+        incomingStartMs: 12000,
+        durationMs: 6000,
+        score: 0.9,
+        confidence: 0.9,
+      );
+      const plan = DjExecutionPlan(
+        candidate: candidate,
+        fallback: true,
+        reason: 'insufficient_analysis_confidence',
+      );
+
+      provider.setApprovedDjTransitions({
+        'outgoing-track\u0000incoming-track': plan,
+      });
+
+      expect(
+        provider.takeApprovedDjTransition('outgoing-track', 'incoming-track'),
+        same(plan),
+      );
+      expect(
+        provider.takeApprovedDjTransition('outgoing-track', 'incoming-track'),
+        isNull,
+        reason: 'an approved plan is a one-shot handoff token',
+      );
+      provider.dispose();
     });
   });
 }
