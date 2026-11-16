@@ -73,15 +73,16 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
         queue: approved.songs,
         startIndex: 0,
       );
-      if (!mounted) return;
       if (!started) {
         music.setApprovedDjTransitions(const {});
+        if (!mounted) return;
         setState(() => _approving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Resonate could not start this mix.')),
         );
         return;
       }
+      if (!mounted) return;
       openShellPlayer(context);
     } catch (error) {
       music?.setApprovedDjTransitions(const {});
