@@ -366,15 +366,37 @@ extension MusicProviderDjHandoff on MusicProvider {
     _activeDjExecutionPlan = null;
     _lastDjIncomingBeatMs = const <int>[];
     _lastDjIncomingBpm = null;
-    final hasApprovedPlan = _approvedDjTransitions.containsKey(
-      '${outgoingSong.id}\\u0000${incomingSong.id}',
+    // Consume through the canonical key builder used by the approval handoff.
+    // A review-time fallback must remain a fallback; never promote it into a
+    // DJ execution plan merely because a later lookup happens to succeed.
+    final approved = takeApprovedDjTransition(
+      outgoingSong.id,
+      incomingSong.id,
     );
-    // Explicit approval of a DJ Suggestion Mix authorizes its reviewed cue
-    // plan even when optional always-on DJ Mode features remain disabled.
-    // Mode restrictions still retain authority over whether a crossfade may run.
-    if ((!_djHandoffsLive && !hasApprovedPlan) ||
+    if (approved?.fallback == true) {
+      await ResonateDiagnostics.recordDj(
+        stage: 'media3_approved_plan',
+        outcome: 'approved_fallback',
+        reason: approved!.reason,
+        songId: incomingSong.id,
+        extra: {'fromSongId': outgoingSong.id},
+      );
+      return const Media3DjTransitionPreparation();
+    }
+    if ((!_djHandoffsLive && approved == null) ||
         !_modeCrossfadeAllowed ||
         _djAnalysis == null) {
+      if (approved != null) {
+        await ResonateDiagnostics.recordDj(
+          stage: 'media3_approved_plan',
+          outcome: 'rejected_runtime_unavailable',
+          reason: !_modeCrossfadeAllowed
+              ? 'mode_crossfade_restricted'
+              : 'analysis_service_unavailable',
+          songId: incomingSong.id,
+          extra: {'fromSongId': outgoingSong.id},
+        );
+      }
       return const Media3DjTransitionPreparation();
     }
 
@@ -389,10 +411,6 @@ extension MusicProviderDjHandoff on MusicProvider {
         // Prefer the exact candidate the user reviewed and approved. The
         // execution planner revalidates it against the real outgoing position
         // and current deck durations before any seek or speed change.
-        final approved = takeApprovedDjTransition(
-          outgoingSong.id,
-          incomingSong.id,
-        );
         // A review can happen well before playback reaches this pair. Never
         // execute a reviewed cue that has already fallen behind the playhead.
         final approvedCueIsAhead = approved != null &&
