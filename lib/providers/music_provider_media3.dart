@@ -727,13 +727,28 @@ extension MusicProviderMedia3 on MusicProvider {
         _queueIndex = _queue.indexOf(matches.first);
       }
     }
-    if (currentSong != null && oldSongId != currentSong!.id) {
+    final songChanged = currentSong != null && oldSongId != currentSong!.id;
+    if (songChanged) {
       currentDuration = state.duration ?? currentSong!.duration;
-      unawaited(_finishHistoryEvent());
-      unawaited(_startHistoryEvent(currentSong!));
       _lastCompletionSongId = null;
     }
     currentPosition = state.position;
+    if (songChanged) {
+      // The incoming snapshot already belongs to the next song. Finalize the
+      // outgoing history row with the last position observed for that song,
+      // not the new track's position (or a stale legacy-player position).
+      unawaited(_finishHistoryEvent(
+        finalPositionMs: previousPosition.inMilliseconds,
+      ));
+      unawaited(_startHistoryEvent(currentSong!));
+    }
+    // Media3 is the canonical position source after cutover. Keep the active
+    // listening event checkpoint current so a crossfade handoff does not
+    // misclassify a nearly/full-length listen as a skip.
+    if (currentSong != null &&
+        _historySession.activeEvent?.songId == currentSong!.id) {
+      _historySession.positionMs = state.position.inMilliseconds;
+    }
     if (state.isPlaying && !_crossfadeInProgress) {
       _maybeStartAutomaticCrossfade(state.position);
     }
