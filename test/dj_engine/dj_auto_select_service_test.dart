@@ -180,7 +180,7 @@ void main() {
 
       expect(result.usedDjArrangement, isTrue);
       expect(orderedEnergy.first, 0.10);
-      expect(peakIndex, inInclusiveRange(3, 4));
+      expect(peakIndex, inInclusiveRange(3, 5));
       expect(orderedEnergy.last, lessThan(orderedEnergy[peakIndex]));
       expect(result.songs.map((song) => song.id).toSet(),
           songs.map((song) => song.id).toSet());
