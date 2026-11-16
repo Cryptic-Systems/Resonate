@@ -33,6 +33,7 @@ DjAnalysis _analysis(
     songId: id,
     bpm: bpm,
     bpmConfidence: 0.92,
+    durationMs: 180000,
     bpmSource: bpmSource,
     beatOffsetMs: beatOffsetMs,
     introHintMs: introHintMs,
