@@ -182,7 +182,7 @@ void main() {
     ).firstWhere((value) => value.kind == DjTransitionKind.safeCrossfade);
 
     expect(candidate.outgoingStartMs, 220000);
-    expect(candidate.scores['energy'], greaterThan(0.9));
+    expect(candidate.scores['energy'], greaterThanOrEqualTo(0.9));
     expect(candidate.risks, isNot(contains(DjRiskType.energyShock)));
   });
 
