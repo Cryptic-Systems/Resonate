@@ -382,9 +382,7 @@ class DjAutoSelectService {
     if (intro == null ||
         outro == null ||
         intro < 500 ||
-        intro > 24000 ||
-        outro < 500 ||
-        outro > 28000) {
+        outro < 500) {
       return null;
     }
     // The analyzer stores these as cue positions from the start of each
