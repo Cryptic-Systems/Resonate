@@ -150,6 +150,9 @@ void main() {
     expect(approved.songs.map((song) => song.id), ['b', 'c', 'a']);
     expect(approved.sourceScope, DjSessionScope.library);
     expect(approved.revision, 2);
+    expect(approved.transitions, hasLength(2));
+    expect(approved.transitions.first.outgoingSongId, 'b');
+    expect(approved.transitions.first.incomingSongId, 'c');
     expect(mix.sourceSongs.map((song) => song.id), ['a', 'b', 'c']);
   });
 
