@@ -675,6 +675,43 @@ class Media3PlaybackService : MediaSessionService() {
         return true
     }
 
+    /**
+     * A crossfade may promote physical deck B. A fresh user-selected queue is
+     * ordinary playback, so return ownership to a newly-created primary A deck
+     * rather than letting B become the long-lived default player.
+     */
+    fun restorePrimaryDeckForNewSelection(): Boolean {
+        if (!::activePlayer.isInitialized) return false
+        clearPreload()
+        if (activeDeckId == "A") return true
+
+        val outgoing = activePlayer
+        val primary = newPlayer(
+            handleAudioFocus = media3AudioFocusEnabled,
+            deckId = "A",
+        )
+        primary.repeatMode = outgoing.repeatMode
+        primary.shuffleModeEnabled = outgoing.shuffleModeEnabled
+        primary.playbackParameters = outgoing.playbackParameters
+
+        // Rebind the canonical session before retiring B. The caller will load
+        // the newly selected queue into this clean A deck immediately afterward.
+        activePlayer = primary
+        activeDeckId = "A"
+        DspEngineRegistry.setActiveDeck("A")
+        DspEngineSinkHook.activateDeck("A")
+        mediaSession?.setPlayer(primary)
+
+        outgoing.pause()
+        outgoing.release()
+        DspEngineSinkHook.suspendDeck("B")
+        DspEngineSinkHook.forgetDeck("B")
+        gainPolicy.resetDecks()
+        applyDeckVolumes()
+        crossfadeStatus = "idle"
+        return true
+    }
+
     fun cancelCrossfade(
         clearOverlays: Boolean = true,
         resetStandbySpeed: Boolean = true,
