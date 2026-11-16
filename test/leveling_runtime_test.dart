@@ -24,6 +24,17 @@ void main() {
       expect(runtime.effectivePreampScale, 0.0);
     });
 
+
+    test('composes secondary normalization without erasing canonical track trim', () {
+      final runtime = LevelingRuntime()..setTrackScale(0.4);
+
+      expect(runtime.composeAdditionalTrackScale(1.0), closeTo(0.4, 1e-9));
+      expect(runtime.composeAdditionalTrackScale(0.82), closeTo(0.328, 1e-9));
+      expect(runtime.composeAdditionalTrackScale(2.0), closeTo(0.4, 1e-9));
+      expect(runtime.composeAdditionalTrackScale(-1.0), 0.0);
+      expect(runtime.composeAdditionalTrackScale(double.nan), closeTo(0.4, 1e-9));
+    });
+
     test('only the newest refresh generation remains current', () {
       final runtime = LevelingRuntime();
       final first = runtime.beginRefresh();
