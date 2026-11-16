@@ -61,7 +61,6 @@ class DjListeningSignal {
     final result = <String, DjListeningSignal>{};
     for (final entry in grouped.entries) {
       final rows = entry.value;
-      final completed = rows.where((event) => event.completed).length;
       final skipped = rows.where((event) => event.skipped).length;
       final finishedCount = rows.where((event) => event.endedAt != null).length;
       final completionRatio = finishedCount == 0
