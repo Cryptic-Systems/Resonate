@@ -172,8 +172,9 @@ class DjPcmProfileAnalyzer {
         continue;
       }
       final bytesPerFrame = 2 * window.channels;
-      final frameSampleCount = math.max(1, window.sampleRate * frameDurationMs ~/ 1000).toInt();
-      final frameByteCount = frameSampleCount * bytesPerFrame;
+      final frameSampleCount = math
+          .max(1, window.sampleRate * frameDurationMs ~/ 1000)
+          .toInt();
       final data = ByteData.sublistView(window.pcm);
       var byteOffset = 0;
       while (byteOffset + bytesPerFrame <= window.pcm.length) {
@@ -193,14 +194,15 @@ class DjPcmProfileAnalyzer {
           squareSum += normalized * normalized;
         }
         final rms = math.sqrt(squareSum / sampleCount);
-        final measuredMs = math.max(1, frames * 1000 ~/ window.sampleRate).toInt();
+        final measuredMs =
+            math.max(1, frames * 1000 ~/ window.sampleRate).toInt();
         result.add(DjRmsSample(
           timeMs: frameStartMs,
           rms: rms,
           windowMs: measuredMs,
         ));
         byteOffset += frames * bytesPerFrame;
-        if (byteOffset >= window.pcm.length || frameByteCount <= 0) break;
+        if (byteOffset >= window.pcm.length) break;
       }
     }
     return result;
