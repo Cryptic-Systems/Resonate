@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
-import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -28,7 +27,6 @@ import 'providers/theme_provider.dart';
 import 'navigation/shell_nav.dart';
 import 'widgets/ask_resonate/ask_resonate_controller.dart';
 import 'screens/home_screen.dart';
-import 'services/audio_service_handler.dart';
 import 'services/media3_provider_session.dart';
 import 'services/playback_diagnostics_observer.dart';
 import 'services/resonate_diagnostics.dart';
@@ -248,33 +246,13 @@ Future<void> main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  final audioHandler = await AudioService.init(
-    builder: () => AudioServiceHandler(),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.aetherion.resonate.audio',
-      androidNotificationChannelName: 'Resonate • Now Playing',
-      androidNotificationChannelDescription:
-          'Resonate • your music, sound, and playback controls',
-      // Brand the system media card with Resonate violet while retaining the
-      // track's album artwork as the large media image.
-      notificationColor: const Color(0xFF6B4EFF),
-      androidNotificationOngoing: false,
-      androidStopForegroundOnPause: false,
-      fastForwardInterval: Duration(seconds: 10),
-      rewindInterval: Duration(seconds: 10),
-      androidNotificationIcon: 'drawable/ic_stat_resonate',
-    ),
-  );
-
   await ResonateDiagnostics.record('app_started', {});
 
-  runApp(ResonateApp(audioHandler: audioHandler));
+  runApp(const ResonateApp());
 }
 
 class ResonateApp extends StatelessWidget {
-  final AudioHandler audioHandler;
-
-  const ResonateApp({super.key, required this.audioHandler});
+  const ResonateApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -286,7 +264,6 @@ class ResonateApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (_) {
             final provider = MusicProvider(
-              audioHandler: audioHandler,
               media3ProviderSession: Media3ProviderSession(),
             );
             // Startup restoration completes before the provider mirrors its
