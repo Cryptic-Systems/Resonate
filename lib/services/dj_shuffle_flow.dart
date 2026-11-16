@@ -9,6 +9,7 @@ import '../navigation/shell_nav.dart';
 import '../providers/dj_mode_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
+import 'database_helper.dart';
 import '../providers/playlist_provider.dart';
 import 'dj_auto_select_service.dart';
 
@@ -158,7 +159,17 @@ class DjShuffleFlow {
     }
 
     final dj = context.read<DjModeProvider>();
-    final result = await DjAutoSelectService(analysis: dj.analysis).arrange(source);
+    final database = DatabaseHelper();
+    final history = await database.getRecentListeningEvents(limit: 500);
+    final favoriteSongs = await database.getFavoriteSongs();
+    final signals = DjListeningSignal.fromHistory(
+      history,
+      favorites: favoriteSongs.map((song) => song.id).toSet(),
+    );
+    final result = await DjAutoSelectService(analysis: dj.analysis).arrange(
+      source,
+      listeningSignals: signals,
+    );
     if (!context.mounted) return;
 
     final music = context.read<MusicProvider>();
