@@ -303,9 +303,22 @@ class MusicProvider extends ChangeNotifier {
       ..addAll(transitions);
   }
 
-  DjExecutionPlan? takeApprovedDjTransition(String outgoingId, String incomingId) {
-    return _approvedDjTransitions.remove('$outgoingId\u0000$incomingId');
-  }
+  String _approvedDjTransitionKey(String outgoingId, String incomingId) =>
+      '$outgoingId\u0000$incomingId';
+
+  DjExecutionPlan? peekApprovedDjTransition(
+    String outgoingId,
+    String incomingId,
+  ) =>
+      _approvedDjTransitions[_approvedDjTransitionKey(outgoingId, incomingId)];
+
+  DjExecutionPlan? takeApprovedDjTransition(
+    String outgoingId,
+    String incomingId,
+  ) =>
+      _approvedDjTransitions.remove(
+        _approvedDjTransitionKey(outgoingId, incomingId),
+      );
 
   /// Opts DJ transition EQ into Media3's active/standby deck overlays.
   ///
