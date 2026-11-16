@@ -321,7 +321,71 @@ class DjAutoSelectService {
       weight += 0.20;
     }
 
+    // Beat phase is meaningful only when both offsets came from PCM-backed
+    // analysis and the tempos are directly compatible. ID3-only BPM rows often
+    // carry a default zero offset, which must never be mistaken for a real grid.
+    final beatPhase = _beatPhaseCompatibility(a, b);
+    if (beatPhase != null) {
+      weighted += beatPhase * 0.12;
+      weight += 0.12;
+    }
+
+    // Intro/outro hints are coarse quiet-section estimates, not exact cue
+    // points. Use them as a small preference only when both sides are present
+    // and plausible; missing hints remain neutral.
+    final transitionWindow = _introOutroCompatibility(a, b);
+    if (transitionWindow != null) {
+      weighted += transitionWindow * 0.08;
+      weight += 0.08;
+    }
+
     return weight < 0.18 ? 0.5 : weighted / weight;
+  }
+
+  static double? _beatPhaseCompatibility(DjAnalysis a, DjAnalysis b) {
+    if (!a.hasUsableBpm ||
+        !b.hasUsableBpm ||
+        a.bpmConfidence < 0.60 ||
+        b.bpmConfidence < 0.60 ||
+        a.beatOffsetMs == null ||
+        b.beatOffsetMs == null ||
+        a.beatOffsetMs! < 0 ||
+        b.beatOffsetMs! < 0 ||
+        !(a.bpmSource?.toLowerCase().contains('pcm') ?? false) ||
+        !(b.bpmSource?.toLowerCase().contains('pcm') ?? false)) {
+      return null;
+    }
+
+    // Half/double-time matches remain valid for tempo scoring, but their phase
+    // relationship is ambiguous. Only compare phase for near-equal BPM.
+    final tempoDelta = (a.bpm! - b.bpm!).abs() / math.max(a.bpm!, b.bpm!);
+    if (tempoDelta > 0.08) return null;
+
+    final period = 60000.0 / ((a.bpm! + b.bpm!) / 2.0);
+    final phaseA = a.beatOffsetMs! % period;
+    final phaseB = b.beatOffsetMs! % period;
+    final rawDistance = (phaseA - phaseB).abs();
+    final distance = math.min(rawDistance, period - rawDistance);
+    return (1.0 - distance / (period / 2.0)).clamp(0.0, 1.0).toDouble();
+  }
+
+  static double? _introOutroCompatibility(DjAnalysis outgoing, DjAnalysis incoming) {
+    final intro = incoming.introHintMs;
+    final outro = outgoing.outroHintMs;
+    if (intro == null ||
+        outro == null ||
+        intro < 500 ||
+        intro > 24000 ||
+        outro < 500 ||
+        outro > 28000) {
+      return null;
+    }
+    // These are quiet-section durations estimated from short PCM windows.
+    // Reward a usable shared overlap, but do not overvalue long estimates.
+    final overlapMs = math.min(intro, outro);
+    return (0.55 + 0.45 * (overlapMs / 8000.0).clamp(0.0, 1.0))
+        .clamp(0.0, 1.0)
+        .toDouble();
   }
 
   static double _tempoCompatibility(double a, double b) {
