@@ -40,6 +40,83 @@ void main() {
     expect(profile.analysisConfidence, 0);
   });
 
+  test('PCM analyzer persists a sustained near-silent outro from measured frames', () {
+    const sampleRate = 11025;
+    Uint8List pcmWithAmplitude(double amplitude) {
+      final bytes = ByteData(sampleRate * 10 * 2);
+      final sample = (32767 * amplitude).round();
+      for (var i = 0; i < sampleRate * 10; i++) {
+        bytes.setInt16(i * 2, sample, Endian.little);
+      }
+      return bytes.buffer.asUint8List();
+    }
+
+    final profile = const DjPcmProfileAnalyzer().analyze(
+      songId: 'silence-tail',
+      durationMs: 180000,
+      windows: [
+        DjDecodedPcmWindow(
+          pcm: pcmWithAmplitude(0.12),
+          sampleRate: sampleRate,
+          channels: 1,
+          startMs: 0,
+          role: 'start',
+        ),
+        DjDecodedPcmWindow(
+          pcm: pcmWithAmplitude(0.12),
+          sampleRate: sampleRate,
+          channels: 1,
+          startMs: 60000,
+          role: 'mid',
+        ),
+        DjDecodedPcmWindow(
+          pcm: pcmWithAmplitude(0.00001),
+          sampleRate: sampleRate,
+          channels: 1,
+          startMs: 120000,
+          role: 'end',
+        ),
+      ],
+    );
+
+    expect(profile.silenceRegions, hasLength(1));
+    expect(profile.silenceRegions.single.startMs, 120000);
+    expect(profile.silenceRegions.single.durationMs, greaterThanOrEqualTo(2000));
+    expect(profile.silenceRegions.single.confidence, greaterThan(0.6));
+  });
+
+  test('PCM analyzer does not bridge sparse windows when building silence evidence', () {
+    const sampleRate = 11025;
+    Uint8List pcmWithAmplitude(double amplitude) {
+      final bytes = ByteData(sampleRate * 10 * 2);
+      final sample = (32767 * amplitude).round();
+      for (var i = 0; i < sampleRate * 10; i++) {
+        bytes.setInt16(i * 2, sample, Endian.little);
+      }
+      return bytes.buffer.asUint8List();
+    }
+
+    final profile = const DjPcmProfileAnalyzer().analyze(
+      songId: 'sparse-silence',
+      durationMs: 180000,
+      windows: [
+        DjDecodedPcmWindow(
+          pcm: pcmWithAmplitude(0.12), sampleRate: sampleRate,
+          channels: 1, startMs: 0, role: 'start',
+        ),
+        DjDecodedPcmWindow(
+          pcm: pcmWithAmplitude(0.00001), sampleRate: sampleRate,
+          channels: 1, startMs: 120000, role: 'end',
+        ),
+      ],
+    );
+
+    // Only one short silent window is available; the detector may describe
+    // that measured segment, but it cannot infer silence across the missing
+    // interval between analysis windows.
+    expect(profile.silenceRegions, isEmpty);
+  });
+
   test('decoded PCM contributes real spectral profile data', () {
     const sampleRate = 11025;
     final pcm = ByteData(sampleRate * 2);
