@@ -17,6 +17,15 @@ class DjExecutionPlanner {
     required DjTransitionCandidate candidate,
     DjPolicy policy = DjPolicy.balanced,
   }) {
+    if (!_profileMetricsValid(outgoing) || !_profileMetricsValid(incoming)) {
+      return DjExecutionPlan(
+        candidate: candidate,
+        fallback: true,
+        reason: 'invalid_track_profile',
+        steps: const [],
+      );
+    }
+
     final candidateMetricsValid =
         candidate.score.isFinite &&
         candidate.confidence.isFinite &&
@@ -126,6 +135,71 @@ class DjExecutionPlanner {
       reason: 'planned',
     );
   }
+
+  static bool _profileMetricsValid(DjTrackProfile profile) {
+    bool unit(double value) => value.isFinite && value >= 0 && value <= 1;
+    final beat = profile.beatGrid;
+    final spectrum = profile.spectrum;
+    final bpm = beat.bpm;
+    if ((profile.durationMs != null && profile.durationMs! <= 0) ||
+        !unit(profile.analysisConfidence) ||
+        (bpm != null && (!bpm.isFinite || bpm <= 40 || bpm >= 240)) ||
+        !unit(beat.confidence) ||
+        !unit(beat.downbeatConfidence) ||
+        !unit(beat.barConfidence) ||
+        !unit(beat.phraseConfidence) ||
+        beat.beatsPerBar < 1 ||
+        beat.beatsPerBar > 12 ||
+        beat.beatsPerPhrase < 1 ||
+        beat.beatsPerPhrase > 64 ||
+        (profile.keyRoot != null &&
+            (profile.keyRoot! < 0 || profile.keyRoot! > 11)) ||
+        !unit(profile.keyConfidence) ||
+        !unit(spectrum.bass) ||
+        !unit(spectrum.mids) ||
+        !unit(spectrum.highs) ||
+        !unit(spectrum.centroid) ||
+        !unit(spectrum.bassDensity) ||
+        !unit(spectrum.spectralFlux) ||
+        !unit(spectrum.confidence)) {
+      return false;
+    }
+    bool validTimes(List<int> times) {
+      var previous = -1;
+      for (final time in times) {
+        if (time < 0 ||
+            (profile.durationMs != null && time > profile.durationMs!) ||
+            time <= previous) {
+          return false;
+        }
+        previous = time;
+      }
+      return true;
+    }
+    if (!validTimes(beat.beatMs) || !validTimes(beat.downbeatMs)) {
+      return false;
+    }
+    final firstBeat = beat.firstBeatMs;
+    if (firstBeat != null &&
+        (firstBeat < 0 ||
+            (profile.durationMs != null && firstBeat > profile.durationMs!))) {
+      return false;
+    }
+    for (final point in profile.energyCurve) {
+      if (point.timeMs < 0 ||
+          (profile.durationMs != null && point.timeMs > profile.durationMs!) ||
+          !unit(point.value) ||
+          !unit(point.loudness) ||
+          !unit(point.bass) ||
+          !unit(point.mids) ||
+          !unit(point.highs) ||
+          !point.slope.isFinite) {
+        return false;
+      }
+    }
+    return true;
+  }
+
 
   /// Prefer a beat/phrase boundary during the crossfade instead of a fixed 35%.
   static int _phraseSnappedSfxMs({
