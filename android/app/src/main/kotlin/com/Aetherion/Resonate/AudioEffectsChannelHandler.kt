@@ -42,9 +42,13 @@ internal class AudioEffectsChannelHandler {
                     "setLiveDspEnabled",
                     "setLiveDspPreampDb",
                     "setLiveDspDvcDb",
+                    "setLiveDspDvc",
+                    "setLiveDspLimiterConfig",
+                    "setLiveDspDither",
                     "setLiveDspLimiterCeiling",
                     "setLiveDspCrossoverHz",
                     "setLiveDspEqBands",
+                    "setLiveDspParametricEqBands",
                     "setLiveDspSpeakerMode",
                     "setLiveDspVirtualBass",
                     "getLiveDspStatus" -> liveDspChannelHandler.handle(call, result)
