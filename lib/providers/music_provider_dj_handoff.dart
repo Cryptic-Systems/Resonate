@@ -378,20 +378,41 @@ extension MusicProviderDjHandoff on MusicProvider {
       final profileA = profiles[0];
       final profileB = profiles[1];
       if (profileA != null && profileB != null) {
-        final candidate = await _djAutopilotPlanner.choose(
-          outgoing: profileA,
-          incoming: profileB,
-          outgoingPositionMs: outgoingPositionMs,
-          preferredDurationMs: _crossfadeDurationMs,
-          maxDurationMs: 6500,
-          policy: _djPolicy,
+        // Prefer the exact candidate the user reviewed and approved. The
+        // execution planner revalidates it against the real outgoing position
+        // and current deck durations before any seek or speed change.
+        final approved = takeApprovedDjTransition(
+          outgoingSong.id,
+          incomingSong.id,
         );
+        final candidate = approved?.candidate ??
+            await _djAutopilotPlanner.choose(
+              outgoing: profileA,
+              incoming: profileB,
+              outgoingPositionMs: outgoingPositionMs,
+              preferredDurationMs: _crossfadeDurationMs,
+              maxDurationMs: 6500,
+              policy: _djPolicy,
+            );
         final execution = _djEngine.execution.plan(
           outgoing: profileA,
           incoming: profileB,
           candidate: candidate,
           policy: _djPolicy,
         );
+        if (approved != null) {
+          await ResonateDiagnostics.recordDj(
+            stage: 'media3_approved_plan',
+            outcome: execution.fallback ? 'rejected_replanned' : 'accepted',
+            reason: execution.reason,
+            songId: incomingSong.id,
+            extra: {
+              'fromSongId': outgoingSong.id,
+              'candidateKind': candidate.kind.name,
+              'candidateDurationMs': candidate.durationMs,
+            },
+          );
+        }
         if (!execution.fallback) {
           _activeDjExecutionPlan = execution;
           _lastDjCrossfadeBiasMs = execution.steps
