@@ -27,11 +27,11 @@ class DjTransitionBrain {
       maxDurationMs: maxDurationMs,
       policy: policy,
     );
-    if (candidates.isEmpty) return _fallback(incoming, preferredDurationMs);
+    if (candidates.isEmpty) return _fallback(incoming, preferredDurationMs, outgoing: outgoing, outgoingPositionMs: outgoingPositionMs);
     final sorted = [...candidates]..sort((a, b) => b.score.compareTo(a.score));
     final best = sorted.first;
     if (!policy.acceptsCandidate(best)) {
-      return _fallback(incoming, preferredDurationMs);
+      return _fallback(incoming, preferredDurationMs, outgoing: outgoing, outgoingPositionMs: outgoingPositionMs);
     }
     return best;
   }
@@ -45,7 +45,6 @@ class DjTransitionBrain {
     int maxDurationMs = 16000,
   }) {
     final result = <DjTransitionCandidate>[];
-    final outRemaining = (outgoing.durationMs ?? 0) - outgoingPositionMs;
     final outgoingAnchor = _bestOutgoingAnchor(outgoing, outgoingPositionMs);
     final baseDuration = preferredDurationMs.clamp(2000, maxDurationMs).toInt();
 
