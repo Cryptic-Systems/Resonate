@@ -32,6 +32,7 @@ import 'queue_screen.dart';
 import 'album_screen.dart';
 import 'artist_screen.dart';
 import 'lyrics_screen.dart';
+import 'audio_leveling_settings_screen.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -641,13 +642,25 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
               trailing: Text('${playback.pitch.toStringAsFixed(2)}×'),
               onTap: () { Navigator.pop(context); _showPitch(context, playback); },
             ),
-            Consumer<PlaybackFeaturesProvider>(
-              builder: (_, current, __) => SwitchListTile(
-                secondary: const Icon(Icons.volume_down_rounded),
+            Consumer<MusicProvider>(
+              builder: (context, music, _) => ListTile(
+                leading: const Icon(Icons.volume_down_rounded),
                 title: const Text('Volume normalization'),
-                subtitle: Text('Target ${current.targetLoudness.toStringAsFixed(0)} LUFS • track gain when available'),
-                value: current.normalizationEnabled,
-                onChanged: current.setNormalizationEnabled,
+                subtitle: Text(
+                  music.audioLevelingEnabled
+                      ? 'On · target ${music.audioLevelingTargetRmsDbfs.toStringAsFixed(0)} dBFS'
+                      : 'Off · analyze tracks and enable leveling',
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AudioLevelingSettingsScreen(),
+                    ),
+                  );
+                },
               ),
             ),
             if (!density.sleepTimerSuggested) sleepTile,
