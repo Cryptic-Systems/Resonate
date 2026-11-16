@@ -46,7 +46,10 @@ class DjTransitionBrain {
   }) {
     final result = <DjTransitionCandidate>[];
     final outgoingAnchor = _bestOutgoingAnchor(outgoing, outgoingPositionMs);
-    final baseDuration = preferredDurationMs.clamp(2000, maxDurationMs).toInt();
+    // Keep the public API safe when callers provide a ceiling below the
+    // minimum executable blend duration.
+    final effectiveMaxDurationMs = maxDurationMs < 2000 ? 2000 : maxDurationMs;
+    final baseDuration = preferredDurationMs.clamp(2000, effectiveMaxDurationMs).toInt();
 
     void add(DjTransitionKind kind, int inMs, int duration, Map<String, double> scores) {
       // A blend must fit entirely inside the remaining playable material on
@@ -62,7 +65,7 @@ class DjTransitionBrain {
           (incomingAvailable != null && incomingAvailable < 2000)) {
         return;
       }
-      var durationLimit = maxDurationMs;
+      var durationLimit = effectiveMaxDurationMs;
       if (outgoingAvailable != null && outgoingAvailable < durationLimit) {
         durationLimit = outgoingAvailable;
       }
@@ -114,7 +117,7 @@ class DjTransitionBrain {
       add(
         DjTransitionKind.phraseBlend,
         phrase,
-        (baseDuration * 1.15).round().clamp(3000, maxDurationMs).toInt(),
+        (baseDuration * 1.15).round().clamp(3000, effectiveMaxDurationMs).toInt(),
         _scorePair(outgoing, incoming, outgoingAnchor, phrase, 0.92, 0.88, policy: policy),
       );
     }
@@ -125,7 +128,7 @@ class DjTransitionBrain {
       add(
         DjTransitionKind.breakdownDrop,
         breakdown.startMs,
-        (drop.startMs - breakdown.startMs).clamp(3000, maxDurationMs).toInt(),
+        (drop.startMs - breakdown.startMs).clamp(3000, effectiveMaxDurationMs).toInt(),
         _scorePair(outgoing, incoming, outgoingAnchor, breakdown.startMs, 0.88, 0.95, policy: policy),
       );
     }
@@ -430,6 +433,9 @@ class DjTransitionBrain {
     final incomingAvailable = b.durationMs == null
         ? null
         : b.durationMs! - incomingStart;
+    if (outgoingPositionMs < 0 || incomingStart < 0) {
+      boundedDuration = 0;
+    }
     if (outgoingAvailable != null && outgoingAvailable < boundedDuration) {
       boundedDuration = outgoingAvailable;
     }
