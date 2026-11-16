@@ -166,10 +166,10 @@ class DjAutoSelectService {
         .toList();
     final minEnergy = energyValues.isEmpty
         ? null
-        : energyValues.reduce(math.min);
+        : energyValues.reduce((a, b) => math.min(a, b).toDouble());
     final maxEnergy = energyValues.isEmpty
         ? null
-        : energyValues.reduce(math.max);
+        : energyValues.reduce((a, b) => math.max(a, b).toDouble());
 
     // Start with the gentlest analyzed track. This gives the set a deliberate
     // opening instead of allowing a random high-energy track to dictate the
