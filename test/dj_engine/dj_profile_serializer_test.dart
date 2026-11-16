@@ -167,4 +167,55 @@ void main() {
     expect(decoded.energyCurve.map((p) => p.timeMs), [10000, 30000]);
   });
 
+
+  test('sanitizes invalid scalar profile metadata without losing the profile', () {
+    const serializer = DjProfileSerializer();
+    final decoded = serializer.decode('''
+      {
+        "songId": "scalar-guard",
+        "durationMs": -900,
+        "analysisConfidence": 1.7,
+        "beatGrid": {
+          "bpm": 999,
+          "confidence": -0.2,
+          "beatsPerBar": 0,
+          "beatsPerPhrase": 1000,
+          "downbeatConfidence": 1.4,
+          "barConfidence": "bad",
+          "phraseConfidence": 0.6
+        },
+        "keyRoot": 14,
+        "keyConfidence": "NaN",
+        "spectrum": {
+          "bass": 1.8,
+          "mids": -0.4,
+          "highs": 0.7,
+          "centroid": "bad",
+          "bassDensity": 0.4,
+          "spectralFlux": 2.0,
+          "confidence": -1
+        }
+      }
+    ''');
+
+    expect(decoded.durationMs, isNull);
+    expect(decoded.analysisConfidence, 0);
+    expect(decoded.beatGrid.bpm, isNull);
+    expect(decoded.beatGrid.confidence, 0);
+    expect(decoded.beatGrid.beatsPerBar, 4);
+    expect(decoded.beatGrid.beatsPerPhrase, 16);
+    expect(decoded.beatGrid.downbeatConfidence, 0);
+    expect(decoded.beatGrid.barConfidence, 0);
+    expect(decoded.beatGrid.phraseConfidence, 0.6);
+    expect(decoded.keyRoot, isNull);
+    expect(decoded.keyConfidence, 0);
+    expect(decoded.spectrum.bass, 0.5);
+    expect(decoded.spectrum.mids, 0.5);
+    expect(decoded.spectrum.highs, 0.7);
+    expect(decoded.spectrum.centroid, 0.5);
+    expect(decoded.spectrum.bassDensity, 0.4);
+    expect(decoded.spectrum.spectralFlux, 0.5);
+    expect(decoded.spectrum.confidence, 0);
+  });
+
 }
