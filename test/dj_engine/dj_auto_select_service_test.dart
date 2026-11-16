@@ -274,12 +274,12 @@ void main() {
         'outgoing': _analysis(
           'outgoing',
           energy: 0.10,
-          outroHintMs: 12000,
+          outroHintMs: 160000,
         ),
         'with-intro': _analysis(
           'with-intro',
           energy: 0.50,
-          introHintMs: 10000,
+          introHintMs: 15000,
         ),
         'without-intro': _analysis(
           'without-intro',
