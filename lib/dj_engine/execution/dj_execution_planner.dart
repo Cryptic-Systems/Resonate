@@ -129,11 +129,118 @@ class DjExecutionPlanner {
       DjExecutionStep(action: 'complete_transition', atMs: effectiveDurationMs),
     ];
 
+    if (!_executionStepsValid(
+      steps: steps,
+      durationMs: effectiveDurationMs,
+      incoming: incoming,
+      candidate: candidate,
+    )) {
+      return DjExecutionPlan(
+        candidate: candidate,
+        fallback: true,
+        reason: 'invalid_execution_timeline',
+        steps: const [],
+      );
+    }
+
     return DjExecutionPlan(
       candidate: candidate,
       steps: steps,
       reason: 'planned',
     );
+  }
+
+
+  static bool _executionStepsValid({
+    required List<DjExecutionStep> steps,
+    required int durationMs,
+    required DjTrackProfile incoming,
+    required DjTransitionCandidate candidate,
+  }) {
+    const allowedActions = {
+      'prepare_incoming',
+      'start_incoming',
+      'extend_crossfade',
+      'duck_incoming_bass',
+      'phrase_align',
+      'trigger_sfx',
+      'complete_transition',
+    };
+    final counts = <String, int>{};
+    var previousAtMs = -1;
+    for (final step in steps) {
+      if (!allowedActions.contains(step.action) ||
+          step.atMs < 0 ||
+          step.atMs > durationMs ||
+          step.atMs < previousAtMs) {
+        return false;
+      }
+      previousAtMs = step.atMs;
+      counts.update(step.action, (count) => count + 1, ifAbsent: () => 1);
+      final parameters = step.parameters;
+      switch (step.action) {
+        case 'prepare_incoming':
+          final seekMs = parameters['seekMs'];
+          if (seekMs is! int ||
+              seekMs != candidate.incomingStartMs ||
+              seekMs < 0 ||
+              (incoming.durationMs != null && seekMs >= incoming.durationMs!)) {
+            return false;
+          }
+        case 'start_incoming':
+          if (step.atMs != 0 || parameters.isNotEmpty) return false;
+        case 'extend_crossfade':
+          if (step.atMs != 0 || parameters['durationMs'] != durationMs) {
+            return false;
+          }
+        case 'duck_incoming_bass':
+          final amount = parameters['amount'];
+          final duckDuration = parameters['durationMs'];
+          if (step.atMs != 0 ||
+              amount is! num ||
+              !amount.isFinite ||
+              amount <= 0 ||
+              amount > 1 ||
+              duckDuration is! int ||
+              duckDuration <= 0 ||
+              duckDuration > durationMs) {
+            return false;
+          }
+        case 'phrase_align':
+          if (step.atMs != 0 || parameters['kind'] != candidate.kind.name) {
+            return false;
+          }
+        case 'trigger_sfx':
+          if (step.atMs <= 0 ||
+              step.atMs >= durationMs ||
+              parameters['kind'] != candidate.kind.name ||
+              parameters['snapped'] != true) {
+            return false;
+          }
+        case 'complete_transition':
+          if (step.atMs != durationMs || parameters.isNotEmpty) return false;
+      }
+    }
+
+    const requiredActions = [
+      'prepare_incoming',
+      'start_incoming',
+      'phrase_align',
+      'trigger_sfx',
+      'complete_transition',
+    ];
+    if (requiredActions.any((action) => counts[action] != 1) ||
+        counts.values.any((count) => count != 1)) {
+      return false;
+    }
+    if (steps.first.action != 'prepare_incoming' ||
+        steps.last.action != 'complete_transition') {
+      return false;
+    }
+    final prepareIndex = steps.indexWhere((s) => s.action == 'prepare_incoming');
+    final startIndex = steps.indexWhere((s) => s.action == 'start_incoming');
+    if (prepareIndex >= startIndex) return false;
+    return true;
   }
 
   static bool _profileMetricsValid(DjTrackProfile profile) {
