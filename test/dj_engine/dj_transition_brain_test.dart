@@ -268,4 +268,32 @@ void main() {
     expect(plan.candidate.score, greaterThan(0.0));
   });
 
+
+  test('keeps fallback non-executable for a negative outgoing position', () {
+    const unknown = DjTrackProfile(songId: 'unknown');
+    final plan = engine.planTransition(
+      outgoing: unknown,
+      incoming: unknown,
+      outgoingPositionMs: -1,
+    );
+
+    expect(plan.fallback, isTrue);
+    expect(plan.reason, 'insufficient_playable_duration');
+    expect(plan.candidate.durationMs, 0);
+    expect(plan.steps, isEmpty);
+  });
+
+  test('normalizes a requested maximum below the minimum blend duration', () {
+    final candidates = engine.brain.generate(
+      outgoing: track(id: 'out'),
+      incoming: track(id: 'in', section: DjSectionType.intro),
+      outgoingPositionMs: 220000,
+      preferredDurationMs: 8000,
+      maxDurationMs: 1000,
+    );
+
+    expect(candidates, isNotEmpty);
+    expect(candidates.every((candidate) => candidate.durationMs == 2000), isTrue);
+  });
+
 }
