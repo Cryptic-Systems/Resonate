@@ -24,11 +24,19 @@ DjAnalysis _analysis(
   int key = 0,
   String mode = 'minor',
   double energy = 0.55,
+  int? beatOffsetMs,
+  int? introHintMs,
+  int? outroHintMs,
+  String? bpmSource,
 }) {
   return DjAnalysis(
     songId: id,
     bpm: bpm,
     bpmConfidence: 0.92,
+    bpmSource: bpmSource,
+    beatOffsetMs: beatOffsetMs,
+    introHintMs: introHintMs,
+    outroHintMs: outroHintMs,
     keyRoot: key,
     keyMode: mode,
     energy: energy,
@@ -184,6 +192,122 @@ void main() {
       expect(orderedEnergy.last, lessThan(orderedEnergy[peakIndex]));
       expect(result.songs.map((song) => song.id).toSet(),
           songs.map((song) => song.id).toSet());
+    });
+
+    test('beat phase favors tracks with aligned PCM beat grids', () {
+      final songs = [
+        _song('opening', artist: 'One'),
+        _song('aligned', artist: 'Two'),
+        _song('offset', artist: 'Three'),
+      ];
+      final analyses = {
+        'opening': _analysis(
+          'opening',
+          energy: 0.10,
+          beatOffsetMs: 100,
+          bpmSource: 'pcm_profile_v2',
+        ),
+        'aligned': _analysis(
+          'aligned',
+          energy: 0.50,
+          beatOffsetMs: 110,
+          bpmSource: 'pcm_profile_v2',
+        ),
+        'offset': _analysis(
+          'offset',
+          energy: 0.50,
+          beatOffsetMs: 350,
+          bpmSource: 'pcm_profile_v2',
+        ),
+      };
+
+      final result = DjAutoSelectService().arrangeWithAnalysis(
+        songs,
+        analyses,
+        random: math.Random(23),
+      );
+
+      expect(result.songs.first.id, 'opening');
+      expect(result.songs[1].id, 'aligned');
+    });
+
+    test('beat phase ignores ID3-only default offsets', () {
+      final songs = [
+        _song('opening', artist: 'One'),
+        _song('other', artist: 'Two'),
+        _song('candidate', artist: 'Three'),
+      ];
+      final analyses = {
+        'opening': _analysis('opening', energy: 0.10, beatOffsetMs: 0),
+        'other': _analysis(
+          'other',
+          energy: 0.50,
+          beatOffsetMs: 0,
+          bpmSource: 'id3_tbpm',
+        ),
+        'candidate': _analysis(
+          'candidate',
+          energy: 0.50,
+          beatOffsetMs: 250,
+          bpmSource: 'id3_tbpm',
+        ),
+      };
+
+      final result = DjAutoSelectService().arrangeWithAnalysis(
+        songs,
+        analyses,
+        random: math.Random(29),
+      );
+
+      expect(result.songs.first.id, 'opening');
+      expect(result.songs[1].id, isNotEmpty);
+      expect(result.usedDjArrangement, isTrue);
+    });
+
+    test('compatible intro and outro hints modestly favor a longer blend window', () {
+      final songs = [
+        _song('outgoing', artist: 'One'),
+        _song('with-intro', artist: 'Two'),
+        _song('without-intro', artist: 'Three'),
+      ];
+      final analyses = {
+        'outgoing': _analysis(
+          'outgoing',
+          energy: 0.10,
+          outroHintMs: 12000,
+        ),
+        'with-intro': _analysis(
+          'with-intro',
+          energy: 0.50,
+          introHintMs: 10000,
+        ),
+        'without-intro': _analysis(
+          'without-intro',
+          energy: 0.50,
+        ),
+      };
+
+      final result = DjAutoSelectService().arrangeWithAnalysis(
+        songs,
+        analyses,
+        random: math.Random(31),
+      );
+
+      expect(result.songs.first.id, 'outgoing');
+      expect(result.songs[1].id, 'with-intro');
+    });
+
+    test('missing intro and outro hints remain neutral', () {
+      final a = _analysis('a', energy: 0.10);
+      final b = _analysis('b', energy: 0.50);
+      final c = _analysis('c', energy: 0.50);
+      expect(a.introHintMs, isNull);
+      expect(b.outroHintMs, isNull);
+      expect(DjAutoSelectService().arrangeWithAnalysis(
+        [_song('a'), _song('b'), _song('c')],
+        {'a': a, 'b': b, 'c': c},
+        random: math.Random(37),
+      ).usedDjArrangement, isTrue);
     });
 
     test('single-track scopes do not invoke a musical reorder', () {
