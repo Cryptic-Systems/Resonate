@@ -74,6 +74,17 @@ void main() {
       expect(result.single.endMs, 123000);
     });
 
+    test('does not bridge a missing PCM window into a false silence region', () {
+      final samples = [
+        ..._samples(startMs: 0, count: 1200, rms: 0.10),
+        ..._samples(startMs: 120000, count: 10, rms: 0.00001),
+        // A large unobserved interval is not evidence of continuous silence.
+        ..._samples(startMs: 150000, count: 10, rms: 0.00001),
+      ];
+
+      expect(detector.detect(samples, durationMs: 180000), isEmpty);
+    });
+
     test('does not flag a globally quiet or low-level recording', () {
       final samples = _samples(
         startMs: 0,
