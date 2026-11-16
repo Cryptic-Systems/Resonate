@@ -155,7 +155,8 @@ void main() {
         _song('mid', artist: 'Three'),
         _song('drive', artist: 'Four'),
         _song('peak', artist: 'Five'),
-        _song('close', artist: 'Six'),
+        _song('peak-two', artist: 'Six'),
+        _song('close', artist: 'Seven'),
       ];
       final analyses = {
         'low': _analysis('low', energy: 0.10),
@@ -163,7 +164,8 @@ void main() {
         'mid': _analysis('mid', energy: 0.40),
         'drive': _analysis('drive', energy: 0.60),
         'peak': _analysis('peak', energy: 0.80),
-        'close': _analysis('close', energy: 1.00),
+        'peak-two': _analysis('peak-two', energy: 1.00),
+        'close': _analysis('close', energy: 0.55),
       };
 
       final result = DjAutoSelectService().arrangeWithAnalysis(
