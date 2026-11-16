@@ -143,15 +143,20 @@ extension MusicProviderMedia3 on MusicProvider {
       }
 
       final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
-      final configuredDurationMs = (djActive
-              ? (_crossfadeDurationMs + _lastDjCrossfadeBiasMs).clamp(500, 6500)
-              : _crossfadeDurationMs.clamp(500, 12000))
-          .toInt();
+      final plannedDurationMs = preparation?.transitionDurationMs;
+      final hasApprovedCue = preparation?.outgoingStartPosition != null;
+      final configuredDurationMs = plannedDurationMs != null
+          ? plannedDurationMs.clamp(2000, 20000).toInt()
+          : (djActive
+                  ? (_crossfadeDurationMs + _lastDjCrossfadeBiasMs).clamp(500, 6500)
+                  : _crossfadeDurationMs.clamp(500, 12000))
+              .toInt();
       final remainingMs = session.duration == null
           ? null
           : session.duration!.inMilliseconds - session.position.inMilliseconds;
-      if (remainingMs == null || remainingMs < 1200 ||
-          remainingMs > configuredDurationMs + 4500) {
+      if (remainingMs == null ||
+          remainingMs < 1200 ||
+          (!hasApprovedCue && remainingMs > configuredDurationMs + 4500)) {
         throw StateError('Media3 crossfade trigger is outside the validated end window.');
       }
       // Never let the outgoing deck reach ENDED before the native fade can
