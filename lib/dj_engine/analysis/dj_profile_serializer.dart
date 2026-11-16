@@ -59,6 +59,14 @@ class DjProfileSerializer {
           'spectralFlux': profile.spectrum.spectralFlux,
           'confidence': profile.spectrum.confidence,
         },
+        'silenceRegions': profile.silenceRegions
+            .map((region) => {
+                  'startMs': region.startMs,
+                  'endMs': region.endMs,
+                  'minimumDbfs': region.minimumDbfs,
+                  'confidence': region.confidence,
+                })
+            .toList(),
         'transitions': {
           'bestIntroMs': profile.transitions.bestIntroMs,
           'bestOutroMs': profile.transitions.bestOutroMs,
@@ -106,6 +114,7 @@ class DjProfileSerializer {
         spectralFlux: (spectrum['spectralFlux'] as num?)?.toDouble() ?? 0.5,
         confidence: (spectrum['confidence'] as num?)?.toDouble() ?? 0,
       ),
+      silenceRegions: _silenceRegions(map['silenceRegions']),
       transitions: DjTransitionMarkers(
         bestIntroMs: (transition['bestIntroMs'] as num?)?.toInt(),
         bestOutroMs: (transition['bestOutroMs'] as num?)?.toInt(),
@@ -130,6 +139,25 @@ class DjProfileSerializer {
             confidence: (p['confidence'] as num?)?.toDouble() ?? 0,
           ))
       .toList();
+
+  List<DjSilenceRegion> _silenceRegions(dynamic value) =>
+      (value is List ? value : const []).whereType<Map>().map((region) {
+        final start = (region['startMs'] as num?)?.toInt() ?? -1;
+        final end = (region['endMs'] as num?)?.toInt() ?? -1;
+        final confidence = (region['confidence'] as num?)?.toDouble() ?? 0;
+        final minimumDbfs = (region['minimumDbfs'] as num?)?.toDouble() ?? 0;
+        if (start < 0 || end <= start ||
+            !confidence.isFinite || confidence < 0 || confidence > 1 ||
+            !minimumDbfs.isFinite) {
+          return null;
+        }
+        return DjSilenceRegion(
+          startMs: start,
+          endMs: end,
+          minimumDbfs: minimumDbfs,
+          confidence: confidence,
+        );
+      }).whereType<DjSilenceRegion>().toList();
 
   List<int> _ints(dynamic value) => (value is List ? value : const [])
       .whereType<num>()
