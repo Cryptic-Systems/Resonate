@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../models/dj_analysis.dart';
+import '../models/listening_event.dart';
 import '../models/song.dart';
 import 'dj_analysis_service.dart';
 
@@ -23,6 +24,65 @@ class DjAutoSelectResult {
   final String? reason;
 }
 
+/// Lightweight, privacy-local listening preference signal derived from the
+/// user's own playback history. Positive values indicate affinity; negative
+/// values indicate repeated early skips or overexposure.
+class DjListeningSignal {
+  const DjListeningSignal({
+    this.completionRatio = 0,
+    this.skipRatio = 0,
+    this.recentPlayCount = 0,
+    this.favorite = false,
+  });
+
+  final double completionRatio;
+  final double skipRatio;
+  final int recentPlayCount;
+  final bool favorite;
+
+  double get preferenceScore {
+    final completion = (completionRatio - 0.5) * 0.34;
+    final skips = skipRatio * 0.42;
+    final overplay = math.min(recentPlayCount, 6) * 0.035;
+    final favoriteBoost = favorite ? 0.12 : 0.0;
+    return (completion - skips - overplay + favoriteBoost)
+        .clamp(-0.45, 0.30)
+        .toDouble();
+  }
+
+  static Map<String, DjListeningSignal> fromHistory(
+    List<ListeningEvent> events, {
+    Set<String> favorites = const {},
+  }) {
+    final grouped = <String, List<ListeningEvent>>{};
+    for (final event in events) {
+      grouped.putIfAbsent(event.songId, () => []).add(event);
+    }
+    final result = <String, DjListeningSignal>{};
+    for (final entry in grouped.entries) {
+      final rows = entry.value;
+      final completed = rows.where((event) => event.completed).length;
+      final skipped = rows.where((event) => event.skipped).length;
+      final finishedCount = rows.where((event) => event.endedAt != null).length;
+      final completionRatio = finishedCount == 0
+          ? 0.5
+          : rows.fold<double>(0, (sum, event) => sum +
+              event.completionRatio.clamp(0.0, 1.0).toDouble()) / rows.length;
+      final skipRatio = finishedCount == 0 ? 0.0 : skipped / finishedCount;
+      result[entry.key] = DjListeningSignal(
+        completionRatio: completionRatio,
+        skipRatio: skipRatio,
+        recentPlayCount: rows.length,
+        favorite: favorites.contains(entry.key),
+      );
+    }
+    for (final id in favorites) {
+      result.putIfAbsent(id, () => const DjListeningSignal(favorite: true));
+    }
+    return result;
+  }
+}
+
 class DjAutoSelectService {
   DjAutoSelectService({DjAnalysisService? analysis})
       : _analysis = analysis ?? DjAnalysisService();
@@ -32,6 +92,7 @@ class DjAutoSelectService {
   Future<DjAutoSelectResult> arrange(
     List<Song> songs, {
     math.Random? random,
+    Map<String, DjListeningSignal> listeningSignals = const {},
   }) async {
     final analyses = <String, DjAnalysis>{};
     for (final song in songs) {
@@ -40,7 +101,12 @@ class DjAutoSelectService {
         analyses[song.id] = analysis;
       }
     }
-    return arrangeWithAnalysis(songs, analyses, random: random);
+    return arrangeWithAnalysis(
+      songs,
+      analyses,
+      random: random,
+      listeningSignals: listeningSignals,
+    );
   }
 
   /// Pure ordering core, exposed so scoring and confidence gates are testable.
@@ -48,6 +114,7 @@ class DjAutoSelectService {
     List<Song> songs,
     Map<String, DjAnalysis> analyses, {
     math.Random? random,
+    Map<String, DjListeningSignal> listeningSignals = const {},
   }) {
     final rng = random ?? math.Random();
     final input = List<Song>.of(songs);
@@ -87,13 +154,14 @@ class DjAutoSelectService {
           analyses[previous.id],
           analyses[candidate.id],
         );
+        final preference = listeningSignals[candidate.id]?.preferenceScore ?? 0.0;
         final sameArtist = _sameMetadata(previous.artist, candidate.artist);
         final sameAlbum = _sameMetadata(previous.album, candidate.album);
         final diversity = (sameArtist ? -0.10 : 0.035) +
             (sameAlbum ? -0.035 : 0.015);
         // Tiny random tie-break prevents the same library from always
         // producing an identical order when musical scores are equivalent.
-        final score = musical + diversity + rng.nextDouble() * 0.025;
+        final score = musical + diversity + preference + rng.nextDouble() * 0.025;
         if (score > bestScore) {
           bestScore = score;
           best = candidate;
