@@ -31,7 +31,7 @@ class DjSilenceSegment {
   final double minimumDbfs;
   final double confidence;
 
-  int get durationMs => math.max(0, endMs - startMs);
+  int get durationMs => math.max(0, endMs - startMs).toInt();
 }
 
 /// Conservative silence detector for musical PCM.
@@ -135,7 +135,7 @@ class DjSilenceDetector {
     }
     if (candidateStart != null) {
       final last = valid.last;
-      closeCandidate(math.min(durationMs, last.timeMs + last.windowMs));
+      closeCandidate(math.min(durationMs, last.timeMs + last.windowMs).toInt());
     }
 
     return candidates;
