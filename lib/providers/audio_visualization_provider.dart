@@ -142,6 +142,9 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
         await AudioEffectsBridge.refreshVisualizers();
         _syncCapture();
       }
+    } catch (_) {
+      _permissionChecked = false;
+      _capturePermissionGranted = false;
     } finally {
       _permissionRequestInFlight = false;
     }
@@ -174,6 +177,12 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
       // Avoid rebuilding both consumers for imperceptible numerical noise.
       if (changed) {
         frequencies = updated;
+        notifyListeners();
+      }
+    } catch (_) {
+      _captureFailures++;
+      if (!_disposed && _playbackActive && frequencies.any((v) => v != 0.0)) {
+        frequencies = List<double>.filled(32, 0.0);
         notifyListeners();
       }
     } finally {
@@ -212,9 +221,13 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
       orbAudioReactive = prefs.getBool('audio_viz_orb_reactive') ?? true;
       smoothAnimation = prefs.getBool('audio_viz_smooth') ?? true;
       frameRate = (prefs.getDouble('audio_viz_fps') ?? 24).clamp(12, 30).toDouble();
+      _preferencesLoaded = true;
       _syncCapture();
       if (!_disposed) notifyListeners();
-    } catch (_) {}
+    } catch (_) {
+      _preferencesLoaded = true;
+      _syncCapture();
+    }
   }
 
   Future<void> _save() async {
@@ -236,7 +249,8 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
 
   @override
   void dispose() {
-    _disposed = true;\n    WidgetsBinding.instance.removeObserver(this);
+    _disposed = true;
+    WidgetsBinding.instance.removeObserver(this);
     if (_playbackListenable != null && _playbackListener != null) {
       _playbackListenable!.removeListener(_playbackListener!);
     }
