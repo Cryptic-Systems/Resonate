@@ -159,6 +159,35 @@ void main() {
     expect(plan.steps.last.atMs, 2000);
   });
 
+  test('caps an overlong candidate to the planner execution ceiling', () {
+    const candidate = DjTransitionCandidate(
+      kind: DjTransitionKind.safeCrossfade,
+      outgoingStartMs: 200000,
+      incomingStartMs: 0,
+      durationMs: 24000,
+      score: 0.9,
+      confidence: 0.92,
+    );
+
+    final plan = planner.plan(
+      outgoing: outgoing,
+      incoming: incoming,
+      candidate: candidate,
+    );
+
+    expect(plan.fallback, isFalse);
+    expect(plan.reason, 'planned');
+    expect(plan.steps.last.action, 'complete_transition');
+    expect(plan.steps.last.atMs, 20000);
+    final sfx = plan.steps.singleWhere((step) => step.action == 'trigger_sfx');
+    expect(sfx.atMs, greaterThanOrEqualTo(150));
+    expect(sfx.atMs, lessThan(20000));
+    expect(
+      plan.steps.map((step) => step.atMs).toList(),
+      orderedEquals(plan.steps.map((step) => step.atMs).toList()..sort()),
+    );
+  });
+
   test('safe policy applies stricter risk threshold than musical policy', () {
     const candidate = DjTransitionCandidate(
       kind: DjTransitionKind.phraseBlend,
