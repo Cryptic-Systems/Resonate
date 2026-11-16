@@ -202,14 +202,16 @@ class DjSessionCoordinator {
         } catch (_) {
           row = null;
         }
-        profile = row != null && row.songId == song.id
-            ? _profileBuilder.fromAnalysis(row)
-            : DjTrackProfile(
-                songId: song.id,
-                durationMs: song.duration.inMilliseconds > 0
-                    ? song.duration.inMilliseconds
-                    : null,
-              );
+        if (row != null && row.songId == song.id) {
+          try {
+            profile = _profileBuilder.fromAnalysis(row);
+          } catch (_) {
+            // A malformed or incomplete cached row must not abort the mix.
+            profile = _emptyProfile(song);
+          }
+        } else {
+          profile = _emptyProfile(song);
+        }
       }
       profiles[song.id] = profile;
     }
@@ -259,6 +261,13 @@ class DjSessionCoordinator {
       revision: revision,
     );
   }
+
+  static DjTrackProfile _emptyProfile(Song song) => DjTrackProfile(
+        songId: song.id,
+        durationMs: song.duration.inMilliseconds > 0
+            ? song.duration.inMilliseconds
+            : null,
+      );
 
   static void _validateSource(
     List<Song> songs,
