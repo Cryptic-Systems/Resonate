@@ -80,7 +80,8 @@ class DjSilenceDetector {
       ..sort();
     if (levels.length < 4) return const [];
     final referenceDbfs = levels[(levels.length * 0.75).floor()
-        .clamp(0, levels.length - 1)];
+        .clamp(0, levels.length - 1)
+        .toInt()];
     if (referenceDbfs < minimumReferenceDbfs) return const [];
 
     // Keep the gate conservative across differently mastered material.
@@ -96,7 +97,7 @@ class DjSilenceDetector {
     void closeCandidate(int endMs) {
       if (candidateStart == null) return;
       final start = candidateStart!;
-      final end = math.max(start, endMs);
+      final end = math.max(start, endMs).toInt();
       final heldMs = end - start;
       if (heldMs >= minimumDurationMs) {
         final depth = (enterDbfs - minimumSeen).clamp(0.0, 24.0);
