@@ -959,33 +959,125 @@ class _NextCard extends StatelessWidget {
 class _PlayerEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final muted = scheme.onSurfaceVariant.withValues(alpha: 0.55);
+
+    // Keep the full player surface visible on a fresh install. Track-dependent
+    // actions remain disabled until a queue item is selected.
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
+      children: [
+        AspectRatio(
+          aspectRatio: 1,
+          child: ResonateGlassCard(
+            padding: EdgeInsets.zero,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.music_note_rounded, size: 76, color: scheme.primary.withValues(alpha: 0.75)),
+                  const SizedBox(height: 12),
+                  Text('Your music will appear here', style: theme.textTheme.titleMedium?.copyWith(color: muted)),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 22),
+        Text(
+          'Nothing playing yet',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          'Choose a song from Library to start listening',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium?.copyWith(color: muted),
+        ),
+        const SizedBox(height: 24),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            disabledActiveTrackColor: scheme.primary.withValues(alpha: 0.35),
+            disabledInactiveTrackColor: scheme.outlineVariant,
+            disabledThumbColor: scheme.primary.withValues(alpha: 0.55),
+          ),
+          child: const Slider(value: 0, min: 0, max: 1, onChanged: null),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [Text('0:00'), Text('0:00')],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            Icon(Icons.music_note_rounded, size: 56, color: scheme.primary),
-            const SizedBox(height: 16),
-            Text(
-              'Nothing playing yet',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+            IconButton(
+              tooltip: 'Previous track',
+              onPressed: null,
+              icon: const Icon(Icons.skip_previous_rounded),
+              iconSize: 34,
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Choose a song from Library to start. Equalizer, Crossfade, and other audio tools are always available under Settings — no need to play first.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium,
+            IconButton(
+              tooltip: 'Seek backward 10 seconds',
+              onPressed: null,
+              icon: const Icon(Icons.replay_10_rounded),
+              iconSize: 30,
             ),
-            const SizedBox(height: 20),
-            Text(
-              'Library · Settings → Audio / Playback',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(color: scheme.primary),
+            SizedBox(
+              width: 68,
+              height: 68,
+              child: FilledButton(
+                onPressed: null,
+                style: FilledButton.styleFrom(
+                  shape: const CircleBorder(),
+                  disabledBackgroundColor: scheme.primary.withValues(alpha: 0.35),
+                  disabledForegroundColor: scheme.onPrimary.withValues(alpha: 0.8),
+                  padding: EdgeInsets.zero,
+                ),
+                child: const Icon(Icons.play_arrow_rounded, size: 42),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Seek forward 10 seconds',
+              onPressed: null,
+              icon: const Icon(Icons.forward_10_rounded),
+              iconSize: 30,
+            ),
+            IconButton(
+              tooltip: 'Next track',
+              onPressed: null,
+              icon: const Icon(Icons.skip_next_rounded),
+              iconSize: 34,
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 18),
+        ResonateGlassCard(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              IconButton(tooltip: 'Shuffle (select a track first)', onPressed: null, icon: const Icon(Icons.shuffle_rounded)),
+              IconButton(tooltip: 'Repeat (select a track first)', onPressed: null, icon: const Icon(Icons.repeat_rounded)),
+              IconButton(tooltip: 'Queue', onPressed: null, icon: const Icon(Icons.queue_music_rounded)),
+              IconButton(tooltip: 'Volume', onPressed: null, icon: const Icon(Icons.volume_up_rounded)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        Center(
+          child: Text(
+            'Playback controls will activate when you select a track.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(color: muted),
+          ),
+        ),
+      ],
     );
   }
 }
