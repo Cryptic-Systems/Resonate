@@ -90,6 +90,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       context,
       songs,
       playlistName: widget.playlist.name,
+      playlistId: widget.playlist.id,
     );
   }
   Future<void> _addAllToQueue(List<Song> songs) async {
