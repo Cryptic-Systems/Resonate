@@ -115,7 +115,7 @@ class DjAutoSelectService {
     var confidence = 0.0;
     if (a.hasUsableBpm) {
       availableWeight += 0.55;
-      confidence += 0.55 * a.bpmConfidence.clamp(0.0, 1.0);
+      confidence += 0.55 * a.bpmConfidence.clamp(0.0, 1.0).toDouble();
     }
     if (a.hasUsableKey) {
       availableWeight += 0.25;
@@ -135,7 +135,7 @@ class DjAutoSelectService {
 
     if (a.hasUsableBpm && b.hasUsableBpm) {
       final confidence = math.min(a.bpmConfidence, b.bpmConfidence)
-          .clamp(0.0, 1.0);
+          .clamp(0.0, 1.0).toDouble();
       final tempo = _tempoCompatibility(a.bpm!, b.bpm!);
       final w = 0.55 * confidence;
       weighted += tempo * w;
@@ -154,7 +154,7 @@ class DjAutoSelectService {
     }
 
     if (a.hasUsableEnergy && b.hasUsableEnergy) {
-      final energy = 1.0 - (a.energy! - b.energy!).abs().clamp(0.0, 1.0);
+      final energy = 1.0 - (a.energy! - b.energy!).abs().clamp(0.0, 1.0).toDouble();
       weighted += energy * 0.20;
       weight += 0.20;
     }
@@ -167,7 +167,7 @@ class DjAutoSelectService {
     final difference = ratios
         .map((ratio) => (ratio - 1.0).abs())
         .reduce(math.min);
-    return (1.0 - difference / 0.18).clamp(0.0, 1.0);
+    return (1.0 - difference / 0.18).clamp(0.0, 1.0).toDouble();
   }
 
   static double _harmonicCompatibility(
@@ -185,7 +185,7 @@ class DjAutoSelectService {
     if (semitones == 0) return 0.88;
     if (semitones == 7 || semitones == 5) return 0.90;
     if (semitones == 3 || semitones == 9) return 0.82;
-    return (0.72 - circleDistance * 0.055).clamp(0.30, 0.72);
+    return (0.72 - circleDistance * 0.055).clamp(0.30, 0.72).toDouble();
   }
 
   static bool _sameMetadata(String a, String b) {
