@@ -171,8 +171,8 @@ class _OrbWaveEdgePainter extends CustomPainter {
       final energy = first + (second - first) * fraction;
       // Keep the contour lively and bass-forward, with enough travel to read
       // as waves rather than a uniformly expanding halo.
-      final displacement = math.sqrt(energy) *
-          (2.0 + sensitivity.clamp(0.1, 1.0) * 7.0);
+      final displacement = (math.sqrt(energy) *
+          (2.0 + sensitivity.clamp(0.1, 1.0) * 7.0)).toDouble();
       final radius = baseRadius + displacement;
       final point = Offset(
         center.dx + math.cos(angle) * radius,
