@@ -118,7 +118,19 @@ class DjSilenceDetector {
       candidateStart = null;
     }
 
+    DjRmsSample? previous;
     for (final sample in valid) {
+      if (previous != null) {
+        final allowedGapMs = math.max(
+          300,
+          math.max(previous.windowMs, sample.windowMs) * 2,
+        );
+        if (sample.timeMs - (previous.timeMs + previous.windowMs) > allowedGapMs) {
+          // Never let sparse analysis windows manufacture a long silent region.
+          closeCandidate(previous.timeMs + previous.windowMs);
+        }
+      }
+      previous = sample;
       final dbfs = _toDbfs(sample.rms);
       if (sample.timeMs < monitorFromMs) continue;
 
