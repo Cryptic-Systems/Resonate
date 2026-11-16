@@ -27,7 +27,6 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
   bool _capturePermissionGranted = false;
   bool _disposed = false;
   bool _preferencesLoaded = false;
-  int _captureFailures = 0;
   Listenable? _playbackListenable;
   VoidCallback? _playbackListener;
   bool Function()? _isPlaybackActive;
@@ -180,7 +179,6 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
         notifyListeners();
       }
     } catch (_) {
-      _captureFailures++;
       if (!_disposed && _playbackActive && frequencies.any((v) => v != 0.0)) {
         frequencies = List<double>.filled(32, 0.0);
         notifyListeners();
