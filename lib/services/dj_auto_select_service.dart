@@ -218,10 +218,22 @@ class DjAutoSelectService {
         // Musical compatibility remains the main transition signal. The
         // lower-weight arc score shapes the full set: warm-up, rise, peak,
         // then a controlled landing. Missing energy is neutral, not penalized.
+        // Cue suitability is a small additive tie-break rather than part
+        // of the normalized musical score. This preserves its influence even
+        // when BPM/key/energy compatibility already reaches 1.0. Unknown cue
+        // data contributes zero after centering at neutral.
+        final cueCompatibility = _introOutroCompatibility(
+          analyses[previous.id] ?? _emptyAnalysis(previous.id),
+          analyses[candidate.id] ?? _emptyAnalysis(candidate.id),
+        );
+        final cuePreference = cueCompatibility == null
+            ? 0.0
+            : (cueCompatibility - 0.5) * 0.08;
         final score = musical +
             diversity +
             preference +
             energyArc * 0.20 +
+            cuePreference +
             rng.nextDouble() * 0.025;
         if (score > bestScore) {
           bestScore = score;
@@ -328,15 +340,6 @@ class DjAutoSelectService {
     if (beatPhase != null) {
       weighted += beatPhase * 0.12;
       weight += 0.12;
-    }
-
-    // Intro/outro hints are coarse quiet-section estimates, not exact cue
-    // points. Use them as a small preference only when both sides are present
-    // and plausible; missing hints remain neutral.
-    final transitionWindow = _introOutroCompatibility(a, b);
-    if (transitionWindow != null) {
-      weighted += transitionWindow * 0.08;
-      weight += 0.08;
     }
 
     return weight < 0.18 ? 0.5 : weighted / weight;
