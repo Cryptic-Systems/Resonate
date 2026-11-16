@@ -204,22 +204,34 @@ class Media3PlaybackBridge(
                     )
                     val targetIndex = reconciliation.targetIndex
 
-                    // Keep the active deck attached to the player while rebuilding the
-                    // surrounding playlist. This avoids resetting the whole player for
-                    // append/remove/reorder edits and invalidates stale crossfade preload.
+                    // Keep the current MediaItem instance attached to the active
+                    // player whenever that occurrence survives the edit. Replacing
+                    // the current item and seeking back to the same timestamp forces
+                    // ExoPlayer to rebuffer; removing an upcoming queue row must not
+                    // interrupt audible playback or transiently publish a paused UI.
+                    val currentOccurrenceSurvives =
+                        oldIdentity.mediaId == items[targetIndex].mediaId &&
+                            oldIdentity.uri == items[targetIndex].localConfiguration?.uri?.toString().orEmpty()
+
                     connected.removeMediaItems(oldIndex + 1, connected.mediaItemCount)
                     connected.removeMediaItems(0, oldIndex)
-                    connected.replaceMediaItem(0, items[targetIndex])
+                    if (!currentOccurrenceSurvives) {
+                        // The old current track was removed. Reuse its player slot
+                        // for the selected fallback and start that track at zero.
+                        connected.replaceMediaItem(0, items[targetIndex])
+                    }
                     if (targetIndex > 0) {
                         connected.addMediaItems(0, items.subList(0, targetIndex))
                     }
                     if (targetIndex < items.lastIndex) {
                         connected.addMediaItems(targetIndex + 1, items.subList(targetIndex + 1, items.size))
                     }
-                    // A removed current track must not carry its old timestamp
-                    // into the fallback track. Keep the exact position only when
-                    // the same media occurrence survives the queue edit.
-                    connected.seekTo(targetIndex, reconciliation.targetPosition(oldPosition))
+                    // A surviving current occurrence is automatically shifted to
+                    // its new index by playlist edits. Do not seek it: preserving the
+                    // live decoder avoids an audible dip and keeps position flowing.
+                    if (!currentOccurrenceSurvives) {
+                        connected.seekTo(targetIndex, 0L)
+                    }
                     result.success(true)
                 }
                 "clearQueue" -> {
