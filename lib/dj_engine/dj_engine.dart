@@ -7,6 +7,7 @@ export 'execution/dj_execution_planner.dart';
 export 'adapters/dj_analysis_bridge.dart';
 export 'analysis/dj_profile_builder.dart';
 export 'analysis/dj_pcm_profile_analyzer.dart';
+export 'analysis/dj_silence_detector.dart';
 
 import 'core/dj_types.dart';
 import 'core/dj_policy.dart';
