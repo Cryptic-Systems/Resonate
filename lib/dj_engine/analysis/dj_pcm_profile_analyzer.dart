@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../../services/dj_pcm_bpm.dart';
 import '../../services/dj_pcm_features.dart';
 import '../core/dj_types.dart';
+import 'dj_silence_detector.dart';
 
 /// Decoded PCM window. Codec decoding stays outside the DJ engine.
 class DjDecodedPcmWindow {
@@ -27,11 +28,15 @@ class DjDecodedPcmWindow {
 class DjPcmProfileAnalyzer {
   final DjPcmBpmAnalyzer _bpm;
   final DjPcmFeatureAnalyzer _features;
+  final DjSilenceDetector _silenceDetector;
 
   const DjPcmProfileAnalyzer({
     DjPcmBpmAnalyzer bpm = const DjPcmBpmAnalyzer(),
     DjPcmFeatureAnalyzer features = const DjPcmFeatureAnalyzer(),
-  }) : _bpm = bpm, _features = features;
+    DjSilenceDetector silenceDetector = const DjSilenceDetector(),
+  }) : _bpm = bpm,
+       _features = features,
+       _silenceDetector = silenceDetector;
 
   DjTrackProfile analyze({
     required String songId,
@@ -51,6 +56,16 @@ class DjPcmProfileAnalyzer {
 
     final bpmSamples = <_BpmSample>[];
     final featureSamples = <_FeatureSample>[];
+    final rmsSamples = _extractRmsSamples(windows, durationMs);
+    final detectedSilence = _silenceDetector.detect(
+      rmsSamples,
+      durationMs: durationMs,
+    ).map((region) => DjSilenceRegion(
+      startMs: region.startMs,
+      endMs: region.endMs,
+      minimumDbfs: region.minimumDbfs,
+      confidence: region.confidence,
+    )).toList(growable: false);
 
     for (final window in windows) {
       final bpm = _bpm.estimateFromPcm16(
@@ -136,9 +151,59 @@ class DjPcmProfileAnalyzer {
       energyCurve: energy,
       spectrum: spectrum,
       transitions: markers,
+      silenceRegions: detectedSilence,
       analysisConfidence: confidence,
       analysisVersion: analysisVersion,
     );
+  }
+
+  /// Measures 100 ms RMS frames directly from decoded signed PCM16.
+  /// Frames retain their absolute track timestamps; the detector will split
+  /// evidence at gaps between windows rather than bridging missing audio.
+  List<DjRmsSample> _extractRmsSamples(
+    List<DjDecodedPcmWindow> windows,
+    int durationMs,
+  ) {
+    const frameDurationMs = 100;
+    final result = <DjRmsSample>[];
+    for (final window in windows) {
+      if (window.sampleRate <= 0 || window.channels <= 0 ||
+          window.startMs < 0 || window.pcm.length < 2 * window.channels) {
+        continue;
+      }
+      final bytesPerFrame = 2 * window.channels;
+      final frameSampleCount = math.max(1, window.sampleRate * frameDurationMs ~/ 1000);
+      final frameByteCount = frameSampleCount * bytesPerFrame;
+      final data = ByteData.sublistView(window.pcm);
+      var byteOffset = 0;
+      while (byteOffset + bytesPerFrame <= window.pcm.length) {
+        final remaining = window.pcm.length - byteOffset;
+        final availableFrames = remaining ~/ bytesPerFrame;
+        final frames = math.min(frameSampleCount, availableFrames);
+        final frameStartMs = window.startMs +
+            ((byteOffset ~/ bytesPerFrame) * 1000 ~/ window.sampleRate);
+        if (frameStartMs >= durationMs) break;
+        // Ignore a truncated trailing fragment; it is not a reliable RMS window.
+        if (frames < frameSampleCount ~/ 2) break;
+        var squareSum = 0.0;
+        final sampleCount = frames * window.channels;
+        for (var i = 0; i < sampleCount; i++) {
+          final sample = data.getInt16(byteOffset + i * 2, Endian.little);
+          final normalized = sample / 32768.0;
+          squareSum += normalized * normalized;
+        }
+        final rms = math.sqrt(squareSum / sampleCount);
+        final measuredMs = math.max(1, frames * 1000 ~/ window.sampleRate);
+        result.add(DjRmsSample(
+          timeMs: frameStartMs,
+          rms: rms,
+          windowMs: measuredMs,
+        ));
+        byteOffset += frames * bytesPerFrame;
+        if (byteOffset >= window.pcm.length || frameByteCount <= 0) break;
+      }
+    }
+    return result;
   }
 
   ({double confidence, double phaseStability, bool hasEvidence}) _aggregateBeatEvidence(
