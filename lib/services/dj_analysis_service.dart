@@ -327,7 +327,8 @@ class DjAnalysisService {
         loudness: legacy.loudness,
         introHintMs: legacy.introHintMs,
         outroHintMs: (durationMs - legacy.outroHintMs!)
-            .clamp(0, durationMs),
+            .clamp(0, durationMs)
+            .toInt(),
         sectionHint: legacy.sectionHint,
       );
     }
@@ -377,7 +378,9 @@ class DjAnalysisService {
       outroHintMs: profile.transitions.bestOutroMs ??
           (legacy?.outroHintMs == null
               ? null
-              : (durationMs - legacy!.outroHintMs!).clamp(0, durationMs)),
+              : (durationMs - legacy!.outroHintMs!)
+                  .clamp(0, durationMs)
+                  .toInt()),
       sectionHint: profile.sections.isNotEmpty
           ? (profile.sections
                 .toList()
