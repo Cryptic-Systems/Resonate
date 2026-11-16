@@ -63,7 +63,7 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
       final music = context.read<MusicProvider>();
       music.setApprovedDjTransitions({
         for (final transition in _mix.transitions)
-          '${transition.outgoingSongId}\\u0000${transition.incomingSongId}': transition.plan,
+          '${transition.outgoingSongId}\u0000${transition.incomingSongId}': transition.plan,
       });
       // DJ order must remain authoritative after approval.
       await music.setShuffleEnabled(false);
@@ -74,6 +74,7 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
       );
       if (!mounted) return;
       if (!started) {
+        music.setApprovedDjTransitions(const {});
         setState(() => _approving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Resonate could not start this mix.')),
