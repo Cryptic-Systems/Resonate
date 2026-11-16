@@ -117,7 +117,7 @@ class DjTransitionBrain {
       add(
         DjTransitionKind.phraseBlend,
         phrase,
-        (baseDuration * 1.15).round().clamp(3000, effectiveMaxDurationMs).toInt(),
+        (baseDuration * 1.15).round().clamp(2000, effectiveMaxDurationMs).toInt(),
         _scorePair(outgoing, incoming, outgoingAnchor, phrase, 0.92, 0.88, policy: policy),
       );
     }
@@ -128,7 +128,7 @@ class DjTransitionBrain {
       add(
         DjTransitionKind.breakdownDrop,
         breakdown.startMs,
-        (drop.startMs - breakdown.startMs).clamp(3000, effectiveMaxDurationMs).toInt(),
+        (drop.startMs - breakdown.startMs).clamp(2000, effectiveMaxDurationMs).toInt(),
         _scorePair(outgoing, incoming, outgoingAnchor, breakdown.startMs, 0.88, 0.95, policy: policy),
       );
     }
