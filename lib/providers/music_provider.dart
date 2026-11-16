@@ -2376,6 +2376,43 @@ class MusicProvider extends ChangeNotifier {
 
     if (!canCrossfadeNext) return;
 
+    // An approved Suggestion Mix owns its reviewed cue timing. Preload the
+    // standby deck ahead of that cue, then start the native fade at the cue
+    // instead of waiting for the ordinary end-of-track trigger window.
+    if (media3Session != null) {
+      final outgoing = currentSong;
+      final incoming = _crossfadeTargetSong;
+      final approved = outgoing != null && incoming != null
+          ? peekApprovedDjTransition(outgoing.id, incoming.id)
+          : null;
+      final prepared = incoming != null && _preloadedNextSongId == incoming.id
+          ? _media3DjTransitionPreparation
+          : null;
+      final approvedCueMs = approved != null && !approved.fallback
+          ? approved.candidate.outgoingStartMs
+          : prepared?.outgoingStartPosition?.inMilliseconds;
+      if (approvedCueMs != null) {
+        final positionMs = activePosition.inMilliseconds;
+        if (CrossfadeOrchestrator.shouldPreloadForApprovedCue(
+          positionMs: positionMs,
+          cueMs: approvedCueMs,
+        )) {
+          unawaited(this._preloadNextForCrossfade());
+        }
+        if (!CrossfadeOrchestrator.shouldStartAtApprovedCue(
+          positionMs: positionMs,
+          cueMs: approvedCueMs,
+        )) {
+          return;
+        }
+        if (remaining < const Duration(milliseconds: 1200)) return;
+        _automaticCrossfadeInFlight = true;
+        _transitionArmedAt = DateTime.now();
+        unawaited(this._runAutomaticCrossfade());
+        return;
+      }
+    }
+
     final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
     final timing = CrossfadeOrchestrator.timing(
       configuredDurationMs: _crossfadeDurationMs,
