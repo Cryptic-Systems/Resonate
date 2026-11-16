@@ -30,10 +30,10 @@ class DjSuggestionMix {
   DjSuggestionMix({
     required this.scope,
     required this.scopeId,
-    required this.sourceSongs,
-    required this.orderedSongs,
-    required this.profiles,
-    required this.transitions,
+    required List<Song> sourceSongs,
+    required List<Song> orderedSongs,
+    required Map<String, DjTrackProfile> profiles,
+    required List<DjSessionTransition> transitions,
     required this.analysisCoverage,
     required this.usedDjArrangement,
     required this.revision,
@@ -61,7 +61,7 @@ class DjSuggestionMix {
 
 class DjApprovedMix {
   DjApprovedMix({
-    required this.songs,
+    required List<Song> songs,
     required this.sourceScope,
     required this.revision,
   }) : songs = List.unmodifiable(songs);
@@ -77,16 +77,30 @@ class DjApprovedMix {
 /// reviewable Suggestion Mix. No player, queue, or Media3 dependency exists
 /// in this layer.
 class DjSessionCoordinator {
-  DjSessionCoordinator({
+  factory DjSessionCoordinator({
     DjAnalysisService? analysis,
     DjAutoSelectService? autoSelect,
     DjEngine engine = const DjEngine(),
     DjProfileBuilder profileBuilder = const DjProfileBuilder(),
-  })  : _analysis = analysis ?? DjAnalysisService(),
+  }) {
+    final resolvedAnalysis = analysis ?? DjAnalysisService();
+    return DjSessionCoordinator._(
+      analysis: resolvedAnalysis,
+      autoSelect: autoSelect ?? DjAutoSelectService(analysis: resolvedAnalysis),
+      engine: engine,
+      profileBuilder: profileBuilder,
+    );
+  }
+
+  DjSessionCoordinator._({
+    required DjAnalysisService analysis,
+    required DjAutoSelectService autoSelect,
+    required DjEngine engine,
+    required DjProfileBuilder profileBuilder,
+  })  : _analysis = analysis,
+        _autoSelect = autoSelect,
         _engine = engine,
-        _profileBuilder = profileBuilder,
-        _autoSelect = autoSelect ??
-            DjAutoSelectService(analysis: analysis ?? DjAnalysisService());
+        _profileBuilder = profileBuilder;
 
   final DjAnalysisService _analysis;
   final DjAutoSelectService _autoSelect;
