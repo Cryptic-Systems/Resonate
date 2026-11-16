@@ -58,11 +58,12 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
   Future<void> _approveAndPlay() async {
     if (_approving || _mix.orderedSongs.isEmpty) return;
     setState(() => _approving = true);
+    MusicProvider? music;
     try {
       final approved = widget.coordinator.approve(_mix);
-      final music = context.read<MusicProvider>();
-      music.setApprovedDjTransitions({
-        for (final transition in _mix.transitions)
+      music = context.read<MusicProvider>();
+      music!.setApprovedDjTransitions({
+        for (final transition in approved.transitions)
           '${transition.outgoingSongId}\u0000${transition.incomingSongId}': transition.plan,
       });
       // DJ order must remain authoritative after approval.
@@ -83,6 +84,7 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
       }
       openShellPlayer(context);
     } catch (error) {
+      music?.setApprovedDjTransitions(const {});
       if (!mounted) return;
       setState(() => _approving = false);
       ScaffoldMessenger.of(context).showSnackBar(
