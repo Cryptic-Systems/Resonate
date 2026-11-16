@@ -16,6 +16,7 @@ import 'playlists_screen.dart';
 import 'album_screen.dart';
 import 'artist_screen.dart';
 import '../services/duplicate_detection.dart';
+import '../services/dj_shuffle_flow.dart';
 
 String _formatDuration(Duration d) {
   if (d.inMilliseconds <= 0) return '—';
@@ -711,28 +712,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: FilledButton.tonalIcon(
-                    onPressed: () async {
-                      final library = context.read<LibraryProvider>();
-                      final songs = List.of(
-                        library.filteredSongs.isNotEmpty ||
-                                library.searchQuery.isNotEmpty ||
-                                library.filterBy != 'all'
-                            ? library.filteredSongs
-                            : library.allSongs,
-                      );
-                      if (songs.isEmpty) return;
-                      songs.shuffle();
-                      final music = context.read<MusicProvider>();
-                      await music.setShuffleEnabled(true);
-                      await music.playSong(
-                        songs.first,
-                        queue: songs,
-                        startIndex: 0,
-                      );
-                      if (mounted) {
-                        openShellPlayer(context);
-                      }
-                    },
+                    onPressed: () => DjShuffleFlow.fromLibrary(context),
                     icon: const Icon(Icons.shuffle_rounded),
                     label: const Text('Shuffle'),
                   ),
