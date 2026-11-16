@@ -8,7 +8,7 @@ enum DjSectionType { unknown, intro, verse, preChorus, chorus, drop, breakdown, 
 
 enum DjTransitionKind { outroIntro, phraseBlend, breakdownDrop, beatBlend, energyBridge, safeCrossfade }
 
-enum DjRiskType { bassCollision, energyShock, harmonicConflict, structureCollision, tempoInstability, lowConfidence }
+enum DjRiskType { bassCollision, energyShock, harmonicConflict, structureCollision, tempoInstability, lowConfidence, silenceEvidenceMismatch }
 
 class DjTimePoint {
   final int timeMs;
