@@ -17,6 +17,27 @@ class DjExecutionPlanner {
     required DjTransitionCandidate candidate,
     DjPolicy policy = DjPolicy.balanced,
   }) {
+    final outgoingAvailable = outgoing.durationMs == null
+        ? null
+        : outgoing.durationMs! - candidate.outgoingStartMs;
+    final incomingAvailable = incoming.durationMs == null
+        ? null
+        : incoming.durationMs! - candidate.incomingStartMs;
+    if (candidate.outgoingStartMs < 0 ||
+        candidate.incomingStartMs < 0 ||
+        candidate.durationMs < 2000 ||
+        (outgoingAvailable != null &&
+            (outgoingAvailable < 2000 || candidate.durationMs > outgoingAvailable)) ||
+        (incomingAvailable != null &&
+            (incomingAvailable < 2000 || candidate.durationMs > incomingAvailable))) {
+      return DjExecutionPlan(
+        candidate: candidate,
+        fallback: true,
+        reason: 'insufficient_playable_duration',
+        steps: const [],
+      );
+    }
+
     final risks = riskEngine.evaluate(
       outgoing: outgoing,
       incoming: incoming,
@@ -35,8 +56,20 @@ class DjExecutionPlanner {
 
     final bassDuck = risks.contains(DjRiskType.bassCollision);
     final longerFade = risks.contains(DjRiskType.energyShock);
+    var durationLimit = 20000;
+    if (outgoingAvailable != null && outgoingAvailable < durationLimit) {
+      durationLimit = outgoingAvailable;
+    }
+    if (incomingAvailable != null && incomingAvailable < durationLimit) {
+      durationLimit = incomingAvailable;
+    }
+    final requestedDuration = longerFade
+        ? (candidate.durationMs * 1.25).round()
+        : candidate.durationMs;
+    final effectiveDurationMs =
+        requestedDuration.clamp(candidate.durationMs, durationLimit).toInt();
     final sfxTriggerMs = _phraseSnappedSfxMs(
-      durationMs: candidate.durationMs,
+      durationMs: effectiveDurationMs,
       kind: candidate.kind,
       outgoing: outgoing,
       outgoingStartMs: candidate.outgoingStartMs,
@@ -48,12 +81,12 @@ class DjExecutionPlanner {
       DjExecutionStep(action: 'start_incoming', atMs: 0),
       if (longerFade)
         DjExecutionStep(action: 'extend_crossfade', atMs: 0, parameters: {
-          'durationMs': (candidate.durationMs * 1.25).round().clamp(2500, 20000),
+          'durationMs': effectiveDurationMs,
         }),
       if (bassDuck)
         DjExecutionStep(action: 'duck_incoming_bass', atMs: 0, parameters: {
           'amount': 0.35,
-          'durationMs': candidate.durationMs ~/ 2,
+          'durationMs': effectiveDurationMs ~/ 2,
         }),
       DjExecutionStep(action: 'phrase_align', atMs: 0, parameters: {
         'kind': candidate.kind.name,
@@ -62,7 +95,7 @@ class DjExecutionPlanner {
         'kind': candidate.kind.name,
         'snapped': true,
       }),
-      DjExecutionStep(action: 'complete_transition', atMs: candidate.durationMs),
+      DjExecutionStep(action: 'complete_transition', atMs: effectiveDurationMs),
     ];
 
     return DjExecutionPlan(
