@@ -36,7 +36,7 @@ class DjAutoSelectService {
     final analyses = <String, DjAnalysis>{};
     for (final song in songs) {
       final analysis = await _analysis.getAnalysis(song.id);
-      if (analysis != null && !analysis.isStale) {
+      if (analysis != null && !analysis.isStale && _matchesSong(song, analysis)) {
         analyses[song.id] = analysis;
       }
     }
@@ -62,7 +62,7 @@ class DjAutoSelectService {
 
     final usable = input.where((song) {
       final a = analyses[song.id];
-      return a != null && !a.isStale && _trackConfidence(a) >= 0.25;
+      return a != null && !a.isStale && _matchesSong(song, a) && _trackConfidence(a) >= 0.25;
     }).length;
     final coverage = usable / input.length;
     final minimumUsable = math.min(3, input.length);
@@ -108,6 +108,15 @@ class DjAutoSelectService {
       usedDjArrangement: true,
       analysisCoverage: coverage,
     );
+  }
+
+  static bool _matchesSong(Song song, DjAnalysis analysis) {
+    final songDuration = song.duration.inMilliseconds;
+    final analyzedDuration = analysis.durationMs;
+    if (songDuration <= 0 || analyzedDuration == null || analyzedDuration <= 0) {
+      return true;
+    }
+    return (songDuration - analyzedDuration).abs() <= 1500;
   }
 
   static double _trackConfidence(DjAnalysis a) {
