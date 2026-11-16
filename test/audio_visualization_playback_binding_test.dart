@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,39 +13,6 @@ class _FakePlayback extends ChangeNotifier {
     isPlaying = value;
     notifyListeners();
   }
-
-  test('refreshes the native visualizer after the app resumes', () async {
-    var refreshCount = 0;
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-      if (call.method == 'getAudioSpectrum') {
-        return List<double>.filled(32, 0.5);
-      }
-      if (call.method == 'refreshVisualizers') {
-        refreshCount++;
-        return null;
-      }
-      return null;
-    });
-
-    final playback = _FakePlayback();
-    final visualization = AudioVisualizationProvider()
-      ..bindPlayback(
-        listenable: playback,
-        isPlaying: () => playback.isPlaying,
-      );
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    playback.setPlaying(true);
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-
-    final beforeResume = refreshCount;
-    WidgetsBinding.instance.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-
-    expect(refreshCount, greaterThan(beforeResume));
-    visualization.dispose();
-  });
-
 }
 
 void main() {
@@ -120,6 +88,38 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 140));
     expect(visualization.frequencies.every((value) => value == 0), isTrue);
 
+    visualization.dispose();
+  });
+
+  test('refreshes the native visualizer after the app resumes', () async {
+    var refreshCount = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'getAudioSpectrum') {
+        return List<double>.filled(32, 0.5);
+      }
+      if (call.method == 'refreshVisualizers') {
+        refreshCount++;
+        return null;
+      }
+      return null;
+    });
+
+    final playback = _FakePlayback();
+    final visualization = AudioVisualizationProvider()
+      ..bindPlayback(
+        listenable: playback,
+        isPlaying: () => playback.isPlaying,
+      );
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    playback.setPlaying(true);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    final beforeResume = refreshCount;
+    WidgetsBinding.instance.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    expect(refreshCount, greaterThan(beforeResume));
     visualization.dispose();
   });
 }
