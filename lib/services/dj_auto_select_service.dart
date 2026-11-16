@@ -380,12 +380,28 @@ class DjAutoSelectService {
         outro > 28000) {
       return null;
     }
-    // These are quiet-section durations estimated from short PCM windows.
-    // Reward a usable shared overlap, but do not overvalue long estimates.
-    final overlapMs = math.min(intro, outro);
-    return (0.55 + 0.45 * (overlapMs / 8000.0).clamp(0.0, 1.0))
+    // The analyzer stores these as cue positions from the start of each
+    // track (not section durations): intro is an early incoming cue and
+    // outro is a late outgoing cue. Require duration metadata before comparing.
+    final incomingDuration = incoming.durationMs;
+    final outgoingDuration = outgoing.durationMs;
+    if (incomingDuration == null ||
+        outgoingDuration == null ||
+        incomingDuration <= 0 ||
+        outgoingDuration <= 0 ||
+        intro >= incomingDuration ||
+        outro >= outgoingDuration) {
+      return null;
+    }
+    final incomingFraction = intro / incomingDuration;
+    final outgoingFraction = outro / outgoingDuration;
+    final earlyIntro = (1.0 - incomingFraction / 0.35)
         .clamp(0.0, 1.0)
         .toDouble();
+    final lateOutro = ((outgoingFraction - 0.55) / 0.40)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    return (earlyIntro + lateOutro) / 2.0;
   }
 
   static double _tempoCompatibility(double a, double b) {
