@@ -59,7 +59,7 @@ class DjTransitionBrain {
           .toDouble();
       result.add(DjTransitionCandidate(
         kind: kind,
-        outgoingStartMs: outgoingPositionMs,
+        outgoingStartMs: outgoingAnchor,
         incomingStartMs: inMs,
         durationMs: duration.clamp(2000, maxDurationMs).toInt(),
         score: score,
@@ -273,24 +273,37 @@ class DjTransitionBrain {
     }
     var best = 0.5;
     for (final region in profile.silenceRegions) {
-      if (region.confidence < 0.78 ||
-          region.durationMs < 2000 ||
-          region.minimumDbfs > -48.0 ||
-          region.startMs < duration * 0.75 ||
-          region.endMs < duration * 0.90) {
-        continue;
-      }
-      final distance = anchorMs < region.startMs
-          ? region.startMs - anchorMs
-          : anchorMs > region.endMs
-              ? anchorMs - region.endMs
-              : 0;
+      if (!_isTrustedLateSilence(profile, region)) continue;
+      final distance = _silenceDistance(anchorMs, region.startMs, region.endMs);
       if (distance > 12000) continue;
       final proximity = (1.0 - distance / 12000.0).clamp(0.0, 1.0);
       final score = 0.5 + 0.5 * proximity * region.confidence;
       if (score > best) best = score;
     }
     return best;
+  }
+
+  bool _hasTrustedSilenceNear(DjTrackProfile profile, int anchorMs) {
+    return profile.silenceRegions.any((region) =>
+        _isTrustedLateSilence(profile, region) &&
+        _silenceDistance(anchorMs, region.startMs, region.endMs) <= 12000);
+  }
+
+  bool _isTrustedLateSilence(DjTrackProfile profile, DjSilenceRegion region) {
+    final duration = profile.durationMs;
+    return duration != null &&
+        duration > 0 &&
+        region.confidence >= 0.78 &&
+        region.durationMs >= 2000 &&
+        region.minimumDbfs <= -48.0 &&
+        region.startMs >= duration * 0.75 &&
+        region.endMs >= duration * 0.90;
+  }
+
+  int _silenceDistance(int anchorMs, int startMs, int endMs) {
+    if (anchorMs < startMs) return startMs - anchorMs;
+    if (anchorMs > endMs) return anchorMs - endMs;
+    return 0;
   }
 
   double _structureScore(DjTrackProfile a, DjTrackProfile b, int outPos, int inPos) {
@@ -320,6 +333,10 @@ class DjTransitionBrain {
       risks.add(DjRiskType.structureCollision);
     }
     if (!a.beatGrid.usable || !b.beatGrid.usable) risks.add(DjRiskType.lowConfidence);
+    final silenceScore = _outgoingSilenceScore(a, outPos);
+    if (silenceScore > 0.5 && !_hasTrustedSilenceNear(a, outPos)) {
+      risks.add(DjRiskType.silenceEvidenceMismatch);
+    }
     return risks;
   }
 
@@ -333,6 +350,7 @@ class DjTransitionBrain {
         DjRiskType.structureCollision => 0.15,
         DjRiskType.tempoInstability => 0.10,
         DjRiskType.lowConfidence => 0.04,
+        DjRiskType.silenceEvidenceMismatch => 0.10,
       };
     }
     return penalty.clamp(0.0, 0.55).toDouble();
