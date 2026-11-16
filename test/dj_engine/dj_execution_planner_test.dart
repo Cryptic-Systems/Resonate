@@ -340,4 +340,84 @@ void main() {
     expect(plan.steps, isEmpty);
   });
 
+
+  test('produces a complete ordered timeline with bounded action parameters', () {
+    const candidate = DjTransitionCandidate(
+      kind: DjTransitionKind.phraseBlend,
+      outgoingStartMs: 220000,
+      incomingStartMs: 1000,
+      durationMs: 8000,
+      score: 0.9,
+      confidence: 0.92,
+    );
+
+    final plan = planner.plan(
+      outgoing: outgoing,
+      incoming: incoming,
+      candidate: candidate,
+    );
+
+    expect(plan.fallback, isFalse);
+    expect(plan.steps.first.action, 'prepare_incoming');
+    expect(plan.steps.last.action, 'complete_transition');
+    expect(
+      plan.steps.map((step) => step.atMs).toList(),
+      orderedEquals(plan.steps.map((step) => step.atMs).toList()..sort()),
+    );
+    expect(plan.steps.map((step) => step.action).toSet(), {
+      'prepare_incoming',
+      'start_incoming',
+      'phrase_align',
+      'trigger_sfx',
+      'complete_transition',
+    });
+    final prepare = plan.steps.first;
+    expect(prepare.parameters['seekMs'], 1000);
+    final sfx = plan.steps.singleWhere((step) => step.action == 'trigger_sfx');
+    expect(sfx.atMs, greaterThan(0));
+    expect(sfx.atMs, lessThan(plan.steps.last.atMs));
+    expect(sfx.parameters['kind'], 'phraseBlend');
+    expect(sfx.parameters['snapped'], isTrue);
+    expect(plan.steps.last.atMs, lessThanOrEqualTo(20000));
+  });
+
+  test('bounds bass duck action parameters when bass collision is present', () {
+    const bassHeavyOutgoing = DjTrackProfile(
+      songId: 'bass-out',
+      durationMs: 240000,
+      beatGrid: DjBeatGrid(bpm: 128, confidence: 0.92),
+      spectrum: DjSpectralProfile(bassDensity: 0.1),
+      analysisConfidence: 0.92,
+    );
+    const bassHeavyIncoming = DjTrackProfile(
+      songId: 'bass-in',
+      durationMs: 220000,
+      beatGrid: DjBeatGrid(bpm: 128, confidence: 0.92),
+      spectrum: DjSpectralProfile(bassDensity: 0.9),
+      analysisConfidence: 0.92,
+    );
+    const candidate = DjTransitionCandidate(
+      kind: DjTransitionKind.safeCrossfade,
+      outgoingStartMs: 220000,
+      incomingStartMs: 0,
+      durationMs: 8000,
+      score: 0.9,
+      confidence: 0.92,
+    );
+
+    final plan = planner.plan(
+      outgoing: bassHeavyOutgoing,
+      incoming: bassHeavyIncoming,
+      candidate: candidate,
+    );
+
+    expect(plan.fallback, isFalse);
+    final duck = plan.steps.singleWhere(
+      (step) => step.action == 'duck_incoming_bass',
+    );
+    expect(duck.parameters['amount'], 0.35);
+    expect(duck.parameters['durationMs'], 4000);
+    expect(duck.atMs, 0);
+  });
+
 }
