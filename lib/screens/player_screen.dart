@@ -9,6 +9,7 @@ import '../widgets/blur_sheet.dart';
 import 'package:provider/provider.dart';
 
 import '../models/intelligence_recommendation.dart';
+import '../models/song.dart';
 import '../providers/equalizer_provider.dart';
 import '../providers/intelligence_provider.dart';
 import '../providers/music_provider.dart';
@@ -118,10 +119,20 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
       body: Consumer2<MusicProvider, ModeProvider>(
         builder: (context, music, modes, _) {
-          final song = music.currentSong;
-          if (song == null) {
-            return _PlayerEmptyState();
-          }
+          final activeSong = music.currentSong;
+          final hasSong = activeSong != null;
+          // Keep the real, detailed player surface mounted from first launch.
+          // A metadata-only placeholder lets the existing layout render without
+          // inventing a second idle-player design or issuing fake track actions.
+          final song = activeSong ?? Song(
+            id: '',
+            title: 'Nothing playing yet',
+            artist: 'Choose a song from your library',
+            album: '',
+            filePath: '',
+            duration: Duration.zero,
+            dateAdded: DateTime.fromMillisecondsSinceEpoch(0),
+          );
 
           final density = ModePlayerDensity.fromMode(modes);
 
@@ -191,14 +202,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   _MarqueeSongTitle(title: song.title),
                   const SizedBox(height: 5),
                   InkWell(
-                    onTap: () {
+                    onTap: hasSong ? () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) => ArtistScreen(artist: song.artist),
                         ),
                       );
-                    },
+                    } : null,
                     child: Text(
                       song.artist,
                       textAlign: TextAlign.center,
@@ -210,7 +221,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     ),
                   ),
                   InkWell(
-                    onTap: () {
+                    onTap: hasSong ? () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -220,7 +231,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                           ),
                         ),
                       );
-                    },
+                    } : null,
                     child: Text(
                       song.album,
                       textAlign: TextAlign.center,
@@ -234,9 +245,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   Align(
                     alignment: Alignment.center,
                     child: TextButton.icon(
-                      onPressed: () => Navigator.of(context).push(
+                      onPressed: hasSong ? () => Navigator.of(context).push(
                         MaterialPageRoute<void>(builder: (_) => LyricsScreen(song: song)),
-                      ),
+                      ) : null,
                       icon: const Icon(Icons.lyrics_outlined, size: 18),
                       label: const Text('Lyrics'),
                     ),
@@ -282,13 +293,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     max: max,
                     hitHeight: density.seekHitHeight,
                     strokeScale: density.seekStrokeScale,
-                    onStart: (value) {
+                    onStart: hasSong ? (value) {
                       setState(() => _dragPosition = value);
-                    },
-                    onUpdate: (value) {
+                    } : (_) {},
+                    onUpdate: hasSong ? (value) {
                       setState(() => _dragPosition = value);
-                    },
+                    } : (_) {},
                     onEnd: (value) async {
+                      if (!hasSong) return;
                       final target = Duration(milliseconds: value.round());
                       setState(() => _dragPosition = null);
                       await PlaybackAuthority.instance.userSeek(music, target);
@@ -319,8 +331,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                         children: [
                           ModeGuardedAction(
                             action: ModeAction.previous,
-                            onAllowed: () =>
-                                PlaybackAuthority.instance.userPrevious(music),
+                            onAllowed: hasSong ? () =>
+                                PlaybackAuthority.instance.userPrevious(music) : () {},
                             child: SizedBox(
                               width: density.transportIconSize + 28,
                               height: density.transportIconSize + 28,
@@ -332,12 +344,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                           ),
                           ModeGuardedAction(
                             action: ModeAction.seekBackward,
-                            onAllowed: () => PlaybackAuthority.instance.userSeek(
+                            onAllowed: hasSong ? () => PlaybackAuthority.instance.userSeek(
                               music,
                               Duration(
                                 milliseconds: math.max(0, currentMs - 10000),
                               ),
-                            ),
+                            ) : () {},
                             child: SizedBox(
                               width: density.transportIconSize + 20,
                               height: density.transportIconSize + 20,
@@ -351,9 +363,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                           ),
                           ModeGuardedAction(
                             action: ModeAction.playPause,
-                            onAllowed: () {
+                            onAllowed: hasSong ? () {
                               music.togglePlayPause();
-                            },
+                            } : () {},
                             child: SizedBox(
                               width: density.playButtonSize,
                               height: density.playButtonSize,
@@ -388,13 +400,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                           ),
                           ModeGuardedAction(
                             action: ModeAction.seekForward,
-                            onAllowed: () => PlaybackAuthority.instance.userSeek(
+                            onAllowed: hasSong ? () => PlaybackAuthority.instance.userSeek(
                               music,
                               Duration(
                                 milliseconds:
                                     math.min(max.toInt(), currentMs + 10000),
                               ),
-                            ),
+                            ) : () {},
                             child: SizedBox(
                               width: density.transportIconSize + 20,
                               height: density.transportIconSize + 20,
@@ -408,7 +420,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                           ),
                           ModeGuardedAction(
                             action: ModeAction.next,
-                            onAllowed: () => music.nextSong(),
+                            onAllowed: hasSong ? () => music.nextSong() : () {},
                             child: SizedBox(
                               width: density.transportIconSize + 28,
                               height: density.transportIconSize + 28,
@@ -469,31 +481,31 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                   ? Theme.of(context).colorScheme.primary
                                   : null,
                             ),
-                            onPressed: () {
+                            onPressed: hasSong ? () {
                               final next = music.repeatMode == PlaybackRepeatMode.off
                                   ? PlaybackRepeatMode.all
                                   : music.repeatMode == PlaybackRepeatMode.all
                                       ? PlaybackRepeatMode.one
                                       : PlaybackRepeatMode.off;
                               music.setRepeatMode(next);
-                            },
+                            } : null,
                           ),
                           IconButton(
                             tooltip: 'Queue',
                             icon: const Icon(Icons.queue_music_rounded),
-                            onPressed: () {
+                            onPressed: hasSong ? () {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (_) => const QueueScreen(),
                                 ),
                               );
-                            },
+                            } : null,
                           ),
                           IconButton(
                             tooltip: 'More options',
                             icon: const Icon(Icons.more_vert_rounded),
-                            onPressed: () => _showMoreOptions(context),
+                            onPressed: hasSong ? () => _showMoreOptions(context) : null,
                           ),
                         ],
                       ),
