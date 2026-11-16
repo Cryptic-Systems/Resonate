@@ -17,6 +17,25 @@ class DjExecutionPlanner {
     required DjTransitionCandidate candidate,
     DjPolicy policy = DjPolicy.balanced,
   }) {
+    final candidateMetricsValid =
+        candidate.score.isFinite &&
+        candidate.confidence.isFinite &&
+        candidate.score >= 0 &&
+        candidate.score <= 1 &&
+        candidate.confidence >= 0 &&
+        candidate.confidence <= 1 &&
+        candidate.scores.values.every(
+          (value) => value.isFinite && value >= 0 && value <= 1,
+        );
+    if (!candidateMetricsValid) {
+      return DjExecutionPlan(
+        candidate: candidate,
+        fallback: true,
+        reason: 'invalid_candidate_metrics',
+        steps: const [],
+      );
+    }
+
     final outgoingAvailable = outgoing.durationMs == null
         ? null
         : outgoing.durationMs! - candidate.outgoingStartMs;
