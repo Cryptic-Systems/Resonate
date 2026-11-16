@@ -133,6 +133,21 @@ class DjAutoSelectService {
     final coverage = usable / input.length;
     final minimumUsable = math.min(3, input.length);
     if (usable < minimumUsable || coverage < 0.50) {
+      // DJ was explicitly requested, so improve the next attempt without
+      // blocking this playback start. Bound the warm-up to avoid scanning an
+      // entire large library in one user interaction.
+      var scheduled = 0;
+      for (final song in input) {
+        final analysis = analyses[song.id];
+        if (analysis == null ||
+            analysis.isStale ||
+            !_matchesSong(song, analysis) ||
+            _trackConfidence(analysis) < 0.25) {
+          _analysis.scheduleAnalyze(song);
+          scheduled++;
+          if (scheduled >= 12) break;
+        }
+      }
       input.shuffle(rng);
       return DjAutoSelectResult(
         songs: input,
