@@ -293,6 +293,19 @@ class MusicProvider extends ChangeNotifier {
   // audio focus, notifications, or the remaining legacy DJ effects.
   PlaybackEngineSession? _djSfxMedia3OverlaySession;
   Media3DjTransitionPreparation? _media3DjTransitionPreparation;
+  /// Approved Suggestion Mix plans are consumed once by the matching adjacent
+  /// Media3 handoff. Unmatched transitions fall back to live planning.
+  final Map<String, DjExecutionPlan> _approvedDjTransitions = {};
+
+  void setApprovedDjTransitions(Map<String, DjExecutionPlan> transitions) {
+    _approvedDjTransitions
+      ..clear()
+      ..addAll(transitions);
+  }
+
+  DjExecutionPlan? takeApprovedDjTransition(String outgoingId, String incomingId) {
+    return _approvedDjTransitions.remove('$outgoingId\\u0000$incomingId');
+  }
 
   /// Opts DJ transition EQ into Media3's active/standby deck overlays.
   ///
