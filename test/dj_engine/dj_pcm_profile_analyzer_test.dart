@@ -111,10 +111,11 @@ void main() {
       ],
     );
 
-    // Only one short silent window is available; the detector may describe
-    // that measured segment, but it cannot infer silence across the missing
-    // interval between analysis windows.
-    expect(profile.silenceRegions, isEmpty);
+    // The measured end window is genuinely silent, but the missing interval
+    // before it must not be counted as part of that silence.
+    expect(profile.silenceRegions, hasLength(1));
+    expect(profile.silenceRegions.single.startMs, 120000);
+    expect(profile.silenceRegions.single.endMs, lessThanOrEqualTo(130000));
   });
 
   test('decoded PCM contributes real spectral profile data', () {
