@@ -153,6 +153,36 @@ void main() {
     expect(mix.sourceSongs.map((song) => song.id), ['a', 'b', 'c']);
   });
 
+
+  test('degrades to a safe profile when cached analysis metadata is incomplete', () async {
+    final songs = [_song('a'), _song('b')];
+    final rows = {
+      for (final id in ['a', 'b'])
+        id: DjAnalysis(
+          songId: id,
+          bpm: 128,
+          bpmConfidence: 0.96,
+          bpmSource: 'pcm_profile_v2',
+          durationMs: null,
+          outroHintMs: 210000,
+        ),
+    };
+    final coordinator = DjSessionCoordinator(
+      analysis: _MemoryDjAnalysisService(rows),
+    );
+
+    final mix = await coordinator.create(
+      songs: songs,
+      scope: DjSessionScope.library,
+      random: math.Random(3),
+    );
+
+    expect(mix.orderedSongs, hasLength(2));
+    expect(mix.profiles.values.every((profile) => profile.analysisConfidence == 0), isTrue);
+    expect(mix.transitions, hasLength(1));
+    expect(mix.transitions.single.plan.fallback, isTrue);
+  });
+
   test('playlist scope requires an explicit playlist ID', () async {
     final coordinator = DjSessionCoordinator(
       analysis: _MemoryDjAnalysisService({}),
