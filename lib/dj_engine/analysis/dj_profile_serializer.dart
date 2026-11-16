@@ -78,23 +78,24 @@ class DjProfileSerializer {
 
   DjTrackProfile decode(String raw) {
     final map = jsonDecode(raw) as Map<String, dynamic>;
+    final durationMs = (map['durationMs'] as num?)?.toInt();
     final beat = _map(map['beatGrid']);
     final spectrum = _map(map['spectrum']);
     final transition = _map(map['transitions']);
     return DjTrackProfile(
       songId: map['songId'] as String,
-      durationMs: (map['durationMs'] as num?)?.toInt(),
+      durationMs: durationMs,
       fingerprint: map['fingerprint'] as String?,
       analysisVersion: (map['analysisVersion'] as num?)?.toInt() ?? 1,
       analysisConfidence: (map['analysisConfidence'] as num?)?.toDouble() ?? 0,
       beatGrid: DjBeatGrid(
         bpm: (beat['bpm'] as num?)?.toDouble(),
         confidence: (beat['confidence'] as num?)?.toDouble() ?? 0,
-        firstBeatMs: (beat['firstBeatMs'] as num?)?.toInt(),
-        beatMs: _ints(beat['beatMs']),
+        firstBeatMs: _time(beat['firstBeatMs'], durationMs),
+        beatMs: _orderedTimes(beat['beatMs'], durationMs),
         beatsPerBar: (beat['beatsPerBar'] as num?)?.toInt() ?? 4,
         beatsPerPhrase: (beat['beatsPerPhrase'] as num?)?.toInt() ?? 16,
-        downbeatMs: _ints(beat['downbeatMs']),
+        downbeatMs: _orderedTimes(beat['downbeatMs'], durationMs),
         downbeatConfidence: (beat['downbeatConfidence'] as num?)?.toDouble() ?? 0,
         barConfidence: (beat['barConfidence'] as num?)?.toDouble() ?? 0,
         phraseConfidence: (beat['phraseConfidence'] as num?)?.toDouble() ?? 0,
@@ -102,9 +103,9 @@ class DjProfileSerializer {
       keyRoot: (map['keyRoot'] as num?)?.toInt(),
       keyMode: map['keyMode'] as String?,
       keyConfidence: (map['keyConfidence'] as num?)?.toDouble() ?? 0,
-      harmonicChanges: _points(map['harmonicChanges']),
-      sections: _sections(map['sections']),
-      energyCurve: _energy(map['energyCurve']),
+      harmonicChanges: _points(map['harmonicChanges'], durationMs),
+      sections: _sections(map['sections'], durationMs),
+      energyCurve: _energy(map['energyCurve'], durationMs),
       spectrum: DjSpectralProfile(
         bass: (spectrum['bass'] as num?)?.toDouble() ?? 0.5,
         mids: (spectrum['mids'] as num?)?.toDouble() ?? 0.5,
@@ -114,13 +115,13 @@ class DjProfileSerializer {
         spectralFlux: (spectrum['spectralFlux'] as num?)?.toDouble() ?? 0.5,
         confidence: (spectrum['confidence'] as num?)?.toDouble() ?? 0,
       ),
-      silenceRegions: _silenceRegions(map['silenceRegions']),
+      silenceRegions: _silenceRegions(map['silenceRegions'], durationMs),
       transitions: DjTransitionMarkers(
-        bestIntroMs: (transition['bestIntroMs'] as num?)?.toInt(),
-        bestOutroMs: (transition['bestOutroMs'] as num?)?.toInt(),
-        safeMixIns: _points(transition['safeMixIns']),
-        safeMixOuts: _points(transition['safeMixOuts']),
-        riskyPoints: _points(transition['riskyPoints']),
+        bestIntroMs: _time(transition['bestIntroMs'], durationMs),
+        bestOutroMs: _time(transition['bestOutroMs'], durationMs),
+        safeMixIns: _points(transition['safeMixIns'], durationMs),
+        safeMixOuts: _points(transition['safeMixOuts'], durationMs),
+        riskyPoints: _points(transition['riskyPoints'], durationMs),
       ),
     );
   }
@@ -132,61 +133,121 @@ class DjProfileSerializer {
           })
       .toList();
 
-  List<DjTimePoint> _points(List<dynamic>? values) => (values ?? [])
-      .whereType<Map>()
-      .map((p) => DjTimePoint(
-            (p['timeMs'] as num?)?.toInt() ?? 0,
-            confidence: (p['confidence'] as num?)?.toDouble() ?? 0,
-          ))
-      .toList();
+  int? _time(dynamic value, int? durationMs) {
+    if (value is! num || !value.isFinite) return null;
+    final time = value.toInt();
+    if (time < 0 || (durationMs != null && (durationMs <= 0 || time > durationMs))) {
+      return null;
+    }
+    return time;
+  }
 
-  List<DjSilenceRegion> _silenceRegions(dynamic value) =>
-      (value is List ? value : const []).whereType<Map>().map((region) {
-        final start = (region['startMs'] as num?)?.toInt() ?? -1;
-        final end = (region['endMs'] as num?)?.toInt() ?? -1;
-        final confidence = (region['confidence'] as num?)?.toDouble() ?? 0;
-        final minimumDbfs = (region['minimumDbfs'] as num?)?.toDouble() ?? 0;
-        if (start < 0 || end <= start ||
-            !confidence.isFinite || confidence < 0 || confidence > 1 ||
-            !minimumDbfs.isFinite) {
-          return null;
-        }
-        return DjSilenceRegion(
-          startMs: start,
-          endMs: end,
-          minimumDbfs: minimumDbfs,
-          confidence: confidence,
-        );
-      }).whereType<DjSilenceRegion>().toList();
+  List<int> _orderedTimes(dynamic value, int? durationMs) {
+    if (value is! List) return const [];
+    final result = <int>[];
+    for (final item in value) {
+      final time = _time(item, durationMs);
+      if (time == null || (result.isNotEmpty && time <= result.last)) continue;
+      result.add(time);
+    }
+    return result;
+  }
 
-  List<int> _ints(dynamic value) => (value is List ? value : const [])
-      .whereType<num>()
-      .map((v) => v.toInt())
-      .toList();
+  List<DjTimePoint> _points(dynamic value, int? durationMs) {
+    if (value is! List) return const [];
+    final points = <DjTimePoint>[];
+    for (final raw in value.whereType<Map>()) {
+      final time = _time(raw['timeMs'], durationMs);
+      final confidence = (raw['confidence'] as num?)?.toDouble() ?? 0;
+      if (time == null || !confidence.isFinite || confidence < 0 || confidence > 1) {
+        continue;
+      }
+      points.add(DjTimePoint(time, confidence: confidence));
+    }
+    points.sort((a, b) => a.timeMs.compareTo(b.timeMs));
+    return points;
+  }
 
-  List<DjSection> _sections(dynamic value) => (value is List ? value : const [])
-      .whereType<Map>()
-      .map((s) => DjSection(
-            type: _sectionType(s['type']?.toString()),
-            startMs: (s['startMs'] as num?)?.toInt() ?? 0,
-            endMs: (s['endMs'] as num?)?.toInt() ?? 0,
-            confidence: (s['confidence'] as num?)?.toDouble() ?? 0,
-            energy: (s['energy'] as num?)?.toDouble() ?? 0.5,
-          ))
-      .toList();
+  List<DjSilenceRegion> _silenceRegions(dynamic value, int? durationMs) {
+    if (value is! List) return const [];
+    final regions = <DjSilenceRegion>[];
+    for (final raw in value.whereType<Map>()) {
+      final start = _time(raw['startMs'], durationMs);
+      final end = _time(raw['endMs'], durationMs);
+      final confidence = (raw['confidence'] as num?)?.toDouble() ?? 0;
+      final minimumDbfs = (raw['minimumDbfs'] as num?)?.toDouble() ?? 0;
+      if (start == null || end == null || end <= start ||
+          !confidence.isFinite || confidence < 0 || confidence > 1 ||
+          !minimumDbfs.isFinite || minimumDbfs > 0 || minimumDbfs < -160) {
+        continue;
+      }
+      regions.add(DjSilenceRegion(
+        startMs: start,
+        endMs: end,
+        minimumDbfs: minimumDbfs,
+        confidence: confidence,
+      ));
+    }
+    regions.sort((a, b) => a.startMs.compareTo(b.startMs));
+    return regions;
+  }
 
-  List<DjEnergyPoint> _energy(dynamic value) =>
-      (value is List ? value : const []).whereType<Map>().map((p) {
-        return DjEnergyPoint(
-          timeMs: (p['timeMs'] as num?)?.toInt() ?? 0,
-          value: (p['value'] as num?)?.toDouble() ?? 0.5,
-          loudness: (p['loudness'] as num?)?.toDouble() ?? 0.5,
-          bass: (p['bass'] as num?)?.toDouble() ?? 0.5,
-          mids: (p['mids'] as num?)?.toDouble() ?? 0.5,
-          highs: (p['highs'] as num?)?.toDouble() ?? 0.5,
-          slope: (p['slope'] as num?)?.toDouble() ?? 0.0,
-        );
-      }).toList();
+  List<DjSection> _sections(dynamic value, int? durationMs) {
+    if (value is! List) return const [];
+    final sections = <DjSection>[];
+    for (final raw in value.whereType<Map>()) {
+      final start = _time(raw['startMs'], durationMs);
+      final end = _time(raw['endMs'], durationMs);
+      final confidence = (raw['confidence'] as num?)?.toDouble() ?? 0;
+      final energy = (raw['energy'] as num?)?.toDouble() ?? 0.5;
+      if (start == null || end == null || end <= start ||
+          !confidence.isFinite || confidence < 0 || confidence > 1 ||
+          !energy.isFinite || energy < 0 || energy > 1) {
+        continue;
+      }
+      sections.add(DjSection(
+        type: _sectionType(raw['type']?.toString()),
+        startMs: start,
+        endMs: end,
+        confidence: confidence,
+        energy: energy,
+      ));
+    }
+    sections.sort((a, b) => a.startMs.compareTo(b.startMs));
+    return sections;
+  }
+
+  List<DjEnergyPoint> _energy(dynamic value, int? durationMs) {
+    if (value is! List) return const [];
+    final points = <DjEnergyPoint>[];
+    for (final raw in value.whereType<Map>()) {
+      final time = _time(raw['timeMs'], durationMs);
+      final fields = [
+        (raw['value'] as num?)?.toDouble() ?? 0.5,
+        (raw['loudness'] as num?)?.toDouble() ?? 0.5,
+        (raw['bass'] as num?)?.toDouble() ?? 0.5,
+        (raw['mids'] as num?)?.toDouble() ?? 0.5,
+        (raw['highs'] as num?)?.toDouble() ?? 0.5,
+        (raw['slope'] as num?)?.toDouble() ?? 0,
+      ];
+      if (time == null ||
+          fields.any((v) => !v.isFinite) ||
+          fields.take(5).any((v) => v < 0 || v > 1)) {
+        continue;
+      }
+      points.add(DjEnergyPoint(
+        timeMs: time,
+        value: fields[0],
+        loudness: fields[1],
+        bass: fields[2],
+        mids: fields[3],
+        highs: fields[4],
+        slope: fields[5],
+      ));
+    }
+    points.sort((a, b) => a.timeMs.compareTo(b.timeMs));
+    return points;
+  }
 
   DjSectionType _sectionType(String? value) {
     for (final type in DjSectionType.values) {
