@@ -514,6 +514,11 @@ extension MusicProviderDjHandoff on MusicProvider {
             standbySpeed: standbySpeed,
             outgoingProfile: profileA,
             transitionKind: candidate.kind,
+            outgoingStartPosition: approvedCueIsAhead
+                ? Duration(milliseconds: candidate.outgoingStartMs)
+                : null,
+            transitionDurationMs:
+                approvedCueIsAhead ? candidate.durationMs : null,
           );
         }
       }
@@ -735,6 +740,8 @@ class Media3DjTransitionPreparation {
     this.standbySpeed = 1.0,
     this.outgoingProfile,
     this.transitionKind,
+    this.outgoingStartPosition,
+    this.transitionDurationMs,
   });
 
   final Duration incomingStartPosition;
@@ -742,4 +749,8 @@ class Media3DjTransitionPreparation {
   final double standbySpeed;
   final DjTrackProfile? outgoingProfile;
   final DjTransitionKind? transitionKind;
+  /// Present only when a reviewed Suggestion Mix cue was accepted.
+  final Duration? outgoingStartPosition;
+  /// Present only when a reviewed Suggestion Mix duration was accepted.
+  final int? transitionDurationMs;
 }
