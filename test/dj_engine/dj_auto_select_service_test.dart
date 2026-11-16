@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/models/dj_analysis.dart';
+import 'package:resonate/models/listening_event.dart';
 import 'package:resonate/models/song.dart';
 import 'package:resonate/services/dj_auto_select_service.dart';
 
@@ -98,6 +99,53 @@ void main() {
 
       expect(result.usedDjArrangement, isFalse);
       expect(result.analysisCoverage, closeTo(2 / 3, 0.0001));
+    });
+
+    test('listening history rewards completed plays and favorites', () {
+      final now = DateTime(2026, 11, 16);
+      final events = [
+        ListeningEvent(
+          id: 'complete-1',
+          songId: 'liked',
+          startedAt: now.subtract(const Duration(days: 2)),
+          endedAt: now.subtract(const Duration(days: 2)),
+          durationPlayedMs: 180000,
+          songDurationMs: 180000,
+          completionRatio: 1,
+          completed: true,
+          skipped: false,
+        ),
+        ListeningEvent(
+          id: 'skip-1',
+          songId: 'skipped',
+          startedAt: now.subtract(const Duration(days: 1)),
+          endedAt: now.subtract(const Duration(days: 1)),
+          durationPlayedMs: 12000,
+          songDurationMs: 180000,
+          completionRatio: 0.07,
+          completed: false,
+          skipped: true,
+          skipPositionMs: 12000,
+        ),
+      ];
+
+      final signals = DjListeningSignal.fromHistory(
+        events,
+        favorites: {'liked'},
+      );
+
+      expect(signals['liked']!.preferenceScore, greaterThan(0));
+      expect(signals['skipped']!.preferenceScore, lessThan(0));
+      expect(signals['liked']!.favorite, isTrue);
+    });
+
+    test('favorite-only tracks receive a positive preference signal', () {
+      final signals = DjListeningSignal.fromHistory(
+        const [],
+        favorites: {'favorite-track'},
+      );
+
+      expect(signals['favorite-track']!.preferenceScore, greaterThan(0));
     });
 
     test('single-track scopes do not invoke a musical reorder', () {
