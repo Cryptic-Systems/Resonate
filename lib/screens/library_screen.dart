@@ -446,49 +446,47 @@ class _LibraryScreenState extends State<LibraryScreen> {
           IconButton(
             tooltip: 'Search library',
             icon: Icon(
-              _searchController.text.isEmpty ? Icons.search_rounded : Icons.search_off_rounded,
+              _searchController.text.isEmpty
+                  ? Icons.search_rounded
+                  : Icons.search_off_rounded,
             ),
             onPressed: _showSearch,
           ),
-          IconButton(
-            tooltip: 'Select',
-            icon: const Icon(Icons.checklist_rounded),
-            onPressed: () => _toggleSelectMode(true),
-          ),
-          IconButton(
-            tooltip: 'Liked Songs',
-            icon: const Icon(Icons.favorite_rounded),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const LikedSongsScreen()),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Playlists',
-            icon: const Icon(Icons.queue_music_rounded),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const PlaylistsScreen()),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: () async {
-              final library = context.read<LibraryProvider>();
-              await library.loadAllSongs();
-              await library.loadFavoriteSongs();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Library refreshed')),
-                );
-              }
-            },
-          ),
           PopupMenuButton<String>(
+            tooltip: 'More library options',
+            icon: const Icon(Icons.more_vert_rounded),
             onSelected: (value) async {
               final library = context.read<LibraryProvider>();
-              if (const ['title', 'artist', 'album', 'date_added', 'duration'].contains(value)) {
+              if (value == 'select') {
+                _toggleSelectMode(true);
+                return;
+              }
+              if (value == 'liked') {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LikedSongsScreen()),
+                );
+                return;
+              }
+              if (value == 'playlists') {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PlaylistsScreen()),
+                );
+                return;
+              }
+              if (value == 'refresh') {
+                await library.loadAllSongs();
+                await library.loadFavoriteSongs();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Library refreshed')),
+                  );
+                }
+                return;
+              }
+              if (const ['title', 'artist', 'album', 'date_added', 'duration']
+                  .contains(value)) {
                 library.setSortBy(value);
               }
               if (const ['all', 'favorites', 'recent'].contains(value)) {
@@ -504,6 +502,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
               }
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'select', child: Text('Select tracks')),
+              PopupMenuItem(value: 'liked', child: Text('Liked songs')),
+              PopupMenuItem(value: 'playlists', child: Text('Playlists')),
+              PopupMenuItem(value: 'refresh', child: Text('Refresh library')),
+              PopupMenuDivider(),
               PopupMenuItem(value: 'title', child: Text('Sort by Title')),
               PopupMenuItem(value: 'artist', child: Text('Sort by Artist')),
               PopupMenuItem(value: 'album', child: Text('Sort by Album')),
