@@ -167,6 +167,8 @@ class DjExecutionPlanner {
       'complete_transition',
     };
     final counts = <String, int>{};
+    bool hasExactKeys(Map<String, dynamic> values, Set<String> keys) =>
+        values.length == keys.length && keys.every(values.containsKey);
     var previousAtMs = -1;
     for (final step in steps) {
       if (!allowedActions.contains(step.action) ||
@@ -180,6 +182,7 @@ class DjExecutionPlanner {
       final parameters = step.parameters;
       switch (step.action) {
         case 'prepare_incoming':
+          if (!hasExactKeys(parameters, {'seekMs'})) return false;
           final seekMs = parameters['seekMs'];
           if (seekMs is! int ||
               seekMs != candidate.incomingStartMs ||
@@ -192,10 +195,11 @@ class DjExecutionPlanner {
           if (step.atMs != 0 || parameters.isNotEmpty) return false;
           break;
         case 'extend_crossfade':
-          if (step.atMs != 0 || parameters['durationMs'] != durationMs) {
+          if (!hasExactKeys(parameters, {'durationMs'}) || step.atMs != 0 || parameters['durationMs'] != durationMs) {
             return false;
           }
         case 'duck_incoming_bass':
+          if (!hasExactKeys(parameters, {'amount', 'durationMs'})) return false;
           final amount = parameters['amount'];
           final duckDuration = parameters['durationMs'];
           if (step.atMs != 0 ||
@@ -210,11 +214,13 @@ class DjExecutionPlanner {
           }
           break;
         case 'phrase_align':
+          if (!hasExactKeys(parameters, {'kind'})) return false;
           if (step.atMs != 0 || parameters['kind'] != candidate.kind.name) {
             return false;
           }
           break;
         case 'trigger_sfx':
+          if (!hasExactKeys(parameters, {'kind', 'snapped'})) return false;
           if (step.atMs <= 0 ||
               step.atMs >= durationMs ||
               parameters['kind'] != candidate.kind.name ||
