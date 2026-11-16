@@ -3755,10 +3755,14 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _finishHistoryEvent({
     bool completed = false,
     int? finalPositionMs,
+    String? expectedSongId,
   }) async {
     await _historySession.enqueue(() async {
       final event = _historySession.activeEvent;
-      if (event == null) return;
+      if (event == null ||
+          (expectedSongId != null && event.songId != expectedSongId)) {
+        return;
+      }
       final total = event.songDurationMs > 0
           ? event.songDurationMs
           : (currentDuration?.inMilliseconds ?? 0);
