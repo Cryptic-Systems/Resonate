@@ -187,8 +187,10 @@ class DjExecutionPlanner {
               (incoming.durationMs != null && seekMs >= incoming.durationMs!)) {
             return false;
           }
+          break;
         case 'start_incoming':
           if (step.atMs != 0 || parameters.isNotEmpty) return false;
+          break;
         case 'extend_crossfade':
           if (step.atMs != 0 || parameters['durationMs'] != durationMs) {
             return false;
@@ -206,10 +208,12 @@ class DjExecutionPlanner {
               duckDuration > durationMs) {
             return false;
           }
+          break;
         case 'phrase_align':
           if (step.atMs != 0 || parameters['kind'] != candidate.kind.name) {
             return false;
           }
+          break;
         case 'trigger_sfx':
           if (step.atMs <= 0 ||
               step.atMs >= durationMs ||
@@ -217,8 +221,10 @@ class DjExecutionPlanner {
               parameters['snapped'] != true) {
             return false;
           }
+          break;
         case 'complete_transition':
           if (step.atMs != durationMs || parameters.isNotEmpty) return false;
+          break;
       }
     }
 
