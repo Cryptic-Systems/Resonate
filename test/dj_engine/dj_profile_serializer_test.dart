@@ -51,6 +51,14 @@ void main() {
         spectralFlux: 0.22,
         confidence: 0.5,
       ),
+      silenceRegions: [
+        DjSilenceRegion(
+          startMs: 168000,
+          endMs: 172000,
+          minimumDbfs: -84,
+          confidence: 0.88,
+        ),
+      ],
       transitions: DjTransitionMarkers(
         bestIntroMs: 12000,
         bestOutroMs: 166000,
@@ -75,6 +83,16 @@ void main() {
     expect(decoded.energyCurve.single.bass, 0.3);
     expect(decoded.spectrum.bassDensity, 0.65);
     expect(decoded.transitions.bestOutroMs, 166000);
+    expect(decoded.silenceRegions.single.startMs, 168000);
+    expect(decoded.silenceRegions.single.durationMs, 4000);
+    expect(decoded.silenceRegions.single.confidence, 0.88);
     expect(decoded.transitions.riskyPoints.single.timeMs, 60000);
+  });
+
+  test('older profiles decode without optional silence metadata', () {
+    const serializer = DjProfileSerializer();
+    final decoded = serializer.decode('{"songId":"legacy","durationMs":120000}');
+    expect(decoded.songId, 'legacy');
+    expect(decoded.silenceRegions, isEmpty);
   });
 }
