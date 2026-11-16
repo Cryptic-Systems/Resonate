@@ -215,4 +215,69 @@ void main() {
     expect(safe.fallback, isTrue);
     expect(musical.fallback, isFalse);
   });
+
+  test('rejects non-finite candidate score and confidence', () {
+    const malformed = DjTransitionCandidate(
+      kind: DjTransitionKind.safeCrossfade,
+      outgoingStartMs: 220000,
+      incomingStartMs: 0,
+      durationMs: 8000,
+      score: double.nan,
+      confidence: double.infinity,
+    );
+
+    final plan = planner.plan(
+      outgoing: outgoing,
+      incoming: incoming,
+      candidate: malformed,
+    );
+
+    expect(plan.fallback, isTrue);
+    expect(plan.reason, 'invalid_candidate_metrics');
+    expect(plan.steps, isEmpty);
+  });
+
+  test('rejects candidate component scores outside normalized range', () {
+    const malformed = DjTransitionCandidate(
+      kind: DjTransitionKind.safeCrossfade,
+      outgoingStartMs: 220000,
+      incomingStartMs: 0,
+      durationMs: 8000,
+      score: 0.9,
+      confidence: 0.9,
+      scores: {'tempo': 1.2},
+    );
+
+    final plan = planner.plan(
+      outgoing: outgoing,
+      incoming: incoming,
+      candidate: malformed,
+    );
+
+    expect(plan.fallback, isTrue);
+    expect(plan.reason, 'invalid_candidate_metrics');
+    expect(plan.steps, isEmpty);
+  });
+
+  test('accepts finite normalized candidate metrics', () {
+    const valid = DjTransitionCandidate(
+      kind: DjTransitionKind.safeCrossfade,
+      outgoingStartMs: 220000,
+      incomingStartMs: 0,
+      durationMs: 8000,
+      score: 0.9,
+      confidence: 0.9,
+      scores: {'tempo': 0.8, 'silence': 0.5},
+    );
+
+    final plan = planner.plan(
+      outgoing: outgoing,
+      incoming: incoming,
+      candidate: valid,
+    );
+
+    expect(plan.fallback, isFalse);
+    expect(plan.reason, 'planned');
+  });
+
 }
