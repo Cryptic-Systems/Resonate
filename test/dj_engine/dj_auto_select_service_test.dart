@@ -148,6 +148,42 @@ void main() {
       expect(signals['favorite-track']!.preferenceScore, greaterThan(0));
     });
 
+    test('energy progression opens gently, builds, and resolves after the peak', () {
+      final songs = [
+        _song('low', artist: 'One'),
+        _song('warm', artist: 'Two'),
+        _song('mid', artist: 'Three'),
+        _song('drive', artist: 'Four'),
+        _song('peak', artist: 'Five'),
+        _song('close', artist: 'Six'),
+      ];
+      final analyses = {
+        'low': _analysis('low', energy: 0.10),
+        'warm': _analysis('warm', energy: 0.25),
+        'mid': _analysis('mid', energy: 0.40),
+        'drive': _analysis('drive', energy: 0.60),
+        'peak': _analysis('peak', energy: 0.80),
+        'close': _analysis('close', energy: 1.00),
+      };
+
+      final result = DjAutoSelectService().arrangeWithAnalysis(
+        songs,
+        analyses,
+        random: math.Random(19),
+      );
+      final orderedEnergy = result.songs
+          .map((song) => analyses[song.id]!.energy!)
+          .toList();
+      final peakIndex = orderedEnergy.indexOf(orderedEnergy.reduce(math.max));
+
+      expect(result.usedDjArrangement, isTrue);
+      expect(orderedEnergy.first, 0.10);
+      expect(peakIndex, inInclusiveRange(3, 4));
+      expect(orderedEnergy.last, lessThan(orderedEnergy[peakIndex]));
+      expect(result.songs.map((song) => song.id).toSet(),
+          songs.map((song) => song.id).toSet());
+    });
+
     test('single-track scopes do not invoke a musical reorder', () {
       final song = _song('only');
       final result = DjAutoSelectService().arrangeWithAnalysis(
