@@ -186,6 +186,53 @@ void main() {
     expect(candidate.risks, isNot(contains(DjRiskType.energyShock)));
   });
 
+  test('caps blend duration to both decks remaining playable material', () {
+    final shortOutgoing = DjTrackProfile(
+      songId: 'out',
+      durationMs: 225000,
+      beatGrid: const DjBeatGrid(bpm: 128, confidence: 0.95),
+      transitions: const DjTransitionMarkers(bestOutroMs: 220000),
+      analysisConfidence: 0.9,
+    );
+    final shortIncoming = DjTrackProfile(
+      songId: 'in',
+      durationMs: 4000,
+      beatGrid: const DjBeatGrid(bpm: 128, confidence: 0.95),
+      analysisConfidence: 0.9,
+    );
+    final candidates = engine.brain.generate(
+      outgoing: shortOutgoing,
+      incoming: shortIncoming,
+      outgoingPositionMs: 200000,
+      preferredDurationMs: 12000,
+      maxDurationMs: 16000,
+    );
+
+    expect(candidates, isNotEmpty);
+    expect(candidates.every((candidate) =>
+        candidate.outgoingStartMs == 220000 &&
+        candidate.durationMs >= 2000 &&
+        candidate.durationMs <= 4000), isTrue);
+  });
+
+  test('does not create a blend when either deck has less than two seconds left', () {
+    final outgoing = DjTrackProfile(
+      songId: 'out',
+      durationMs: 221000,
+      beatGrid: const DjBeatGrid(bpm: 128, confidence: 0.95),
+      transitions: const DjTransitionMarkers(bestOutroMs: 220000),
+      analysisConfidence: 0.9,
+    );
+    final incoming = track(id: 'in', section: DjSectionType.intro);
+    final candidates = engine.brain.generate(
+      outgoing: outgoing,
+      incoming: incoming,
+      outgoingPositionMs: 200000,
+    );
+
+    expect(candidates, isEmpty);
+  });
+
   test('uses energy slope when ranking candidates', () {
     final outgoing = track(id: 'a', energy: 0.7);
     final incoming = DjTrackProfile(
