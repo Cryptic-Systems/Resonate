@@ -66,8 +66,11 @@ class DjExecutionPlanner {
     final requestedDuration = longerFade
         ? (candidate.durationMs * 1.25).round()
         : candidate.durationMs;
+    // The planner owns a 20-second execution ceiling. A candidate may
+    // request a longer blend, but execution must cap it rather than passing
+    // an inverted clamp range (candidate duration > durationLimit).
     final effectiveDurationMs =
-        requestedDuration.clamp(candidate.durationMs, durationLimit).toInt();
+        requestedDuration.clamp(2000, durationLimit).toInt();
     final sfxTriggerMs = _phraseSnappedSfxMs(
       durationMs: effectiveDurationMs,
       kind: candidate.kind,
