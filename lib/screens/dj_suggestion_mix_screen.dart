@@ -74,7 +74,6 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
         );
         return;
       }
-      Navigator.of(context).pop();
       openShellPlayer(context);
     } catch (error) {
       if (!mounted) return;
