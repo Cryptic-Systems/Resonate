@@ -280,4 +280,64 @@ void main() {
     expect(plan.reason, 'planned');
   });
 
+
+  test('rejects invalid runtime BPM and spectral profile metrics', () {
+    const candidate = DjTransitionCandidate(
+      kind: DjTransitionKind.safeCrossfade,
+      outgoingStartMs: 200000,
+      incomingStartMs: 0,
+      durationMs: 8000,
+      score: 0.9,
+      confidence: 0.9,
+    );
+    const malformedOutgoing = DjTrackProfile(
+      songId: 'bad-profile',
+      durationMs: 240000,
+      beatGrid: DjBeatGrid(bpm: double.nan, confidence: 0.9),
+      spectrum: DjSpectralProfile(bassDensity: 1.4),
+      analysisConfidence: 0.9,
+    );
+
+    final plan = planner.plan(
+      outgoing: malformedOutgoing,
+      incoming: incoming,
+      candidate: candidate,
+    );
+
+    expect(plan.fallback, isTrue);
+    expect(plan.reason, 'invalid_track_profile');
+    expect(plan.steps, isEmpty);
+  });
+
+  test('rejects non-monotonic runtime beat grids', () {
+    const candidate = DjTransitionCandidate(
+      kind: DjTransitionKind.safeCrossfade,
+      outgoingStartMs: 200000,
+      incomingStartMs: 0,
+      durationMs: 8000,
+      score: 0.9,
+      confidence: 0.9,
+    );
+    const malformedIncoming = DjTrackProfile(
+      songId: 'bad-beats',
+      durationMs: 220000,
+      beatGrid: DjBeatGrid(
+        bpm: 128,
+        confidence: 0.9,
+        beatMs: [1000, 1500, 1400],
+      ),
+      analysisConfidence: 0.9,
+    );
+
+    final plan = planner.plan(
+      outgoing: outgoing,
+      incoming: malformedIncoming,
+      candidate: candidate,
+    );
+
+    expect(plan.fallback, isTrue);
+    expect(plan.reason, 'invalid_track_profile');
+    expect(plan.steps, isEmpty);
+  });
+
 }
