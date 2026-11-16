@@ -95,4 +95,76 @@ void main() {
     expect(decoded.songId, 'legacy');
     expect(decoded.silenceRegions, isEmpty);
   });
+
+  test('drops malformed and out-of-range profile timeline data', () {
+    const serializer = DjProfileSerializer();
+    final decoded = serializer.decode('''
+      {
+        "songId": "guarded",
+        "durationMs": 180000,
+        "beatGrid": {
+          "beatMs": [320, 804, 804, -10, 181000, 1288],
+          "downbeatMs": [320, 1288, 1200],
+          "firstBeatMs": 181000
+        },
+        "sections": [
+          {"type": "intro", "startMs": 0, "endMs": 12000, "confidence": 0.8, "energy": 0.4},
+          {"type": "outro", "startMs": 170000, "endMs": 190000, "confidence": 0.8, "energy": 0.4},
+          {"type": "drop", "startMs": 50000, "endMs": 60000, "confidence": 1.4, "energy": 0.8}
+        ],
+        "energyCurve": [
+          {"timeMs": 1000, "value": 0.5, "bass": 0.4},
+          {"timeMs": 181000, "value": 0.5}
+        ],
+        "silenceRegions": [
+          {"startMs": 170000, "endMs": 174000, "minimumDbfs": -80, "confidence": 0.9},
+          {"startMs": 175000, "endMs": 185000, "minimumDbfs": -80, "confidence": 0.9},
+          {"startMs": 176000, "endMs": 177000, "minimumDbfs": 12, "confidence": 0.9}
+        ],
+        "transitions": {
+          "bestIntroMs": -1,
+          "bestOutroMs": 181000,
+          "safeMixIns": [
+            {"timeMs": 2000, "confidence": 0.8},
+            {"timeMs": 181000, "confidence": 0.8}
+          ],
+          "safeMixOuts": [],
+          "riskyPoints": [{"timeMs": 5000, "confidence": 2.0}]
+        }
+      }
+    ''');
+
+    expect(decoded.beatGrid.firstBeatMs, isNull);
+    expect(decoded.beatGrid.beatMs, [320, 804, 1288]);
+    expect(decoded.beatGrid.downbeatMs, [320, 1288]);
+    expect(decoded.sections, hasLength(1));
+    expect(decoded.energyCurve, hasLength(1));
+    expect(decoded.silenceRegions, hasLength(1));
+    expect(decoded.transitions.bestIntroMs, isNull);
+    expect(decoded.transitions.bestOutroMs, isNull);
+    expect(decoded.transitions.safeMixIns.map((p) => p.timeMs), [2000]);
+    expect(decoded.transitions.riskyPoints, isEmpty);
+  });
+
+  test('sorts valid timeline collections into chronological order', () {
+    const serializer = DjProfileSerializer();
+    final decoded = serializer.decode('''
+      {
+        "songId": "ordered",
+        "durationMs": 60000,
+        "harmonicChanges": [
+          {"timeMs": 30000, "confidence": 0.8},
+          {"timeMs": 10000, "confidence": 0.7}
+        ],
+        "energyCurve": [
+          {"timeMs": 30000, "value": 0.7},
+          {"timeMs": 10000, "value": 0.3}
+        ]
+      }
+    ''');
+
+    expect(decoded.harmonicChanges.map((p) => p.timeMs), [10000, 30000]);
+    expect(decoded.energyCurve.map((p) => p.timeMs), [10000, 30000]);
+  });
+
 }
