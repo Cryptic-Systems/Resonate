@@ -385,15 +385,20 @@ extension MusicProviderDjHandoff on MusicProvider {
           outgoingSong.id,
           incomingSong.id,
         );
-        final candidate = approved?.candidate ??
-            await _djAutopilotPlanner.choose(
-              outgoing: profileA,
-              incoming: profileB,
-              outgoingPositionMs: outgoingPositionMs,
-              preferredDurationMs: _crossfadeDurationMs,
-              maxDurationMs: 6500,
-              policy: _djPolicy,
-            );
+        // A review can happen well before playback reaches this pair. Never
+        // execute a reviewed cue that has already fallen behind the playhead.
+        final approvedCueIsAhead = approved != null &&
+            approved.candidate.outgoingStartMs >= outgoingPositionMs;
+        final candidate = approvedCueIsAhead
+            ? approved.candidate
+            : await _djAutopilotPlanner.choose(
+                outgoing: profileA,
+                incoming: profileB,
+                outgoingPositionMs: outgoingPositionMs,
+                preferredDurationMs: _crossfadeDurationMs,
+                maxDurationMs: 6500,
+                policy: _djPolicy,
+              );
         final execution = _djEngine.execution.plan(
           outgoing: profileA,
           incoming: profileB,
@@ -403,7 +408,11 @@ extension MusicProviderDjHandoff on MusicProvider {
         if (approved != null) {
           await ResonateDiagnostics.recordDj(
             stage: 'media3_approved_plan',
-            outcome: execution.fallback ? 'rejected_replanned' : 'accepted',
+            outcome: !approvedCueIsAhead
+                ? 'rejected_stale_cue_replanned'
+                : execution.fallback
+                    ? 'rejected_replanned'
+                    : 'accepted',
             reason: execution.reason,
             songId: incomingSong.id,
             extra: {
