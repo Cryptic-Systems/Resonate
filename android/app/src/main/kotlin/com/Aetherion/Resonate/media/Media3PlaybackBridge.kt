@@ -43,10 +43,14 @@ class Media3PlaybackBridge(
 
     private val positionTicker = object : Runnable {
         override fun run() {
-            val player = controller
-            if (released || eventSink == null || player == null || !player.isPlaying) {
+            if (released || eventSink == null || controller == null) {
                 return
             }
+            // Keep publishing snapshots while paused as well as while playing.
+            // MediaSession.setPlayer() can swap the physical deck at a crossfade
+            // boundary without a reliable isPlaying edge reaching this bridge.
+            // A continuously refreshed snapshot prevents Flutter's play state,
+            // current item and seek bar from remaining bound to the outgoing deck.
             publishState()
             mainHandler.postDelayed(this, POSITION_UPDATE_INTERVAL_MS)
         }
@@ -55,17 +59,13 @@ class Media3PlaybackBridge(
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             publishState()
-            if (player.isPlaying) {
-                schedulePositionUpdates()
-            } else {
-                stopPositionUpdates()
-            }
+            schedulePositionUpdates()
         }
     }
 
     private fun schedulePositionUpdates() {
         stopPositionUpdates()
-        if (!released && eventSink != null && controller?.isPlaying == true) {
+        if (!released && eventSink != null && controller != null) {
             mainHandler.postDelayed(positionTicker, POSITION_UPDATE_INTERVAL_MS)
         }
     }
