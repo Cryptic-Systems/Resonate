@@ -16,7 +16,7 @@ class DjTransitionBrain {
     // for the active policy floor. Playback continues through the safe path.
     final floor = policy.analysisFloor;
     if (outgoing.analysisConfidence < floor && incoming.analysisConfidence < floor) {
-      return _fallback(incoming, preferredDurationMs);
+      return _fallback(incoming, preferredDurationMs, outgoing: outgoing, outgoingPositionMs: outgoingPositionMs);
     }
 
     final candidates = generate(
@@ -50,6 +50,28 @@ class DjTransitionBrain {
     final baseDuration = preferredDurationMs.clamp(2000, maxDurationMs).toInt();
 
     void add(DjTransitionKind kind, int inMs, int duration, Map<String, double> scores) {
+      // A blend must fit entirely inside the remaining playable material on
+      // both decks. Unknown durations remain unconstrained rather than guessed.
+      if (outgoingAnchor < 0 || inMs < 0) return;
+      final outgoingAvailable = outgoing.durationMs == null
+          ? null
+          : outgoing.durationMs! - outgoingAnchor;
+      final incomingAvailable = incoming.durationMs == null
+          ? null
+          : incoming.durationMs! - inMs;
+      if ((outgoingAvailable != null && outgoingAvailable < 2000) ||
+          (incomingAvailable != null && incomingAvailable < 2000)) {
+        return;
+      }
+      var durationLimit = maxDurationMs;
+      if (outgoingAvailable != null && outgoingAvailable < durationLimit) {
+        durationLimit = outgoingAvailable;
+      }
+      if (incomingAvailable != null && incomingAvailable < durationLimit) {
+        durationLimit = incomingAvailable;
+      }
+      if (durationLimit < 2000) return;
+      final boundedDuration = duration.clamp(2000, durationLimit).toInt();
       final risk = _risks(outgoing, incoming, outgoingAnchor, inMs);
       final confidence = _confidence(outgoing, incoming, scores);
       final score = (_weightedScore(scores, policy: policy)
@@ -61,7 +83,7 @@ class DjTransitionBrain {
         kind: kind,
         outgoingStartMs: outgoingAnchor,
         incomingStartMs: inMs,
-        durationMs: duration.clamp(2000, maxDurationMs).toInt(),
+        durationMs: boundedDuration,
         score: score,
         confidence: confidence,
         scores: scores,
@@ -71,7 +93,7 @@ class DjTransitionBrain {
 
     final intro = _bestIncomingAnchor(incoming);
     final out = outgoing.transitions.bestOutroMs;
-    if (out != null && outRemaining > 2500) {
+    if (out != null && (outgoing.durationMs == null || outgoing.durationMs! - outgoingAnchor > 2500)) {
       add(
         DjTransitionKind.outroIntro,
         intro,
@@ -395,12 +417,32 @@ class DjTransitionBrain {
     return null;
   }
 
-  DjTransitionCandidate _fallback(DjTrackProfile b, int duration) {
+  DjTransitionCandidate _fallback(
+    DjTrackProfile b,
+    int duration, {
+    required DjTrackProfile outgoing,
+    required int outgoingPositionMs,
+  }) {
+    final incomingStart = b.transitions.bestIntroMs ?? 0;
+    var boundedDuration = duration.clamp(2000, 16000).toInt();
+    final outgoingAvailable = outgoing.durationMs == null
+        ? null
+        : outgoing.durationMs! - outgoingPositionMs;
+    final incomingAvailable = b.durationMs == null
+        ? null
+        : b.durationMs! - incomingStart;
+    if (outgoingAvailable != null && outgoingAvailable < boundedDuration) {
+      boundedDuration = outgoingAvailable;
+    }
+    if (incomingAvailable != null && incomingAvailable < boundedDuration) {
+      boundedDuration = incomingAvailable;
+    }
+    if (boundedDuration < 2000) boundedDuration = 0;
     return DjTransitionCandidate(
       kind: DjTransitionKind.safeCrossfade,
-      outgoingStartMs: 0,
-      incomingStartMs: b.transitions.bestIntroMs ?? 0,
-      durationMs: duration.clamp(2000, 16000).toInt(),
+      outgoingStartMs: outgoingPositionMs,
+      incomingStartMs: incomingStart,
+      durationMs: boundedDuration,
       score: 0.5,
       confidence: 0.5,
     );
