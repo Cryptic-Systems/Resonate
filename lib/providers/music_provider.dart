@@ -3752,10 +3752,23 @@ class MusicProvider extends ChangeNotifier {
     });
   }
 
-  Future<void> _finishHistoryEvent({bool completed = false}) async {
+  Future<void> _finishHistoryEvent({
+    bool completed = false,
+    int? finalPositionMs,
+  }) async {
     await _historySession.enqueue(() async {
-      final event = _historySession.activeEvent; if (event == null) return;
-      final total = event.songDurationMs > 0 ? event.songDurationMs : (currentDuration?.inMilliseconds ?? 0); final position = _historySession.positionMs.clamp(0, total > 0 ? total : 1).toInt(); final ratio = total <= 0 ? 0.0 : (position / total).clamp(0.0, 1.0).toDouble(); final wasCompleted = completed || ratio >= .90;
+      final event = _historySession.activeEvent;
+      if (event == null) return;
+      final total = event.songDurationMs > 0
+          ? event.songDurationMs
+          : (currentDuration?.inMilliseconds ?? 0);
+      final position = (finalPositionMs ?? _historySession.positionMs)
+          .clamp(0, total > 0 ? total : 1)
+          .toInt();
+      final ratio = total <= 0
+          ? 0.0
+          : (position / total).clamp(0.0, 1.0).toDouble();
+      final wasCompleted = completed || ratio >= .90;
       final updated = ListeningEvent(id: event.id, songId: event.songId, previousSongId: event.previousSongId, startedAt: event.startedAt, endedAt: DateTime.now(), durationPlayedMs: position, songDurationMs: total, completionRatio: ratio, completed: wasCompleted, skipped: !wasCompleted && position > 0, skipPositionMs: !wasCompleted && position > 0 ? position : null);
       // Phase 7: full listen after DJ handoff → soft positive signal.
       try {
