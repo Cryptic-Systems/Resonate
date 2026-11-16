@@ -29,7 +29,7 @@ class DjAutoSelectResult {
 /// values indicate repeated early skips or overexposure.
 class DjListeningSignal {
   const DjListeningSignal({
-    this.completionRatio = 0,
+    this.completionRatio = 0.5,
     this.skipRatio = 0,
     this.recentPlayCount = 0,
     this.favorite = false,
