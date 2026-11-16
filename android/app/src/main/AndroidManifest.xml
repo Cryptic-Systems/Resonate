@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
@@ -11,10 +11,6 @@
 
     <application android:label="Resonate" android:icon="@mipmap/ic_launcher" android:allowBackup="true" android:supportsRtl="true">
         <meta-data android:name="flutterEmbedding" android:value="2" />
-        <!-- Compile-time keep for the media FGS small icon. audio_service looks this
-             up by string; without an XML resource reference Unisoc posts icon=0 and
-             kills MainActivity on first play. -->
-        <meta-data android:name="com.aetherion.resonate.notification_icon" android:resource="@drawable/ic_stat_resonate" />
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:theme="@style/LaunchTheme" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -26,11 +22,10 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
-        <service android:name="com.ryanheise.audioservice.AudioService" android:exported="true" android:foregroundServiceType="mediaPlayback">
-            <intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter>
-        </service>
-        <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver" android:exported="true">
-            <intent-filter><action android:name="android.intent.action.MEDIA_BUTTON" /></intent-filter>
-        </receiver>
+        <!-- The audio_service plugin is retained temporarily for legacy migration
+             code, but its second Android service/receiver must not publish a
+             competing notification or claim media-button events. Media3 owns both. -->
+        <service android:name="com.ryanheise.audioservice.AudioService" tools:node="remove" />
+        <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver" tools:node="remove" />
     </application>
 </manifest>
