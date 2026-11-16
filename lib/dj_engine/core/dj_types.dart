@@ -118,6 +118,24 @@ class DjTransitionMarkers {
   });
 }
 
+/// Confidence-weighted near-silence evidence measured from decoded PCM.
+/// This is descriptive track metadata only; it never executes playback actions.
+class DjSilenceRegion {
+  final int startMs;
+  final int endMs;
+  final double minimumDbfs;
+  final double confidence;
+
+  const DjSilenceRegion({
+    required this.startMs,
+    required this.endMs,
+    required this.minimumDbfs,
+    required this.confidence,
+  });
+
+  int get durationMs => (endMs - startMs).clamp(0, 1 << 30);
+}
+
 /// Richer replacement/future companion to the current DjAnalysis model.
 class DjTrackProfile {
   final String songId;
@@ -132,6 +150,7 @@ class DjTrackProfile {
   final List<DjEnergyPoint> energyCurve;
   final DjSpectralProfile spectrum;
   final DjTransitionMarkers transitions;
+  final List<DjSilenceRegion> silenceRegions;
   final double analysisConfidence;
   final int analysisVersion;
 
@@ -148,6 +167,7 @@ class DjTrackProfile {
     this.energyCurve = const [],
     this.spectrum = const DjSpectralProfile(),
     this.transitions = const DjTransitionMarkers(),
+    this.silenceRegions = const [],
     this.analysisConfidence = 0,
     this.analysisVersion = 1,
   });
