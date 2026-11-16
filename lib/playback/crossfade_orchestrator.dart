@@ -38,6 +38,24 @@ class CrossfadeOrchestrator {
     );
   }
 
+  /// Prepares the standby deck shortly before a reviewed DJ cue.
+  static bool shouldPreloadForApprovedCue({
+    required int positionMs,
+    required int cueMs,
+    int preloadLeadMs = 10000,
+  }) {
+    if (positionMs < 0 || cueMs < 0 || preloadLeadMs < 0) return false;
+    final preloadAtMs = math.max(0, cueMs - preloadLeadMs);
+    return positionMs >= preloadAtMs && positionMs < cueMs;
+  }
+
+  /// Starts the approved transition at its reviewed outgoing cue position.
+  static bool shouldStartAtApprovedCue({
+    required int positionMs,
+    required int cueMs,
+  }) =>
+      positionMs >= 0 && cueMs >= 0 && positionMs >= cueMs;
+
   static CrossfadeTiming timing({
     required int configuredDurationMs,
     required bool djActive,
