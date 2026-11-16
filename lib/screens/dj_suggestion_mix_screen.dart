@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../dj_engine/core/dj_types.dart';
+import '../providers/dj_mode_provider.dart';
 import '../navigation/shell_nav.dart';
 import '../providers/music_provider.dart';
 import '../models/song.dart';
@@ -44,6 +45,7 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
       final updated = widget.coordinator.reorder(
         mix: _mix,
         orderedSongIds: songs.map((song) => song.id).toList(),
+        policy: context.read<DjModeProvider>().policy,
       );
       setState(() => _mix = updated);
     } on Object catch (error) {
@@ -59,6 +61,10 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
     try {
       final approved = widget.coordinator.approve(_mix);
       final music = context.read<MusicProvider>();
+      music.setApprovedDjTransitions({
+        for (final transition in _mix.transitions)
+          '${transition.outgoingSongId}\\u0000${transition.incomingSongId}': transition.plan,
+      });
       // DJ order must remain authoritative after approval.
       await music.setShuffleEnabled(false);
       final started = await music.playSong(
