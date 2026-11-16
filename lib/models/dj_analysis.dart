@@ -31,7 +31,9 @@ class DjAnalysis {
   final double? energy;
   /// Approximate loudness 0–1 from PCM window.
   final double? loudness;
+  /// Intro cue position in milliseconds from the start of the track.
   final int? introHintMs;
+  /// Outro cue position in milliseconds from the start of the track.
   final int? outroHintMs;
   final String? sectionHint;
 
