@@ -234,7 +234,7 @@ class DjSessionCoordinator {
     for (var i = 0; i + 1 < orderedSongs.length; i++) {
       final outgoing = profiles[orderedSongs[i].id]!;
       final incoming = profiles[orderedSongs[i + 1].id]!;
-      final plan = _engine.planTransition(
+      final planned = _engine.planTransition(
         outgoing: outgoing,
         incoming: incoming,
         // The transition brain selects a suitable outgoing cue from the
@@ -242,6 +242,22 @@ class DjSessionCoordinator {
         outgoingPositionMs: 0,
         policy: policy,
       );
+      // A technically executable generic fade is not a DJ-intelligent
+      // transition when either track lacks reliable analysis. Keep it as an
+      // explicit fallback so the review UI can distinguish it from a
+      // confidence-backed musical recommendation.
+      final plan = math.min(
+                outgoing.analysisConfidence,
+                incoming.analysisConfidence,
+              ) <
+              0.35
+          ? DjExecutionPlan(
+              candidate: planned.candidate,
+              fallback: true,
+              reason: 'insufficient_analysis_confidence',
+              steps: const [],
+            )
+          : planned;
       transitions.add(DjSessionTransition(
         outgoingSongId: outgoing.songId,
         incomingSongId: incoming.songId,
