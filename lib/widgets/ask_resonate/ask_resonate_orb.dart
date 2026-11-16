@@ -50,41 +50,57 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
 
     if (ctrl.isOpen) return const SizedBox.shrink();
 
+    final reactiveBands = viz.enabled && viz.orbAudioReactive
+        ? List<double>.unmodifiable(viz.frequencies)
+        : const <double>[];
+
     Widget orb = Material(
       key: _orbKey,
       color: Colors.transparent,
       elevation: 0,
-      child: Container(
-        width: 58,
-        height: 58,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              scheme.secondary.withValues(alpha: 0.95),
-              scheme.primary.withValues(alpha: 0.90),
-            ],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: scheme.primary.withValues(alpha: 0.35),
-              blurRadius: 16,
-              spreadRadius: 1,
-              offset: const Offset(0, 4),
-            ),
-          ],
+      child: CustomPaint(
+        size: const Size(82, 82),
+        painter: _OrbWaveEdgePainter(
+          color: scheme.secondary,
+          bands: reduceMotion ? const <double>[] : reactiveBands,
+          sensitivity: viz.sensitivity,
         ),
-        child: Center(
-          child: CustomPaint(
-            size: const Size(32, 32),
-            painter: _OrbSpectrumPainter(
-              color: Colors.white,
-              bands: viz.enabled && viz.orbAudioReactive
-                  ? List<double>.unmodifiable(viz.frequencies.take(7))
-                  : const <double>[],
-              sensitivity: reduceMotion ? 0.0 : viz.sensitivity,
+        child: SizedBox(
+          width: 82,
+          height: 82,
+          child: Center(
+            child: Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    scheme.secondary.withValues(alpha: 0.95),
+                    scheme.primary.withValues(alpha: 0.90),
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: scheme.primary.withValues(alpha: 0.35),
+                    blurRadius: 16,
+                    spreadRadius: 1,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: CustomPaint(
+                  size: const Size(32, 32),
+                  painter: _OrbSpectrumPainter(
+                    color: Colors.white,
+                    bands: reactiveBands.take(7).toList(growable: false),
+                    sensitivity: reduceMotion ? 0.0 : viz.sensitivity,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -111,6 +127,80 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
   }
 }
 
+
+/// Audio-reactive perimeter. Low-frequency FFT bins are distributed around
+/// the circumference and interpolated into a smooth, asymmetric wave contour.
+class _OrbWaveEdgePainter extends CustomPainter {
+  const _OrbWaveEdgePainter({
+    required this.color,
+    required this.bands,
+    required this.sensitivity,
+  });
+
+  final Color color;
+  final List<double> bands;
+  final double sensitivity;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    const baseRadius = 30.0;
+    final usableBands = bands.take(12).toList(growable: false);
+    final paint = Paint()
+      ..color = color.withValues(alpha: 0.88)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final path = Path();
+    const samples = 144;
+    for (var i = 0; i <= samples; i++) {
+      final angle = (i / samples) * math.pi * 2 - math.pi / 2;
+      final bandPosition = (i / samples) * usableBands.length;
+      final lower = bandPosition.floor();
+      final fraction = bandPosition - lower;
+      final a = usableBands.isEmpty
+          ? 0.0
+          : usableBands[lower % usableBands.length];
+      final b = usableBands.isEmpty
+          ? 0.0
+          : usableBands[(lower + 1) % usableBands.length];
+      final first = a.isFinite ? a.clamp(0.0, 1.0).toDouble() : 0.0;
+      final second = b.isFinite ? b.clamp(0.0, 1.0).toDouble() : 0.0;
+      final energy = first + (second - first) * fraction;
+      // Keep the contour lively and bass-forward, with enough travel to read
+      // as waves rather than a uniformly expanding halo.
+      final displacement = math.sqrt(energy) *
+          (2.0 + sensitivity.clamp(0.1, 1.0) * 7.0);
+      final radius = baseRadius + displacement;
+      final point = Offset(
+        center.dx + math.cos(angle) * radius,
+        center.dy + math.sin(angle) * radius,
+      );
+      if (i == 0) {
+        path.moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+    path.close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _OrbWaveEdgePainter oldDelegate) {
+    if (oldDelegate.color != color ||
+        oldDelegate.sensitivity != sensitivity ||
+        oldDelegate.bands.length != bands.length) {
+      return true;
+    }
+    for (var i = 0; i < bands.length; i++) {
+      if (oldDelegate.bands[i] != bands[i]) return true;
+    }
+    return false;
+  }
+}
 
 /// Compact FFT mark: its seven strokes are driven by the same measured bands
 /// as the main visualizer. No independent animation or idle pulse is used.
