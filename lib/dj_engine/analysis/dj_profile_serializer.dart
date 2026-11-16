@@ -78,7 +78,10 @@ class DjProfileSerializer {
 
   DjTrackProfile decode(String raw) {
     final map = jsonDecode(raw) as Map<String, dynamic>;
-    final durationMs = (map['durationMs'] as num?)?.toInt();
+    final rawDuration = map['durationMs'];
+    final durationMs = rawDuration is num && rawDuration.isFinite && rawDuration > 0
+        ? rawDuration.toInt()
+        : null;
     final beat = _map(map['beatGrid']);
     final spectrum = _map(map['spectrum']);
     final transition = _map(map['transitions']);
@@ -87,33 +90,33 @@ class DjProfileSerializer {
       durationMs: durationMs,
       fingerprint: map['fingerprint'] as String?,
       analysisVersion: (map['analysisVersion'] as num?)?.toInt() ?? 1,
-      analysisConfidence: (map['analysisConfidence'] as num?)?.toDouble() ?? 0,
+      analysisConfidence: _unit(map['analysisConfidence'], fallback: 0),
       beatGrid: DjBeatGrid(
-        bpm: (beat['bpm'] as num?)?.toDouble(),
-        confidence: (beat['confidence'] as num?)?.toDouble() ?? 0,
+        bpm: _bpm(beat['bpm']),
+        confidence: _unit(beat['confidence'], fallback: 0),
         firstBeatMs: _time(beat['firstBeatMs'], durationMs),
         beatMs: _orderedTimes(beat['beatMs'], durationMs),
-        beatsPerBar: (beat['beatsPerBar'] as num?)?.toInt() ?? 4,
-        beatsPerPhrase: (beat['beatsPerPhrase'] as num?)?.toInt() ?? 16,
+        beatsPerBar: _boundedInt(beat['beatsPerBar'], 1, 12, 4),
+        beatsPerPhrase: _boundedInt(beat['beatsPerPhrase'], 1, 64, 16),
         downbeatMs: _orderedTimes(beat['downbeatMs'], durationMs),
-        downbeatConfidence: (beat['downbeatConfidence'] as num?)?.toDouble() ?? 0,
-        barConfidence: (beat['barConfidence'] as num?)?.toDouble() ?? 0,
-        phraseConfidence: (beat['phraseConfidence'] as num?)?.toDouble() ?? 0,
+        downbeatConfidence: _unit(beat['downbeatConfidence'], fallback: 0),
+        barConfidence: _unit(beat['barConfidence'], fallback: 0),
+        phraseConfidence: _unit(beat['phraseConfidence'], fallback: 0),
       ),
-      keyRoot: (map['keyRoot'] as num?)?.toInt(),
+      keyRoot: _keyRoot(map['keyRoot']),
       keyMode: map['keyMode'] as String?,
-      keyConfidence: (map['keyConfidence'] as num?)?.toDouble() ?? 0,
+      keyConfidence: _unit(map['keyConfidence'], fallback: 0),
       harmonicChanges: _points(map['harmonicChanges'], durationMs),
       sections: _sections(map['sections'], durationMs),
       energyCurve: _energy(map['energyCurve'], durationMs),
       spectrum: DjSpectralProfile(
-        bass: (spectrum['bass'] as num?)?.toDouble() ?? 0.5,
-        mids: (spectrum['mids'] as num?)?.toDouble() ?? 0.5,
-        highs: (spectrum['highs'] as num?)?.toDouble() ?? 0.5,
-        centroid: (spectrum['centroid'] as num?)?.toDouble() ?? 0.5,
-        bassDensity: (spectrum['bassDensity'] as num?)?.toDouble() ?? 0.5,
-        spectralFlux: (spectrum['spectralFlux'] as num?)?.toDouble() ?? 0.5,
-        confidence: (spectrum['confidence'] as num?)?.toDouble() ?? 0,
+        bass: _unit(spectrum['bass'], fallback: 0.5),
+        mids: _unit(spectrum['mids'], fallback: 0.5),
+        highs: _unit(spectrum['highs'], fallback: 0.5),
+        centroid: _unit(spectrum['centroid'], fallback: 0.5),
+        bassDensity: _unit(spectrum['bassDensity'], fallback: 0.5),
+        spectralFlux: _unit(spectrum['spectralFlux'], fallback: 0.5),
+        confidence: _unit(spectrum['confidence'], fallback: 0),
       ),
       silenceRegions: _silenceRegions(map['silenceRegions'], durationMs),
       transitions: DjTransitionMarkers(
@@ -124,6 +127,35 @@ class DjProfileSerializer {
         riskyPoints: _points(transition['riskyPoints'], durationMs),
       ),
     );
+  }
+
+  double _unit(dynamic value, {required double fallback}) {
+    if (value is! num || !value.isFinite || value < 0 || value > 1) {
+      return fallback;
+    }
+    return value.toDouble();
+  }
+
+  double? _bpm(dynamic value) {
+    if (value is! num || !value.isFinite) return null;
+    final bpm = value.toDouble();
+    return bpm > 40 && bpm < 240 ? bpm : null;
+  }
+
+  int _boundedInt(dynamic value, int min, int max, int fallback) {
+    if (value is! num || !value.isFinite || value != value.round() ||
+        value < min || value > max) {
+      return fallback;
+    }
+    return value.toInt();
+  }
+
+  int? _keyRoot(dynamic value) {
+    if (value is! num || !value.isFinite || value != value.round() ||
+        value < 0 || value > 11) {
+      return null;
+    }
+    return value.toInt();
   }
 
   List<Map<String, dynamic>> _encodePoints(List<DjTimePoint> values) => values
