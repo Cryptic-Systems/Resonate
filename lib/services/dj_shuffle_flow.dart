@@ -6,12 +6,14 @@ import 'package:provider/provider.dart';
 import '../models/playlist.dart';
 import '../models/song.dart';
 import '../navigation/shell_nav.dart';
+import '../screens/dj_suggestion_mix_screen.dart';
 import '../providers/dj_mode_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
 import 'database_helper.dart';
 import '../providers/playlist_provider.dart';
 import 'dj_auto_select_service.dart';
+import 'dj_session_coordinator.dart';
 
 /// Shared opt-in DJ shuffle flow for Library and playlist surfaces.
 class DjShuffleFlow {
@@ -79,11 +81,22 @@ class DjShuffleFlow {
     if (!context.mounted || scope == null) return;
 
     if (scope == 'library') {
-      await _playDj(context, library.allSongs, scopeLabel: 'entire library');
+      await _playDj(
+        context,
+        library.allSongs,
+        scope: DjSessionScope.library,
+        scopeLabel: 'Entire library',
+      );
     } else if (scope is Playlist) {
       final songs = await playlists.songsFor(scope.id);
       if (!context.mounted) return;
-      await _playDj(context, songs, scopeLabel: scope.name);
+      await _playDj(
+          context,
+          songs,
+          scope: DjSessionScope.playlist,
+          scopeId: scope.id,
+          scopeLabel: scope.name,
+        );
     }
   }
 
@@ -91,12 +104,19 @@ class DjShuffleFlow {
     BuildContext context,
     List<Song> songs, {
     required String playlistName,
+    required String playlistId,
   }) async {
     if (songs.isEmpty) return;
     final useDj = await _askForDjShuffle(context);
     if (!context.mounted || useDj == null) return;
     if (useDj) {
-      await _playDj(context, songs, scopeLabel: playlistName);
+      await _playDj(
+        context,
+        songs,
+        scope: DjSessionScope.playlist,
+        scopeId: playlistId,
+        scopeLabel: playlistName,
+      );
     } else {
       await _playRegular(context, songs);
     }
@@ -149,6 +169,8 @@ class DjShuffleFlow {
   static Future<void> _playDj(
     BuildContext context,
     List<Song> source, {
+    required DjSessionScope scope,
+    String? scopeId,
     required String scopeLabel,
   }) async {
     if (source.isEmpty) {
@@ -158,68 +180,41 @@ class DjShuffleFlow {
       return;
     }
 
-    final dj = context.read<DjModeProvider>();
-    final database = DatabaseHelper();
-    final history = await database.getRecentListeningEvents(limit: 500);
-    final favoriteSongs = await database.getFavoriteSongs();
-    final signals = DjListeningSignal.fromHistory(
-      history,
-      favorites: favoriteSongs.map((song) => song.id).toSet(),
-    );
-    final result = await DjAutoSelectService(analysis: dj.analysis).arrange(
-      source,
-      listeningSignals: signals,
-    );
-    if (!context.mounted) return;
-
-    final music = context.read<MusicProvider>();
-    if (!result.usedDjArrangement) {
-      // Low-confidence analysis never forces an arbitrary musical order.
-      // Keep every track and use the established ordinary shuffle path.
-      await music.setShuffleEnabled(true);
-      final shuffled = List<Song>.of(source)..shuffle(math.Random());
-      final ok = await music.playSong(
-        shuffled.first,
-        queue: shuffled,
-        startIndex: 0,
+    try {
+      final dj = context.read<DjModeProvider>();
+      final database = DatabaseHelper();
+      final history = await database.getRecentListeningEvents(limit: 500);
+      final favoriteSongs = await database.getFavoriteSongs();
+      if (!context.mounted) return;
+      final signals = DjListeningSignal.fromHistory(
+        history,
+        favorites: favoriteSongs.map((song) => song.id).toSet(),
+      );
+      final coordinator = DjSessionCoordinator(analysis: dj.analysis);
+      final mix = await coordinator.create(
+        songs: source,
+        scope: scope,
+        scopeId: scopeId,
+        listeningSignals: signals,
+        policy: dj.policy,
       );
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Not enough reliable DJ analysis for $scopeLabel yet '
-            '(${(result.analysisCoverage * 100).round()}% covered). '
-            'Playing a regular shuffle instead.',
-          ),
-          duration: const Duration(seconds: 4),
-        ),
-      );
-      if (ok) openShellPlayer(context);
-      return;
-    }
 
-    // MusicProvider intentionally randomizes an incoming queue while shuffle
-    // is enabled. Turn that flag off so the DJ-arranged order is authoritative.
-    await music.setShuffleEnabled(false);
-    final ok = await music.playSong(
-      result.songs.first,
-      queue: result.songs,
-      startIndex: 0,
-    );
-    if (!context.mounted) return;
-    if (ok) {
-      openShellPlayer(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'DJ arranged ${result.songs.length} tracks from $scopeLabel.',
+      // Creating a Suggestion Mix is deliberately side-effect free with
+      // respect to playback. The review screen owns the explicit approval.
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => DjSuggestionMixScreen(
+            initialMix: mix,
+            coordinator: coordinator,
+            scopeLabel: scopeLabel,
           ),
-          duration: const Duration(seconds: 3),
         ),
       );
-    } else {
+    } catch (error) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to start DJ-arranged playback.')),
+        SnackBar(content: Text('Could not prepare a DJ suggestion: $error')),
       );
     }
   }
