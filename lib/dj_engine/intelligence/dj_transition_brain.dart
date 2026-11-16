@@ -137,6 +137,7 @@ class DjTransitionBrain {
     final spectrum = _spectrumScore(a, b);
     final phrase = _phraseScore(a, b, inPos);
     final structure = _structureScore(a, b, outPos, inPos);
+    final silence = _outgoingSilenceScore(a, outPos);
     return {
       'tempo': tempo,
       'harmonic': harmonic,
@@ -144,6 +145,7 @@ class DjTransitionBrain {
       'spectrum': spectrum,
       'phrase': (phrase * phraseWeight).clamp(0.0, 1.0).toDouble(),
       'structure': (structure * structureWeight).clamp(0.0, 1.0).toDouble(),
+      'silence': silence,
       'confidence': _analysisConfidence(a, b),
     };
   }
@@ -152,11 +154,12 @@ class DjTransitionBrain {
     final phraseBoost = policy.phraseWeightBoost;
     return (s['tempo'] ?? 0.5) * 0.22 +
         (s['harmonic'] ?? 0.5) * 0.18 +
-        (s['energy'] ?? 0.5) * 0.16 +
-        (s['spectrum'] ?? 0.5) * 0.10 +
+        (s['energy'] ?? 0.5) * 0.14 +
+        (s['spectrum'] ?? 0.5) * 0.09 +
         (s['phrase'] ?? 0.5) * (0.14 + phraseBoost) +
-        (s['structure'] ?? 0.5) * 0.12 +
-        (s['confidence'] ?? 0.5) * 0.08;
+        (s['structure'] ?? 0.5) * 0.10 +
+        (s['silence'] ?? 0.5) * 0.06 +
+        (s['confidence'] ?? 0.5) * 0.07;
   }
 
 
@@ -257,6 +260,37 @@ class DjTransitionBrain {
     if (candidates.isEmpty) return 0;
     candidates.sort();
     return candidates.first;
+  }
+
+  /// Rewards a transition anchor that is close to confidently measured,
+  /// near-end PCM silence. Quiet musical sections are not treated as silence:
+  /// evidence must be deep, sustained, late in the track, and close to anchor.
+  /// Missing or weak evidence remains neutral.
+  double _outgoingSilenceScore(DjTrackProfile profile, int anchorMs) {
+    final duration = profile.durationMs;
+    if (duration == null || duration <= 0 || profile.silenceRegions.isEmpty) {
+      return 0.5;
+    }
+    var best = 0.5;
+    for (final region in profile.silenceRegions) {
+      if (region.confidence < 0.78 ||
+          region.durationMs < 2000 ||
+          region.minimumDbfs > -48.0 ||
+          region.startMs < duration * 0.75 ||
+          region.endMs < duration * 0.90) {
+        continue;
+      }
+      final distance = anchorMs < region.startMs
+          ? region.startMs - anchorMs
+          : anchorMs > region.endMs
+              ? anchorMs - region.endMs
+              : 0;
+      if (distance > 12000) continue;
+      final proximity = (1.0 - distance / 12000.0).clamp(0.0, 1.0);
+      final score = 0.5 + 0.5 * proximity * region.confidence;
+      if (score > best) best = score;
+    }
+    return best;
   }
 
   double _structureScore(DjTrackProfile a, DjTrackProfile b, int outPos, int inPos) {
