@@ -158,9 +158,44 @@ class DjAutoSelectService {
     }
 
     final remaining = List<Song>.of(input)..shuffle(rng);
-    final ordered = <Song>[remaining.removeAt(0)];
+    final energyValues = input
+        .map((song) => analyses[song.id])
+        .whereType<DjAnalysis>()
+        .where((analysis) => analysis.hasUsableEnergy)
+        .map((analysis) => analysis.energy!)
+        .toList();
+    final minEnergy = energyValues.isEmpty
+        ? null
+        : energyValues.reduce(math.min);
+    final maxEnergy = energyValues.isEmpty
+        ? null
+        : energyValues.reduce(math.max);
+
+    // Start with the gentlest analyzed track. This gives the set a deliberate
+    // opening instead of allowing a random high-energy track to dictate the
+    // entire progression.
+    Song? opening;
+    var openingScore = double.negativeInfinity;
+    for (final candidate in remaining) {
+      final analysis = analyses[candidate.id];
+      final energy = analysis != null && analysis.hasUsableEnergy
+          ? analysis.energy!
+          : double.infinity;
+      final preference = listeningSignals[candidate.id]?.preferenceScore ?? 0.0;
+      final score = (energy.isFinite ? -energy : -2.0) +
+          preference * 0.12 +
+          rng.nextDouble() * 0.002;
+      if (score > openingScore) {
+        openingScore = score;
+        opening = candidate;
+      }
+    }
+    final ordered = <Song>[opening!];
+    remaining.remove(opening);
+
     while (remaining.isNotEmpty) {
       final previous = ordered.last;
+      final nextPosition = ordered.length;
       Song? best;
       var bestScore = double.negativeInfinity;
       for (final candidate in remaining) {
@@ -173,9 +208,21 @@ class DjAutoSelectService {
         final sameAlbum = _sameMetadata(previous.album, candidate.album);
         final diversity = (sameArtist ? -0.10 : 0.035) +
             (sameAlbum ? -0.035 : 0.015);
-        // Tiny random tie-break prevents the same library from always
-        // producing an identical order when musical scores are equivalent.
-        final score = musical + diversity + preference + rng.nextDouble() * 0.025;
+        final energyArc = _energyArcScore(
+          analyses[candidate.id],
+          position: nextPosition,
+          total: input.length,
+          minEnergy: minEnergy,
+          maxEnergy: maxEnergy,
+        );
+        // Musical compatibility remains the main transition signal. The
+        // lower-weight arc score shapes the full set: warm-up, rise, peak,
+        // then a controlled landing. Missing energy is neutral, not penalized.
+        final score = musical +
+            diversity +
+            preference +
+            energyArc * 0.20 +
+            rng.nextDouble() * 0.025;
         if (score > bestScore) {
           bestScore = score;
           best = candidate;
@@ -190,6 +237,30 @@ class DjAutoSelectService {
       usedDjArrangement: true,
       analysisCoverage: coverage,
     );
+  }
+
+  static double _energyArcScore(
+    DjAnalysis? analysis, {
+    required int position,
+    required int total,
+    required double? minEnergy,
+    required double? maxEnergy,
+  }) {
+    if (analysis == null ||
+        !analysis.hasUsableEnergy ||
+        minEnergy == null ||
+        maxEnergy == null) {
+      return 0.5;
+    }
+    final range = maxEnergy - minEnergy;
+    if (range < 0.08) return 0.5;
+
+    final progress = total <= 1 ? 1.0 : position / (total - 1);
+    final target = progress <= 0.72
+        ? 0.15 + (progress / 0.72) * 0.73
+        : 0.88 - ((progress - 0.72) / 0.28) * 0.32;
+    final normalized = (analysis.energy! - minEnergy) / range;
+    return (1.0 - (normalized - target).abs()).clamp(0.0, 1.0).toDouble();
   }
 
   static bool _matchesSong(Song song, DjAnalysis analysis) {
