@@ -11,6 +11,7 @@ void main() {
     int key = 0,
     double energy = 0.7,
     DjSectionType section = DjSectionType.outro,
+    List<DjSilenceRegion> silenceRegions = const [],
   }) {
     return DjTrackProfile(
       songId: id,
@@ -32,6 +33,7 @@ void main() {
       ],
       spectrum: const DjSpectralProfile(bassDensity: 0.65, centroid: 0.5, spectralFlux: 0.5, confidence: 0.9),
       transitions: const DjTransitionMarkers(bestIntroMs: 0, bestOutroMs: 220000),
+      silenceRegions: silenceRegions,
       analysisConfidence: 0.9,
     );
   }
@@ -94,6 +96,67 @@ void main() {
       outgoingPositionMs: 220000,
     );
     expect(const <int>[0, 469, 938, 1406, 1875, 2344, 2813, 3281].contains(plan.candidate.incomingStartMs), isTrue);
+  });
+
+  test('rewards a high-confidence near-end PCM silence anchor', () {
+    final incoming = track(id: 'b', section: DjSectionType.intro);
+    final withoutSilence = engine.brain.generate(
+      outgoing: track(id: 'a'),
+      incoming: incoming,
+      outgoingPositionMs: 220000,
+    ).firstWhere((candidate) => candidate.kind == DjTransitionKind.safeCrossfade);
+    final withSilence = engine.brain.generate(
+      outgoing: track(
+        id: 'a',
+        silenceRegions: const [
+          DjSilenceRegion(
+            startMs: 218000,
+            endMs: 232000,
+            minimumDbfs: -58,
+            confidence: 0.92,
+          ),
+        ],
+      ),
+      incoming: incoming,
+      outgoingPositionMs: 220000,
+    ).firstWhere((candidate) => candidate.kind == DjTransitionKind.safeCrossfade);
+
+    expect(withSilence.scores['silence'], greaterThan(0.9));
+    expect(withSilence.score, greaterThan(withoutSilence.score));
+  });
+
+  test('ignores weak silence and quiet mid-track breakdown evidence', () {
+    final incoming = track(id: 'b', section: DjSectionType.intro);
+    final weak = track(
+      id: 'weak',
+      silenceRegions: const [
+        DjSilenceRegion(
+          startMs: 218000,
+          endMs: 232000,
+          minimumDbfs: -58,
+          confidence: 0.62,
+        ),
+      ],
+    );
+    final breakdown = track(
+      id: 'breakdown',
+      silenceRegions: const [
+        DjSilenceRegion(
+          startMs: 120000,
+          endMs: 132000,
+          minimumDbfs: -58,
+          confidence: 0.96,
+        ),
+      ],
+    );
+    for (final outgoing in [weak, breakdown]) {
+      final candidate = engine.brain.generate(
+        outgoing: outgoing,
+        incoming: incoming,
+        outgoingPositionMs: 220000,
+      ).firstWhere((value) => value.kind == DjTransitionKind.safeCrossfade);
+      expect(candidate.scores['silence'], 0.5);
+    }
   });
 
   test('uses energy slope when ranking candidates', () {
