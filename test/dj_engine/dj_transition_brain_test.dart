@@ -12,6 +12,7 @@ void main() {
     double energy = 0.7,
     DjSectionType section = DjSectionType.outro,
     List<DjSilenceRegion> silenceRegions = const [],
+    List<DjEnergyPoint>? energyCurve,
   }) {
     return DjTrackProfile(
       songId: id,
@@ -28,7 +29,7 @@ void main() {
       sections: [
         DjSection(type: section, startMs: 220000, endMs: 240000, confidence: 0.9, energy: energy),
       ],
-      energyCurve: [
+      energyCurve: energyCurve ?? [
         DjEnergyPoint(timeMs: 220000, value: energy),
       ],
       spectrum: const DjSpectralProfile(bassDensity: 0.65, centroid: 0.5, spectralFlux: 0.5, confidence: 0.9),
@@ -157,6 +158,32 @@ void main() {
       ).firstWhere((value) => value.kind == DjTransitionKind.safeCrossfade);
       expect(candidate.scores['silence'], 0.5);
     }
+  });
+
+  test('evaluates outgoing risks at the selected transition anchor', () {
+    final outgoing = track(
+      id: 'a',
+      energy: 0.8,
+      energyCurve: const [
+        DjEnergyPoint(timeMs: 200000, value: 0.1),
+        DjEnergyPoint(timeMs: 220000, value: 0.8),
+      ],
+    );
+    final incoming = track(
+      id: 'b',
+      energy: 0.8,
+      section: DjSectionType.intro,
+    );
+
+    final candidate = engine.brain.generate(
+      outgoing: outgoing,
+      incoming: incoming,
+      outgoingPositionMs: 200000,
+    ).firstWhere((value) => value.kind == DjTransitionKind.safeCrossfade);
+
+    expect(candidate.outgoingStartMs, 220000);
+    expect(candidate.scores['energy'], greaterThan(0.9));
+    expect(candidate.risks, isNot(contains(DjRiskType.energyShock)));
   });
 
   test('uses energy slope when ranking candidates', () {
