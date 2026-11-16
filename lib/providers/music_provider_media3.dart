@@ -218,6 +218,14 @@ extension MusicProviderMedia3 on MusicProvider {
       );
       await session.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
       await _restoreDjTransitionSfx();
+      // The polling loop can observe promotion before the Flutter state stream
+      // delivers its media-item transition. Finalize the outgoing history row
+      // explicitly here and start the incoming row after reconciling its position.
+      // expectedSongId makes this idempotent if the state stream got there first.
+      unawaited(_finishHistoryEvent(
+        finalPositionMs: _historySession.positionMs,
+        expectedSongId: outgoingSong.id,
+      ));
       _preloadedNextSongId = null;
       _media3DjTransitionPreparation = null;
       _lastCompletionSongId = null;
@@ -225,6 +233,7 @@ extension MusicProviderMedia3 on MusicProvider {
       _automaticCrossfadeInFlight = false;
       _transitionArmedAt = null;
       _reconcileMedia3ProviderSession();
+      unawaited(_startHistoryEvent(nextSong));
       _publishServiceState();
       notifyListeners();
       await ResonateDiagnostics.record('media3_crossfade_committed', {
@@ -739,6 +748,7 @@ extension MusicProviderMedia3 on MusicProvider {
       // not the new track's position (or a stale legacy-player position).
       unawaited(_finishHistoryEvent(
         finalPositionMs: previousPosition.inMilliseconds,
+        expectedSongId: oldSongId,
       ));
       unawaited(_startHistoryEvent(currentSong!));
     }
