@@ -166,7 +166,7 @@ class DjAutoSelectService {
     final ratios = <double>[b / a, (b * 2) / a, b / (a * 2)];
     final difference = ratios
         .map((ratio) => (ratio - 1.0).abs())
-        .reduce(math.min);
+        .reduce((left, right) => left < right ? left : right);
     return (1.0 - difference / 0.18).clamp(0.0, 1.0).toDouble();
   }
 
