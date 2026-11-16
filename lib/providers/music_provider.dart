@@ -656,7 +656,14 @@ class MusicProvider extends ChangeNotifier {
     final session = _media3ProviderSession;
     if (session != null) {
       final activeSession = (await _ensureMedia3ProviderSessionActive())!;
-      await activeSession.setGainFactors(trackLevel: enabled ? trackLevel : 1.0);
+      // The canonical RMS analysis trim belongs to MusicProvider. Preserve it
+      // when the older PlaybackFeatures normalization is disabled, and
+      // multiply any optional secondary trim instead of overwriting it.
+      final composedTrackLevel =
+          _levelingRuntime.composeAdditionalTrackScale(
+        enabled ? trackLevel : 1.0,
+      );
+      await activeSession.setGainFactors(trackLevel: composedTrackLevel);
       return;
     }
     await loudnessEnhancer.setTargetGain(
