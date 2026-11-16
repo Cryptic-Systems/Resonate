@@ -10,6 +10,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
@@ -17,6 +18,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.aetherion.resonate.dsp.DspEngineSinkHook
 import com.aetherion.resonate.dsp.DspEngineRegistry
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
@@ -25,6 +27,7 @@ import androidx.media3.session.MediaSessionService
  * production handoff while this service owns native transport, MediaSession,
  * DSP and equal-power crossfade execution.
  */
+@OptIn(UnstableApi::class)
 class Media3PlaybackService : MediaSessionService() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var mediaSession: MediaSession? = null
@@ -252,6 +255,13 @@ class Media3PlaybackService : MediaSessionService() {
         activeDeckId = "A"
         DspEngineRegistry.setActiveDeck(activeDeckId)
         DspEngineSinkHook.activateDeck(activeDeckId)
+        // Media3 is the sole system-media publisher. Use Resonate's monochrome
+        // status-bar mark; track artwork remains the large media-card artwork.
+        setMediaNotificationProvider(
+            DefaultMediaNotificationProvider.Builder(this).build().apply {
+                setSmallIcon(R.drawable.ic_stat_resonate)
+            },
+        )
         mediaSession = MediaSession.Builder(this, activePlayer).build()
         applyDeckVolumes()
     }
