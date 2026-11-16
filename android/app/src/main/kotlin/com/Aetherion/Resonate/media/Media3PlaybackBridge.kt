@@ -133,8 +133,10 @@ class Media3PlaybackBridge(
                             .setMediaMetadata(metadata)
                             .build()
                     }
-                    // A previous standby deck must not survive queue replacement.
-                    Media3PlaybackService.instance?.clearPreload()
+                    // A library/song selection is normal playback, not a
+                    // crossfade handoff. If B was promoted by the last fade,
+                    // retire it and bind a fresh primary A before loading this queue.
+                    Media3PlaybackService.instance?.restorePrimaryDeckForNewSelection()
                     connected.setMediaItems(items, startIndex, 0L)
                     connected.prepare()
                     result.success(true)
