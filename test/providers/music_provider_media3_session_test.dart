@@ -84,6 +84,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   bool throwOnCrossfade = false;
   bool throwOnPreloadNext = false;
   bool throwOnClearDeckEqOverlay = false;
+  bool deferLoadQueueState = false;
   Completer<void>? cancelCrossfadeGate;
   Completer<void>? preloadNextGate;
   Song? currentSongValue;
@@ -161,10 +162,12 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
     queue = List<Song>.of(songs);
     loadedIndex = startIndex;
-    currentSongValue = songs.isEmpty ? null : songs[startIndex];
-    queueIndexValue = songs.isEmpty ? null : startIndex;
-    durationValue = currentSongValue?.duration;
-    positionValue = Duration.zero;
+    if (!deferLoadQueueState) {
+      currentSongValue = songs.isEmpty ? null : songs[startIndex];
+      queueIndexValue = songs.isEmpty ? null : startIndex;
+      durationValue = currentSongValue?.duration;
+      positionValue = Duration.zero;
+    }
     calls.add('loadQueue');
   }
 
@@ -1053,6 +1056,53 @@ void main() {
       expect(provider.currentSong?.id, third.id);
       expect(provider.queueIndex, 2);
       expect(session.currentSong?.id, third.id);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('fresh library selection is not reverted by a delayed native timeline snapshot', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('stale-ui-first');
+      final second = _song('stale-ui-second');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(
+        first,
+        queue: <Song>[first, second],
+        startIndex: 0,
+      ), isTrue);
+
+      // Simulate Media3 accepting loadQueue while its readable timeline still
+      // points at the outgoing item for a short interval.
+      session.deferLoadQueueState = true;
+      expect(await provider.playSong(
+        second,
+        queue: <Song>[first, second],
+        startIndex: 1,
+      ), isTrue);
+      expect(provider.currentSong?.id, second.id);
+      expect(provider.queueIndex, 1);
+      expect(provider.currentPosition, Duration.zero);
+
+      // Once the native timeline catches up, normal observation remains the
+      // source of truth and must preserve the selected item.
+      session.deferLoadQueueState = false;
+      session.currentSongValue = second;
+      session.queueIndexValue = 1;
+      session.durationValue = second.duration;
+      session.states.add(_state(
+        song: second,
+        queueIndex: 1,
+        playing: true,
+        playWhenReady: true,
+        position: Duration.zero,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(provider.currentSong?.id, second.id);
+      expect(provider.queueIndex, 1);
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
