@@ -90,6 +90,9 @@ extension MusicProviderMedia3 on MusicProvider {
       if (stillOwnsPreload()) {
         _preloadedNextSongId = null;
         _media3DjTransitionPreparation = null;
+        try {
+          await session.clearDeckEqOverlay(deck: 'standby');
+        } catch (_) {}
         await ResonateDiagnostics.record('media3_crossfade_preload_failed', {
           'songId': next.id,
           'error': error.toString(),
