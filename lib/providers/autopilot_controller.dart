@@ -243,7 +243,9 @@ class AutopilotController extends ChangeNotifier {
   Future<void> _evaluate({bool forceTransition = false}) async {
     // Phase 5: Intelligence off or not in Autopilot mode → never drive playback.
     if (!_consentLoaded || !intelligence.isEnabled || !intelligence.isAutopilot) return;
-    if (music.currentSong == null) return;
+    final evaluatedSourceSongId = music.currentSong?.id;
+    if (evaluatedSourceSongId == null) return;
+    final evaluatedMode = modes?.mode;
     if (!music.isPlaying && !forceTransition) return;
 
     final now = DateTime.now();
@@ -331,9 +333,11 @@ class AutopilotController extends ChangeNotifier {
 
     // The planner and diagnostics both await I/O. A manual skip, mode change,
     // or consent update during either await invalidates this decision.
-    final decisionSourceSongId = music.currentSong?.id;
-    final decisionMode = modes?.mode;
-    if (decisionSourceSongId == null) return;
+    if (evaluatedSourceSongId != music.currentSong?.id ||
+        evaluatedMode != modes?.mode) {
+      _scheduleEvaluate();
+      return;
+    }
 
     // Phase 5 consent gate: no play APIs without consent (forceTransition only
     // after allowPendingTakeover which sets _consentGranted = true).
@@ -351,8 +355,8 @@ class AutopilotController extends ChangeNotifier {
         // Do not surface an approval prompt for a track/mode that is no
         // longer active, or after the user has granted/revoked control while
         // diagnostics were being persisted.
-        if (decisionSourceSongId != music.currentSong?.id ||
-            decisionMode != modes?.mode ||
+        if (evaluatedSourceSongId != music.currentSong?.id ||
+            evaluatedMode != modes?.mode ||
             _consentGranted ||
             !intelligence.isEnabled ||
             !intelligence.isAutopilot) {
@@ -362,14 +366,14 @@ class AutopilotController extends ChangeNotifier {
         _pendingTakeover = true;
         _pendingSongId = nextSong.id;
         _pendingSong = nextSong;
-        _pendingSourceSongId = decisionSourceSongId;
+        _pendingSourceSongId = evaluatedSourceSongId;
         notifyListeners();
       }
       return;
     }
 
-    if (decisionSourceSongId != music.currentSong?.id ||
-        decisionMode != modes?.mode) {
+    if (evaluatedSourceSongId != music.currentSong?.id ||
+        evaluatedMode != modes?.mode) {
       _scheduleEvaluate();
       return;
     }
