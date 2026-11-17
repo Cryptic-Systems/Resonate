@@ -723,6 +723,17 @@ class Media3PlaybackService : MediaSessionService() {
         return true
     }
 
+    /** Atomically restore primary A and load a fresh user-selected queue. */
+    fun loadNewQueue(items: List<MediaItem>, startIndex: Int): Boolean {
+        if (items.isEmpty() || startIndex !in items.indices ||
+            items.any { it.localConfiguration?.uri == null } ||
+            !restorePrimaryDeckForNewSelection()
+        ) return false
+        activePlayer.setMediaItems(items, startIndex, 0L)
+        activePlayer.prepare()
+        return true
+    }
+
     fun cancelCrossfade(
         clearOverlays: Boolean = true,
         resetStandbySpeed: Boolean = true,
