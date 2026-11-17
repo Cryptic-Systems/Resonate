@@ -102,7 +102,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   Future<void> setNormalizationEnabled(bool value) async {
     normalizationEnabled = value;
     if (value) {
-      await _refreshNormalizationForCurrentSong();
+      unawaited(_refreshNormalizationForCurrentSong());
     } else {
       ++_normalizationGeneration;
       normalizedSongId = null;
@@ -116,7 +116,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   Future<void> setTargetLoudness(double value) async {
     targetLoudness = value.clamp(-20.0, -8.0).toDouble();
     if (normalizationEnabled) {
-      await _refreshNormalizationForCurrentSong(force: true);
+      unawaited(_refreshNormalizationForCurrentSong(force: true));
     }
     await _save();
     notifyListeners();

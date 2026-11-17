@@ -335,6 +335,7 @@ class ResonateApp extends StatelessWidget {
           ),
         ),
         ChangeNotifierProvider(
+          lazy: false,
           create: (context) {
             final music = context.read<MusicProvider>();
             return AudioEffectsProvider(
@@ -358,6 +359,7 @@ class ResonateApp extends StatelessWidget {
               PlaybackFeaturesProvider(music: context.read<MusicProvider>()),
         ),
         ChangeNotifierProvider(
+          lazy: false,
           create: (context) {
             final music = context.read<MusicProvider>();
             return AudioVisualizationProvider()
