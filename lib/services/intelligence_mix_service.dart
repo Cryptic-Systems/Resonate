@@ -188,7 +188,16 @@ class IntelligenceMixService {
     return recommendations.map((item) => IntelligenceRecommendation(song: item.song, score: item.score + factor * item.confidence.clamp(0.0, 1.0), confidence: item.confidence, reason: item.reason, decision: item.decision, sessionReason: item.sessionReason)).toList(growable: false);
   }
 
-  Future<Map<String, dynamic>?> evaluateMix(IntelligenceMix mix) async { final assessment = await _continuity.evaluate(mix); if (assessment != null) await _continuity.remember(assessment); return assessment; }
+  Future<Map<String, dynamic>?> evaluateMix(
+    IntelligenceMix mix, {
+    bool Function()? shouldContinue,
+  }) async {
+    final assessment = await _continuity.evaluate(mix);
+    if (assessment != null && shouldContinue?.call() != false) {
+      await _continuity.remember(assessment);
+    }
+    return assessment;
+  }
   Future<List<Map<String, dynamic>>> recentMixContinuity() => _continuity.recent();
   Future<List<Map<String, dynamic>>> recentGeneratedMixes() => _memory.recent();
 
