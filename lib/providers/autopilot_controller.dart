@@ -407,33 +407,42 @@ class AutopilotController extends ChangeNotifier {
     });
 
     try {
-      if (!_requirePlaybackMutationPermission('transition_start')) return;
-      if (_authority.isStale(automaticGeneration) ||
-          userGeneration != _authority.userGeneration) {
-        return;
-      }
+      bool decisionStillOwnsPlayback() =>
+          !_authority.isStale(automaticGeneration) &&
+          userGeneration == _authority.userGeneration &&
+          evaluatedSourceSongId == music.currentSong?.id &&
+          evaluatedMode == modes?.mode &&
+          intelligence.isEnabled &&
+          intelligence.isAutopilot &&
+          _requirePlaybackMutationPermission('transition_context');
 
-      // Make sure the chosen song is the immediate next item in the queue
+      if (!decisionStillOwnsPlayback()) return;
+
+      // Make sure the chosen song is the immediate next item in the queue.
+      // Re-check authority after every await: a manual transport command or
+      // mode/consent change must win over an older automatic decision.
       final upcoming = music.queue.skip(music.queueIndex + 1).toList();
       final alreadyNext = upcoming.isNotEmpty && upcoming.first.id == nextSong.id;
       if (!alreadyNext) {
-        if (!_requirePlaybackMutationPermission('play_next_enqueue')) return;
+        if (!decisionStillOwnsPlayback()) return;
         await music.playNext(nextSong);
+        if (!decisionStillOwnsPlayback()) return;
       }
-      if (!_requirePlaybackMutationPermission('transition_after_queue_update')) return;
+      if (!decisionStillOwnsPlayback()) return;
 
       if (useCrossfade && music.canCrossfadeNext && music.isPlaying) {
         final ms = await IntelligenceSettingsStore.autopilotCrossfadeMs();
-        if (!_requirePlaybackMutationPermission('crossfade_start')) return;
-        if (_authority.isStale(automaticGeneration)) return;
+        if (!decisionStillOwnsPlayback()) return;
         final ok = await music.performTrueCrossfade(milliseconds: ms, fadeType: 'ease_in_out');
+        // A user command during the crossfade owns the resulting playback;
+        // never issue an automatic fallback-next over that newer command.
+        if (!decisionStillOwnsPlayback()) return;
         if (!ok) {
-          if (!_requirePlaybackMutationPermission('crossfade_fallback_next')) return;
+          if (!decisionStillOwnsPlayback()) return;
           await music.nextSong(source: 'intelligence');
         }
       } else {
-        if (!_requirePlaybackMutationPermission('next_song')) return;
-        if (_authority.isStale(automaticGeneration)) return;
+        if (!decisionStillOwnsPlayback()) return;
         await music.nextSong(source: 'intelligence');
       }
 
