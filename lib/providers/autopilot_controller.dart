@@ -505,6 +505,9 @@ class AutopilotController extends ChangeNotifier {
     try {
       await intelligence.refreshRecommendations(notify: false);
       if (!_requirePlaybackMutationPermission('queue_after_refresh')) return;
+      final planningSourceSongId = music.currentSong?.id;
+      if (planningSourceSongId == null) return;
+      final planningMode = modes?.mode;
       final futureQueued = music.queue.skip(music.queueIndex + 1).map((song) => song.id).toSet();
       final modePolicy = modes?.policy;
       final sequenceCount = AutopilotModePolicy.predictedSequenceCount(modePolicy);
@@ -533,6 +536,8 @@ class AutopilotController extends ChangeNotifier {
           tracks: available,
         );
         if (!_requirePlaybackMutationPermission('queue_after_decision')) return;
+        if (planningSourceSongId != music.currentSong?.id ||
+            planningMode != modes?.mode) return;
         if (!result.isUsable) {
           _modeQueueBlockedReason = result.message ??
               'No analyzed tracks currently meet the active mode profile.';
@@ -565,6 +570,8 @@ class AutopilotController extends ChangeNotifier {
         final biased = _applyModeBias(candidates);
         considered = biased;
         arranged = await _arrangeForActiveMode(biased);
+        if (planningSourceSongId != music.currentSong?.id ||
+            planningMode != modes?.mode) return;
       }
       if (arranged.isNotEmpty) {
         if (!_requirePlaybackMutationPermission('queue_enqueue')) return;
