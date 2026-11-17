@@ -13,6 +13,7 @@ import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
 import '../providers/playlist_provider.dart';
 import '../services/mode_shelf_builder.dart';
+import '../services/mode_aware_queue_planner.dart';
 import '../services/playback_authority.dart';
 import '../ui/resonate_glass.dart';
 import '../widgets/mode_artwork_banner.dart';
@@ -268,28 +269,47 @@ class ModeShelfScreen extends StatelessWidget {
     }
   }
 
-  static void _playShelf(
+  static Future<void> _playShelf(
     BuildContext context,
     List<Song> tracks, {
     int startIndex = 0,
     bool shuffle = false,
-  }) {
+  }) async {
     if (tracks.isEmpty) return;
+    final modes = context.read<ModeProvider>();
+    final requested = tracks[startIndex.clamp(0, tracks.length - 1)];
+    final result = await ModeAwareQueuePlanner().arrange(
+      modes: modes,
+      tracks: tracks,
+      requiredSongId: requested.id,
+    );
+    if (!context.mounted) return;
+    if (!result.isUsable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message ?? 'Could not build this mode queue.')),
+      );
+      return;
+    }
+    if (result.usedDjPlanner && result.plan?.status == QueuePlanStatus.partial) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message!)),
+      );
+    }
     final music = context.read<MusicProvider>();
-    var queue = List<Song>.from(tracks);
-    var index = startIndex.clamp(0, queue.length - 1);
-    if (shuffle && queue.length > 1) {
+    final queue = List<Song>.from(result.songs);
+    var index = queue.indexWhere((song) => song.id == requested.id);
+    if (index < 0) index = 0;
+    // DJ's planned order is retained for tempo-constrained modes. Ordinary
+    // modes keep the existing user-requested shuffle behavior.
+    if (shuffle && !result.usedDjPlanner && queue.length > 1) {
       final first = queue[index];
       queue.shuffle();
-      index = queue.indexWhere((s) => s.id == first.id);
+      index = queue.indexWhere((song) => song.id == first.id);
       if (index < 0) index = 0;
     }
     PlaybackAuthority.instance.markExternalUserCommand(
-      'mode_shelf',
-      shuffle ? 'shuffle_play' : 'play',
+      'mode_shelf', shuffle ? 'shuffle_play' : 'play',
     );
-    unawaited(
-      music.playSong(queue[index], queue: queue, startIndex: index),
-    );
+    await music.playSong(queue[index], queue: queue, startIndex: index);
   }
 }

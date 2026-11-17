@@ -4,6 +4,11 @@ import 'package:provider/provider.dart';
 
 import '../modes/integration/resonate_mode_ports.dart';
 import '../modes/models/resonate_mode.dart';
+import '../modes/models/media_type.dart';
+import '../modes/models/mode_media_item.dart';
+import '../models/queue_intent.dart';
+import '../services/mode_aware_queue_planner.dart';
+
 import '../modes/providers/mode_provider.dart';
 import '../modes/screens/modes_screen.dart';
 import '../providers/library_provider.dart';
@@ -14,6 +19,32 @@ import '../services/mode_shelf_builder.dart';
 import '../screens/mode_shelf_screen.dart';
 import '../services/playback_authority.dart';
 import '../ui/resonate_glass.dart';
+
+Future<List<Song>?> _resolveModeQueue(
+  BuildContext context,
+  ModeProvider modes,
+  List<Song> tracks, {
+  String? requiredSongId,
+}) async {
+  final result = await ModeAwareQueuePlanner().arrange(
+    modes: modes,
+    tracks: tracks,
+    requiredSongId: requiredSongId,
+  );
+  if (!context.mounted) return null;
+  if (!result.isUsable) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.message ?? 'Could not build this mode queue.')),
+    );
+    return null;
+  }
+  if (result.usedDjPlanner && result.plan?.status == QueuePlanStatus.partial) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.message!)),
+    );
+  }
+  return result.songs;
+}
 
 /// Home card: virtual playlist for the active mode (folders + suggestions).
 /// Never replaces the main library.
@@ -135,18 +166,19 @@ class ModeShelfCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          onTap: () {
-                            final music = context.read<MusicProvider>();
-                            final idx = tracks.indexWhere((x) => x.id == s.id);
-                            PlaybackAuthority.instance.markExternalUserCommand(
-                              'mode_shelf',
-                              'play_track',
+                          onTap: () async {
+                            final queue = await _resolveModeQueue(
+                              context, modes, tracks, requiredSongId: s.id,
                             );
-                            unawaited(music.playSong(
-                              s,
-                              queue: tracks,
-                              startIndex: idx < 0 ? 0 : idx,
-                            ));
+                            if (queue == null || !context.mounted) return;
+                            final music = context.read<MusicProvider>();
+                            final idx = queue.indexWhere((x) => x.id == s.id);
+                            PlaybackAuthority.instance.markExternalUserCommand(
+                              'mode_shelf', 'play_track',
+                            );
+                            await music.playSong(
+                              s, queue: queue, startIndex: idx < 0 ? 0 : idx,
+                            );
                           },
                         ),
                       ),
@@ -161,17 +193,14 @@ class ModeShelfCard extends StatelessWidget {
                   Row(
                     children: [
                       FilledButton.tonalIcon(
-                        onPressed: () {
+                        onPressed: () async {
+                          final queue = await _resolveModeQueue(context, modes, tracks);
+                          if (queue == null || !context.mounted) return;
                           final music = context.read<MusicProvider>();
                           PlaybackAuthority.instance.markExternalUserCommand(
-                            'mode_shelf',
-                            'play_shelf',
+                            'mode_shelf', 'play_shelf',
                           );
-                          unawaited(music.playSong(
-                            tracks.first,
-                            queue: tracks,
-                            startIndex: 0,
-                          ));
+                          await music.playSong(queue.first, queue: queue, startIndex: 0);
                         },
                         icon: const Icon(Icons.play_arrow_rounded),
                         label: const Text('Play shelf'),
@@ -179,17 +208,15 @@ class ModeShelfCard extends StatelessWidget {
                       const SizedBox(width: 8),
                       OutlinedButton.icon(
                         onPressed: () async {
+                          final queue = await _resolveModeQueue(context, modes, tracks);
+                          if (queue == null || !context.mounted) return;
                           final music = context.read<MusicProvider>();
-                          final ok = await music.enqueueSongs(tracks);
+                          final ok = await music.enqueueSongs(queue);
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  ok
-                                      ? 'Added ${tracks.length} track(s) to queue'
-                                      : 'Nothing new to add',
-                                ),
-                              ),
+                              SnackBar(content: Text(ok
+                                  ? 'Added ${queue.length} mode-arranged track(s) to queue'
+                                  : 'Nothing new to add')),
                             );
                           }
                         },

@@ -40,11 +40,16 @@ class QueueIntent {
   static const balanced = QueueIntent(id: 'balanced', label: 'Balanced Mix');
 
   static QueueIntent? forMode(ResonateMode mode) => switch (mode) {
+    // These modes explicitly target music and can safely apply DJ constraints.
     ResonateMode.running || ResonateMode.workout => workout,
     ResonateMode.work => focus,
-    ResonateMode.sleep => calmerMix,
-    ResonateMode.motivation => highEnergy,
-    ResonateMode.driving || ResonateMode.normal => balanced,
-    ResonateMode.podcast || ResonateMode.audiobook => null,
+    // Driving, sleep and motivation can include mixed content. They retain
+    // their mode policy until a content-type-aware mixed-media planner exists.
+    ResonateMode.normal ||
+    ResonateMode.driving ||
+    ResonateMode.podcast ||
+    ResonateMode.motivation ||
+    ResonateMode.audiobook ||
+    ResonateMode.sleep => null,
   };
 }

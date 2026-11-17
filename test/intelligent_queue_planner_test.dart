@@ -87,7 +87,11 @@ void main() {
     test('maps music modes to shared queue intents', () {
       expect(QueueIntent.forMode(ResonateMode.workout), QueueIntent.workout);
       expect(QueueIntent.forMode(ResonateMode.running), QueueIntent.workout);
-      expect(QueueIntent.forMode(ResonateMode.sleep), QueueIntent.calmerMix);
+      expect(QueueIntent.forMode(ResonateMode.work), QueueIntent.focus);
+      expect(QueueIntent.forMode(ResonateMode.running), QueueIntent.workout);
+      expect(QueueIntent.forMode(ResonateMode.sleep), isNull);
+      expect(QueueIntent.forMode(ResonateMode.motivation), isNull);
+      expect(QueueIntent.forMode(ResonateMode.driving), isNull);
       expect(QueueIntent.forMode(ResonateMode.podcast), isNull);
       expect(QueueIntent.forMode(ResonateMode.audiobook), isNull);
     });
