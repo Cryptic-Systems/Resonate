@@ -125,5 +125,50 @@ void main() {
       expect(QueueIntent.forMode(ResonateMode.podcast), isNull);
       expect(QueueIntent.forMode(ResonateMode.audiobook), isNull);
     });
+
+    test('sleep, focus, driving and motivation modes enforce their own DJ profiles', () {
+      final cases = <(ResonateMode, double, double)>[
+        (ResonateMode.sleep, 82, 0.20),
+        (ResonateMode.work, 108, 0.38),
+        (ResonateMode.driving, 112, 0.52),
+        (ResonateMode.motivation, 132, 0.82),
+      ];
+      for (final (mode, bpm, energy) in cases) {
+        final intent = QueueIntent.forMode(mode)!;
+        final suitable = _song('${mode.name}-suitable');
+        final unsuitable = _song('${mode.name}-unsuitable');
+        final plan = planner.planWithProfiles(
+          [suitable, unsuitable],
+          intent: intent,
+          profiles: {
+            suitable.id: _profile(suitable.id, bpm: bpm, energy: energy),
+            unsuitable.id: _profile(unsuitable.id, bpm: 176, energy: 0.96),
+          },
+        );
+        expect(
+          plan.songs.map((song) => song.id),
+          [suitable.id],
+          reason: '${mode.name} must use its own BPM/energy constraints',
+        );
+        expect(plan.excludedSongIds, contains(unsuitable.id));
+        expect(plan.intentId, intent.id);
+      }
+    });
+
+    test('mode queue intents always require beat-grid and energy evidence', () {
+      for (final mode in [
+        ResonateMode.sleep,
+        ResonateMode.work,
+        ResonateMode.driving,
+        ResonateMode.motivation,
+        ResonateMode.workout,
+        ResonateMode.running,
+      ]) {
+        final intent = QueueIntent.forMode(mode)!;
+        expect(intent.requireBeatGrid, isTrue, reason: mode.name);
+        expect(intent.requireEnergy, isTrue, reason: mode.name);
+      }
+    });
+
   });
 }
