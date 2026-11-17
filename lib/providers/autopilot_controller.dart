@@ -220,6 +220,8 @@ class AutopilotController extends ChangeNotifier {
   Future<void> allowPendingTakeover() async {
     if (!hasPendingTakeover) return;
     final pending = _pendingSongId;
+    final sourceSongId = _pendingSourceSongId;
+    final approvedMode = modes?.mode;
     _consentGranted = true;
     _pendingTakeover = false;
     _pendingSongId = null;
@@ -236,7 +238,19 @@ class AutopilotController extends ChangeNotifier {
     });
     await IntelligenceSettingsStore.setAutopilotConsent(true);
     notifyListeners();
-    await _evaluate(forceTransition: true);
+
+    // Approval applies to the exact proposal and source context the user saw.
+    // If playback or mode changed while permission was being persisted, keep
+    // the consent but do not redirect that approval to a different track.
+    if (pending == null ||
+        sourceSongId != music.currentSong?.id ||
+        approvedMode != modes?.mode ||
+        !intelligence.isEnabled ||
+        !intelligence.isAutopilot) {
+      _scheduleEvaluate();
+      return;
+    }
+    await _evaluate(forceTransition: true, approvedSongId: pending);
   }
 
   Future<void> denyPendingTakeover() async {
@@ -256,7 +270,10 @@ class AutopilotController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _evaluate({bool forceTransition = false}) async {
+  Future<void> _evaluate({
+    bool forceTransition = false,
+    String? approvedSongId,
+  }) async {
     // Phase 5: Intelligence off or not in Autopilot mode → never drive playback.
     if (!_consentLoaded || !intelligence.isEnabled || !intelligence.isAutopilot) return;
     final evaluatedSourceSongId = music.currentSong?.id;
@@ -311,7 +328,10 @@ class AutopilotController extends ChangeNotifier {
 
     // Prefer the highest-confidence recommendation that is not the current song
     final candidates = _activeRecommendationPool
-        .where((r) => r.song.id != music.currentSong?.id && r.confidence >= threshold)
+        .where((r) =>
+            r.song.id != music.currentSong?.id &&
+            r.confidence >= threshold &&
+            (approvedSongId == null || r.song.id == approvedSongId))
         .toList();
 
     Song? nextSong;
@@ -327,7 +347,7 @@ class AutopilotController extends ChangeNotifier {
           (item) => item.song.id == nextSong!.id,
         );
       }
-    } else if (intelligence.isAutopilotGraduated) {
+    } else if (approvedSongId == null && intelligence.isAutopilotGraduated) {
       // Existing queued tracks are also checked against the active mode's
       // DJ constraints before Autopilot is allowed to choose one.
       if (music.queueIndex < music.queue.length - 1) {
