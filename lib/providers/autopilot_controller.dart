@@ -38,6 +38,7 @@ class AutopilotController extends ChangeNotifier {
   DateTime? _lastEvaluation;
   DateTime? _lastMotivationFollowupAt;
   bool _evaluationScheduled = false;
+  double _lastConfidenceThreshold = .65;
 
   AutopilotController({
     required this.music,
@@ -54,6 +55,28 @@ class AutopilotController extends ChangeNotifier {
   bool get hasPendingTakeover => _pendingTakeover && _pendingSongId != null;
   String? get pendingSongId => _pendingSongId;
   bool get consentGranted => _consentGranted;
+
+  /// Live explanation of the gates currently preventing or enabling takeover.
+  String get readinessMessage {
+    final current = music.currentSong;
+    final duration = music.currentDuration;
+    final remaining = duration == null ? null : duration - music.currentPosition;
+    final hasCandidate = intelligence.recommendations.any((recommendation) =>
+        recommendation.song.id != current?.id &&
+        recommendation.confidence >= _lastConfidenceThreshold);
+    return AutopilotModePolicy.readinessMessage(
+      intelligenceEnabled: intelligence.isEnabled,
+      autopilotSelected: intelligence.isAutopilot,
+      consentGranted: _consentGranted,
+      hasPendingTakeover: hasPendingTakeover,
+      transitionInFlight: _transitionInFlight,
+      hasCurrentSong: current != null,
+      isPlaying: music.isPlaying,
+      automaticNextAllowed: AutopilotModePolicy.allowsAutomaticNext(modes?.policy),
+      hasConfidentCandidate: hasCandidate,
+      remaining: remaining,
+    );
+  }
 
   bool get _mayMutatePlayback => AutopilotModePolicy.mayMutatePlayback(
         consentGranted: _consentGranted,
@@ -180,6 +203,7 @@ class AutopilotController extends ChangeNotifier {
 
     final automaticQueue = await IntelligenceSettingsStore.automaticQueue();
     final threshold = await IntelligenceSettingsStore.confidenceThreshold();
+    _lastConfidenceThreshold = threshold;
     if (!intelligence.isEnabled || !intelligence.isAutopilot) return;
     final modePolicy = modes?.policy;
     final useCrossfade = AutopilotModePolicy.shouldUseCrossfade(

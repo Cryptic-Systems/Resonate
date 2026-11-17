@@ -136,6 +136,17 @@ class AutopilotHomeCard extends StatelessWidget {
               ),
             ),
           ),
+          if (intelligence.isEnabled)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 6, 18, 0),
+              child: Text(
+                autopilot.readinessMessage,
+                style: textTheme.bodySmall?.copyWith(
+                  height: 1.35,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
             child: Wrap(

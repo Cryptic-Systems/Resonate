@@ -27,6 +27,47 @@ void main() {
     });
   });
 
+
+  group('Autopilot readiness explanation', () {
+    String status({
+      bool enabled = true,
+      bool selected = true,
+      bool consent = true,
+      bool pending = false,
+      bool transitioning = false,
+      bool hasSong = true,
+      bool playing = true,
+      bool allowed = true,
+      bool candidate = true,
+      Duration? remaining = const Duration(seconds: 30),
+    }) => AutopilotModePolicy.readinessMessage(
+      intelligenceEnabled: enabled,
+      autopilotSelected: selected,
+      consentGranted: consent,
+      hasPendingTakeover: pending,
+      transitionInFlight: transitioning,
+      hasCurrentSong: hasSong,
+      isPlaying: playing,
+      automaticNextAllowed: allowed,
+      hasConfidentCandidate: candidate,
+      remaining: remaining,
+    );
+
+    test('explains each prerequisite and the final transition window', () {
+      expect(status(enabled: false), contains('fully manual'));
+      expect(status(selected: false), contains('not selected'));
+      expect(status(pending: true, consent: false), contains('approval'));
+      expect(status(consent: false), contains('advisory only'));
+      expect(status(hasSong: false), contains('Start a track'));
+      expect(status(playing: false), contains('paused'));
+      expect(status(allowed: false), contains('disabled'));
+      expect(status(candidate: false), contains('confidence threshold'));
+      expect(status(remaining: null), contains('duration'));
+      expect(status(remaining: const Duration(seconds: 25)), contains('final 10 seconds'));
+      expect(status(remaining: const Duration(seconds: 5)), contains('ready'));
+    });
+  });
+
   test('Autopilot keeps automatic next enabled for every current mode', () {
     for (final mode in ResonateMode.values) {
       final policy = ModePolicyCatalog.policyFor(mode);
