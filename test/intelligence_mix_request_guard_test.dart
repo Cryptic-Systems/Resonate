@@ -34,6 +34,19 @@ void main() {
       ), isFalse);
     });
 
+    test('latest request still owns cleanup after playback context changes', () {
+      final guard = IntelligenceMixRequestGuard();
+      final request = guard.begin();
+
+      expect(guard.owns(
+        requestGeneration: request,
+        sourceSongId: 'track-a',
+        currentSongId: 'track-b',
+        intelligenceEnabled: true,
+      ), isFalse);
+      expect(guard.isLatest(request), isTrue);
+    });
+
     test('disabling Intelligence invalidates pending generation', () {
       final guard = IntelligenceMixRequestGuard();
       final request = guard.begin();
