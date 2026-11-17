@@ -146,7 +146,7 @@ extension MusicProviderMedia3 on MusicProvider {
       final plannedDurationMs = preparation?.transitionDurationMs;
       final hasApprovedCue = preparation?.outgoingStartPosition != null;
       final configuredDurationMs = plannedDurationMs != null
-          ? plannedDurationMs.clamp(2000, 20000).toInt()
+          ? plannedDurationMs.clamp(2000, 15000).toInt()
           : (djActive
                   ? (_crossfadeDurationMs + _lastDjCrossfadeBiasMs).clamp(500, 6500)
                   : _crossfadeDurationMs.clamp(500, 12000))
