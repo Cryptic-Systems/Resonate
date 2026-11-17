@@ -462,7 +462,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                             onPressed: () => _showVolume(context, music),
                           ),
                           IconButton(
-                            tooltip: 'Shuffle',
+                            tooltip: music.queueOrderLocked
+                                ? 'Shuffle is held off for this planned queue'
+                                : 'Shuffle',
                             icon: Icon(
                               Icons.shuffle_rounded,
                               color: music.shuffleEnabled

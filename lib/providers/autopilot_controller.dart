@@ -316,7 +316,7 @@ class AutopilotController extends ChangeNotifier {
         if (top != null && top.id != music.currentSong?.id) {
           final arranged = await _arrangeForActiveMode([top]);
           if (arranged.isNotEmpty) {
-            await music.enqueueSongs(arranged);
+            await music.enqueueSongs(arranged, preserveOrder: true);
             nextSong = arranged.first;
           }
         }
@@ -537,7 +537,7 @@ class AutopilotController extends ChangeNotifier {
       }
       if (arranged.isNotEmpty) {
         if (!_requirePlaybackMutationPermission('queue_enqueue')) return;
-        final added = await music.enqueueSongs(arranged);
+        final added = await music.enqueueSongs(arranged, preserveOrder: true);
         await ResonateDiagnostics.record('intelligence_queue_decision', {
           'mode': intelligence.autonomyLabel,
           'candidates': arranged.map((song) => song.id).toList(),

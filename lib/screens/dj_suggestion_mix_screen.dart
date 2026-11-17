@@ -76,12 +76,13 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
         for (final transition in approved.transitions)
           '${transition.outgoingSongId}\u0000${transition.incomingSongId}': transition.plan,
       });
-      // DJ order must remain authoritative after approval.
-      await music.setShuffleEnabled(false);
+      // DJ order remains authoritative for this queue while the saved
+      // global Shuffle preference remains untouched.
       final started = await music.playSong(
         approved.songs.first,
         queue: approved.songs,
         startIndex: 0,
+        preserveQueueOrder: true,
       );
       if (!started) {
         music.setApprovedDjTransitions(const {});

@@ -84,7 +84,12 @@ class CompanionCommandExecutor {
             ...list.where((s) => s.artist == current.artist),
             ...list.where((s) => s.artist != current.artist),
           ];
-          await music.playSong(preferred.first, queue: preferred, startIndex: 0);
+          await music.playSong(
+            preferred.first,
+            queue: preferred,
+            startIndex: 0,
+            preserveQueueOrder: true,
+          );
           return CompanionCommandResult(ok: true,
             message: current == null
                 ? 'Started a local similar mix from your top recommendations.'
@@ -124,7 +129,12 @@ class CompanionCommandExecutor {
             return CompanionCommandResult(ok: false,
               message: 'Could not build "$title" yet — need more library signals or recommendations.');
           }
-          await music.playSong(mix.songs.first, queue: mix.songs, startIndex: 0);
+          await music.playSong(
+            mix.songs.first,
+            queue: mix.songs,
+            startIndex: 0,
+            preserveQueueOrder: true,
+          );
           final plan = mixes.lastQueuePlan;
           final djNote = queueIntent == null || plan == null ? '' :
               ' DJ analysis matched ${plan.eligibleTrackCount} tracks; coverage ${(plan.analysisCoverage * 100).round()}%.';
@@ -134,7 +144,12 @@ class CompanionCommandExecutor {
           final mix = await mixes.evolveCurrentMix();
           if (mix == null) return const CompanionCommandResult(ok: false,
             message: 'No active mix to evolve — create one first.');
-          if (mix.songs.isNotEmpty) await music.playSong(mix.songs.first, queue: mix.songs, startIndex: 0);
+          if (mix.songs.isNotEmpty) await music.playSong(
+            mix.songs.first,
+            queue: mix.songs,
+            startIndex: 0,
+            preserveQueueOrder: true,
+          );
           return CompanionCommandResult(ok: true,
             message: 'Evolved to "${mix.title}" (edition ${mix.edition}).');
         case CompanionAction.playTopRecommendation:
@@ -142,7 +157,12 @@ class CompanionCommandExecutor {
           if (recs.isEmpty) return const CompanionCommandResult(ok: false,
             message: 'No recommendations ready yet.');
           final songs = recs.map((r) => r.song).toList();
-          await music.playSong(songs.first, queue: songs, startIndex: 0);
+          await music.playSong(
+            songs.first,
+            queue: songs,
+            startIndex: 0,
+            preserveQueueOrder: true,
+          );
           return CompanionCommandResult(ok: true,
             message: 'Playing "${songs.first.title}" — ${recs.first.reason}');
         case CompanionAction.unknown:

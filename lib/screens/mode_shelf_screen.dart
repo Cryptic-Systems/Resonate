@@ -319,6 +319,11 @@ class ModeShelfScreen extends StatelessWidget {
     PlaybackAuthority.instance.markExternalUserCommand(
       'mode_shelf', shuffle ? 'shuffle_play' : 'play',
     );
-    await music.playSong(queue[index], queue: queue, startIndex: index);
+    await music.playSong(
+      queue[index],
+      queue: queue,
+      startIndex: index,
+      preserveQueueOrder: result.usedDjPlanner,
+    );
   }
 }
