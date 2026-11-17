@@ -6,6 +6,8 @@ class IntelligenceMixRequestGuard {
 
   int begin() => ++_generation;
 
+  bool isLatest(int requestGeneration) => requestGeneration == _generation;
+
   void invalidate() => _generation++;
 
   bool owns({
