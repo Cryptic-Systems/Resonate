@@ -14,10 +14,12 @@ class QueueStore {
   static const savedQueueIdsKey = 'playback_queue_song_ids';
   static const savedQueueIndexKey = 'playback_queue_index';
   static const shuffleEnabledKey = 'playback_shuffle_enabled';
+  static const queueOrderLockedKey = 'playback_queue_order_locked';
 
   List<Song> _songs = <Song>[];
   int _index = 0;
   bool shuffleEnabled = false;
+  bool queueOrderLocked = false;
   bool restoreInProgress = false;
 
   /// Live list used by the playback coordinator. Prefer [replace] / mutators
@@ -138,23 +140,28 @@ class QueueStore {
   Future<void> persist() {
     final ids = _songs.map((song) => song.id).toList(growable: false);
     final index = _index;
+    final orderLocked = ids.isNotEmpty && queueOrderLocked;
     return _enqueuePersistence(() async {
       final prefs = await SharedPreferences.getInstance();
       if (ids.isEmpty) {
         await prefs.remove(savedQueueIdsKey);
         await prefs.remove(savedQueueIndexKey);
+        await prefs.setBool(queueOrderLockedKey, false);
       } else {
         await prefs.setStringList(savedQueueIdsKey, ids);
         await prefs.setInt(savedQueueIndexKey, index);
+        await prefs.setBool(queueOrderLockedKey, orderLocked);
       }
     });
   }
 
   Future<void> persistShuffleFlag() {
     final enabled = shuffleEnabled;
+    final orderLocked = queueOrderLocked;
     return _enqueuePersistence(() async {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(shuffleEnabledKey, enabled);
+      await prefs.setBool(queueOrderLockedKey, orderLocked);
     });
   }
 
@@ -162,6 +169,7 @@ class QueueStore {
     try {
       final prefs = await SharedPreferences.getInstance();
       shuffleEnabled = prefs.getBool(shuffleEnabledKey) ?? false;
+      queueOrderLocked = prefs.getBool(queueOrderLockedKey) ?? false;
     } catch (e) {
       debugPrint('Playback shuffle load failed: $e');
     }

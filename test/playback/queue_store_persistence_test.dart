@@ -71,6 +71,22 @@ void main() {
     expect(prefs.getBool(QueueStore.shuffleEnabledKey), isFalse);
   });
 
+  test('planned queue order lock persists and restores with the queue', () async {
+    final store = QueueStore()
+      ..replace(<Song>[_song('planned-first'), _song('planned-next')])
+      ..shuffleEnabled = true
+      ..queueOrderLocked = true;
+    await store.persist();
+
+    final restored = QueueStore();
+    await restored.loadShuffleFlag();
+
+    expect(restored.shuffleEnabled, isTrue);
+    expect(restored.queueOrderLocked, isTrue);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(QueueStore.queueOrderLockedKey), isTrue);
+  });
+
   test('queue and shuffle writes share the same persistence order', () async {
     final store = QueueStore()..replace(<Song>[_song('before')]);
 

@@ -65,6 +65,27 @@ void main() {
     modes.dispose();
   });
 
+  test('Sleep mode with only spoken content still preserves order against shuffle', () async {
+    final modes = ModeProvider();
+    await modes.ready;
+    await modes.setMode(ResonateMode.sleep);
+    final book = _song('book', '/audiobooks/book/chapter-1.mp3');
+    final podcast = _song('podcast', '/podcasts/show/episode-1.mp3');
+    final result = await ModeAwareQueuePlanner(
+      planner: _FixedPlanner(QueuePlan(
+        intentId: QueueIntent.sleep.id,
+        songs: const [],
+        status: QueuePlanStatus.insufficientAnalysis,
+        analysisCoverage: 0,
+        analyzedTrackCount: 0,
+        eligibleTrackCount: 0,
+      )),
+    ).arrange(modes: modes, tracks: [book, podcast]);
+    expect(result.songs.map((song) => song.id), ['book', 'podcast']);
+    expect(result.usedDjPlanner, isTrue);
+    modes.dispose();
+  });
+
   test('Podcast mode keeps strict spoken sequence and bypasses DJ music ordering', () async {
     final modes = ModeProvider();
     await modes.ready;

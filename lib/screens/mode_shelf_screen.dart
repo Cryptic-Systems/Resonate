@@ -147,11 +147,13 @@ class ModeShelfScreen extends StatelessWidget {
                               ),
                               const SizedBox(width: 8),
                               OutlinedButton.icon(
-                                onPressed: () => _playShelf(
-                                  context,
-                                  shelf.tracks,
-                                  shuffle: true,
-                                ),
+                                onPressed: modes.policy.shuffleAllowed
+                                    ? () => _playShelf(
+                                          context,
+                                          shelf.tracks,
+                                          shuffle: true,
+                                        )
+                                    : null,
                                 icon: const Icon(Icons.shuffle_rounded),
                                 label: const Text('Shuffle'),
                               ),
@@ -277,6 +279,16 @@ class ModeShelfScreen extends StatelessWidget {
   }) async {
     if (tracks.isEmpty) return;
     final modes = context.read<ModeProvider>();
+    if (shuffle && !modes.policy.shuffleAllowed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Shuffle is disabled in ${modes.mode.label} to preserve spoken-content order.',
+          ),
+        ),
+      );
+      return;
+    }
     final requested = tracks[startIndex.clamp(0, tracks.length - 1)];
     final result = await ModeAwareQueuePlanner().arrange(
       modes: modes,

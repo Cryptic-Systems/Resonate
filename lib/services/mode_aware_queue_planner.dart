@@ -60,7 +60,7 @@ class ModeAwareQueuePlanner {
     if (musicTracks.isEmpty) {
       return ModeQueuePlanResult(
         songs: List.unmodifiable(acceptedTracks),
-        usedDjPlanner: false,
+        usedDjPlanner: hasNonMusicContent,
         message: 'No music tracks were present for DJ arrangement; the mode queue order was preserved.',
       );
     }

@@ -203,9 +203,9 @@ class MusicProvider extends ChangeNotifier {
   set _queueIndex(int value) => _queueStore.index = value;
   bool get _shuffleEnabled => _queueStore.shuffleEnabled;
   set _shuffleEnabled(bool value) => _queueStore.shuffleEnabled = value;
-  // Keep algorithmically planned queues deterministic without changing the
-  // user's persisted global Shuffle preference.
-  bool _queueOrderLocked = false;
+  // Queue-order lock lives with the persisted queue state.
+  bool get _queueOrderLocked => _queueStore.queueOrderLocked;
+  set _queueOrderLocked(bool value) => _queueStore.queueOrderLocked = value;
   /// Compatibility aliases — mode policy runtime lives in [ModePlaybackPolicyState].
   final ModePlaybackPolicyState _modePlaybackPolicy = ModePlaybackPolicyState();
   bool get _modeCrossfadeAllowed => _modePlaybackPolicy.crossfadeAllowed;
@@ -1035,6 +1035,8 @@ class MusicProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       _shuffleEnabled = prefs.getBool(QueueStore.shuffleEnabledKey) ?? false;
+      _queueOrderLocked =
+          prefs.getBool(QueueStore.queueOrderLockedKey) ?? false;
       await _levelingSettings.load(prefs);
       await _audioFocusSettings.load(prefs);
       // Restore persistent native protection/gain before the first playback
@@ -3922,6 +3924,7 @@ class MusicProvider extends ChangeNotifier {
     if (index < 0 || index >= _queue.length || index == _queueIndex) return false;
     _queue.removeAt(index);
     if (index < _queueIndex) _queueIndex -= 1;
+    if (_queueIndex >= _queue.length - 1) _queueOrderLocked = false;
     await _persistQueue();
     await this._syncMedia3ProviderQueue();
     notifyListeners();
@@ -3933,7 +3936,9 @@ class MusicProvider extends ChangeNotifier {
 
     final previousQueue = List<Song>.of(_queue);
     final previousIndex = _queueIndex;
+    final previousOrderLock = _queueOrderLocked;
     _queue = previousQueue.take(previousIndex + 1).toList(growable: true);
+    _queueOrderLocked = false;
 
     try {
       await _persistQueue();
@@ -3944,6 +3949,7 @@ class MusicProvider extends ChangeNotifier {
       // the original persistence/synchronization failure.
       _queue = previousQueue;
       _queueIndex = previousIndex;
+      _queueOrderLocked = previousOrderLock;
       try {
         await _persistQueue();
       } catch (_) {}
