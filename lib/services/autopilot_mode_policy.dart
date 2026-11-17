@@ -19,6 +19,17 @@ class AutopilotModePolicy {
   static bool allowsAutomaticNext(PlaybackPolicy? policy) =>
       policy?.autoNextPreferred != false;
 
+  /// A declined suggestion is suppressed only for the source track that
+  /// prompted it; a later source track gets a fresh decision.
+  static bool shouldSuppressDeclinedCandidate({
+    required String? declinedSongId,
+    required String? declinedSourceSongId,
+    required String candidateSongId,
+    required String sourceSongId,
+  }) =>
+      declinedSongId == candidateSongId &&
+      declinedSourceSongId == sourceSongId;
+
   static bool shouldUseCrossfade({
     required bool userCrossfadeEnabled,
     PlaybackPolicy? policy,
