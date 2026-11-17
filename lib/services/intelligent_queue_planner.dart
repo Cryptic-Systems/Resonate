@@ -11,19 +11,25 @@ import 'dj_analysis_service.dart';
 /// energy-curve and harmonic analysis, but never owns playback. A constrained
 /// intent is never silently replaced with ordinary/random shuffle.
 class IntelligentQueuePlanner {
+  static final DjAnalysisService _sharedAnalysis = DjAnalysisService();
+  static const int _maxConcurrentAnalysisWarmupsPerPlan = 6;
+
   IntelligentQueuePlanner({DjAnalysisService? analysis})
-      : _analysis = analysis ?? DjAnalysisService();
+      : _analysis = analysis ?? _sharedAnalysis;
   final DjAnalysisService _analysis;
 
   Future<QueuePlan> plan(List<Song> scope, {required QueueIntent intent}) async {
     final profiles = <String, DjTrackProfile>{};
+    var scheduledWarmups = 0;
     for (final song in scope) {
       final profile = await _analysis.getProfile(song.id);
       if (profile != null) {
         profiles[song.id] = profile;
-      } else {
-        // Analysis is opportunistic; never block a playback start on decoding.
+      } else if (scheduledWarmups < _maxConcurrentAnalysisWarmupsPerPlan) {
+        // Warm only a small batch: a large library mix must not launch dozens
+        // of concurrent PCM decodes and drain battery or contend with playback.
         _analysis.scheduleAnalyze(song);
+        scheduledWarmups++;
       }
     }
     return planWithProfiles(scope, intent: intent, profiles: profiles);
