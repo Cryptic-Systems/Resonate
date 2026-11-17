@@ -37,6 +37,21 @@ class QueueIntent {
     minEnergy: 0.12, maxEnergy: 0.58, targetEnergy: 0.34,
     requireBeatGrid: true, requireEnergy: true,
   );
+  static const sleep = QueueIntent(
+    id: 'sleep', label: 'Sleep', minBpm: 55, maxBpm: 105,
+    minEnergy: 0.0, maxEnergy: 0.38, targetEnergy: 0.20,
+    requireBeatGrid: true, requireEnergy: true,
+  );
+  static const motivation = QueueIntent(
+    id: 'motivation', label: 'Motivation', minBpm: 95, maxBpm: 155,
+    minEnergy: 0.45, maxEnergy: 1.0, targetEnergy: 0.72,
+    requireBeatGrid: true, requireEnergy: true, minAnalysisConfidence: 0.40,
+  );
+  static const driving = QueueIntent(
+    id: 'driving', label: 'Driving', minBpm: 85, maxBpm: 135,
+    minEnergy: 0.30, maxEnergy: 0.78, targetEnergy: 0.54,
+    requireBeatGrid: true, requireEnergy: true,
+  );
   static const balanced = QueueIntent(id: 'balanced', label: 'Balanced Mix');
 
   static QueueIntent? forMode(ResonateMode mode) => switch (mode) {
@@ -45,11 +60,11 @@ class QueueIntent {
     ResonateMode.work => focus,
     // Driving, sleep and motivation can include mixed content. They retain
     // their mode policy until a content-type-aware mixed-media planner exists.
+    ResonateMode.driving => driving,
+    ResonateMode.motivation => motivation,
+    ResonateMode.sleep => sleep,
     ResonateMode.normal ||
-    ResonateMode.driving ||
     ResonateMode.podcast ||
-    ResonateMode.motivation ||
-    ResonateMode.audiobook ||
-    ResonateMode.sleep => null,
+    ResonateMode.audiobook => null,
   };
 }

@@ -415,7 +415,9 @@ class AutopilotController extends ChangeNotifier {
         return const [];
       }
       _modeQueueBlockedReason =
-          result.plan?.status == QueuePlanStatus.partial ? result.message : null;
+          result.plan != null && result.plan!.status != QueuePlanStatus.ready
+              ? result.message
+              : null;
       return result.songs;
     } catch (error) {
       _modeQueueBlockedReason = 'DJ queue planning could not complete: $error';
@@ -456,12 +458,12 @@ class AutopilotController extends ChangeNotifier {
         // Search the whole mode-aware recommendation pool before selecting the
         // next runway. Choosing only the generic top 2/4 first can miss every
         // BPM-compatible track even when suitable analyzed tracks are available.
-        final available = _activeRecommendationPool
+        final available = _applyModeBias(_activeRecommendationPool
             .where((item) =>
                 item.song.id != music.currentSong?.id &&
                 !futureQueued.contains(item.song.id))
             .map((item) => item.song)
-            .toList(growable: false);
+            .toList(growable: false));
         considered = available;
         if (available.isEmpty) {
           _modeQueueBlockedReason = null;
@@ -486,7 +488,9 @@ class AutopilotController extends ChangeNotifier {
           return;
         }
         _modeQueueBlockedReason =
-            result.plan?.status == QueuePlanStatus.partial ? result.message : null;
+            result.plan != null && result.plan!.status != QueuePlanStatus.ready
+                ? result.message
+                : null;
         arranged = result.songs.take(sequenceCount).toList(growable: false);
       } else {
         final candidates = await _decisionEngine.chooseSequence(

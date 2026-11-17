@@ -290,7 +290,9 @@ class ModeShelfScreen extends StatelessWidget {
       );
       return;
     }
-    if (result.usedDjPlanner && result.plan?.status == QueuePlanStatus.partial) {
+    if (result.usedDjPlanner &&
+        result.plan != null &&
+        result.plan!.status != QueuePlanStatus.ready) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(result.message!)),
       );
