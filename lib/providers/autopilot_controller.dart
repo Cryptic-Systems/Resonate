@@ -227,6 +227,9 @@ class AutopilotController extends ChangeNotifier {
     _pendingSongId = null;
     _pendingSong = null;
     _pendingSourceSongId = null;
+    // Clear the approval surface immediately; persistence and diagnostics
+    // must not leave a stale prompt visible while local I/O is pending.
+    notifyListeners();
     await CompanionDecisionLog.record(
       source: 'autopilot',
       action: 'takeover_allowed',
@@ -237,7 +240,6 @@ class AutopilotController extends ChangeNotifier {
       'action': 'accepted', 'songId': pending, 'mode': intelligence.autonomyLabel,
     });
     await IntelligenceSettingsStore.setAutopilotConsent(true);
-    notifyListeners();
 
     // Approval applies to the exact proposal and source context the user saw.
     // If playback or mode changed while permission was being persisted, keep
@@ -264,10 +266,11 @@ class AutopilotController extends ChangeNotifier {
       _declinedForSongId = pending;
       _declinedForSourceSongId = sourceSongId;
     }
+    // Dismiss the prompt synchronously from the user's point of view.
+    notifyListeners();
     await ResonateDiagnostics.record('intelligence_notification_action', {
       'action': 'rejected', 'songId': pending, 'mode': intelligence.autonomyLabel,
     });
-    notifyListeners();
   }
 
   Future<void> _evaluate({
