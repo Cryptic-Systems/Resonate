@@ -31,6 +31,7 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   String? _observedSongId;
   bool _lastPlaying = false;
   List<IntelligenceRecommendation> _recommendations = const [];
+  List<IntelligenceRecommendation> _candidatePool = const [];
   Map<String, double> _feedback = <String, double>{};
   final Set<String> _avoidedArtists = <String>{};
 
@@ -48,6 +49,7 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _quietWhenBackground = true;
   bool _appInBackground = false;
 
+  static const int _candidatePoolLimit = 80;
   static const int _minimumLearningEvents = 40;
   static const int _minimumDistinctSongs = 12;
   static const double _graduationConfidence = .78;
@@ -110,6 +112,9 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool get isAutopilotGraduated => _autopilotGraduated;
   String get autonomyLabel => const ['Suggestions only', 'Assist me', 'Autopilot'][_autonomy.clamp(0, 2)];
   List<IntelligenceRecommendation> get recommendations => List.unmodifiable(_recommendations);
+  /// Larger local ranking pool reserved for mode-aware planners; the UI keeps
+  /// using [recommendations] so candidate expansion does not flood the feed.
+  List<IntelligenceRecommendation> get candidatePool => List.unmodifiable(_candidatePool);
   IntelligenceRecommendation? get anticipatedNext => _recommendations.isEmpty ? null : _recommendations.first;
   String get sessionMode => _sessionMode;
   String get sessionSummary => _sessionSummary;
@@ -153,6 +158,7 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
     try { await (await SharedPreferences.getInstance()).setBool('intelligence_enabled', enabled); } catch (e) { debugPrint('Intelligence enabled save failed: $e'); }
     if (!enabled) {
       _recommendations = const [];
+      _candidatePool = const [];
       _sessionMode = 'Manual playback';
       _sessionSummary = 'Intelligence is off, so this session stays fully manual.';
       _sessionCompletion = 0.0;
@@ -325,7 +331,7 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _updateSessionArtistAndMode(List<ListeningEvent> events, Map<String, Song> byId) async => _updateSessionContext(events, byId);
 
   Future<void> refreshRecommendations({int limit = 8, bool notify = true}) async {
-    if (!_enabled) { _recommendations = const []; if (notify) notifyListeners(); return; }
+    if (!_enabled) { _recommendations = const []; _candidatePool = const []; if (notify) notifyListeners(); return; }
     if (_refreshInFlight) {
       _refreshQueued = true;
       return;
@@ -430,7 +436,9 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
         }
         ranked.add(IntelligenceRecommendation(song: song, score: score, confidence: confidence, reason: reason, decision: _autonomy == 2 ? 'autopilot' : _autonomy == 1 ? 'assist' : 'suggest', sessionReason: sessionReason));
       }
-      ranked.sort((a, b) => b.score.compareTo(a.score)); _recommendations = ranked.take(limit).toList(growable: false);
+      ranked.sort((a, b) => b.score.compareTo(a.score));
+      _candidatePool = ranked.take(_candidatePoolLimit).toList(growable: false);
+      _recommendations = ranked.take(limit).toList(growable: false);
       await ResonateDiagnostics.record('intelligence_recommendations_generated', {
         'stage': 'recommendations_generated',
         'mode': autonomyLabel,

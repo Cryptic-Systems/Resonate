@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/intelligence_recommendation.dart';
 import '../models/song.dart';
 import '../models/queue_plan.dart';
+import '../models/queue_intent.dart';
 import '../services/intelligence_decision_engine.dart';
 import '../services/intelligence_settings_store.dart';
 import '../services/resonate_diagnostics.dart';
@@ -88,6 +89,13 @@ class AutopilotController extends ChangeNotifier {
       hasConfidentCandidate: hasCandidate,
       remaining: remaining,
     );
+  }
+
+  List<IntelligenceRecommendation> get _activeRecommendationPool {
+    final mode = modes?.mode;
+    return mode != null && QueueIntent.forMode(mode) != null
+        ? intelligence.candidatePool
+        : intelligence.recommendations;
   }
 
   bool get _mayMutatePlayback => AutopilotModePolicy.mayMutatePlayback(
@@ -252,7 +260,7 @@ class AutopilotController extends ChangeNotifier {
     if (_transitionSongId == music.currentSong?.id) return;
 
     // Prefer the highest-confidence recommendation that is not the current song
-    final candidates = intelligence.recommendations
+    final candidates = _activeRecommendationPool
         .where((r) => r.song.id != music.currentSong?.id && r.confidence >= threshold)
         .toList();
 
@@ -280,7 +288,8 @@ class AutopilotController extends ChangeNotifier {
       } else if (_mayMutatePlayback) {
         await _ensurePredictedQueue(threshold);
         if (!_requirePlaybackMutationPermission('fallback_enqueue')) return;
-        final top = intelligence.anticipatedNext?.song;
+        final pool = _activeRecommendationPool;
+        final top = pool.isEmpty ? null : pool.first.song;
         if (top != null && top.id != music.currentSong?.id) {
           final arranged = await _arrangeForActiveMode([top]);
           if (arranged.isNotEmpty) {
@@ -440,7 +449,7 @@ class AutopilotController extends ChangeNotifier {
       final modePolicy = modes?.policy;
       final sequenceCount = AutopilotModePolicy.predictedSequenceCount(modePolicy);
       final candidates = await _decisionEngine.chooseSequence(
-        recommendations: intelligence.recommendations,
+        recommendations: _activeRecommendationPool,
         queuedIds: futureQueued,
         currentSong: music.currentSong,
         sessionMode: intelligence.sessionMode,

@@ -55,7 +55,10 @@ class IntelligenceMixController extends ChangeNotifier {
     String? title,
     QueueIntent? queueIntent,
   }) async {
-    if (!intelligence.isEnabled || intelligence.recommendations.isEmpty) {
+    final sourceRecommendations = queueIntent == null
+        ? intelligence.recommendations
+        : intelligence.candidatePool;
+    if (!intelligence.isEnabled || sourceRecommendations.isEmpty) {
       _lastQueuePlan = null;
       return null;
     }
@@ -66,7 +69,7 @@ class IntelligenceMixController extends ChangeNotifier {
       final minutes = targetDuration?.inMinutes ??
           await IntelligenceMixSettingsStore.targetMinutes();
       final generated = await _service.generateMix(
-        recommendations: intelligence.recommendations,
+        recommendations: sourceRecommendations,
         currentSong: music.currentSong,
         sessionMode: intelligence.sessionMode,
         sessionSkipStreak: intelligence.sessionSkipStreak,
