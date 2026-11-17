@@ -20,6 +20,7 @@ class AudioEffectsProvider extends ChangeNotifier {
   StreamSubscription<Media3ProviderState>? _media3SessionSubscription;
   final Set<int> _media3SessionIds = <int>{};
   Future<void> _nativeApplyQueue = Future<void>.value();
+  late final Future<void> ready;
 
   AudioEffectsProvider({this.playbackSession}) {
     // Media3 exposes both physical deck sessions. Subscribe to its canonical
@@ -35,7 +36,7 @@ class AudioEffectsProvider extends ChangeNotifier {
         },
       );
     }
-    _load();
+    ready = _load();
   }
 
   bool _isSessionTracked(int sessionId) =>
@@ -163,6 +164,12 @@ class AudioEffectsProvider extends ChangeNotifier {
         lowDb: canonical.limiterLowCeilingDb,
       );
       await AudioEffectsBridge.setLiveDspCrossoverHz(canonical.crossoverHz);
+      // Speaker protection and virtual-bass amount are canonical DSP state;
+      // restore both before a newly-created Media3 deck inherits sticky state.
+      await AudioEffectsBridge.setLiveDspSpeakerMode(
+        canonical.speakerProtectionEnabled,
+      );
+      await AudioEffectsBridge.setLiveDspVirtualBass(canonical.virtualBassAmount);
       // DVC is independent from EQ preamp and must be restored even when the
       // user has not opened Audio automation in this process. Registry state
       // carries it to both current and subsequently-created A/B sinks.

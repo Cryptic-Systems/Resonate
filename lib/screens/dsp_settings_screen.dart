@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/dsp_settings.dart';
+import '../providers/audio_effects_provider.dart';
 import '../providers/equalizer_provider.dart';
 import '../services/audio_effects_bridge.dart';
 
@@ -45,6 +46,10 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
   }
 
   Future<void> _load() async {
+    // Wait for the app-wide DSP restore pass before taking a live diagnostics
+    // snapshot; otherwise the first screen frame can display default sticky values.
+    await context.read<AudioEffectsProvider>().ready;
+    if (!mounted) return;
     final canonical = await DspSettings.load();
     if (!mounted) return;
     final eq = context.read<EqualizerProvider>();

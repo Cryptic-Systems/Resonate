@@ -74,8 +74,27 @@ void main() {
   Future<void> settleProvider(AudioEffectsProvider provider) async {
     // Let the stream callback's queued native work settle without issuing a
     // second settings mutation (which would itself trigger another attach).
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await provider.ready;
   }
+
+  test('restores canonical speaker protection and virtual bass before diagnostics', () async {
+    await DspSettings.update((settings) => settings.copyWith(
+          speakerProtectionEnabled: true,
+          virtualBassAmount: 0.6,
+        ));
+    calls.clear();
+    final provider = AudioEffectsProvider();
+    await provider.ready;
+
+    expect(calls.any((call) =>
+        call.method == 'setLiveDspSpeakerMode' &&
+        (call.arguments as Map)['enabled'] == true), isTrue);
+    expect(calls.any((call) =>
+        call.method == 'setLiveDspVirtualBass' &&
+        ((call.arguments as Map)['amount'] as num).toDouble() == 0.6), isTrue);
+
+    provider.dispose();
+  });
 
   test('Media3 effects stay attached to both decks through promotion',
       () async {
@@ -83,7 +102,7 @@ void main() {
     final provider = AudioEffectsProvider(
       playbackSession: session,
     );
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await provider.ready;
     calls.clear();
 
     session.emitState(301);
@@ -143,7 +162,7 @@ void main() {
   test('Media3 session owns effects without constructing legacy players', () async {
     final session = _FakePlaybackSession();
     final provider = AudioEffectsProvider(playbackSession: session);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await provider.ready;
     calls.clear();
 
     session.emitState(601, 602);
@@ -167,7 +186,7 @@ void main() {
     final provider = AudioEffectsProvider(
       playbackSession: session,
     );
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await provider.ready;
 
     session.emitState(411);
     await settleProvider(provider);
@@ -188,7 +207,7 @@ void main() {
   test('sound profile effects are applied to both active and standby sessions', () async {
     final session = _FakePlaybackSession();
     final provider = AudioEffectsProvider(playbackSession: session);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await provider.ready;
     session.emitState(711, 712);
     await settleProvider(provider);
     calls.clear();
@@ -223,7 +242,7 @@ void main() {
     final provider = AudioEffectsProvider(
       playbackSession: session,
     );
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await provider.ready;
 
     provider.dispose();
     calls.clear();
