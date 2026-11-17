@@ -49,18 +49,12 @@ extension MusicProviderMedia3 on MusicProvider {
         queueIndex: nextIndex,
         startPosition: preparation.incomingStartPosition,
       );
-      if (!stillOwnsPreload()) {
-        await session.cancelCrossfade();
-        return;
-      }
+      if (!stillOwnsPreload()) return;
       await session.setDeckPlaybackSpeeds(
         activeSpeed: preparation.activeSpeed,
         standbySpeed: preparation.standbySpeed,
       );
-      if (!stillOwnsPreload()) {
-        await session.cancelCrossfade();
-        return;
-      }
+      if (!stillOwnsPreload()) return;
       final bassDuckAmount = preparation.incomingBassDuckAmount;
       if (bassDuckAmount != null && bassDuckAmount > 0 && bassDuckAmount < 1) {
         // Convert the planner's linear attenuation into a bounded dB overlay
@@ -73,11 +67,7 @@ extension MusicProviderMedia3 on MusicProvider {
           gainsDb: List<double>.filled(3, boundedDuckDb),
         );
       }
-      if (!stillOwnsPreload()) {
-        await session.cancelCrossfade();
-        await session.clearDeckEqOverlay(deck: 'standby');
-        return;
-      }
+      if (!stillOwnsPreload()) return;
       _media3DjTransitionPreparation = preparation;
       _preloadedNextSongId = next.id;
       await ResonateDiagnostics.record('media3_crossfade_preloaded', {

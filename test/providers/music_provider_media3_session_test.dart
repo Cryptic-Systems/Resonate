@@ -1285,8 +1285,15 @@ void main() {
       // A new explicit selection owns transport while the old standby load is
       // still blocked. Its late completion must not keep the preload lock set.
       expect(await provider.playSong(second, queue: <Song>[second, third]), isTrue);
+      final cancelCountAfterSelection =
+          session.calls.where((call) => call == 'cancelCrossfade').length;
       session.preloadNextGate!.complete();
       await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(
+        session.calls.where((call) => call == 'cancelCrossfade').length,
+        cancelCountAfterSelection,
+        reason: 'A stale preload continuation must not cancel a newer standby operation.',
+      );
 
       session.positionValue = const Duration(milliseconds: 170000);
       session.states.add(_state(
