@@ -451,6 +451,7 @@ class AutopilotController extends ChangeNotifier {
       final activeModes = modes;
       final intent = activeModes == null ? null : QueueIntent.forMode(activeModes.mode);
       List<Song> arranged;
+      List<Song> considered = const [];
       if (activeModes != null && intent != null) {
         // Search the whole mode-aware recommendation pool before selecting the
         // next runway. Choosing only the generic top 2/4 first can miss every
@@ -461,6 +462,7 @@ class AutopilotController extends ChangeNotifier {
                 !futureQueued.contains(item.song.id))
             .map((item) => item.song)
             .toList(growable: false);
+        considered = available;
         if (available.isEmpty) {
           _modeQueueBlockedReason = null;
           notifyListeners();
@@ -499,6 +501,7 @@ class AutopilotController extends ChangeNotifier {
         );
         if (!_requirePlaybackMutationPermission('queue_after_decision')) return;
         final biased = _applyModeBias(candidates);
+        considered = biased;
         arranged = await _arrangeForActiveMode(biased);
       }
       if (arranged.isNotEmpty) {
@@ -520,10 +523,10 @@ class AutopilotController extends ChangeNotifier {
             songId: arranged.first.id,
           ));
         }
-      } else if (biased.isNotEmpty) {
+      } else if (considered.isNotEmpty) {
         await ResonateDiagnostics.record('intelligence_queue_decision', {
           'mode': intelligence.autonomyLabel,
-          'candidates': biased.map((song) => song.id).toList(),
+          'candidates': considered.map((song) => song.id).toList(),
           'added': false,
           'djIntentBlocked': _modeQueueBlockedReason,
         });
