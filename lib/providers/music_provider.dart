@@ -203,6 +203,9 @@ class MusicProvider extends ChangeNotifier {
   set _queueIndex(int value) => _queueStore.index = value;
   bool get _shuffleEnabled => _queueStore.shuffleEnabled;
   set _shuffleEnabled(bool value) => _queueStore.shuffleEnabled = value;
+  // Keep algorithmically planned queues deterministic without changing the
+  // user's persisted global Shuffle preference.
+  bool _queueOrderLocked = false;
   /// Compatibility aliases — mode policy runtime lives in [ModePlaybackPolicyState].
   final ModePlaybackPolicyState _modePlaybackPolicy = ModePlaybackPolicyState();
   bool get _modeCrossfadeAllowed => _modePlaybackPolicy.crossfadeAllowed;
@@ -558,7 +561,8 @@ class MusicProvider extends ChangeNotifier {
   List<Song> get queue => _queueStore.unmodifiable;
   int get queueIndex => _queueStore.index;
   List<Song> get upcomingQueue => _queueStore.upcoming;
-  bool get shuffleEnabled => _queueStore.shuffleEnabled;
+  bool get shuffleEnabled => effectiveShuffleEnabled;
+  bool get queueOrderLocked => _queueOrderLocked;
   bool get modeCrossfadeAllowed => _modeCrossfadeAllowed;
   bool get modeShuffleAllowed => _modeShuffleAllowed;
   bool get modePreciseResume => _modePreciseResume;
@@ -590,7 +594,7 @@ class MusicProvider extends ChangeNotifier {
   bool get _djHandoffsLive =>
       _modeCrossfadeAllowed && _djHandoff.anyFeatureActive;
   bool get effectiveShuffleEnabled =>
-      _shuffleEnabled && _modeShuffleAllowed;
+      _shuffleEnabled && _modeShuffleAllowed && !_queueOrderLocked;
 
   PlaybackRepeatMode get repeatMode => _repeatMode;
   bool get canCrossfadeNext {
@@ -1065,6 +1069,8 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> setShuffleEnabled(bool enabled) async {
+    // An explicit user toggle overrides a temporary planned-queue lock.
+    _queueOrderLocked = false;
     _shuffleEnabled = enabled;
     if (enabled) {
       _queueStore.shuffleUpcoming();
@@ -1073,7 +1079,7 @@ class MusicProvider extends ChangeNotifier {
     await _persistQueue();
     if (_media3ProviderSession != null) {
       final session = (await _ensureMedia3ProviderSessionActive())!;
-      await session.setShuffleMode(enabled);
+      await session.setShuffleMode(effectiveShuffleEnabled);
       await session.synchronizeQueue(_queue);
     }
     notifyListeners();
@@ -1265,7 +1271,7 @@ class MusicProvider extends ChangeNotifier {
         PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
         PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
       });
-      await session.setShuffleMode(_shuffleEnabled && _modeShuffleAllowed);
+      await session.setShuffleMode(effectiveShuffleEnabled);
       return;
     }
     // A policy update must never pause an engine after a new handoff has
@@ -3888,7 +3894,28 @@ class MusicProvider extends ChangeNotifier {
     });
   }
 
-  Future<bool> enqueueSongs(List<Song> songs) async { await _visibility.load(); final additions = songs.where((s) => _visibility.isVisible(s.id) && s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList(); if (additions.isEmpty) return false; if (effectiveShuffleEnabled && additions.length > 1) additions.shuffle(math.Random()); _queue.addAll(additions); await _persistQueue(); await this._syncMedia3ProviderQueue(); notifyListeners(); return true; }
+  Future<bool> enqueueSongs(
+    List<Song> songs, {
+    bool preserveOrder = false,
+  }) async {
+    await _visibility.load();
+    final additions = songs
+        .where((song) =>
+            _visibility.isVisible(song.id) &&
+            song.filePath.trim().isNotEmpty &&
+            !_queue.any((queued) => queued.id == song.id))
+        .toList();
+    if (additions.isEmpty) return false;
+    if (preserveOrder) _queueOrderLocked = true;
+    if (effectiveShuffleEnabled && additions.length > 1) {
+      additions.shuffle(math.Random());
+    }
+    _queue.addAll(additions);
+    await _persistQueue();
+    await this._syncMedia3ProviderQueue();
+    notifyListeners();
+    return true;
+  }
   Future<bool> addToQueue(Song song) => enqueueSongs([song]);
   Future<bool> playNext(Song song) async { await _visibility.load(); if (!_visibility.isVisible(song.id) || song.filePath.trim().isEmpty || currentSong?.id == song.id || _queue.any((q) => q.id == song.id)) return false; final insertAt = (_queueIndex + 1).clamp(0, _queue.length).toInt(); _queue.insert(insertAt, song); await _persistQueue(); await this._syncMedia3ProviderQueue(); notifyListeners(); return true; }
   Future<bool> removeFromQueue(int index) async {

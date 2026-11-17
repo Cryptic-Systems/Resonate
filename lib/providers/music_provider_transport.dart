@@ -3,7 +3,21 @@ part of 'music_provider.dart';
 /// Serialized transport commands separated from the core provider body.
 /// Kept in the same Dart library to preserve access to private transport state.
 extension MusicProviderTransport on MusicProvider {
-Future<bool> playSong(Song song, {List<Song>? queue, int startIndex = 0, bool resumeIfPossible = false, int? resumeAtMs}) {
+Future<bool> playSong(
+    Song song, {
+    List<Song>? queue,
+    int startIndex = 0,
+    bool resumeIfPossible = false,
+    int? resumeAtMs,
+    bool preserveQueueOrder = false,
+  }) {
+    final queueMatchesCurrent = queue != null &&
+        queue.length == _queue.length &&
+        queue.asMap().entries.every((entry) =>
+            entry.value.id == _queue[entry.key].id &&
+            entry.value.filePath == _queue[entry.key].filePath);
+    _queueOrderLocked = preserveQueueOrder ||
+        (_queueOrderLocked && queueMatchesCurrent);
     final intentToken = _playbackIntentGate.issue();
     final wasXf = _crossfadeInProgress || _automaticCrossfadeInFlight;
     _cancelAutomaticPlaybackWork();
@@ -714,6 +728,7 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
       await _finishHistoryEvent();
       _queue = <Song>[];
       _queueIndex = 0;
+      _queueOrderLocked = false;
       if (_media3ProviderSession != null) {
         final session = (await _ensureMedia3ProviderSessionActive())!;
         await session.clearQueue();

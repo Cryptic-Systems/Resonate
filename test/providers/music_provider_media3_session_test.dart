@@ -841,6 +841,58 @@ void main() {
       await session.states.close();
     });
 
+    test('planned queue order overrides Shuffle temporarily without changing its saved preference', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      await provider.setShuffleEnabled(true);
+      final first = _song('planned-first');
+      final second = _song('planned-second');
+      final third = _song('planned-third');
+      final fourth = _song('planned-fourth');
+      final fifth = _song('planned-fifth');
+
+      expect(await provider.playSong(
+        first,
+        queue: <Song>[first, second, third],
+        preserveQueueOrder: true,
+      ), isTrue);
+      expect(provider.queue.map((song) => song.id).toList(),
+          [first.id, second.id, third.id]);
+      expect(provider.queueOrderLocked, isTrue);
+      expect(provider.shuffleEnabled, isFalse);
+      expect(session.shuffleModeSet, isFalse);
+
+      expect(await provider.enqueueSongs(
+        <Song>[fourth, fifth],
+        preserveOrder: true,
+      ), isTrue);
+      expect(provider.queue.map((song) => song.id).toList(),
+          [first.id, second.id, third.id, fourth.id, fifth.id]);
+      expect(session.shuffleModeSet, isFalse);
+
+      // Selecting another item in the same planned queue must not unlock it.
+      expect(await provider.playSong(
+        second,
+        queue: provider.queue,
+        startIndex: 1,
+      ), isTrue);
+      expect(provider.queue.map((song) => song.id).toList(),
+          [first.id, second.id, third.id, fourth.id, fifth.id]);
+      expect(provider.queueOrderLocked, isTrue);
+      expect(session.shuffleModeSet, isFalse);
+
+      // A direct user Shuffle toggle overrides the temporary lock.
+      await provider.setShuffleEnabled(true);
+      expect(provider.queueOrderLocked, isFalse);
+      expect(provider.shuffleEnabled, isTrue);
+      expect(session.shuffleModeSet, isTrue);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('clearing upcoming queue awaits persistence and synchronizes Media3', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);

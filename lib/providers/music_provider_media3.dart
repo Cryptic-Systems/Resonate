@@ -757,7 +757,7 @@ extension MusicProviderMedia3 on MusicProvider {
     if (_media3ProviderSession == null) return;
     final session = (await _ensureMedia3ProviderSessionActive())!;
     await session.synchronizeQueue(_queue);
-    await session.setShuffleMode(_shuffleEnabled);
+    await session.setShuffleMode(effectiveShuffleEnabled);
     await session.setRepeatMode(switch (_repeatMode) {
       PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
       PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
@@ -858,7 +858,7 @@ extension MusicProviderMedia3 on MusicProvider {
         PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
         PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
       });
-      await session.setShuffleMode(_shuffleEnabled);
+      await session.setShuffleMode(effectiveShuffleEnabled);
       await session.setVolume(1.0);
       await session.setGainFactors(
         trackLevel: selectedTrackLevel,
