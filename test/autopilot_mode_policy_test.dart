@@ -68,6 +68,36 @@ void main() {
     });
   });
 
+  test('declined candidate is suppressed only for the source track that prompted it', () {
+    expect(
+      AutopilotModePolicy.shouldSuppressDeclinedCandidate(
+        declinedSongId: 'candidate',
+        declinedSourceSongId: 'source-a',
+        candidateSongId: 'candidate',
+        sourceSongId: 'source-a',
+      ),
+      isTrue,
+    );
+    expect(
+      AutopilotModePolicy.shouldSuppressDeclinedCandidate(
+        declinedSongId: 'candidate',
+        declinedSourceSongId: 'source-a',
+        candidateSongId: 'candidate',
+        sourceSongId: 'source-b',
+      ),
+      isFalse,
+    );
+    expect(
+      AutopilotModePolicy.shouldSuppressDeclinedCandidate(
+        declinedSongId: 'candidate',
+        declinedSourceSongId: 'source-a',
+        candidateSongId: 'other',
+        sourceSongId: 'source-a',
+      ),
+      isFalse,
+    );
+  });
+
   test('Autopilot keeps automatic next enabled for every current mode', () {
     for (final mode in ResonateMode.values) {
       final policy = ModePolicyCatalog.policyFor(mode);
