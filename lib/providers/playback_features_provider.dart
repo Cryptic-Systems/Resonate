@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'music_provider.dart';
 import '../services/playback_engine_session.dart';
+import '../services/loudness_service.dart';
 
 class PlaybackFeaturesProvider extends ChangeNotifier {
   final MusicProvider music;
@@ -30,6 +31,9 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   // fade after cancellation or replacement has already cleared it.
   Future<void> _sleepFadeOperations = Future<void>.value();
   bool _disposed = false;
+  int _normalizationGeneration = 0;
+  final LoudnessService _loudnessService = LoudnessService();
+  late final Future<void> ready;
 
   void _notifyIfAlive() {
     if (!_disposed) notifyListeners();
@@ -52,7 +56,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
 
   PlaybackFeaturesProvider({required this.music}) {
     music.addListener(_syncEngineIfNeeded);
-    _load();
+    ready = _load();
   }
 
   bool get sleepTimerActive => sleepRemainingSeconds > 0;
@@ -62,9 +66,14 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     final songId = music.currentSong?.id;
     final engine = music.activeEngineLabel;
     if (songId == _lastSongId && engine == _lastEngine) return;
+    final trackChanged = songId != _lastSongId;
     _lastSongId = songId;
     _lastEngine = engine;
-    unawaited(applyToActiveEngine());
+    if (trackChanged) {
+      unawaited(_refreshNormalizationForCurrentSong());
+    } else {
+      unawaited(applyToActiveEngine());
+    }
   }
 
   Future<void> setSpeed(double value) async {
@@ -92,24 +101,71 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
 
   Future<void> setNormalizationEnabled(bool value) async {
     normalizationEnabled = value;
-    await _applyNormalization();
+    if (value) {
+      await _refreshNormalizationForCurrentSong();
+    } else {
+      ++_normalizationGeneration;
+      normalizedSongId = null;
+      _normalizationGainDb = 0.0;
+      await _applyNormalization();
+    }
     await _save();
     notifyListeners();
   }
 
   Future<void> setTargetLoudness(double value) async {
     targetLoudness = value.clamp(-20.0, -8.0).toDouble();
-    if (normalizationEnabled) await _applyNormalization();
+    if (normalizationEnabled) {
+      await _refreshNormalizationForCurrentSong(force: true);
+    }
     await _save();
     notifyListeners();
   }
 
   Future<void> applyTrackGain(String songId, double gainDb) async {
+    ++_normalizationGeneration;
     normalizedSongId = songId;
     _normalizationGainDb = gainDb.isFinite ? gainDb : 0.0;
     if (!normalizationEnabled) return;
     await _applyNormalization();
     notifyListeners();
+  }
+
+  Future<void> _refreshNormalizationForCurrentSong({bool force = false}) async {
+    final generation = ++_normalizationGeneration;
+    final song = music.currentSong;
+    if (!normalizationEnabled || song == null) {
+      normalizedSongId = null;
+      _normalizationGainDb = 0.0;
+      await _applyNormalization();
+      return;
+    }
+    bool cancelled() => _disposed ||
+        generation != _normalizationGeneration ||
+        !normalizationEnabled ||
+        music.currentSong?.id != song.id;
+    try {
+      var result = force ? null : await _loudnessService.getCached(song);
+      if (cancelled()) return;
+      if (result == null ||
+          (result.targetRmsDbfs - targetLoudness).abs() >= 0.001) {
+        result = await _loudnessService.scanSong(
+          song,
+          targetRmsDbfs: targetLoudness,
+          force: force,
+          isCancelled: cancelled,
+        );
+      }
+      if (cancelled() || result == null) return;
+      normalizedSongId = song.id;
+      _normalizationGainDb = result.gainDb;
+      await _applyNormalization();
+      if (!cancelled()) _notifyIfAlive();
+    } catch (error) {
+      if (!cancelled()) {
+        debugPrint('Track loudness normalization failed: $error');
+      }
+    }
   }
 
   Future<void> _applyNormalization() async {
@@ -239,6 +295,9 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       if (_disposed) return;
       _lastSongId = music.currentSong?.id;
       _lastEngine = music.activeEngineLabel;
+      if (normalizationEnabled && music.currentSong != null) {
+        unawaited(_refreshNormalizationForCurrentSong());
+      }
     } catch (e) {
       debugPrint('Playback settings load failed: $e');
     }
@@ -260,6 +319,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    ++_normalizationGeneration;
     music.removeListener(_syncEngineIfNeeded);
     // Invalidate any asynchronous tick already in flight. Without advancing
     // the generation, a tick awaiting a fade update could still pause playback

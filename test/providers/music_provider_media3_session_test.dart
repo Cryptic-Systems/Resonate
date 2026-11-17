@@ -8,6 +8,7 @@ import 'package:resonate/dj_engine/core/dj_types.dart';
 import 'package:resonate/playback/queue_store.dart';
 import 'package:resonate/providers/music_provider.dart';
 import 'package:resonate/providers/crossfade_provider.dart';
+import 'package:resonate/providers/playback_features_provider.dart';
 import 'package:resonate/services/audio_service_handler.dart';
 import 'package:resonate/services/playback_backend.dart';
 import 'package:resonate/services/playback_engine_session.dart';
@@ -328,6 +329,30 @@ void main() {
 
   group('MusicProvider Media3 session preparation', () {
     setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
+
+    test('applies cached volume normalization for the current Media3 track', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'normalization_enabled': true,
+        'target_loudness': -14.0,
+        'loudness_scan_v1_first': '1|-14.0|-10.0|-1.0|-6.0|1024|2026-11-17T00:00:00.000Z',
+      });
+      final session = _FakePlaybackSession();
+      final music = MusicProvider(media3ProviderSession: session);
+      await music.prepareMedia3ProviderSession();
+      final features = PlaybackFeaturesProvider(music: music);
+      await features.ready;
+      final first = _song('first');
+      expect(await music.playSong(first, queue: <Song>[first]), isTrue);
+      for (var attempt = 0; attempt < 20; attempt++) {
+        if ((session.gainFactors?['trackLevel'] ?? 1.0)! < 0.9) break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.gainFactors?['trackLevel'], closeTo(0.501187, 0.0001));
+      features.dispose();
+      await music.dispose();
+      await session.states.close();
+      await session.audioSessions.close();
+    });
 
     test('applies the selected track cached leveling trim before Media3 playback', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
