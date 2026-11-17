@@ -1197,8 +1197,16 @@ void main() {
       final crossfade = CrossfadeProvider(music: provider);
       await crossfade.ready;
       expect(provider.crossfadeEnabled, isTrue);
-      session.emitIncomingErrorOnCrossfade = true;
       session.positionValue = const Duration(milliseconds: 177600);
+      provider.onCrossfadeSettingsRestored();
+      for (var attempt = 0;
+          attempt < 100 && session.preloadedSong?.id != second.id;
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.preloadedSong?.id, second.id,
+          reason: 'The selected standby occurrence must be prepared before simulating its decode error.');
+      session.emitIncomingErrorOnCrossfade = true;
       session.states.add(_state(
         song: first,
         queueIndex: 0,
