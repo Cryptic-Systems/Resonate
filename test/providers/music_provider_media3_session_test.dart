@@ -259,6 +259,20 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   }
 
   @override
+  Future<void> setDeckEqOverlay({
+    required String deck,
+    required List<double> centersHz,
+    required List<double> gainsDb,
+  }) async {
+    calls.add('setDeckEqOverlay:$deck');
+  }
+
+  @override
+  Future<void> clearDeckEqOverlay({required String deck}) async {
+    calls.add('clearDeckEqOverlay:$deck');
+  }
+
+  @override
   Future<void> cancelCrossfade() async {
     calls.add('cancelCrossfade');
     await cancelCrossfadeGate?.future;
@@ -947,11 +961,14 @@ void main() {
       expect(await provider.playQueueIndex(2), isTrue);
 
       final cancelIndex = session.calls.indexOf('cancelCrossfade');
+      final overlayClearIndex = session.calls.indexOf('clearDeckEqOverlay:standby');
       final loadIndex = session.calls.lastIndexOf('loadQueue');
       expect(cancelIndex, greaterThanOrEqualTo(0),
           reason: 'Queue selection must invalidate a prepared native standby deck.');
-      expect(loadIndex, greaterThan(cancelIndex),
-          reason: 'The requested queue occurrence must load after cancellation.');
+      expect(overlayClearIndex, greaterThan(cancelIndex),
+          reason: 'Transport cancellation must clear temporary standby bass ducking.');
+      expect(loadIndex, greaterThan(overlayClearIndex),
+          reason: 'The requested queue occurrence must load after transition cleanup.');
       expect(provider.currentSong?.id, third.id);
       expect(provider.queueIndex, 2);
       expect(session.currentSong?.id, third.id);

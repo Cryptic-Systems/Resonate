@@ -4167,6 +4167,12 @@ class MusicProvider extends ChangeNotifier {
       unawaited(() async {
         try {
           await session.cancelCrossfade();
+          if (!stillOwnsCancellation()) return;
+          // Bass ducking is a temporary standby-deck overlay. Clear it on
+          // every user transport cancellation so it cannot leak into a later
+          // preload or become audible after the standby deck is promoted.
+          await session.clearDeckEqOverlay(deck: 'standby');
+          if (!stillOwnsCancellation()) return;
           await session.setDeckPlaybackSpeeds(
             activeSpeed: 1.0,
             standbySpeed: 1.0,
