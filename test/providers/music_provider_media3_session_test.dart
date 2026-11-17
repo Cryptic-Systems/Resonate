@@ -1252,6 +1252,63 @@ void main() {
       await session.states.close();
     });
 
+    test('late standby completion defers to the native queue instead of reloading playback', () async {
+      final session = _FakePlaybackSession()
+        ..preloadNextGate = Completer<void>();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('late-preload-out');
+      final second = _song('late-preload-in');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
+      await provider.setCrossfadeDuration(500);
+
+      session.positionValue = const Duration(milliseconds: 170000);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 100 && !session.calls.any((call) => call.startsWith('preloadNext:'));
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.calls.any((call) => call.startsWith('preloadNext:')), isTrue);
+
+      // Trigger the transition with two seconds remaining. The decoder finishes
+      // just before the two-second wait expires, leaving too little room for a
+      // validated fade. That must not take the hard queue-reload fallback.
+      session.positionValue = const Duration(milliseconds: 178000);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      Future<void>.delayed(const Duration(milliseconds: 1700), () {
+        session.positionValue = const Duration(milliseconds: 179000);
+        session.preloadNextGate!.complete();
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 2300));
+
+      expect(session.calls.where((call) => call == 'loadQueue').length, 1,
+          reason: 'A late standby deck must not reload the active queue.');
+      expect(session.calls.where((call) => call == 'play').length, 1,
+          reason: 'Natural queue completion must retain ownership of playback.');
+      expect(session.calls.where((call) => call.startsWith('crossfade:')), isEmpty);
+      expect(session.calls, contains('cancelCrossfade'));
+      expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+      expect(provider.currentSong?.id, first.id);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('manual transport invalidates a blocked preload without poisoning the next preload', () async {
       final session = _FakePlaybackSession()
         ..preloadNextGate = Completer<void>();
