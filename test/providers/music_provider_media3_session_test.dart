@@ -1191,6 +1191,12 @@ void main() {
       final second = _song('standby-error-in');
       await provider.prepareMedia3ProviderSession();
       expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
+      // Hydrate the persisted opt-in through the same provider lifecycle used
+      // by the app; SharedPreferences alone does not enable crossfade in
+      // MusicProvider.
+      final crossfade = CrossfadeProvider(music: provider);
+      await crossfade.ready;
+      expect(provider.crossfadeEnabled, isTrue);
       session.emitIncomingErrorOnCrossfade = true;
       session.positionValue = const Duration(milliseconds: 177600);
       session.states.add(_state(
@@ -1214,6 +1220,7 @@ void main() {
       expect(session.loadedIndex, 1,
           reason: 'A failed standby deck must fall back to the selected queue item without waiting for the transition timeout.');
       expect(session.calls, contains('play'));
+      crossfade.dispose();
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
       await session.audioSessions.close();
