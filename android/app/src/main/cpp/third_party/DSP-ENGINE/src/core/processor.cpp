@@ -113,6 +113,8 @@ struct DspEngine {
     sample_t tp_hist[kMaxChannels][4]{};
 
     uint32_t dither_state[kMaxChannels]{};
+    // Error feedback is kept in normalized sample units and persists across blocks.
+    sample_t dither_error[kMaxChannels]{};
 
     alignas(32) sample_t temp[kMaxChannels][kMaxBlock]{};
     alignas(32) sample_t work[kMaxBlock * kMaxChannels]{};
@@ -579,7 +581,7 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
         constexpr float kInv = 1.f / 32768.f;
         for (int c = 0; c < ch; ++c) {
             uint32_t s = eng->dither_state[c];
-            float err = 0.f;
+            float err = static_cast<float>(eng->dither_error[c]);
             for (int i = 0; i < frames; ++i) {
                 s ^= s << 13; s ^= s >> 17; s ^= s << 5;
                 float r1 = (s & 0xFFFFFF) / float(0x1000000) - 0.5f;
@@ -592,10 +594,19 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
                 float q = std::floor(scaled + 0.5f);
                 if (q > 32767.f) q = 32767.f;
                 if (q < -32768.f) q = -32768.f;
-                if (eng->dither_mode == DSP_DITHER_SHAPED) err = (scaled - q) * 0.5f;
+                // Quantization error is measured in 16-bit LSBs. Convert it
+                // back to normalized PCM units before feeding it into x on the
+                // next sample; mixing LSBs directly into normalized PCM creates
+                // near-full-scale noise (audible continuous static).
+                if (eng->dither_mode == DSP_DITHER_SHAPED) {
+                    err = (scaled - q) * 0.5f * kInv;
+                } else {
+                    err = 0.f;
+                }
                 eng->temp[c][i] = static_cast<sample_t>(q * kInv);
             }
             eng->dither_state[c] = s;
+            eng->dither_error[c] = static_cast<sample_t>(err);
         }
     }
 

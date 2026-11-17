@@ -19,7 +19,7 @@ class DjModeProvider extends ChangeNotifier {
     _idle = DjIdleAnalysisService(analysis: _analysis);
     _lastObservedPlaying = music.isPlaying;
     music.addListener(_onMusicChanged);
-    unawaited(_load());
+    ready = _load();
   }
 
   final MusicProvider music;
@@ -36,6 +36,7 @@ class DjModeProvider extends ChangeNotifier {
   DjAggressiveness _aggressiveness = DjAggressiveness.balanced;
   double _minConfidence = 0.40;
   bool _loaded = false;
+  late final Future<void> ready;
   bool _lastObservedPlaying = false;
   DateTime? _lastEventScanAt;
   Timer? _eventScanDebounce;

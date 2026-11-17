@@ -60,6 +60,16 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
     setState(() => _approving = true);
     MusicProvider? music;
     try {
+      final djMode = context.read<DjModeProvider>();
+      await djMode.ready;
+      if (!djMode.isEnabled) {
+        if (!mounted) return;
+        setState(() => _approving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('DJ Mode was turned off. Enable it again to start this mix.')),
+        );
+        return;
+      }
       final approved = widget.coordinator.approve(_mix);
       music = context.read<MusicProvider>();
       music!.setApprovedDjTransitions({

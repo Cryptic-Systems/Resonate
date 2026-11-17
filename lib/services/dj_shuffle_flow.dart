@@ -182,6 +182,14 @@ class DjShuffleFlow {
 
     try {
       final dj = context.read<DjModeProvider>();
+      await dj.ready;
+      if (!context.mounted) return;
+      if (!dj.isEnabled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enable DJ Mode before starting a DJ-arranged shuffle.')),
+        );
+        return;
+      }
       final database = DatabaseHelper();
       final history = await database.getRecentListeningEvents(limit: 500);
       final favoriteSongs = await database.getFavoriteSongs();

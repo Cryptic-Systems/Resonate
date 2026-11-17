@@ -90,6 +90,52 @@ static bool verify_midrange_boost(float frequency_hz, float probe_hz = -1.f) {
     return ok;
 }
 
+static bool verify_shaped_dither_noise_bounded() {
+    DspConfig config{};
+    config.sample_rate = 48000.f;
+    config.channels = 2;
+    config.max_block = 256;
+    config.enable_eq = 0;
+    config.enable_dvc = 0;
+    config.enable_limiter = 0;
+    config.enable_dither = 1;
+    config.dither_mode = DSP_DITHER_SHAPED;
+    config.limiter_threshold_db = -1.f;
+    config.limiter_release_ms = 50.f;
+    config.limiter_mode = DSP_LIMITER_FAST;
+    config.limiter_ceiling_db = -0.5f;
+    config.limiter_ceiling_low_db = -0.2f;
+    config.limiter_attack_ms = 0.1f;
+    config.limiter_lookahead_ms = 2.f;
+    config.crossover_hz = 120.f;
+    config.virtual_bass = 0.f;
+
+    DspEngine* engine = dsp_create(&config);
+    if (!engine) return false;
+    constexpr int frames = 256;
+    constexpr int blocks = 64;
+    std::vector<int16_t> pcm(frames * 2, 0);
+    int maxAbs = 0;
+    bool ok = true;
+    for (int block = 0; block < blocks; ++block) {
+        std::fill(pcm.begin(), pcm.end(), 0);
+        if (dsp_process_pcm16(engine, pcm.data(), frames) != DSP_OK) {
+            ok = false;
+            break;
+        }
+        for (const auto sample : pcm) {
+            const int magnitude = std::abs(static_cast<int>(sample));
+            if (magnitude > maxAbs) maxAbs = magnitude;
+        }
+    }
+    dsp_destroy(engine);
+    if (maxAbs > 2) {
+        std::fprintf(stderr, "Shaped dither generated excessive silence noise: peak=%d LSB\n", maxAbs);
+        ok = false;
+    }
+    return ok;
+}
+
 int main() {
     DspConfig config{};
     config.sample_rate = 48000.f;
@@ -124,7 +170,7 @@ int main() {
         bands[i].type = 0;
     }
 
-    bool ok = true;
+    bool ok = verify_shaped_dither_noise_bounded();
     ok &= dsp_eq_set_bands(engine, bands, DSP_EQ_MAX_BANDS) == DSP_OK;
     ok &= dsp_eq_band_count(engine) == DSP_EQ_MAX_BANDS;
     ok &= dsp_eq_enable(engine, 1) == DSP_OK;

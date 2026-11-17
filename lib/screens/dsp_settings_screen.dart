@@ -65,6 +65,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
       _settings = canonical;
       _bands = bands;
       _loading = false;
+      _statusFuture = AudioEffectsBridge.getLiveDspStatus();
     });
   }
 
@@ -146,6 +147,9 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
         enabled: current.ditherEnabled,
         mode: current.ditherMode,
       );
+      if (mounted) {
+        setState(() => _statusFuture = AudioEffectsBridge.getLiveDspStatus());
+      }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -241,21 +245,18 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
         final avgUs = (status?['avgUs'] as num?)?.toDouble() ?? 0;
         final overruns = (status?['overruns'] as num?)?.toInt() ?? 0;
         final maxUs = (status?['maxUs'] as num?)?.toDouble() ?? 0;
-        final linearGain = (status?['linearGain'] as num?)?.toDouble();
-        final dvcGainDb = linearGain == null
-            ? null
-            : linearGain <= 1.0e-6
-                ? -120.0
-                : 20.0 * math.log(linearGain) / math.ln10;
+        final dvcGainDb = (status?['dvcDb'] as num?)?.toDouble();
+        final virtualBass = (status?['virtualBass'] as num?)?.toDouble() ??
+            _settings?.virtualBassAmount;
         return _section('Live engine', 'Per-deck Media3 DSP status and PCM diagnostics. Media3 owns output routing and sample-rate conversion; standalone backend and SRC controls are not used in this live path.', [
           _statusRow('Active DSP decks', engines.toString() + ' / 2'),
           _statusRow('PCM blocks processed', calls.toString()),
           _statusRow('Average processing time', avgUs.toStringAsFixed(1) + ' μs'),
           _statusRow('Maximum processing time', maxUs.toStringAsFixed(1) + ' μs'),
           _statusRow('Realtime budget overruns', overruns.toString()),
-          _statusRow('Master / DVC gain', dvcGainDb == null ? '—' : dvcGainDb.toStringAsFixed(1) + ' dB'),
+          _statusRow('DVC gain', dvcGainDb == null ? '—' : dvcGainDb.toStringAsFixed(1) + ' dB'),
           _statusRow('Speaker protection', status?['speakerMode'] == true ? 'On' : 'Off'),
-          _statusRow('Virtual bass', ((status?['virtualBass'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)),
+          _statusRow('Virtual bass', virtualBass == null ? '—' : virtualBass.toStringAsFixed(2)),
           if (status?['gateTripped'] == true)
             const Padding(
               padding: EdgeInsets.only(top: 8),
