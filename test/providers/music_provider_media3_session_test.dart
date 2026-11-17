@@ -1288,11 +1288,10 @@ void main() {
         playWhenReady: true,
         position: session.positionValue,
       ));
-      Future<void>.delayed(const Duration(milliseconds: 1700), () {
-        session.positionValue = const Duration(milliseconds: 179000);
-        session.preloadNextGate!.complete();
-      });
-      await Future<void>.delayed(const Duration(milliseconds: 2300));
+      await Future<void>.delayed(const Duration(milliseconds: 1700));
+      session.positionValue = const Duration(milliseconds: 179000);
+      session.preloadNextGate!.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
 
       expect(session.calls.where((call) => call == 'loadQueue').length, 1,
           reason: 'A late standby deck must not reload the active queue.');
