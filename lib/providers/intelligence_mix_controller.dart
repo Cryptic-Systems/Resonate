@@ -231,8 +231,12 @@ class IntelligenceMixController extends ChangeNotifier {
     final mix = _currentMix;
     if (mix == null) return null;
     final assessment = await _service.evaluateMix(mix);
-    if (assessment != null) { _currentContinuity = assessment; notifyListeners(); }
-    return assessment;
+    if (assessment != null && _currentMix?.id == mix.id) {
+      _currentContinuity = assessment;
+      notifyListeners();
+      return assessment;
+    }
+    return null;
   }
 
   Future<List<Map<String, dynamic>>> recentMixContinuity() => _service.recentMixContinuity();
@@ -248,14 +252,17 @@ class IntelligenceMixController extends ChangeNotifier {
   }
 
   Future<void> _restoreLatestMix() async {
+    final restoreGeneration = _requestGuard.currentGeneration;
     try {
       final entries = await _memory.recent();
+      if (!_requestGuard.isLatest(restoreGeneration) || _currentMix != null) return;
       if (entries.isEmpty) return;
       final latest = entries.first;
       final rawSongIds = latest['songIds'] as List?;
       final songIds = rawSongIds?.whereType<String>().toList(growable: false);
       if (songIds == null || songIds.isEmpty) return;
       final allSongs = await _database.getAllSongs();
+      if (!_requestGuard.isLatest(restoreGeneration) || _currentMix != null) return;
       final byId = <String, Song>{for (final song in allSongs) song.id: song};
       final songs = <Song>[];
       final restoredIds = <String>{};
