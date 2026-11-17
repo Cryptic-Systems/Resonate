@@ -432,23 +432,29 @@ extension MusicProviderMedia3 on MusicProvider {
     } catch (error) {
       if (stillOwnsTransition()) {
         var fallbackStage = 'cancel_crossfade';
-        try {
-          await session.cancelCrossfade();
-          await session.clearDeckEqOverlay(deck: 'standby');
-          if (!stillOwnsTransition()) {
-            await ResonateDiagnostics.record('media3_crossfade_fallback_aborted', {
-              'stage': fallbackStage,
-              'reason': 'transport_or_pause_took_ownership',
+        Future<void> bestEffortCleanup(
+          String stage,
+          Future<void> Function() action,
+        ) async {
+          fallbackStage = stage;
+          try {
+            await action();
+          } catch (cleanupError) {
+            await ResonateDiagnostics.record('media3_crossfade_cleanup_failed', {
+              'stage': stage,
               'outgoingSongId': outgoingSong.id,
               'incomingSongId': nextSong.id,
+              'error': cleanupError.toString(),
             });
-            return;
           }
+        }
 
-          fallbackStage = 'reset_deck_speeds';
-          await session.setDeckPlaybackSpeeds(
-            activeSpeed: 1.0,
-            standbySpeed: 1.0,
+        try {
+          // Each cleanup is independent: a native overlay-clear failure must
+          // not prevent playback-rate reset or DJ effect restoration.
+          await bestEffortCleanup(
+            'cancel_crossfade',
+            () => session.cancelCrossfade(),
           );
           if (!stillOwnsTransition()) {
             await ResonateDiagnostics.record('media3_crossfade_fallback_aborted', {
@@ -460,8 +466,41 @@ extension MusicProviderMedia3 on MusicProvider {
             return;
           }
 
-          fallbackStage = 'restore_dj_effects';
-          await _restoreDjTransitionSfx();
+          await bestEffortCleanup(
+            'clear_standby_overlay',
+            () => session.clearDeckEqOverlay(deck: 'standby'),
+          );
+          if (!stillOwnsTransition()) {
+            await ResonateDiagnostics.record('media3_crossfade_fallback_aborted', {
+              'stage': fallbackStage,
+              'reason': 'transport_or_pause_took_ownership',
+              'outgoingSongId': outgoingSong.id,
+              'incomingSongId': nextSong.id,
+            });
+            return;
+          }
+
+          await bestEffortCleanup(
+            'reset_deck_speeds',
+            () => session.setDeckPlaybackSpeeds(
+              activeSpeed: 1.0,
+              standbySpeed: 1.0,
+            ),
+          );
+          if (!stillOwnsTransition()) {
+            await ResonateDiagnostics.record('media3_crossfade_fallback_aborted', {
+              'stage': fallbackStage,
+              'reason': 'transport_or_pause_took_ownership',
+              'outgoingSongId': outgoingSong.id,
+              'incomingSongId': nextSong.id,
+            });
+            return;
+          }
+
+          await bestEffortCleanup(
+            'restore_dj_effects',
+            () => _restoreDjTransitionSfx(),
+          );
           if (!stillOwnsTransition()) {
             await ResonateDiagnostics.record('media3_crossfade_fallback_aborted', {
               'stage': fallbackStage,
