@@ -46,10 +46,14 @@ class _AutopilotTakeoverCardState extends State<AutopilotTakeoverCard> {
           break;
         }
       }
-      pendingSong ??= intelligence.candidatePool
-          .where((item) => item.song.id == controller.pendingSongId)
-          .map((item) => item.song)
-          .firstOrNull;
+      if (pendingSong == null) {
+        for (final recommendation in intelligence.candidatePool) {
+          if (recommendation.song.id == controller.pendingSongId) {
+            pendingSong = recommendation.song;
+            break;
+          }
+        }
+      }
     }
 
     final scheme = Theme.of(context).colorScheme;
