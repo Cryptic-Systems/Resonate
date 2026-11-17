@@ -164,7 +164,7 @@ class IntelligenceMixController extends ChangeNotifier {
       _currentContinuity = null;
       return mix;
     } finally {
-      if (requestIsCurrent()) {
+      if (_requestGuard.isLatest(requestGeneration)) {
         _loading = false;
         notifyListeners();
       }
@@ -205,12 +205,7 @@ class IntelligenceMixController extends ChangeNotifier {
       _currentContinuity = continuity;
       return mix;
     } finally {
-      if (_requestGuard.owns(
-        requestGeneration: requestGeneration,
-        sourceSongId: sourceSongId,
-        currentSongId: music.currentSong?.id,
-        intelligenceEnabled: intelligence.isEnabled,
-      )) {
+      if (_requestGuard.isLatest(requestGeneration)) {
         _loading = false;
         notifyListeners();
       }
