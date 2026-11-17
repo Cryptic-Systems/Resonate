@@ -321,7 +321,13 @@ class AutopilotController extends ChangeNotifier {
         final top = pool.isEmpty ? null : pool.first.song;
         if (top != null && top.id != music.currentSong?.id) {
           final arranged = await _arrangeForActiveMode([top]);
+          if (evaluatedSourceSongId != music.currentSong?.id ||
+              evaluatedMode != modes?.mode) {
+            _scheduleEvaluate();
+            return;
+          }
           if (arranged.isNotEmpty) {
+            if (!_requirePlaybackMutationPermission('fallback_enqueue_after_plan')) return;
             await music.enqueueSongs(arranged, preserveOrder: true);
             nextSong = arranged.first;
           }
