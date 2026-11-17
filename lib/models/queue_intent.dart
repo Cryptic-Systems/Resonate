@@ -58,8 +58,8 @@ class QueueIntent {
     // These modes explicitly target music and can safely apply DJ constraints.
     ResonateMode.running || ResonateMode.workout => workout,
     ResonateMode.work => focus,
-    // Driving, sleep and motivation can include mixed content. They retain
-    // their mode policy until a content-type-aware mixed-media planner exists.
+    // The shared planner arranges music and preserves allowed spoken-content
+    // anchors for mixed-media modes.
     ResonateMode.driving => driving,
     ResonateMode.motivation => motivation,
     ResonateMode.sleep => sleep,

@@ -36,6 +36,8 @@ class AutopilotController extends ChangeNotifier {
   bool _transitionInFlight = false;
   String? _transitionSongId;
   String? _pendingSongId;
+  Song? _pendingSong;
+  String? _pendingSourceSongId;
   String? _declinedForSongId;
   bool _pendingTakeover = false;
   bool _consentLoaded = false;
@@ -62,6 +64,7 @@ class AutopilotController extends ChangeNotifier {
 
   bool get hasPendingTakeover => _pendingTakeover && _pendingSongId != null;
   String? get pendingSongId => _pendingSongId;
+  Song? get pendingSong => _pendingSong;
   bool get consentGranted => _consentGranted;
 
   /// Live explanation of the gates currently preventing or enabling takeover.
@@ -124,6 +127,8 @@ class AutopilotController extends ChangeNotifier {
     if (!value) {
       _pendingTakeover = false;
       _pendingSongId = null;
+      _pendingSong = null;
+      _pendingSourceSongId = null;
     }
     notifyListeners();
     await ResonateDiagnostics.record('intelligence_notification_action', {
@@ -140,7 +145,17 @@ class AutopilotController extends ChangeNotifier {
     if (value) await _evaluate();
   }
 
-  void _onPlaybackChanged() => _scheduleEvaluate();
+  void _onPlaybackChanged() {
+    if (_pendingTakeover &&
+        _pendingSourceSongId != music.currentSong?.id) {
+      _pendingTakeover = false;
+      _pendingSongId = null;
+      _pendingSong = null;
+      _pendingSourceSongId = null;
+      notifyListeners();
+    }
+    _scheduleEvaluate();
+  }
   void _onIntelligenceChanged() => _scheduleEvaluate();
 
   void _onModesChanged() {
@@ -149,6 +164,10 @@ class AutopilotController extends ChangeNotifier {
     if (m.mode != _lastObservedMode) {
       _lastObservedMode = m.mode;
       _modeQueueBlockedReason = null;
+      _pendingTakeover = false;
+      _pendingSongId = null;
+      _pendingSong = null;
+      _pendingSourceSongId = null;
       _scheduleEvaluate();
     }
     if (m.lastMotivationIntents.isEmpty) return;
@@ -188,6 +207,8 @@ class AutopilotController extends ChangeNotifier {
     _consentGranted = true;
     _pendingTakeover = false;
     _pendingSongId = null;
+    _pendingSong = null;
+    _pendingSourceSongId = null;
     await CompanionDecisionLog.record(
       source: 'autopilot',
       action: 'takeover_allowed',
@@ -206,6 +227,8 @@ class AutopilotController extends ChangeNotifier {
     final pending = _pendingSongId;
     _pendingTakeover = false;
     _pendingSongId = null;
+    _pendingSong = null;
+    _pendingSourceSongId = null;
     if (pending != null) _declinedForSongId = pending;
     await ResonateDiagnostics.record('intelligence_notification_action', {
       'action': 'rejected', 'songId': pending, 'mode': intelligence.autonomyLabel,
@@ -309,6 +332,8 @@ class AutopilotController extends ChangeNotifier {
       if (!_pendingTakeover) {
         _pendingTakeover = true;
         _pendingSongId = nextSong.id;
+        _pendingSong = nextSong;
+        _pendingSourceSongId = music.currentSong?.id;
         await ResonateDiagnostics.record('intelligence_notification_action', {
           'action': 'shown',
           'songId': nextSong.id,
@@ -325,6 +350,8 @@ class AutopilotController extends ChangeNotifier {
     // Consent granted – may call public play APIs only
     _pendingTakeover = false;
     _pendingSongId = null;
+    _pendingSong = null;
+    _pendingSourceSongId = null;
     _transitionSongId = music.currentSong?.id;
     _transitionInFlight = true;
 

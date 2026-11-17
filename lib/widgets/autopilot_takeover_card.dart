@@ -38,14 +38,18 @@ class _AutopilotTakeoverCardState extends State<AutopilotTakeoverCard> {
     if (!intelligence.isEnabled) return const SizedBox.shrink();
 
     final music = context.read<MusicProvider>();
-    Song? pendingSong;
-    if (controller.hasPendingTakeover) {
+    Song? pendingSong = controller.pendingSong;
+    if (pendingSong == null && controller.hasPendingTakeover) {
       for (final item in music.queue) {
         if (item.id == controller.pendingSongId) {
           pendingSong = item;
           break;
         }
       }
+      pendingSong ??= intelligence.candidatePool
+          .where((item) => item.song.id == controller.pendingSongId)
+          .map((item) => item.song)
+          .firstOrNull;
     }
 
     final scheme = Theme.of(context).colorScheme;
