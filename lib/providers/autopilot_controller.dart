@@ -39,6 +39,7 @@ class AutopilotController extends ChangeNotifier {
   Song? _pendingSong;
   String? _pendingSourceSongId;
   String? _declinedForSongId;
+  String? _declinedForSourceSongId;
   bool _pendingTakeover = false;
   bool _consentLoaded = false;
   bool _consentGranted = false;
@@ -146,14 +147,23 @@ class AutopilotController extends ChangeNotifier {
   }
 
   void _onPlaybackChanged() {
-    if (_pendingTakeover &&
-        _pendingSourceSongId != music.currentSong?.id) {
+    final currentSongId = music.currentSong?.id;
+    var changed = false;
+    if (_pendingTakeover && _pendingSourceSongId != currentSongId) {
       _pendingTakeover = false;
       _pendingSongId = null;
       _pendingSong = null;
       _pendingSourceSongId = null;
-      notifyListeners();
+      changed = true;
     }
+    // A decline is scoped to the track whose transition was being proposed.
+    // Reconsider the same candidate when a new source track starts.
+    if (_declinedForSourceSongId != null &&
+        _declinedForSourceSongId != currentSongId) {
+      _declinedForSongId = null;
+      _declinedForSourceSongId = null;
+    }
+    if (changed) notifyListeners();
     _scheduleEvaluate();
   }
   void _onIntelligenceChanged() => _scheduleEvaluate();
@@ -168,6 +178,8 @@ class AutopilotController extends ChangeNotifier {
       _pendingSongId = null;
       _pendingSong = null;
       _pendingSourceSongId = null;
+      _declinedForSongId = null;
+      _declinedForSourceSongId = null;
       // The pending prompt and mode-readiness explanation are both visible
       // state; refresh the UI immediately even if playback is outside the
       // transition window and the scheduled evaluation returns early.
@@ -229,11 +241,15 @@ class AutopilotController extends ChangeNotifier {
 
   Future<void> denyPendingTakeover() async {
     final pending = _pendingSongId;
+    final sourceSongId = _pendingSourceSongId;
     _pendingTakeover = false;
     _pendingSongId = null;
     _pendingSong = null;
     _pendingSourceSongId = null;
-    if (pending != null) _declinedForSongId = pending;
+    if (pending != null) {
+      _declinedForSongId = pending;
+      _declinedForSourceSongId = sourceSongId;
+    }
     await ResonateDiagnostics.record('intelligence_notification_action', {
       'action': 'rejected', 'songId': pending, 'mode': intelligence.autonomyLabel,
     });
@@ -348,7 +364,8 @@ class AutopilotController extends ChangeNotifier {
     // Phase 5 consent gate: no play APIs without consent (forceTransition only
     // after allowPendingTakeover which sets _consentGranted = true).
     if (!_consentGranted) {
-      if (_declinedForSongId == nextSong.id) return;
+      if (_declinedForSongId == nextSong.id &&
+          _declinedForSourceSongId == evaluatedSourceSongId) return;
       if (!_pendingTakeover) {
         await ResonateDiagnostics.record('intelligence_notification_action', {
           'action': 'shown',
