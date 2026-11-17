@@ -35,7 +35,7 @@ DjTempoStretchPlan? _safeProfileTempoStretch(
   return computeTempoStretch(
     bpmA: bpmA,
     bpmB: bpmB,
-    maxStretchPercent: maxStretchPercent.clamp(3, 6),
+    maxStretchPercent: maxStretchPercent.clamp(3, 6).toInt(),
   );
 }
 
