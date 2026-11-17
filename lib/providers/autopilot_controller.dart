@@ -74,7 +74,7 @@ class AutopilotController extends ChangeNotifier {
     final current = music.currentSong;
     final duration = music.currentDuration;
     final remaining = duration == null ? null : duration - music.currentPosition;
-    final hasCandidate = intelligence.recommendations.any((recommendation) =>
+    final hasCandidate = _activeRecommendationPool.any((recommendation) =>
         recommendation.song.id != current?.id &&
         recommendation.confidence >= _lastConfidenceThreshold);
     return AutopilotModePolicy.readinessMessage(
