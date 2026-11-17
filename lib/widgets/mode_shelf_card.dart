@@ -1,13 +1,10 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../modes/integration/resonate_mode_ports.dart';
 import '../modes/models/resonate_mode.dart';
-import '../modes/models/media_type.dart';
-import '../modes/models/mode_media_item.dart';
-import '../models/queue_intent.dart';
 import '../services/mode_aware_queue_planner.dart';
+import '../models/queue_plan.dart';
 
 import '../modes/providers/mode_provider.dart';
 import '../modes/screens/modes_screen.dart';

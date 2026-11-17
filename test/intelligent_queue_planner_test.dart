@@ -13,7 +13,8 @@ Song _song(String id) => Song(
 );
 
 DjTrackProfile _profile(String id, {required double bpm,
-    required double energy, int key = 0, double confidence = 0.9}) =>
+    required double energy, int key = 0, double confidence = 0.9,
+    bool includeEnergy = true}) =>
   DjTrackProfile(
     songId: id, durationMs: 180000,
     beatGrid: DjBeatGrid(bpm: bpm, confidence: confidence,
@@ -21,11 +22,11 @@ DjTrackProfile _profile(String id, {required double bpm,
       downbeatMs: const [120], downbeatConfidence: confidence,
       barConfidence: confidence, phraseConfidence: confidence),
     keyRoot: key, keyMode: 'minor', keyConfidence: confidence,
-    energyCurve: [
+    energyCurve: includeEnergy ? [
       DjEnergyPoint(timeMs: 0, value: energy),
       DjEnergyPoint(timeMs: 90000, value: energy),
       DjEnergyPoint(timeMs: 175000, value: energy),
-    ],
+    ] : const [],
     analysisConfidence: confidence, analysisVersion: 7,
   );
 
@@ -64,6 +65,19 @@ void main() {
       expect(plan.songs, isEmpty);
       expect(plan.status, QueuePlanStatus.insufficientAnalysis);
       expect(plan.reason, contains('not replaced with ordinary shuffle'));
+    });
+
+
+    test('coverage requires every analysis signal demanded by the intent', () {
+      final plan = planner.planWithProfiles([_song('bpm-only')],
+        intent: QueueIntent.calmerMix,
+        profiles: {
+          'bpm-only': _profile('bpm-only', bpm: 88, energy: 0.2,
+            includeEnergy: false),
+        });
+      expect(plan.songs, isEmpty);
+      expect(plan.status, QueuePlanStatus.insufficientAnalysis);
+      expect(plan.analysisCoverage, 0);
     });
 
     test('analyzed tracks outside the requested profile are rejected', () {

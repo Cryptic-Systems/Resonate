@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -14,6 +12,7 @@ import '../providers/music_provider.dart';
 import '../providers/playlist_provider.dart';
 import '../services/mode_shelf_builder.dart';
 import '../services/mode_aware_queue_planner.dart';
+import '../models/queue_plan.dart';
 import '../services/playback_authority.dart';
 import '../ui/resonate_glass.dart';
 import '../widgets/mode_artwork_banner.dart';

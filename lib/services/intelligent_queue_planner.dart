@@ -62,7 +62,12 @@ class IntelligentQueuePlanner {
       final bpm = profile.hasTempo ? profile.beatGrid.bpm : null;
       final energy = _averageEnergy(profile);
       final hasKey = profile.hasKey && profile.keyConfidence >= 0.35;
-      if (bpm != null || energy != null || hasKey) analyzedCount++;
+      final hasRequiredAnalysis =
+          (!intent.requireBeatGrid || bpm != null) &&
+          (!intent.requireEnergy || energy != null);
+      if (hasRequiredAnalysis && (bpm != null || energy != null || hasKey)) {
+        analyzedCount++;
+      }
 
       if (intent.requireBeatGrid &&
           (bpm == null || (intent.minBpm != null && bpm < intent.minBpm!) ||
