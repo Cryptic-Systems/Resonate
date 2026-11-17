@@ -164,9 +164,70 @@ extension MusicProviderMedia3 on MusicProvider {
 
       final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
       final plannedDurationMs = preparation?.transitionDurationMs;
-      final hasApprovedCue = preparation?.outgoingStartPosition != null;
-      final configuredDurationMs = plannedDurationMs != null
-          ? plannedDurationMs.clamp(2000, 15000).toInt()
+      final approvedCueMs =
+          preparation?.outgoingStartPosition?.inMilliseconds;
+      var hasApprovedCue = false;
+
+      // A reviewed phrase cue is a time on the outgoing deck, not permission
+      // to start the fade immediately. Wait for that musical boundary while
+      // playback continues. If it has already passed or cannot be reached in
+      // a bounded window, discard phrase timing and use the ordinary safe fade.
+      if (approvedCueMs != null) {
+        final initialPositionMs = session.position.inMilliseconds;
+        if (approvedCueMs >= initialPositionMs - 250) {
+          final cueWait = Stopwatch()..start();
+          while (session.position.inMilliseconds + 80 < approvedCueMs) {
+            if (!stillOwnsTransition() ||
+                !session.isPlaying ||
+                session.currentSong?.id != outgoingSong.id ||
+                session.queueIndex != _queueIndex ||
+                _crossfadeTargetSong?.id != nextSong.id ||
+                _crossfadeTargetIndex != nextIndex) {
+              await ResonateDiagnostics.recordDj(
+                stage: 'media3_phrase_cue',
+                outcome: 'cancelled_before_cue',
+                reason: 'playback_or_queue_ownership_changed',
+                songId: nextSong.id,
+                extra: {'cueMs': approvedCueMs},
+              );
+              return;
+            }
+            if (cueWait.elapsed >= const Duration(seconds: 20)) break;
+            await Future<void>.delayed(const Duration(milliseconds: 24));
+          }
+          hasApprovedCue =
+              session.position.inMilliseconds + 250 >= approvedCueMs;
+          await ResonateDiagnostics.recordDj(
+            stage: 'media3_phrase_cue',
+            outcome: hasApprovedCue ? 'reached' : 'wait_window_expired',
+            reason: hasApprovedCue
+                ? 'outgoing_phrase_boundary_reached'
+                : 'cue_not_reached_in_time',
+            songId: nextSong.id,
+            extra: {
+              'cueMs': approvedCueMs,
+              'positionMs': session.position.inMilliseconds,
+              'waitMs': cueWait.elapsedMilliseconds,
+            },
+          );
+        } else {
+          await ResonateDiagnostics.recordDj(
+            stage: 'media3_phrase_cue',
+            outcome: 'stale',
+            reason: 'outgoing_phrase_boundary_already_passed',
+            songId: nextSong.id,
+            extra: {
+              'cueMs': approvedCueMs,
+              'positionMs': initialPositionMs,
+            },
+          );
+        }
+      }
+
+      final effectivePlannedDurationMs =
+          hasApprovedCue ? plannedDurationMs : null;
+      final configuredDurationMs = effectivePlannedDurationMs != null
+          ? effectivePlannedDurationMs.clamp(2000, 15000).toInt()
           : (djActive
                   ? (_crossfadeDurationMs + _lastDjCrossfadeBiasMs).clamp(500, 6500)
                   : _crossfadeDurationMs.clamp(500, 12000))
