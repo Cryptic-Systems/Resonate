@@ -119,9 +119,9 @@ void main() {
       expect(QueueIntent.forMode(ResonateMode.running), QueueIntent.workout);
       expect(QueueIntent.forMode(ResonateMode.work), QueueIntent.focus);
       expect(QueueIntent.forMode(ResonateMode.running), QueueIntent.workout);
-      expect(QueueIntent.forMode(ResonateMode.sleep), isNull);
-      expect(QueueIntent.forMode(ResonateMode.motivation), isNull);
-      expect(QueueIntent.forMode(ResonateMode.driving), isNull);
+      expect(QueueIntent.forMode(ResonateMode.sleep), QueueIntent.sleep);
+      expect(QueueIntent.forMode(ResonateMode.motivation), QueueIntent.motivation);
+      expect(QueueIntent.forMode(ResonateMode.driving), QueueIntent.driving);
       expect(QueueIntent.forMode(ResonateMode.podcast), isNull);
       expect(QueueIntent.forMode(ResonateMode.audiobook), isNull);
     });
