@@ -566,6 +566,8 @@ extension MusicProviderDjHandoff on MusicProvider {
                 : null,
             transitionDurationMs:
                 approvedCueIsAhead ? executionDurationMs : null,
+            incomingBassDuckAmount: _djBassDuckAmount(execution),
+            incomingBassDuckDurationMs: _djBassDuckDuration(execution),
           );
         }
       }
@@ -779,6 +781,24 @@ extension MusicProviderDjHandoff on MusicProvider {
 }
 
 
+double? _djBassDuckAmount(DjExecutionPlan plan) {
+  for (final step in plan.steps) {
+    if (step.action == 'duck_incoming_bass') {
+      return (step.parameters['amount'] as num?)?.toDouble();
+    }
+  }
+  return null;
+}
+
+int? _djBassDuckDuration(DjExecutionPlan plan) {
+  for (final step in plan.steps) {
+    if (step.action == 'duck_incoming_bass') {
+      return (step.parameters['durationMs'] as num?)?.toInt();
+    }
+  }
+  return null;
+}
+
 /// Immutable output of DJ planning for a Media3 active/standby pair.
 class Media3DjTransitionPreparation {
   const Media3DjTransitionPreparation({
@@ -789,6 +809,8 @@ class Media3DjTransitionPreparation {
     this.transitionKind,
     this.outgoingStartPosition,
     this.transitionDurationMs,
+    this.incomingBassDuckAmount,
+    this.incomingBassDuckDurationMs,
   });
 
   final Duration incomingStartPosition;
@@ -800,4 +822,7 @@ class Media3DjTransitionPreparation {
   final Duration? outgoingStartPosition;
   /// Present only when a reviewed Suggestion Mix duration was accepted.
   final int? transitionDurationMs;
+  /// Temporary low-frequency attenuation requested by the execution plan.
+  final double? incomingBassDuckAmount;
+  final int? incomingBassDuckDurationMs;
 }

@@ -59,6 +59,23 @@ extension MusicProviderMedia3 on MusicProvider {
         await session.cancelCrossfade();
         return;
       }
+      final bassDuckAmount = preparation.incomingBassDuckAmount;
+      if (bassDuckAmount != null && bassDuckAmount > 0 && bassDuckAmount < 1) {
+        // Convert the planner's linear attenuation into a bounded dB overlay
+        // on the incoming deck only. It is removed halfway through the blend.
+        final duckDb = 20 * math.log(1 - bassDuckAmount) / math.ln10;
+        final boundedDuckDb = duckDb.clamp(-6.0, -1.0).toDouble();
+        await session.setDeckEqOverlay(
+          deck: 'standby',
+          centersHz: const [60.0, 90.0, 120.0],
+          gainsDb: List<double>.filled(3, boundedDuckDb),
+        );
+      }
+      if (!stillOwnsPreload()) {
+        await session.cancelCrossfade();
+        await session.clearDeckEqOverlay(deck: 'standby');
+        return;
+      }
       _media3DjTransitionPreparation = preparation;
       _preloadedNextSongId = next.id;
       await ResonateDiagnostics.record('media3_crossfade_preloaded', {
@@ -190,6 +207,11 @@ extension MusicProviderMedia3 on MusicProvider {
       await session.crossfade(duration: Duration(milliseconds: durationMs));
 
       var elapsedMs = 0;
+      var bassDuckCleared = preparation?.incomingBassDuckAmount == null;
+      final bassDuckReleaseMs = (preparation?.incomingBassDuckDurationMs ??
+              (durationMs ~/ 2))
+          .clamp(1, durationMs)
+          .toInt();
       var lastTick = DateTime.now();
       while (session.currentSong?.id != nextSong.id ||
           session.queueIndex != nextIndex) {
@@ -200,6 +222,10 @@ extension MusicProviderMedia3 on MusicProvider {
         }
         lastTick = now;
         if (!stillOwnsTransition()) return;
+        if (!bassDuckCleared && elapsedMs >= bassDuckReleaseMs) {
+          await session.clearDeckEqOverlay(deck: 'standby');
+          bassDuckCleared = true;
+        }
         if (_djSfxEngaged) {
           await _tickDjClubFxSweep(
             (elapsedMs / durationMs).clamp(0.0, 1.0).toDouble(),
@@ -253,6 +279,7 @@ extension MusicProviderMedia3 on MusicProvider {
         var fallbackStage = 'cancel_crossfade';
         try {
           await session.cancelCrossfade();
+          await session.clearDeckEqOverlay(deck: 'standby');
           if (!stillOwnsTransition()) {
             await ResonateDiagnostics.record('media3_crossfade_fallback_aborted', {
               'stage': fallbackStage,
