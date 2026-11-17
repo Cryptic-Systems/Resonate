@@ -205,7 +205,12 @@ class IntelligenceMixController extends ChangeNotifier {
       _currentContinuity = continuity;
       return mix;
     } finally {
-      if (requestIsCurrent()) {
+      if (_requestGuard.owns(
+        requestGeneration: requestGeneration,
+        sourceSongId: sourceSongId,
+        currentSongId: music.currentSong?.id,
+        intelligenceEnabled: intelligence.isEnabled,
+      )) {
         _loading = false;
         notifyListeners();
       }
