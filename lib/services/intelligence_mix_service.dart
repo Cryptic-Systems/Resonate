@@ -84,25 +84,27 @@ class IntelligenceMixService {
     return IntelligenceMixSegment(startMs: startMs, endMs: endMs, listens: listens + replayCount, preference: preference, replayCount: replayCount);
   }
 
-  Future<IntelligenceMix> generateMix({required List<IntelligenceRecommendation> recommendations, required Song? currentSong, required String sessionMode, int sessionSkipStreak = 0, int sessionCompletionStreak = 0, Map<String, int> sessionArtistCounts = const <String, int>{}, Duration targetDuration = const Duration(minutes: 60), String title = 'Your Resonate Mix'}) async {
+  Future<IntelligenceMix> generateMix({required List<IntelligenceRecommendation> recommendations, required Song? currentSong, required String sessionMode, int sessionSkipStreak = 0, int sessionCompletionStreak = 0, Map<String, int> sessionArtistCounts = const <String, int>{}, Duration targetDuration = const Duration(minutes: 60), String title = 'Your Resonate Mix', bool Function()? shouldContinue}) async {
     // Long-form behavior is useful even before a mix has a continuity history:
     // if the listener has repeatedly rewound parts of a long track, those
     // tracks deserve a small boost in newly generated mixes too.
     final longMixAware = await _applyLongMixSignals(recommendations, await _continuity.continuityPrior(), const <String>{});
-    return _generateFrom(recommendations: longMixAware, currentSong: currentSong, sessionMode: sessionMode, sessionSkipStreak: sessionSkipStreak, sessionCompletionStreak: sessionCompletionStreak, sessionArtistCounts: sessionArtistCounts, targetDuration: targetDuration, title: title, evolvingFrom: null, parentMixId: null, edition: 1);
+    return _generateFrom(recommendations: longMixAware, currentSong: currentSong, sessionMode: sessionMode, sessionSkipStreak: sessionSkipStreak, sessionCompletionStreak: sessionCompletionStreak, sessionArtistCounts: sessionArtistCounts, targetDuration: targetDuration, title: title, evolvingFrom: null, parentMixId: null, edition: 1, shouldContinue: shouldContinue);
   }
 
   /// Builds the next edition of an existing mix. Successful journeys keep a
   /// bounded amount of their proven tracks; weak journeys deliberately open
   /// space for new choices. The original mix is never mutated.
-  Future<IntelligenceMix> evolveMix({required IntelligenceMix previousMix, required List<IntelligenceRecommendation> recommendations, required Song? currentSong, required String sessionMode, int sessionSkipStreak = 0, int sessionCompletionStreak = 0, Map<String, int> sessionArtistCounts = const <String, int>{}, Duration? targetDuration}) async {
+  Future<IntelligenceMix> evolveMix({required IntelligenceMix previousMix, required List<IntelligenceRecommendation> recommendations, required Song? currentSong, required String sessionMode, int sessionSkipStreak = 0, int sessionCompletionStreak = 0, Map<String, int> sessionArtistCounts = const <String, int>{}, Duration? targetDuration, bool Function()? shouldContinue}) async {
     final assessment = await _continuity.evaluate(previousMix);
-    if (assessment != null) await _continuity.remember(assessment);
+    if (assessment != null && shouldContinue?.call() != false) {
+      await _continuity.remember(assessment);
+    }
     final score = (assessment?['score'] as num?)?.toDouble() ?? await _continuity.continuityPrior();
     final priorIds = previousMix.songs.map((song) => song.id).toSet();
     final adjusted = await _applyLongMixSignals(recommendations, score, priorIds);
     final title = score >= .65 ? '${previousMix.title} • Refined' : score <= .35 ? '${previousMix.title} • Reimagined' : '${previousMix.title} • Evolved';
-    return _generateFrom(recommendations: adjusted, currentSong: currentSong, sessionMode: sessionMode, sessionSkipStreak: sessionSkipStreak, sessionCompletionStreak: sessionCompletionStreak, sessionArtistCounts: sessionArtistCounts, targetDuration: targetDuration ?? previousMix.targetDuration, title: title, evolvingFrom: score, parentMixId: previousMix.id, edition: previousMix.edition + 1);
+    return _generateFrom(recommendations: adjusted, currentSong: currentSong, sessionMode: sessionMode, sessionSkipStreak: sessionSkipStreak, sessionCompletionStreak: sessionCompletionStreak, sessionArtistCounts: sessionArtistCounts, targetDuration: targetDuration ?? previousMix.targetDuration, title: title, evolvingFrom: score, parentMixId: previousMix.id, edition: previousMix.edition + 1, shouldContinue: shouldContinue);
   }
 
   Future<List<IntelligenceRecommendation>> _applyLongMixSignals(List<IntelligenceRecommendation> recommendations, double continuityScore, Set<String> priorIds) async {
@@ -124,7 +126,7 @@ class IntelligenceMixService {
     return adjusted;
   }
 
-  Future<IntelligenceMix> _generateFrom({required List<IntelligenceRecommendation> recommendations, required Song? currentSong, required String sessionMode, required int sessionSkipStreak, required int sessionCompletionStreak, required Map<String, int> sessionArtistCounts, required Duration targetDuration, required String title, required double? evolvingFrom, required String? parentMixId, required int edition}) async {
+  Future<IntelligenceMix> _generateFrom({required List<IntelligenceRecommendation> recommendations, required Song? currentSong, required String sessionMode, required int sessionSkipStreak, required int sessionCompletionStreak, required Map<String, int> sessionArtistCounts, required Duration targetDuration, required String title, required double? evolvingFrom, required String? parentMixId, required int edition, bool Function()? shouldContinue}) async {
     final songs = <Song>[];
     final selectedIds = <String>{if (currentSong != null) currentSong.id};
     final targetMs = targetDuration.inMilliseconds;
@@ -137,7 +139,7 @@ class IntelligenceMixService {
       final progress = targetMs <= 0 ? 1.0 : (totalMs / targetMs).clamp(0.0, 1.0).toDouble();
       final journeyRecommendations = _journeyAdjustedRecommendations(recommendations, progress, pacingReferenceMs);
       final next = await _decisionEngine.chooseSequence(recommendations: _continuityAdjustedRecommendations(journeyRecommendations, continuityPrior), queuedIds: selectedIds, currentSong: songs.isEmpty ? currentSong : songs.last, sessionMode: sessionMode, sessionSkipStreak: sessionSkipStreak, sessionCompletionStreak: sessionCompletionStreak, sessionArtistCounts: sessionArtistCounts, count: 1);
-      if (next.isEmpty) break;
+      if (shouldContinue?.call() == false || next.isEmpty) break;
       final song = next.first;
       if (selectedIds.contains(song.id)) break;
       songs.add(song); selectedIds.add(song.id); totalMs += song.duration.inMilliseconds;
@@ -145,7 +147,7 @@ class IntelligenceMixService {
     final reason = _mixReason(sessionMode: sessionMode, sessionSkipStreak: sessionSkipStreak, sessionCompletionStreak: sessionCompletionStreak, count: songs.length, continuityPrior: continuityPrior, evolvingFrom: evolvingFrom);
     final description = songs.isEmpty ? 'I need a little more listening evidence before I can build this mix.' : evolvingFrom == null ? '${songs.length} tracks shaped by your long-term memory, recent listening and previous mix journeys.' : '${songs.length} tracks refined from how you actually listened to the previous edition.';
     final mix = IntelligenceMix(id: 'mix_${DateTime.now().microsecondsSinceEpoch}', title: title, description: description, songs: List.unmodifiable(songs), targetDuration: targetDuration, createdAt: DateTime.now(), reason: reason, parentMixId: parentMixId, edition: edition, previousContinuityScore: evolvingFrom);
-    await _memory.remember(mix);
+    if (shouldContinue?.call() != false) await _memory.remember(mix);
     return mix;
   }
 
