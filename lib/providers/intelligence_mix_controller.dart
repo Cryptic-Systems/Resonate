@@ -113,6 +113,7 @@ class IntelligenceMixController extends ChangeNotifier {
         sessionArtistCounts: intelligence.sessionArtistCounts,
         targetDuration: Duration(minutes: minutes.clamp(15, 120)),
         title: title ?? _defaultTitle(),
+        shouldContinue: requestIsCurrent,
       );
       if (!requestIsCurrent()) return null;
 
@@ -197,9 +198,13 @@ class IntelligenceMixController extends ChangeNotifier {
         sessionSkipStreak: intelligence.sessionSkipStreak,
         sessionCompletionStreak: intelligence.sessionCompletionStreak,
         sessionArtistCounts: intelligence.sessionArtistCounts,
+        shouldContinue: requestIsCurrent,
       );
       if (!requestIsCurrent()) return null;
-      final continuity = await _service.evaluateMix(previous);
+      final continuity = await _service.evaluateMix(
+        previous,
+        shouldContinue: requestIsCurrent,
+      );
       if (!requestIsCurrent()) return null;
       _currentMix = mix;
       _currentContinuity = continuity;
@@ -230,7 +235,10 @@ class IntelligenceMixController extends ChangeNotifier {
   Future<Map<String, dynamic>?> evaluateCurrentMix() async {
     final mix = _currentMix;
     if (mix == null) return null;
-    final assessment = await _service.evaluateMix(mix);
+    final assessment = await _service.evaluateMix(
+      mix,
+      shouldContinue: () => _currentMix?.id == mix.id,
+    );
     if (assessment != null && _currentMix?.id == mix.id) {
       _currentContinuity = assessment;
       notifyListeners();
