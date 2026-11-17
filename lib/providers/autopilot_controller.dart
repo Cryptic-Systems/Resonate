@@ -329,15 +329,17 @@ class AutopilotController extends ChangeNotifier {
 
     if (nextSong == null) return;
 
+    // The planner and diagnostics both await I/O. A manual skip, mode change,
+    // or consent update during either await invalidates this decision.
+    final decisionSourceSongId = music.currentSong?.id;
+    final decisionMode = modes?.mode;
+    if (decisionSourceSongId == null) return;
+
     // Phase 5 consent gate: no play APIs without consent (forceTransition only
     // after allowPendingTakeover which sets _consentGranted = true).
     if (!_consentGranted) {
       if (_declinedForSongId == nextSong.id) return;
       if (!_pendingTakeover) {
-        _pendingTakeover = true;
-        _pendingSongId = nextSong.id;
-        _pendingSong = nextSong;
-        _pendingSourceSongId = music.currentSong?.id;
         await ResonateDiagnostics.record('intelligence_notification_action', {
           'action': 'shown',
           'songId': nextSong.id,
@@ -346,8 +348,29 @@ class AutopilotController extends ChangeNotifier {
           'reason': recommendation?.reason ?? 'graduated_autopilot',
           'consentGranted': false,
         });
+        // Do not surface an approval prompt for a track/mode that is no
+        // longer active, or after the user has granted/revoked control while
+        // diagnostics were being persisted.
+        if (decisionSourceSongId != music.currentSong?.id ||
+            decisionMode != modes?.mode ||
+            _consentGranted ||
+            !intelligence.isEnabled ||
+            !intelligence.isAutopilot) {
+          _scheduleEvaluate();
+          return;
+        }
+        _pendingTakeover = true;
+        _pendingSongId = nextSong.id;
+        _pendingSong = nextSong;
+        _pendingSourceSongId = decisionSourceSongId;
         notifyListeners();
       }
+      return;
+    }
+
+    if (decisionSourceSongId != music.currentSong?.id ||
+        decisionMode != modes?.mode) {
+      _scheduleEvaluate();
       return;
     }
 
