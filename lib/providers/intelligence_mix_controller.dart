@@ -29,6 +29,7 @@ class IntelligenceMixController extends ChangeNotifier {
   bool _loading = false;
   String? _analyzingSongId;
   String? _lastObservedSongId;
+  int _mixGeneration = 0;
 
   IntelligenceMixController({
     required this.music,
@@ -56,11 +57,20 @@ class IntelligenceMixController extends ChangeNotifier {
     String? title,
     QueueIntent? queueIntent,
   }) async {
+    final requestGeneration = ++_mixGeneration;
+    final sourceSongId = music.currentSong?.id;
+    bool requestIsCurrent() =>
+        requestGeneration == _mixGeneration &&
+        sourceSongId == music.currentSong?.id &&
+        intelligence.isEnabled;
+
     var sourceRecommendations = queueIntent == null
         ? intelligence.recommendations
         : intelligence.candidatePool;
     if (!intelligence.isEnabled || sourceRecommendations.isEmpty) {
       _lastQueuePlan = null;
+      _loading = false;
+      notifyListeners();
       return null;
     }
     _loading = true;
@@ -76,6 +86,7 @@ class IntelligenceMixController extends ChangeNotifier {
           sourceRecommendations.map((item) => item.song).toList(growable: false),
           intent: queueIntent,
         );
+        if (!requestIsCurrent()) return null;
         _lastQueuePlan = candidatePoolPlan;
         if (!candidatePoolPlan.isUsable) return null;
         final byId = <String, IntelligenceRecommendation>{
@@ -88,6 +99,7 @@ class IntelligenceMixController extends ChangeNotifier {
       }
       final minutes = targetDuration?.inMinutes ??
           await IntelligenceMixSettingsStore.targetMinutes();
+      if (!requestIsCurrent()) return null;
       final generated = await _service.generateMix(
         recommendations: sourceRecommendations,
         currentSong: music.currentSong,
@@ -98,6 +110,7 @@ class IntelligenceMixController extends ChangeNotifier {
         targetDuration: Duration(minutes: minutes.clamp(15, 120)),
         title: title ?? _defaultTitle(),
       );
+      if (!requestIsCurrent()) return null;
 
       var mix = generated;
       if (queueIntent != null && generated.songs.isNotEmpty) {
@@ -105,6 +118,7 @@ class IntelligenceMixController extends ChangeNotifier {
           generated.songs,
           intent: queueIntent,
         );
+        if (!requestIsCurrent()) return null;
         if (!finalPlan.isUsable) {
           _lastQueuePlan = finalPlan;
           return null;
@@ -141,12 +155,15 @@ class IntelligenceMixController extends ChangeNotifier {
           previousContinuityScore: generated.previousContinuityScore,
         );
       }
+      if (!requestIsCurrent()) return null;
       _currentMix = mix;
       _currentContinuity = null;
       return mix;
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (requestGeneration == _mixGeneration) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -202,6 +219,8 @@ class IntelligenceMixController extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> recentGeneratedMixes() => _service.recentGeneratedMixes();
 
   void clearMix() {
+    _mixGeneration++;
+    _loading = false;
     _currentMix = null;
     _currentContinuity = null;
     _lastQueuePlan = null;
@@ -257,6 +276,7 @@ class IntelligenceMixController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _mixGeneration++;
     music.removeListener(_observeMixPlayback);
     super.dispose();
   }
