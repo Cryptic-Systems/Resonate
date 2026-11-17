@@ -518,6 +518,12 @@ extension MusicProviderDjHandoff on MusicProvider {
               _djStretchSpeedIn = standbySpeed;
             }
           }
+          // The execution planner may extend or cap the candidate duration.
+          // Pass its validated completion boundary to Media3, not the raw
+          // candidate duration, so the actual fade matches the approved plan.
+          final executionDurationMs = execution.steps.isNotEmpty
+              ? execution.steps.last.atMs
+              : candidate.durationMs;
           final seekMs = candidate.incomingStartMs
               .clamp(0, incomingSong.duration.inMilliseconds > 0
                   ? incomingSong.duration.inMilliseconds
@@ -559,7 +565,7 @@ extension MusicProviderDjHandoff on MusicProvider {
                 ? Duration(milliseconds: candidate.outgoingStartMs)
                 : null,
             transitionDurationMs:
-                approvedCueIsAhead ? candidate.durationMs : null,
+                approvedCueIsAhead ? executionDurationMs : null,
           );
         }
       }
