@@ -364,8 +364,12 @@ class AutopilotController extends ChangeNotifier {
     // Phase 5 consent gate: no play APIs without consent (forceTransition only
     // after allowPendingTakeover which sets _consentGranted = true).
     if (!_consentGranted) {
-      if (_declinedForSongId == nextSong.id &&
-          _declinedForSourceSongId == evaluatedSourceSongId) return;
+      if (AutopilotModePolicy.shouldSuppressDeclinedCandidate(
+        declinedSongId: _declinedForSongId,
+        declinedSourceSongId: _declinedForSourceSongId,
+        candidateSongId: nextSong.id,
+        sourceSongId: evaluatedSourceSongId,
+      )) return;
       if (!_pendingTakeover) {
         await ResonateDiagnostics.record('intelligence_notification_action', {
           'action': 'shown',
