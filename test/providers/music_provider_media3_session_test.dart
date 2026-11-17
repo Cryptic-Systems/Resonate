@@ -342,9 +342,10 @@ void main() {
       final features = PlaybackFeaturesProvider(music: music);
       await features.ready;
       final first = _song('first');
-      expect(await music.playSong(first, queue: <Song>[first]), isTrue);
+      await music.playSong(first, queue: <Song>[first]);
+      expect(session.calls, contains('play'));
       for (var attempt = 0; attempt < 20; attempt++) {
-        if ((session.gainFactors?['trackLevel'] ?? 1.0)! < 0.9) break;
+        if ((session.gainFactors?['trackLevel'] ?? 1.0) < 0.9) break;
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
       expect(session.gainFactors?['trackLevel'], closeTo(0.501187, 0.0001));
@@ -365,9 +366,9 @@ void main() {
       await provider.prepareMedia3ProviderSession();
       final first = _song('first');
 
-      final started = await provider.playSong(first, queue: <Song>[first]);
+      await provider.playSong(first, queue: <Song>[first]);
 
-      expect(started, isTrue);
+      expect(session.calls, contains('play'));
       expect(session.gainFactors?['trackLevel'], closeTo(0.501187, 0.0001));
       expect(session.calls.indexOf('gainFactors'), lessThan(session.calls.indexOf('play')));
       await provider.dispose();
