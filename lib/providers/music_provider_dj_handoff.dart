@@ -570,6 +570,25 @@ extension MusicProviderDjHandoff on MusicProvider {
             incomingBassDuckDurationMs: _djBassDuckDuration(execution),
           );
         }
+
+        // A profile-backed V2 rejection is authoritative. Do not pass the
+        // same pair into the legacy planner, which may apply a less
+        // conservative tempo stretch and recreate slow-motion/crackle.
+        await ResonateDiagnostics.recordDj(
+          stage: 'media3_handoff_prepare',
+          outcome: 'safe_fallback',
+          reason: execution.reason,
+          songId: incomingSong.id,
+          extra: {
+            'planner': 'v2',
+            'candidateKind': candidate.kind.name,
+            'candidateScore': candidate.score,
+            'candidateConfidence': candidate.confidence,
+            'risks': candidate.risks.map((risk) => risk.name).toList(),
+            'legacyTempoFallbackSkipped': true,
+          },
+        );
+        return const Media3DjTransitionPreparation();
       }
     } catch (error) {
       await ResonateDiagnostics.recordDj(
