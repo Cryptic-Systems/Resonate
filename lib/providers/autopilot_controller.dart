@@ -461,6 +461,11 @@ class AutopilotController extends ChangeNotifier {
                 !futureQueued.contains(item.song.id))
             .map((item) => item.song)
             .toList(growable: false);
+        if (available.isEmpty) {
+          _modeQueueBlockedReason = null;
+          notifyListeners();
+          return;
+        }
         final result = await _modeQueuePlanner.arrange(
           modes: activeModes,
           tracks: available,
