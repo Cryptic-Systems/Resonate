@@ -428,14 +428,17 @@ class AutopilotController extends ChangeNotifier {
     });
 
     try {
-      bool decisionStillOwnsPlayback() =>
+      bool transitionStillAuthorized() =>
           !_authority.isStale(automaticGeneration) &&
           userGeneration == _authority.userGeneration &&
-          evaluatedSourceSongId == music.currentSong?.id &&
           evaluatedMode == modes?.mode &&
           intelligence.isEnabled &&
           intelligence.isAutopilot &&
           _requirePlaybackMutationPermission('transition_context');
+
+      bool decisionStillOwnsPlayback() =>
+          transitionStillAuthorized() &&
+          evaluatedSourceSongId == music.currentSong?.id;
 
       if (!decisionStillOwnsPlayback()) return;
 
@@ -455,10 +458,12 @@ class AutopilotController extends ChangeNotifier {
         final ms = await IntelligenceSettingsStore.autopilotCrossfadeMs();
         if (!decisionStillOwnsPlayback()) return;
         final ok = await music.performTrueCrossfade(milliseconds: ms, fadeType: 'ease_in_out');
-        // A user command during the crossfade owns the resulting playback;
-        // never issue an automatic fallback-next over that newer command.
-        if (!decisionStillOwnsPlayback()) return;
+        // The source track is expected to change after a successful fade, so
+        // validate authority/mode separately from the pre-transition source.
+        // A newer user command must still prevent any automatic fallback.
+        if (!transitionStillAuthorized()) return;
         if (!ok) {
+          if (evaluatedSourceSongId != music.currentSong?.id) return;
           if (!decisionStillOwnsPlayback()) return;
           await music.nextSong(source: 'intelligence');
         }
