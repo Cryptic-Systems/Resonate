@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/intelligence_recommendation.dart';
 import '../models/song.dart';
+import '../models/queue_plan.dart';
 import '../services/intelligence_decision_engine.dart';
 import '../services/intelligence_settings_store.dart';
 import '../services/resonate_diagnostics.dart';
@@ -13,6 +14,7 @@ import 'intelligence_provider.dart';
 import 'music_provider.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/models/motivation_intent.dart';
+import '../modes/models/resonate_mode.dart';
 import '../modes/services/mode_content_resolver.dart';
 import '../services/autopilot_mode_policy.dart';
 import '../services/mode_aware_queue_planner.dart';
@@ -42,12 +44,14 @@ class AutopilotController extends ChangeNotifier {
   bool _evaluationScheduled = false;
   double _lastConfidenceThreshold = .65;
   String? _modeQueueBlockedReason;
+  ResonateMode? _lastObservedMode;
 
   AutopilotController({
     required this.music,
     required this.intelligence,
     this.modes,
   }) {
+    _lastObservedMode = modes?.mode;
     music.addListener(_onPlaybackChanged);
     intelligence.addListener(_onIntelligenceChanged);
     modes?.addListener(_onModesChanged);
@@ -61,6 +65,7 @@ class AutopilotController extends ChangeNotifier {
 
   /// Live explanation of the gates currently preventing or enabling takeover.
   String get readinessMessage {
+    if (!_consentLoaded) return 'Loading saved Autopilot permission…';
     if (intelligence.isAutopilot && _consentGranted &&
         _modeQueueBlockedReason != null) {
       return _modeQueueBlockedReason!;
@@ -131,10 +136,14 @@ class AutopilotController extends ChangeNotifier {
   void _onIntelligenceChanged() => _scheduleEvaluate();
 
   void _onModesChanged() {
-    _modeQueueBlockedReason = null;
-    _scheduleEvaluate();
     final m = modes;
-    if (m == null || m.lastMotivationIntents.isEmpty) return;
+    if (m == null) return;
+    if (m.mode != _lastObservedMode) {
+      _lastObservedMode = m.mode;
+      _modeQueueBlockedReason = null;
+      _scheduleEvaluate();
+    }
+    if (m.lastMotivationIntents.isEmpty) return;
     final intent = m.lastMotivationIntents.last;
     if (intent.type != MotivationIntentType.musicFollowupSuggested) return;
     if (_lastMotivationFollowupAt == intent.at) return;
