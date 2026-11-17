@@ -101,6 +101,8 @@ struct NativeHandle {
     DspEngine* engine = nullptr;
     PendingSettings pending;
     uint32_t appliedSequence = 0; // Audio-thread owned.
+    Snapshot appliedSnapshot{};
+    bool hasAppliedSnapshot = false;
     const int sampleRate;
     const int channels;
     std::atomic<uint32_t> processCalls{0};
@@ -156,8 +158,20 @@ bool readSnapshot(const PendingSettings& p, Snapshot* out) {
 }
 
 // All upstream C API setters are invoked here, on the same thread that calls
-// dsp_process_pcm16. This protects the upstream implementation's EQ rebuild,
-// limiter state and speaker filter state from UI/audio data races.
+// dsp_process_pcm16. Apply only fields that actually changed. Reapplying the
+// complete snapshot for every slider update rebuilt the 31-band EQ and reset
+// limiter/speaker state even for unrelated controls, producing audible dropouts.
+bool sameEqBands(const Snapshot& a, const Snapshot& b) {
+    if (a.eqCount != b.eqCount) return false;
+    for (int i = 0; i < a.eqCount; ++i) {
+        if (a.bands[i].freq_hz != b.bands[i].freq_hz ||
+            a.bands[i].gain_db != b.bands[i].gain_db ||
+            a.bands[i].q != b.bands[i].q ||
+            a.bands[i].type != b.bands[i].type) return false;
+    }
+    return true;
+}
+
 void applyPending(NativeHandle* h) {
     const uint32_t pendingSequence = h->pending.sequence.load(std::memory_order_acquire);
     if ((pendingSequence & 1U) != 0U || pendingSequence == h->appliedSequence) return;
@@ -165,27 +179,61 @@ void applyPending(NativeHandle* h) {
     if (!readSnapshot(h->pending, &s) || s.sequence == h->appliedSequence) return;
     DspEngine* e = h->engine;
     if (!e) return;
-    dsp_set_processing_enabled(e, s.processingEnabled);
-    dsp_eq_enable(e, s.eqEnabled);
-    if (s.eqCount > 0) dsp_eq_set_bands(e, s.bands, s.eqCount);
-    else dsp_eq_set_bands(e, nullptr, 0);
-    dsp_dvc_enable(e, s.dvcEnabled);
-    dsp_dvc_set_smoothing(e, s.dvcSmoothing, s.dvcSmoothingMs);
-    dsp_dvc_set_gain_db(e, s.dvcDb);
-    dsp_preamp_set_linear(e, s.preampLinear);
-    dsp_speaker_set_enabled(e, s.speakerEnabled);
-    dsp_speaker_set_virtual_bass(e, s.virtualBass);
-    dsp_limiter_enable(e, s.limiterEnabled);
-    dsp_limiter_set_mode(e, static_cast<DspLimiterMode>(s.limiterMode));
-    dsp_limiter_set_threshold(e, s.limiterThreshold);
-    dsp_limiter_set_release(e, s.limiterRelease);
-    dsp_limiter_set_attack_ms(e, s.limiterAttack);
-    dsp_limiter_set_lookahead_ms(e, s.limiterLookahead);
-    dsp_limiter_set_knee_db(e, s.limiterKnee);
-    dsp_limiter_set_ceiling_bands(e, s.limiterHigh, s.limiterLow);
-    dsp_limiter_set_crossover_hz(e, s.crossover);
-    dsp_dither_enable(e, s.ditherEnabled);
-    dsp_dither_set_mode(e, static_cast<DspDitherMode>(s.ditherMode));
+    const Snapshot& old = h->appliedSnapshot;
+    const bool initial = !h->hasAppliedSnapshot;
+
+    if (initial || s.processingEnabled != old.processingEnabled)
+        dsp_set_processing_enabled(e, s.processingEnabled);
+
+    if (initial || s.eqEnabled != old.eqEnabled)
+        dsp_eq_enable(e, s.eqEnabled);
+    if (initial || !sameEqBands(s, old)) {
+        if (s.eqCount > 0) dsp_eq_set_bands(e, s.bands, s.eqCount);
+        else dsp_eq_set_bands(e, nullptr, 0);
+    }
+
+    if (initial || s.dvcEnabled != old.dvcEnabled)
+        dsp_dvc_enable(e, s.dvcEnabled);
+    if (initial || s.dvcSmoothing != old.dvcSmoothing ||
+        s.dvcSmoothingMs != old.dvcSmoothingMs)
+        dsp_dvc_set_smoothing(e, s.dvcSmoothing, s.dvcSmoothingMs);
+    if (initial || s.dvcDb != old.dvcDb)
+        dsp_dvc_set_gain_db(e, s.dvcDb);
+    if (initial || s.preampLinear != old.preampLinear)
+        dsp_preamp_set_linear(e, s.preampLinear);
+
+    if (initial || s.speakerEnabled != old.speakerEnabled)
+        dsp_speaker_set_enabled(e, s.speakerEnabled);
+    if (initial || s.virtualBass != old.virtualBass)
+        dsp_speaker_set_virtual_bass(e, s.virtualBass);
+
+    if (initial || s.limiterEnabled != old.limiterEnabled)
+        dsp_limiter_enable(e, s.limiterEnabled);
+    if (initial || s.limiterMode != old.limiterMode)
+        dsp_limiter_set_mode(e, static_cast<DspLimiterMode>(s.limiterMode));
+    if (initial || s.limiterThreshold != old.limiterThreshold)
+        dsp_limiter_set_threshold(e, s.limiterThreshold);
+    if (initial || s.limiterRelease != old.limiterRelease)
+        dsp_limiter_set_release(e, s.limiterRelease);
+    if (initial || s.limiterAttack != old.limiterAttack)
+        dsp_limiter_set_attack_ms(e, s.limiterAttack);
+    if (initial || s.limiterLookahead != old.limiterLookahead)
+        dsp_limiter_set_lookahead_ms(e, s.limiterLookahead);
+    if (initial || s.limiterKnee != old.limiterKnee)
+        dsp_limiter_set_knee_db(e, s.limiterKnee);
+    if (initial || s.limiterHigh != old.limiterHigh ||
+        s.limiterLow != old.limiterLow)
+        dsp_limiter_set_ceiling_bands(e, s.limiterHigh, s.limiterLow);
+    if (initial || s.crossover != old.crossover)
+        dsp_limiter_set_crossover_hz(e, s.crossover);
+
+    if (initial || s.ditherEnabled != old.ditherEnabled)
+        dsp_dither_enable(e, s.ditherEnabled);
+    if (initial || s.ditherMode != old.ditherMode)
+        dsp_dither_set_mode(e, static_cast<DspDitherMode>(s.ditherMode));
+
+    h->appliedSnapshot = s;
+    h->hasAppliedSnapshot = true;
     h->appliedSequence = s.sequence;
 }
 
