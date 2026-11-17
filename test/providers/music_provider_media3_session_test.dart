@@ -350,7 +350,7 @@ void main() {
       }
       expect(session.gainFactors?['trackLevel'], closeTo(0.501187, 0.0001));
       features.dispose();
-      await music.dispose();
+      music.dispose();
       await session.states.close();
       await session.audioSessions.close();
     });
@@ -371,7 +371,7 @@ void main() {
       expect(session.calls, contains('play'));
       expect(session.gainFactors?['trackLevel'], closeTo(0.501187, 0.0001));
       expect(session.calls.indexOf('gainFactors'), lessThan(session.calls.indexOf('play')));
-      await provider.dispose();
+      provider.dispose();
       await session.states.close();
       await session.audioSessions.close();
     });
