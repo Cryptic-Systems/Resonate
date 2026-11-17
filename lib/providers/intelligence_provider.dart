@@ -45,6 +45,8 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _refreshDebounce;
   bool _refreshInFlight = false;
   bool _refreshQueued = false;
+  bool _refreshAwaitingCaller = false;
+  Completer<void>? _refreshCompletion;
   int _recommendationRevision = 0;
   bool _disposed = false;
 
@@ -355,10 +357,20 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> refreshRecommendations({int limit = 8, bool notify = true}) async {
     if (!_enabled) { _recommendations = const []; _candidatePool = const []; if (notify && !_disposed) notifyListeners(); return; }
     if (_refreshInFlight) {
+      // A caller that needs recommendations for a playback decision must not
+      // continue with the previous snapshot while a newer refresh is pending.
+      // Wait for the active pass, then own a fresh pass for the latest context.
       _refreshQueued = true;
+      _refreshAwaitingCaller = true;
+      final activeRefresh = _refreshCompletion?.future;
+      if (activeRefresh != null) await activeRefresh;
+      if (_enabled && !_disposed) {
+        return refreshRecommendations(limit: limit, notify: notify);
+      }
       return;
     }
     _refreshInFlight = true;
+    _refreshCompletion = Completer<void>();
     final revision = _recommendationRevision;
     final sourceSongId = music.currentSong?.id;
     final sourceMode = _modes?.mode;
@@ -499,10 +511,20 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('$stack');
     } finally {
       _refreshInFlight = false;
-      if (_refreshQueued && _enabled && !_disposed) {
+      final completion = _refreshCompletion;
+      _refreshCompletion = null;
+      if (_refreshAwaitingCaller) {
+        // The waiting caller immediately starts the next pass; don't also
+        // schedule a debounced duplicate of the same refresh.
+        _refreshAwaitingCaller = false;
+        _refreshQueued = false;
+      } else if (_refreshQueued && _enabled && !_disposed) {
         _refreshQueued = false;
         _scheduleRefreshRecommendations(limit: limit);
+      } else {
+        _refreshQueued = false;
       }
+      if (completion != null && !completion.isCompleted) completion.complete();
     }
   }
 
