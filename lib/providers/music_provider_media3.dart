@@ -235,9 +235,27 @@ extension MusicProviderMedia3 on MusicProvider {
       final remainingMs = session.duration == null
           ? null
           : session.duration!.inMilliseconds - session.position.inMilliseconds;
-      if (remainingMs == null ||
-          remainingMs < 1200 ||
-          (!hasApprovedCue && remainingMs > configuredDurationMs + 4500)) {
+      if (remainingMs == null || remainingMs < 1200) {
+        throw StateError('Media3 crossfade trigger is outside the validated end window.');
+      }
+      if (!hasApprovedCue && remainingMs > configuredDurationMs + 4500) {
+        if (approvedCueMs != null) {
+          // A reviewed cue that is stale or not yet reached must never turn
+          // into an immediate queue advance. Leave the outgoing deck playing
+          // and let the normal end-window trigger retry with a safe crossfade.
+          await ResonateDiagnostics.recordDj(
+            stage: 'media3_phrase_cue',
+            outcome: 'deferred_to_safe_crossfade',
+            reason: 'phrase_boundary_not_executable_yet',
+            songId: nextSong.id,
+            extra: {
+              'cueMs': approvedCueMs,
+              'positionMs': session.position.inMilliseconds,
+              'remainingMs': remainingMs,
+            },
+          );
+          return;
+        }
         throw StateError('Media3 crossfade trigger is outside the validated end window.');
       }
       // Never let the outgoing deck reach ENDED before the native fade can
