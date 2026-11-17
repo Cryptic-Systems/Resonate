@@ -90,6 +90,22 @@ void main() {
       expect(plan.status, QueuePlanStatus.noEligibleTracks);
     });
 
+
+    test('keeps scanning when analyzed tracks fail but scope remains unanalyzed', () {
+      final plan = planner.planWithProfiles(
+        [_song('slow-a'), _song('slow-b'), _song('unknown')],
+        intent: QueueIntent.workout,
+        profiles: {
+          'slow-a': _profile('slow-a', bpm: 90, energy: 0.8),
+          'slow-b': _profile('slow-b', bpm: 95, energy: 0.75),
+        },
+      );
+      expect(plan.songs, isEmpty);
+      expect(plan.status, QueuePlanStatus.insufficientAnalysis);
+      expect(plan.analysisCoverage, closeTo(2 / 3, 0.0001));
+      expect(plan.reason, contains('still incomplete'));
+    });
+
     test('rejects a profile for a different track identity', () {
       final plan = planner.planWithProfiles([_song('track-a')],
         intent: QueueIntent.calmerMix,

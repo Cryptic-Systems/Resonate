@@ -92,7 +92,7 @@ class IntelligentQueuePlanner {
 
     final coverage = analyzedCount / songs.length;
     if (candidates.isEmpty) {
-      final insufficient = profiles.isEmpty || analyzedCount == 0;
+      final insufficient = analyzedCount < songs.length;
       return QueuePlan(
         intentId: intent.id, songs: const [],
         status: insufficient ? QueuePlanStatus.insufficientAnalysis
@@ -100,7 +100,7 @@ class IntelligentQueuePlanner {
         analysisCoverage: coverage, analyzedTrackCount: analyzedCount,
         eligibleTrackCount: 0, excludedSongIds: List.unmodifiable(excluded),
         reason: insufficient
-            ? 'DJ analysis is not ready. This request was not replaced with ordinary shuffle.'
+            ? 'DJ analysis is still incomplete for this scope. This request was not replaced with ordinary shuffle.'
             : 'No analyzed tracks meet this mix profile.',
       );
     }
