@@ -76,7 +76,14 @@ class CompanionCommandExecutor {
             message: 'I will downrank ${song.artist} for a while based on this session.');
         case CompanionAction.similarToCurrent:
           final current = music.currentSong;
+          final sourceSongId = current?.id;
           if (intelligence.recommendations.isEmpty) await intelligence.refreshRecommendations();
+          if (sourceSongId != music.currentSong?.id) {
+            return const CompanionCommandResult(
+              ok: false,
+              message: 'Playback changed while I was preparing that mix. Please try the command again.',
+            );
+          }
           final list = intelligence.recommendations.map((r) => r.song).toList();
           if (list.isEmpty) return const CompanionCommandResult(ok: false,
             message: 'No similar picks yet — play a bit more so local patterns can form.');
@@ -95,6 +102,7 @@ class CompanionCommandExecutor {
                 ? 'Started a local similar mix from your top recommendations.'
                 : 'More like "${current.title}" from local transitions and affinity.');
         case CompanionAction.createMix:
+          final sourceSongId = music.currentSong?.id;
           final title = switch (intent.mood) {
             'relaxing' => 'Calmer local mix',
             'energetic' => 'Higher-energy local mix',
@@ -110,12 +118,24 @@ class CompanionCommandExecutor {
             await IntelligenceSettingsStore.setExploration((cur - 10).clamp(0, 100));
           }
           await intelligence.refreshRecommendations();
+          if (sourceSongId != music.currentSong?.id) {
+            return const CompanionCommandResult(
+              ok: false,
+              message: 'Playback changed while I was preparing that mix. Please try the command again.',
+            );
+          }
           final queueIntent = switch (intent.mood) {
             'relaxing' => QueueIntent.calmerMix,
             'energetic' => QueueIntent.highEnergy,
             _ => null,
           };
           final mix = await mixes.generateMix(title: title, queueIntent: queueIntent);
+          if (sourceSongId != music.currentSong?.id) {
+            return const CompanionCommandResult(
+              ok: false,
+              message: 'Playback changed while I was preparing that mix. Please try the command again.',
+            );
+          }
           if (mix == null || mix.songs.isEmpty) {
             final plan = mixes.lastQueuePlan;
             if (queueIntent != null && plan != null) {
@@ -141,7 +161,14 @@ class CompanionCommandExecutor {
           return CompanionCommandResult(ok: true,
             message: 'Started "${mix.title}" (${mix.songs.length} tracks). ${mix.reason}$djNote');
         case CompanionAction.evolveMix:
+          final sourceSongId = music.currentSong?.id;
           final mix = await mixes.evolveCurrentMix();
+          if (sourceSongId != music.currentSong?.id) {
+            return const CompanionCommandResult(
+              ok: false,
+              message: 'Playback changed while I was evolving that mix. Please try again.',
+            );
+          }
           if (mix == null) return const CompanionCommandResult(ok: false,
             message: 'No active mix to evolve — create one first.');
           if (mix.songs.isNotEmpty) await music.playSong(
