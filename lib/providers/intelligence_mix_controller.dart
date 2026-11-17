@@ -7,6 +7,7 @@ import '../models/queue_plan.dart';
 import '../models/song.dart';
 import '../services/database_helper.dart';
 import '../services/intelligence_mix_memory.dart';
+import '../services/intelligence_mix_request_guard.dart';
 import '../services/intelligence_mix_service.dart';
 import '../services/intelligence_mix_settings_store.dart';
 import '../services/intelligent_queue_planner.dart';
@@ -29,7 +30,7 @@ class IntelligenceMixController extends ChangeNotifier {
   bool _loading = false;
   String? _analyzingSongId;
   String? _lastObservedSongId;
-  int _mixGeneration = 0;
+  final IntelligenceMixRequestGuard _requestGuard = IntelligenceMixRequestGuard();
 
   IntelligenceMixController({
     required this.music,
@@ -57,12 +58,15 @@ class IntelligenceMixController extends ChangeNotifier {
     String? title,
     QueueIntent? queueIntent,
   }) async {
-    final requestGeneration = ++_mixGeneration;
+    final requestGeneration = _requestGuard.begin();
     final sourceSongId = music.currentSong?.id;
     bool requestIsCurrent() =>
-        requestGeneration == _mixGeneration &&
-        sourceSongId == music.currentSong?.id &&
-        intelligence.isEnabled;
+        _requestGuard.owns(
+          requestGeneration: requestGeneration,
+          sourceSongId: sourceSongId,
+          currentSongId: music.currentSong?.id,
+          intelligenceEnabled: intelligence.isEnabled,
+        );
 
     var sourceRecommendations = queueIntent == null
         ? intelligence.recommendations
@@ -160,7 +164,7 @@ class IntelligenceMixController extends ChangeNotifier {
       _currentContinuity = null;
       return mix;
     } finally {
-      if (requestGeneration == _mixGeneration) {
+      if (requestIsCurrent()) {
         _loading = false;
         notifyListeners();
       }
@@ -170,10 +174,21 @@ class IntelligenceMixController extends ChangeNotifier {
   Future<IntelligenceMix?> evolveCurrentMix() async {
     final previous = _currentMix;
     if (previous == null || !intelligence.isEnabled || intelligence.recommendations.isEmpty) return null;
-    if (!await IntelligenceMixSettingsStore.autoEvolutionEnabled()) return null;
+    final requestGeneration = _requestGuard.begin();
+    final sourceSongId = music.currentSong?.id;
+    bool requestIsCurrent() =>
+        _requestGuard.owns(
+          requestGeneration: requestGeneration,
+          sourceSongId: sourceSongId,
+          currentSongId: music.currentSong?.id,
+          intelligenceEnabled: intelligence.isEnabled,
+        ) &&
+        _currentMix?.id == previous.id;
     _loading = true;
     notifyListeners();
     try {
+      if (!await IntelligenceMixSettingsStore.autoEvolutionEnabled() ||
+          !requestIsCurrent()) return null;
       final mix = await _service.evolveMix(
         previousMix: previous,
         recommendations: intelligence.recommendations,
@@ -183,12 +198,17 @@ class IntelligenceMixController extends ChangeNotifier {
         sessionCompletionStreak: intelligence.sessionCompletionStreak,
         sessionArtistCounts: intelligence.sessionArtistCounts,
       );
+      if (!requestIsCurrent()) return null;
+      final continuity = await _service.evaluateMix(previous);
+      if (!requestIsCurrent()) return null;
       _currentMix = mix;
-      _currentContinuity = await _service.evaluateMix(previous);
+      _currentContinuity = continuity;
       return mix;
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (requestIsCurrent()) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -219,7 +239,7 @@ class IntelligenceMixController extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> recentGeneratedMixes() => _service.recentGeneratedMixes();
 
   void clearMix() {
-    _mixGeneration++;
+    _requestGuard.invalidate();
     _loading = false;
     _currentMix = null;
     _currentContinuity = null;
@@ -276,7 +296,7 @@ class IntelligenceMixController extends ChangeNotifier {
 
   @override
   void dispose() {
-    _mixGeneration++;
+    _requestGuard.invalidate();
     music.removeListener(_observeMixPlayback);
     super.dispose();
   }
