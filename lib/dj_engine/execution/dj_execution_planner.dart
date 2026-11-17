@@ -84,7 +84,7 @@ class DjExecutionPlanner {
 
     final bassDuck = risks.contains(DjRiskType.bassCollision);
     final longerFade = risks.contains(DjRiskType.energyShock);
-    var durationLimit = 20000;
+    var durationLimit = 15000;
     if (outgoingAvailable != null && outgoingAvailable < durationLimit) {
       durationLimit = outgoingAvailable;
     }
@@ -94,9 +94,9 @@ class DjExecutionPlanner {
     final requestedDuration = longerFade
         ? (candidate.durationMs * 1.25).round()
         : candidate.durationMs;
-    // The planner owns a 20-second execution ceiling. A candidate may
-    // request a longer blend, but execution must cap it rather than passing
-    // an inverted clamp range (candidate duration > durationLimit).
+    // Media3 accepts crossfades up to 15 seconds. Keep the planner's execution
+    // timeline inside that native command contract even when a phrase blend
+    // or energy extension requests a longer duration.
     final effectiveDurationMs =
         requestedDuration.clamp(2000, durationLimit).toInt();
     final sfxTriggerMs = _phraseSnappedSfxMs(
@@ -327,7 +327,7 @@ class DjExecutionPlanner {
     required DjTrackProfile outgoing,
     required int outgoingStartMs,
   }) {
-    final dur = durationMs.clamp(500, 20000);
+    final dur = durationMs.clamp(500, 15000);
     final fraction = switch (kind) {
       DjTransitionKind.safeCrossfade => 0.22,
       DjTransitionKind.energyBridge => 0.28,
