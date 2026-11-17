@@ -168,6 +168,10 @@ class AutopilotController extends ChangeNotifier {
       _pendingSongId = null;
       _pendingSong = null;
       _pendingSourceSongId = null;
+      // The pending prompt and mode-readiness explanation are both visible
+      // state; refresh the UI immediately even if playback is outside the
+      // transition window and the scheduled evaluation returns early.
+      notifyListeners();
       _scheduleEvaluate();
     }
     if (m.lastMotivationIntents.isEmpty) return;
