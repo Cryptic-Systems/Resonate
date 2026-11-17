@@ -329,6 +329,27 @@ void main() {
   group('MusicProvider Media3 session preparation', () {
     setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
 
+    test('applies the selected track cached leveling trim before Media3 playback', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'audio_leveling_enabled_v1': true,
+        'audio_leveling_target_rms_dbfs_v1': -18.0,
+        'loudness_scan_v1_first': '1|-18.0|-12.0|-2.0|-6.0|1024|2026-11-17T00:00:00.000Z',
+      });
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      await provider.prepareMedia3ProviderSession();
+      final first = _song('first');
+
+      final started = await provider.playSong(first, queue: <Song>[first]);
+
+      expect(started, isTrue);
+      expect(session.gainFactors?['trackLevel'], closeTo(0.501187, 0.0001));
+      expect(session.calls.indexOf('gainFactors'), lessThan(session.calls.indexOf('play')));
+      await provider.dispose();
+      await session.states.close();
+      await session.audioSessions.close();
+    });
+
     test('restores saved speed and pitch before Media3 takes focus ownership', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'playback_speed': 1.35,

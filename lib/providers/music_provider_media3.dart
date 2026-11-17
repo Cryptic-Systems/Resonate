@@ -419,6 +419,9 @@ extension MusicProviderMedia3 on MusicProvider {
       _automaticCrossfadeInFlight = false;
       _transitionArmedAt = null;
       _reconcileMedia3ProviderSession();
+      // The shared Media3 master gain now belongs to the promoted track. Apply
+      // its cached leveling trim only after the native deck handoff commits.
+      await _refreshTrackLevelingFor(nextSong);
       unawaited(_startHistoryEvent(nextSong));
       _publishServiceState();
       notifyListeners();
@@ -817,6 +820,19 @@ extension MusicProviderMedia3 on MusicProvider {
       return false;
     }
     final selected = normalized[resolvedIndex];
+    // Media3 is the production path, so resolve its per-track RMS trim here
+    // rather than relying on the legacy playSong finalizer. The selected track
+    // must have its own gain before the first audible PCM block.
+    var selectedTrackLevel = 1.0;
+    if (_audioLevelingEnabled) {
+      final cachedLevel = await _loudnessService.getCached(selected);
+      if (!_playbackIntentGate.isCurrent(intentToken)) return false;
+      if (cachedLevel != null &&
+          (cachedLevel.targetRmsDbfs - _audioLevelingTargetRmsDbfs).abs() < 0.001) {
+        final safeGainDb = cachedLevel.gainDb.clamp(-12.0, 0.0).toDouble();
+        selectedTrackLevel = math.pow(10.0, safeGainDb / 20.0).toDouble();
+      }
+    }
     final nextQueue = effectiveShuffleEnabled && normalized.length > 1
         ? <Song>[
             selected,
@@ -831,6 +847,9 @@ extension MusicProviderMedia3 on MusicProvider {
     _userWantsPlaying = true;
     _queue = nextQueue;
     _queueIndex = nextIndex;
+    _trackLevelingScale = selectedTrackLevel;
+    _eqPreampScale =
+        (_eqPreampUserScale * selectedTrackLevel).clamp(0.0, 1.0).toDouble();
     try {
       await session.setAudioFocusHandling(true);
       await session.loadQueue(nextQueue, startIndex: nextIndex);
@@ -842,7 +861,7 @@ extension MusicProviderMedia3 on MusicProvider {
       await session.setShuffleMode(_shuffleEnabled);
       await session.setVolume(1.0);
       await session.setGainFactors(
-        trackLevel: _trackLevelingScale,
+        trackLevel: selectedTrackLevel,
         preamp: _eqPreampUserScale,
         sleepFade: _sleepFadeScale,
         focusDuck: _isDucked ? (_audioFocusLevel == 1 ? 0.18 : MusicProvider._duckLevel) : 1.0,
