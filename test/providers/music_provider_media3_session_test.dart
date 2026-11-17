@@ -1197,7 +1197,12 @@ void main() {
       final crossfade = CrossfadeProvider(music: provider);
       await crossfade.ready;
       expect(provider.crossfadeEnabled, isTrue);
-      session.positionValue = const Duration(milliseconds: 177600);
+      // Preload belongs to the lead-in window, not the fade-arm window.
+      // At 2.4s remaining the ordinary 500ms crossfade is already too late
+      // to request a fresh preload, so first place playback 10s from the end.
+      session.positionValue = const Duration(milliseconds: 170000);
+      expect(provider.canCrossfadeNext, isTrue);
+      expect(session.isPlaying, isTrue);
       provider.onCrossfadeSettingsRestored();
       for (var attempt = 0;
           attempt < 100 && session.preloadedSong?.id != second.id;
@@ -1205,7 +1210,11 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
       expect(session.preloadedSong?.id, second.id,
-          reason: 'The selected standby occurrence must be prepared before simulating its decode error.');
+          reason: 'The selected standby occurrence must be prepared in the preload lead-in window.');
+
+      // Now enter the native fade trigger window and report the simulated
+      // standby decode error from the crossfade command itself.
+      session.positionValue = const Duration(milliseconds: 178000);
       session.emitIncomingErrorOnCrossfade = true;
       session.states.add(_state(
         song: first,
