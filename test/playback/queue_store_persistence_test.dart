@@ -77,6 +77,7 @@ void main() {
       ..shuffleEnabled = true
       ..queueOrderLocked = true;
     await store.persist();
+    await store.persistShuffleFlag();
 
     final restored = QueueStore();
     await restored.loadShuffleFlag();
