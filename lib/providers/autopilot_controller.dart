@@ -413,21 +413,26 @@ class AutopilotController extends ChangeNotifier {
     _transitionSongId = music.currentSong?.id;
     _transitionInFlight = true;
 
-    // Capture user intent before any diagnostic await. Otherwise a manual
-    // command arriving during logging could be mistaken for the current intent.
+    // Capture user intent and transition identity before any diagnostic
+    // await. A manual command during logging must invalidate this decision.
     final userGeneration = _authority.userGeneration;
     final automaticGeneration = _authority.beginAutomatic('intelligence_transition');
-
-    await ResonateDiagnostics.record('intelligence_transition', {
-      'stage': 'started',
-      'mode': intelligence.autonomyLabel,
-      'fromSongId': music.currentSong?.id,
-      'toSongId': nextSong.id,
-      'confidence': recommendation?.confidence ?? 0,
-      'reason': recommendation?.reason ?? 'graduated_autopilot',
-    });
+    final transitionSourceSongId = evaluatedSourceSongId;
+    final transitionTargetSongId = nextSong.id;
 
     try {
+      // Keep every awaited operation inside this try/finally. If diagnostics
+      // storage fails, the in-flight latch must still be released so
+      // Autopilot can evaluate a later track instead of becoming stuck.
+      await ResonateDiagnostics.record('intelligence_transition', {
+        'stage': 'started',
+        'mode': intelligence.autonomyLabel,
+        'fromSongId': transitionSourceSongId,
+        'toSongId': transitionTargetSongId,
+        'confidence': recommendation?.confidence ?? 0,
+        'reason': recommendation?.reason ?? 'graduated_autopilot',
+      });
+
       bool transitionStillAuthorized() =>
           !_authority.isStale(automaticGeneration) &&
           userGeneration == _authority.userGeneration &&
@@ -475,13 +480,16 @@ class AutopilotController extends ChangeNotifier {
       await ResonateDiagnostics.record('intelligence_transition', {
         'stage': 'completed',
         'mode': intelligence.autonomyLabel,
-        'fromSongId': music.currentSong?.id,
+        'fromSongId': transitionSourceSongId,
+        'toSongId': transitionTargetSongId,
         'queueIndex': music.queueIndex,
       });
     } catch (e) {
       await ResonateDiagnostics.record('intelligence_transition', {
         'stage': 'failed',
         'mode': intelligence.autonomyLabel,
+        'fromSongId': transitionSourceSongId,
+        'toSongId': transitionTargetSongId,
         'error': e.toString(),
       });
       debugPrint('Autopilot transition failed: $e');
