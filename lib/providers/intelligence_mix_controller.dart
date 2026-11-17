@@ -55,7 +55,7 @@ class IntelligenceMixController extends ChangeNotifier {
     String? title,
     QueueIntent? queueIntent,
   }) async {
-    final sourceRecommendations = queueIntent == null
+    var sourceRecommendations = queueIntent == null
         ? intelligence.recommendations
         : intelligence.candidatePool;
     if (!intelligence.isEnabled || sourceRecommendations.isEmpty) {
@@ -66,6 +66,26 @@ class IntelligenceMixController extends ChangeNotifier {
     _lastQueuePlan = null;
     notifyListeners();
     try {
+      QueuePlan? candidatePoolPlan;
+      if (queueIntent != null) {
+        // Filter the broad Intelligence candidate pool before mix generation,
+        // so the decision engine cannot spend the entire mix budget on tracks
+        // that the requested DJ profile would later reject.
+        candidatePoolPlan = await _queuePlanner.plan(
+          sourceRecommendations.map((item) => item.song).toList(growable: false),
+          intent: queueIntent,
+        );
+        _lastQueuePlan = candidatePoolPlan;
+        if (!candidatePoolPlan.isUsable) return null;
+        final byId = <String, dynamic>{
+          for (final item in sourceRecommendations) item.song.id: item,
+        };
+        sourceRecommendations = candidatePoolPlan.songs
+            .map((song) => byId[song.id])
+            .whereType<IntelligenceRecommendation>()
+            .toList(growable: false);
+        if (sourceRecommendations.isEmpty) return null;
+      }
       final minutes = targetDuration?.inMinutes ??
           await IntelligenceMixSettingsStore.targetMinutes();
       final generated = await _service.generateMix(
@@ -81,14 +101,34 @@ class IntelligenceMixController extends ChangeNotifier {
 
       var mix = generated;
       if (queueIntent != null && generated.songs.isNotEmpty) {
-        final plan = await _queuePlanner.plan(generated.songs, intent: queueIntent);
+        final finalPlan = await _queuePlanner.plan(
+          generated.songs,
+          intent: queueIntent,
+        );
+        if (!finalPlan.isUsable) {
+          _lastQueuePlan = finalPlan;
+          return null;
+        }
+        final coveragePlan = candidatePoolPlan ?? finalPlan;
+        final plan = QueuePlan(
+          intentId: queueIntent.id,
+          songs: finalPlan.songs,
+          status: coveragePlan.status == QueuePlanStatus.partial ||
+                  finalPlan.status == QueuePlanStatus.partial
+              ? QueuePlanStatus.partial
+              : QueuePlanStatus.ready,
+          analysisCoverage: coveragePlan.analysisCoverage,
+          analyzedTrackCount: coveragePlan.analyzedTrackCount,
+          eligibleTrackCount: coveragePlan.eligibleTrackCount,
+          excludedSongIds: coveragePlan.excludedSongIds,
+          reason: coveragePlan.reason ?? finalPlan.reason,
+        );
         _lastQueuePlan = plan;
-        if (!plan.isUsable) return null;
         mix = IntelligenceMix(
           id: generated.id,
           title: generated.title,
           description: plan.status == QueuePlanStatus.partial
-              ? '${generated.description} DJ analysis matched ${plan.eligibleTrackCount} of ${generated.songs.length} tracks to this listening goal.'
+              ? '${generated.description} DJ analysis matched ${plan.eligibleTrackCount} of ${plan.analyzedTrackCount + plan.excludedSongIds.length} candidate tracks to this listening goal.'
               : generated.description,
           songs: plan.songs,
           targetDuration: generated.targetDuration,
