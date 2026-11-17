@@ -448,19 +448,54 @@ class AutopilotController extends ChangeNotifier {
       final futureQueued = music.queue.skip(music.queueIndex + 1).map((song) => song.id).toSet();
       final modePolicy = modes?.policy;
       final sequenceCount = AutopilotModePolicy.predictedSequenceCount(modePolicy);
-      final candidates = await _decisionEngine.chooseSequence(
-        recommendations: _activeRecommendationPool,
-        queuedIds: futureQueued,
-        currentSong: music.currentSong,
-        sessionMode: intelligence.sessionMode,
-        sessionSkipStreak: intelligence.sessionSkipStreak,
-        sessionCompletionStreak: intelligence.sessionCompletionStreak,
-        sessionArtistCounts: intelligence.sessionArtistCounts,
-        count: sequenceCount,
-      );
-      if (!_requirePlaybackMutationPermission('queue_after_decision')) return;
-      final biased = _applyModeBias(candidates);
-      final arranged = await _arrangeForActiveMode(biased);
+      final activeModes = modes;
+      final intent = activeModes == null ? null : QueueIntent.forMode(activeModes.mode);
+      List<Song> arranged;
+      if (activeModes != null && intent != null) {
+        // Search the whole mode-aware recommendation pool before selecting the
+        // next runway. Choosing only the generic top 2/4 first can miss every
+        // BPM-compatible track even when suitable analyzed tracks are available.
+        final available = _activeRecommendationPool
+            .where((item) =>
+                item.song.id != music.currentSong?.id &&
+                !futureQueued.contains(item.song.id))
+            .map((item) => item.song)
+            .toList(growable: false);
+        final result = await _modeQueuePlanner.arrange(
+          modes: activeModes,
+          tracks: available,
+        );
+        if (!_requirePlaybackMutationPermission('queue_after_decision')) return;
+        if (!result.isUsable) {
+          _modeQueueBlockedReason = result.message ??
+              'No analyzed tracks currently meet the active mode profile.';
+          notifyListeners();
+          await ResonateDiagnostics.record('intelligence_queue_decision', {
+            'mode': intelligence.autonomyLabel,
+            'candidates': available.map((song) => song.id).toList(),
+            'added': false,
+            'djIntentBlocked': _modeQueueBlockedReason,
+          });
+          return;
+        }
+        _modeQueueBlockedReason =
+            result.plan?.status == QueuePlanStatus.partial ? result.message : null;
+        arranged = result.songs.take(sequenceCount).toList(growable: false);
+      } else {
+        final candidates = await _decisionEngine.chooseSequence(
+          recommendations: _activeRecommendationPool,
+          queuedIds: futureQueued,
+          currentSong: music.currentSong,
+          sessionMode: intelligence.sessionMode,
+          sessionSkipStreak: intelligence.sessionSkipStreak,
+          sessionCompletionStreak: intelligence.sessionCompletionStreak,
+          sessionArtistCounts: intelligence.sessionArtistCounts,
+          count: sequenceCount,
+        );
+        if (!_requirePlaybackMutationPermission('queue_after_decision')) return;
+        final biased = _applyModeBias(candidates);
+        arranged = await _arrangeForActiveMode(biased);
+      }
       if (arranged.isNotEmpty) {
         if (!_requirePlaybackMutationPermission('queue_enqueue')) return;
         final added = await music.enqueueSongs(arranged);
