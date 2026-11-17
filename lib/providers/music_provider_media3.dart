@@ -866,23 +866,34 @@ extension MusicProviderMedia3 on MusicProvider {
         sleepFade: _sleepFadeScale,
         focusDuck: _isDucked ? (_audioFocusLevel == 1 ? 0.18 : MusicProvider._duckLevel) : 1.0,
       );
+      var requestedStartPosition = Duration.zero;
       if (resume && _resumeSongId == selected.id && _resumePositionMs > 0) {
         final durationMs = selected.duration.inMilliseconds;
         final safeMs = _resumePositionMs
             .clamp(0, durationMs > 0 ? durationMs : _resumePositionMs)
             .toInt();
-        await session.seek(Duration(milliseconds: safeMs));
-      } else {
-        await session.seek(Duration.zero);
+        requestedStartPosition = Duration(milliseconds: safeMs);
       }
+      await session.seek(requestedStartPosition);
       if (!_playbackIntentGate.isCurrent(intentToken)) return false;
       await session.play();
 
       final previousId = currentSong?.id;
-      _reconcileMedia3ProviderSession();
-      currentSong ??= selected;
-      currentDuration ??= session.duration ?? selected.duration;
-      currentPosition = session.position;
+      final nativeSelectionCommitted =
+          session.currentSong?.id == selected.id &&
+          session.currentSong?.filePath.trim() == selected.filePath.trim() &&
+          session.queueIndex == nextIndex;
+      if (nativeSelectionCommitted) {
+        _reconcileMedia3ProviderSession();
+      } else {
+        // loadQueue/play may complete before Media3 publishes its new timeline.
+        // Do not let the previous item's still-readable snapshot roll the
+        // just-accepted library selection back to the old player UI.
+        currentSong = selected;
+        _queueIndex = nextIndex;
+        currentDuration = selected.duration;
+        currentPosition = requestedStartPosition;
+      }
       isPlaying = session.isPlaying;
       _lastCompletionSongId = null;
       _crossfadeInProgress = false;
