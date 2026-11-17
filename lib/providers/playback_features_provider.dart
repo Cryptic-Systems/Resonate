@@ -144,6 +144,12 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
         generation != _normalizationGeneration ||
         !normalizationEnabled ||
         music.currentSong?.id != song.id;
+    // Never carry the previous track's trim into a newly selected track while
+    // its own cache is being resolved or its analysis is running.
+    normalizedSongId = null;
+    _normalizationGainDb = 0.0;
+    await _applyNormalization();
+    if (cancelled()) return;
     try {
       var result = force ? null : await _loudnessService.getCached(song);
       if (cancelled()) return;
