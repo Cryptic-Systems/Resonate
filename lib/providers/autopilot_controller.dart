@@ -15,6 +15,7 @@ import '../modes/providers/mode_provider.dart';
 import '../modes/models/motivation_intent.dart';
 import '../modes/services/mode_content_resolver.dart';
 import '../services/autopilot_mode_policy.dart';
+import '../services/mode_aware_queue_planner.dart';
 
 /// Bridges Intelligence decisions into the existing MusicProvider playback
 /// engine. MusicProvider remains authoritative for playback and queue state.
@@ -26,6 +27,7 @@ class AutopilotController extends ChangeNotifier {
   final ModeProvider? modes;
   final IntelligenceDecisionEngine _decisionEngine = const IntelligenceDecisionEngine();
   final ModeContentResolver _modeContentResolver = const ModeContentResolver();
+  final ModeAwareQueuePlanner _modeQueuePlanner = ModeAwareQueuePlanner();
   final PlaybackAuthority _authority = PlaybackAuthority.instance;
   bool _queueDecisionInFlight = false;
   bool _transitionInFlight = false;
@@ -39,6 +41,7 @@ class AutopilotController extends ChangeNotifier {
   DateTime? _lastMotivationFollowupAt;
   bool _evaluationScheduled = false;
   double _lastConfidenceThreshold = .65;
+  String? _modeQueueBlockedReason;
 
   AutopilotController({
     required this.music,
@@ -58,6 +61,10 @@ class AutopilotController extends ChangeNotifier {
 
   /// Live explanation of the gates currently preventing or enabling takeover.
   String get readinessMessage {
+    if (intelligence.isAutopilot && _consentGranted &&
+        _modeQueueBlockedReason != null) {
+      return _modeQueueBlockedReason!;
+    }
     final current = music.currentSong;
     final duration = music.currentDuration;
     final remaining = duration == null ? null : duration - music.currentPosition;
@@ -124,6 +131,8 @@ class AutopilotController extends ChangeNotifier {
   void _onIntelligenceChanged() => _scheduleEvaluate();
 
   void _onModesChanged() {
+    _modeQueueBlockedReason = null;
+    _scheduleEvaluate();
     final m = modes;
     if (m == null || m.lastMotivationIntents.isEmpty) return;
     final intent = m.lastMotivationIntents.last;
@@ -242,23 +251,33 @@ class AutopilotController extends ChangeNotifier {
     IntelligenceRecommendation? recommendation;
 
     if (candidates.isNotEmpty) {
-      recommendation = candidates.first;
-      nextSong = recommendation.song;
+      final arranged = await _arrangeForActiveMode(
+        candidates.map((item) => item.song).toList(growable: false),
+      );
+      if (arranged.isNotEmpty) {
+        nextSong = arranged.first;
+        recommendation = candidates.firstWhere(
+          (item) => item.song.id == nextSong!.id,
+        );
+      }
     } else if (intelligence.isAutopilotGraduated) {
-      // Prefer existing queue next. Phase 5: only enqueue with consent.
+      // Existing queued tracks are also checked against the active mode's
+      // DJ constraints before Autopilot is allowed to choose one.
       if (music.queueIndex < music.queue.length - 1) {
         final upcoming = music.queue.skip(music.queueIndex + 1).toList();
         final modeSafe = _applyModeBias(upcoming);
-        if (modeSafe.isNotEmpty) {
-          nextSong = modeSafe.first;
-        }
+        final arranged = await _arrangeForActiveMode(modeSafe);
+        if (arranged.isNotEmpty) nextSong = arranged.first;
       } else if (_mayMutatePlayback) {
         await _ensurePredictedQueue(threshold);
         if (!_requirePlaybackMutationPermission('fallback_enqueue')) return;
         final top = intelligence.anticipatedNext?.song;
         if (top != null && top.id != music.currentSong?.id) {
-          await music.enqueueSongs([top]);
-          nextSong = top;
+          final arranged = await _arrangeForActiveMode([top]);
+          if (arranged.isNotEmpty) {
+            await music.enqueueSongs(arranged);
+            nextSong = arranged.first;
+          }
         }
       }
     }
@@ -357,6 +376,36 @@ class AutopilotController extends ChangeNotifier {
   }
 
 
+  /// Applies the shared DJ planner after the mode's media-type filter.
+  /// A missing/insufficient beat-grid never silently degrades to a random pick.
+  Future<List<Song>> _arrangeForActiveMode(List<Song> songs) async {
+    final activeModes = modes;
+    if (activeModes == null || songs.isEmpty) return songs;
+    try {
+      final result = await _modeQueuePlanner.arrange(
+        modes: activeModes,
+        tracks: songs,
+      );
+      if (!result.usedDjPlanner) {
+        _modeQueueBlockedReason = null;
+        return result.songs;
+      }
+      if (!result.isUsable) {
+        _modeQueueBlockedReason = result.message ??
+            'DJ analysis is not ready for the active music mode.';
+        notifyListeners();
+        return const [];
+      }
+      _modeQueueBlockedReason =
+          result.plan?.status == QueuePlanStatus.partial ? result.message : null;
+      return result.songs;
+    } catch (error) {
+      _modeQueueBlockedReason = 'DJ queue planning could not complete: $error';
+      notifyListeners();
+      return const [];
+    }
+  }
+
   /// Resolves generated Autopilot candidates against the active Mode.
   /// An active Mode is strict for generated content: if nothing matches, we
   /// return an empty set rather than leaking an avoided media type.
@@ -393,24 +442,33 @@ class AutopilotController extends ChangeNotifier {
       );
       if (!_requirePlaybackMutationPermission('queue_after_decision')) return;
       final biased = _applyModeBias(candidates);
-      if (biased.isNotEmpty) {
+      final arranged = await _arrangeForActiveMode(biased);
+      if (arranged.isNotEmpty) {
         if (!_requirePlaybackMutationPermission('queue_enqueue')) return;
-        final added = await music.enqueueSongs(biased);
+        final added = await music.enqueueSongs(arranged);
         await ResonateDiagnostics.record('intelligence_queue_decision', {
           'mode': intelligence.autonomyLabel,
-          'candidates': biased.map((song) => song.id).toList(),
+          'candidates': arranged.map((song) => song.id).toList(),
           'added': added,
           'queueLength': music.queue.length,
           'queueIndex': music.queueIndex,
+          'djIntentBlocked': false,
         });
         if (added) {
           unawaited(CompanionDecisionLog.record(
             source: 'autopilot',
             action: 'enqueue',
-            detail: 'Queued predicted track(s) under your consent.',
-            songId: biased.first.id,
+            detail: 'Queued predicted track(s) under your consent and active mode constraints.',
+            songId: arranged.first.id,
           ));
         }
+      } else if (biased.isNotEmpty) {
+        await ResonateDiagnostics.record('intelligence_queue_decision', {
+          'mode': intelligence.autonomyLabel,
+          'candidates': biased.map((song) => song.id).toList(),
+          'added': false,
+          'djIntentBlocked': _modeQueueBlockedReason,
+        });
       }
     } finally {
       _queueDecisionInFlight = false;
