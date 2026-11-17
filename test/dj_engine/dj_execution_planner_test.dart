@@ -159,7 +159,7 @@ void main() {
     expect(plan.steps.last.atMs, 2000);
   });
 
-  test('caps an overlong candidate to the planner execution ceiling', () {
+  test('caps an overlong phrase blend to the native Media3 execution ceiling', () {
     const candidate = DjTransitionCandidate(
       kind: DjTransitionKind.safeCrossfade,
       outgoingStartMs: 200000,
@@ -178,10 +178,10 @@ void main() {
     expect(plan.fallback, isFalse);
     expect(plan.reason, 'planned');
     expect(plan.steps.last.action, 'complete_transition');
-    expect(plan.steps.last.atMs, 20000);
+    expect(plan.steps.last.atMs, 15000);
     final sfx = plan.steps.singleWhere((step) => step.action == 'trigger_sfx');
     expect(sfx.atMs, greaterThanOrEqualTo(150));
-    expect(sfx.atMs, lessThan(20000));
+    expect(sfx.atMs, lessThan(15000));
     expect(
       plan.steps.map((step) => step.atMs).toList(),
       orderedEquals(plan.steps.map((step) => step.atMs).toList()..sort()),
@@ -378,7 +378,7 @@ void main() {
     expect(sfx.atMs, lessThan(plan.steps.last.atMs));
     expect(sfx.parameters['kind'], 'phraseBlend');
     expect(sfx.parameters['snapped'], isTrue);
-    expect(plan.steps.last.atMs, lessThanOrEqualTo(20000));
+    expect(plan.steps.last.atMs, lessThanOrEqualTo(15000));
   });
 
   test('bounds bass duck action parameters when bass collision is present', () {
