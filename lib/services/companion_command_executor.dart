@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-
+import '../models/queue_intent.dart';
 import '../providers/intelligence_mix_controller.dart';
 import '../providers/intelligence_provider.dart';
 import '../providers/music_provider.dart';
@@ -37,15 +37,12 @@ class CompanionCommandExecutor {
   }
 
   Future<CompanionCommandResult> _execute(CompanionIntent intent) async {
-    if (!intelligence.isEnabled &&
-        intent.action != CompanionAction.explainSession) {
+    if (!intelligence.isEnabled && intent.action != CompanionAction.explainSession) {
       return const CompanionCommandResult(
         ok: false,
-        message:
-            'Intelligence is off. Enable it in Settings to use Ask Resonate actions.',
+        message: 'Intelligence is off. Enable it in Settings to use Ask Resonate actions.',
       );
     }
-
     try {
       switch (intent.action) {
         case CompanionAction.explainSession:
@@ -55,78 +52,43 @@ class CompanionCommandExecutor {
                 ? intelligence.sessionSummary
                 : 'Not enough listening in this session yet for a clear read.',
           );
-
         case CompanionAction.increaseExploration:
           final cur = await IntelligenceSettingsStore.exploration();
           final next = (cur + 15).clamp(0, 100);
           await IntelligenceSettingsStore.setExploration(next);
           await intelligence.refreshRecommendations();
-          return CompanionCommandResult(
-            ok: true,
-            message:
-                'Exploration up to $next%. I will lean toward less-played local picks.',
-          );
-
+          return CompanionCommandResult(ok: true,
+            message: 'Exploration up to $next%. I will lean toward less-played local picks.');
         case CompanionAction.decreaseExploration:
           final cur = await IntelligenceSettingsStore.exploration();
           final next = (cur - 15).clamp(0, 100);
           await IntelligenceSettingsStore.setExploration(next);
           await intelligence.refreshRecommendations();
-          return CompanionCommandResult(
-            ok: true,
-            message:
-                'Exploration down to $next%. I will stick closer to familiar patterns.',
-          );
-
+          return CompanionCommandResult(ok: true,
+            message: 'Exploration down to $next%. I will stick closer to familiar patterns.');
         case CompanionAction.avoidArtist:
           final song = music.currentSong;
-          if (song == null) {
-            return const CompanionCommandResult(
-              ok: false,
-              message:
-                  'Nothing is playing — open a track first, then avoid that artist.',
-            );
-          }
+          if (song == null) return const CompanionCommandResult(ok: false,
+            message: 'Nothing is playing — open a track first, then avoid that artist.');
           await intelligence.rateRecommendation(song.id, false);
           await intelligence.avoidArtist(song.artist);
-          return CompanionCommandResult(
-            ok: true,
-            message:
-                'I will downrank ${song.artist} for a while based on this session.',
-          );
-
+          return CompanionCommandResult(ok: true,
+            message: 'I will downrank ${song.artist} for a while based on this session.');
         case CompanionAction.similarToCurrent:
           final current = music.currentSong;
-          if (intelligence.recommendations.isEmpty) {
-            await intelligence.refreshRecommendations();
-          }
-          final list =
-              intelligence.recommendations.map((r) => r.song).toList();
-          if (list.isEmpty) {
-            return const CompanionCommandResult(
-              ok: false,
-              message:
-                  'No similar picks yet — play a bit more so local patterns can form.',
-            );
-          }
-          final preferred = current == null
-              ? list
-              : [
-                  ...list.where((s) => s.artist == current.artist),
-                  ...list.where((s) => s.artist != current.artist),
-                ];
-          await music.playSong(
-            preferred.first,
-            queue: preferred,
-            startIndex: 0,
-          );
-          return CompanionCommandResult(
-            ok: true,
+          if (intelligence.recommendations.isEmpty) await intelligence.refreshRecommendations();
+          final list = intelligence.recommendations.map((r) => r.song).toList();
+          if (list.isEmpty) return const CompanionCommandResult(ok: false,
+            message: 'No similar picks yet — play a bit more so local patterns can form.');
+          final preferred = current == null ? list : [
+            ...list.where((s) => s.artist == current.artist),
+            ...list.where((s) => s.artist != current.artist),
+          ];
+          await music.playSong(preferred.first, queue: preferred, startIndex: 0);
+          return CompanionCommandResult(ok: true,
             message: current == null
                 ? 'Started a local similar mix from your top recommendations.'
-                : 'More like "${current.title}" from local transitions and affinity.',
-          );
-
+                : 'More like "${current.title}" from local transitions and affinity.');
         case CompanionAction.createMix:
           final title = switch (intent.mood) {
             'relaxing' => 'Calmer local mix',
@@ -137,84 +99,59 @@ class CompanionCommandExecutor {
           };
           if (intent.mood == 'explore') {
             final cur = await IntelligenceSettingsStore.exploration();
-            await IntelligenceSettingsStore.setExploration(
-              (cur + 10).clamp(0, 100),
-            );
+            await IntelligenceSettingsStore.setExploration((cur + 10).clamp(0, 100));
           } else if (intent.mood == 'familiar' || intent.mood == 'relaxing') {
             final cur = await IntelligenceSettingsStore.exploration();
-            await IntelligenceSettingsStore.setExploration(
-              (cur - 10).clamp(0, 100),
-            );
+            await IntelligenceSettingsStore.setExploration((cur - 10).clamp(0, 100));
           }
           await intelligence.refreshRecommendations();
-          final mix = await mixes.generateMix(title: title);
+          final queueIntent = switch (intent.mood) {
+            'relaxing' => QueueIntent.calmerMix,
+            'energetic' => QueueIntent.highEnergy,
+            _ => null,
+          };
+          final mix = await mixes.generateMix(title: title, queueIntent: queueIntent);
           if (mix == null || mix.songs.isEmpty) {
-            return CompanionCommandResult(
-              ok: false,
-              message:
-                  'Could not build "$title" yet — need more library signals or recommendations.',
-            );
+            final plan = mixes.lastQueuePlan;
+            if (queueIntent != null && plan != null) {
+              final coverage = (plan.analysisCoverage * 100).round();
+              final scopeCount = plan.analyzedTrackCount + plan.excludedSongIds.length;
+              return CompanionCommandResult(
+                ok: false,
+                message: '${plan.reason ?? 'DJ analysis has not produced a usable queue yet.'} Analysis coverage: $coverage% ($scopeCount tracks). Try again after DJ analysis has had time to scan your library.',
+              );
+            }
+            return CompanionCommandResult(ok: false,
+              message: 'Could not build "$title" yet — need more library signals or recommendations.');
           }
-          await music.playSong(
-            mix.songs.first,
-            queue: mix.songs,
-            startIndex: 0,
-          );
-          return CompanionCommandResult(
-            ok: true,
-            message:
-                'Started "${mix.title}" (${mix.songs.length} tracks). ${mix.reason}',
-          );
-
+          await music.playSong(mix.songs.first, queue: mix.songs, startIndex: 0);
+          final plan = mixes.lastQueuePlan;
+          final djNote = queueIntent == null || plan == null ? '' :
+              ' DJ analysis matched ${plan.eligibleTrackCount} tracks; coverage ${(plan.analysisCoverage * 100).round()}%.';
+          return CompanionCommandResult(ok: true,
+            message: 'Started "${mix.title}" (${mix.songs.length} tracks). ${mix.reason}$djNote');
         case CompanionAction.evolveMix:
           final mix = await mixes.evolveCurrentMix();
-          if (mix == null) {
-            return const CompanionCommandResult(
-              ok: false,
-              message: 'No active mix to evolve — create one first.',
-            );
-          }
-          if (mix.songs.isNotEmpty) {
-            await music.playSong(
-              mix.songs.first,
-              queue: mix.songs,
-              startIndex: 0,
-            );
-          }
-          return CompanionCommandResult(
-            ok: true,
-            message: 'Evolved to "${mix.title}" (edition ${mix.edition}).',
-          );
-
+          if (mix == null) return const CompanionCommandResult(ok: false,
+            message: 'No active mix to evolve — create one first.');
+          if (mix.songs.isNotEmpty) await music.playSong(mix.songs.first, queue: mix.songs, startIndex: 0);
+          return CompanionCommandResult(ok: true,
+            message: 'Evolved to "${mix.title}" (edition ${mix.edition}).');
         case CompanionAction.playTopRecommendation:
           final recs = intelligence.recommendations;
-          if (recs.isEmpty) {
-            return const CompanionCommandResult(
-              ok: false,
-              message: 'No recommendations ready yet.',
-            );
-          }
+          if (recs.isEmpty) return const CompanionCommandResult(ok: false,
+            message: 'No recommendations ready yet.');
           final songs = recs.map((r) => r.song).toList();
           await music.playSong(songs.first, queue: songs, startIndex: 0);
-          return CompanionCommandResult(
-            ok: true,
-            message:
-                'Playing "${songs.first.title}" — ${recs.first.reason}',
-          );
-
+          return CompanionCommandResult(ok: true,
+            message: 'Playing "${songs.first.title}" — ${recs.first.reason}');
         case CompanionAction.unknown:
-          return const CompanionCommandResult(
-            ok: false,
-            message:
-                'Try a command below — e.g. more like this, calmer mix, or more adventurous.',
-          );
+          return const CompanionCommandResult(ok: false,
+            message: 'Try a command below — e.g. more like this, calmer mix, or more adventurous.');
       }
     } catch (e) {
       debugPrint('Companion command failed: $e');
-      return CompanionCommandResult(
-        ok: false,
-        message: 'Something went wrong: $e',
-      );
+      return CompanionCommandResult(ok: false, message: 'Something went wrong: $e');
     }
   }
 }
