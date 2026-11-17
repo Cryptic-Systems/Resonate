@@ -268,6 +268,10 @@ class MusicProvider extends ChangeNotifier {
   set _repeatSelfGeneration(int value) =>
       _crossfadeRuntime.repeatSelfGeneration = value;
   int _modeBoundaryGeneration = 0;
+  /// Invalidates a standby preload independently from transition ownership.
+  /// Old async preload completions must not leave the shared in-flight flag set
+  /// or clear a newer preload after manual transport takes ownership.
+  int _media3PreloadGeneration = 0;
   String? get _repeatSelfTargetSongId =>
       _crossfadeRuntime.repeatSelfTargetSongId;
   set _repeatSelfTargetSongId(String? value) =>
@@ -4144,6 +4148,8 @@ class MusicProvider extends ChangeNotifier {
     _userTransportEpoch++;
     final cancellationEpoch = _userTransportEpoch;
     _automaticTransitionGeneration++;
+    _media3PreloadGeneration++;
+    _crossfadePreloadInFlight = false;
     final cancellationGeneration = _automaticTransitionGeneration;
     bool stillOwnsCancellation() =>
         _userTransportEpoch == cancellationEpoch &&
@@ -4239,6 +4245,8 @@ class MusicProvider extends ChangeNotifier {
     // before releasing the flags so all stale continuations fail their guards.
     final invalidatedGeneration = _automaticTransitionGeneration;
     _automaticTransitionGeneration++;
+    _media3PreloadGeneration++;
+    _crossfadePreloadInFlight = false;
     if (_media3ProviderSessionActive && _media3ProviderSession != null) {
       unawaited(_media3ProviderSession!.cancelCrossfade());
       _media3DjTransitionPreparation = null;

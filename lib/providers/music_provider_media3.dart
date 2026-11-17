@@ -17,7 +17,9 @@ extension MusicProviderMedia3 on MusicProvider {
 
     final generation = _automaticTransitionGeneration;
     final transportEpoch = _userTransportEpoch;
+    final preloadGeneration = ++_media3PreloadGeneration;
     bool stillOwnsPreload() =>
+        preloadGeneration == _media3PreloadGeneration &&
         generation == _automaticTransitionGeneration &&
         transportEpoch == _userTransportEpoch &&
         _media3ProviderSessionActive &&
@@ -99,8 +101,7 @@ extension MusicProviderMedia3 on MusicProvider {
         });
       }
     } finally {
-      if (generation == _automaticTransitionGeneration &&
-          transportEpoch == _userTransportEpoch) {
+      if (preloadGeneration == _media3PreloadGeneration) {
         _crossfadePreloadInFlight = false;
       }
       _drainPendingMedia3Completion();

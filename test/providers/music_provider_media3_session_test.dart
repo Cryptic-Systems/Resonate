@@ -1252,6 +1252,68 @@ void main() {
       await session.states.close();
     });
 
+    test('manual transport invalidates a blocked preload without poisoning the next preload', () async {
+      final session = _FakePlaybackSession()
+        ..preloadNextGate = Completer<void>();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('cancel-preload-out');
+      final second = _song('cancel-preload-in');
+      final third = _song('cancel-preload-next');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
+      await provider.setCrossfadeDuration(500);
+
+      session.positionValue = const Duration(milliseconds: 170000);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 100 &&
+              !session.calls.any((call) => call.startsWith('preloadNext:cancel-preload-in:'));
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(
+        session.calls.any((call) => call.startsWith('preloadNext:cancel-preload-in:')),
+        isTrue,
+      );
+
+      // A new explicit selection owns transport while the old standby load is
+      // still blocked. Its late completion must not keep the preload lock set.
+      expect(await provider.playSong(second, queue: <Song>[second, third]), isTrue);
+      session.preloadNextGate!.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      session.positionValue = const Duration(milliseconds: 170000);
+      session.states.add(_state(
+        song: second,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 100 &&
+              !session.calls.any((call) => call.startsWith('preloadNext:cancel-preload-next:'));
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(
+        session.calls.any((call) => call.startsWith('preloadNext:cancel-preload-next:')),
+        isTrue,
+        reason: 'A stale preload completion must not leave the next queue occurrence permanently un-preloadable.',
+      );
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('fails over immediately when the native standby deck reports an error', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'crossfade_enabled': true,
