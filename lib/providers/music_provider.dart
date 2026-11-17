@@ -941,7 +941,7 @@ class MusicProvider extends ChangeNotifier {
       PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
       PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
     });
-    await session.setShuffleMode(_shuffleEnabled);
+    await session.setShuffleMode(effectiveShuffleEnabled);
     await session.setVolume(1.0);
     await session.setGainFactors(
       trackLevel: _trackLevelingScale,
