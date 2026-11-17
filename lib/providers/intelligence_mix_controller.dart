@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/intelligence_mix.dart';
+import '../models/intelligence_recommendation.dart';
 import '../models/queue_intent.dart';
 import '../models/queue_plan.dart';
 import '../models/song.dart';
@@ -77,12 +78,11 @@ class IntelligenceMixController extends ChangeNotifier {
         );
         _lastQueuePlan = candidatePoolPlan;
         if (!candidatePoolPlan.isUsable) return null;
-        final byId = <String, dynamic>{
+        final byId = <String, IntelligenceRecommendation>{
           for (final item in sourceRecommendations) item.song.id: item,
         };
         sourceRecommendations = candidatePoolPlan.songs
-            .map((song) => byId[song.id])
-            .whereType<IntelligenceRecommendation>()
+            .map((song) => byId[song.id]!)
             .toList(growable: false);
         if (sourceRecommendations.isEmpty) return null;
       }
