@@ -82,6 +82,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   bool disposed = false;
   bool throwOnCrossfade = false;
   Completer<void>? cancelCrossfadeGate;
+  Completer<void>? preloadNextGate;
   Song? currentSongValue;
   int? queueIndexValue;
   bool playingValue = false;
@@ -234,6 +235,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
     preloadedIndex = queueIndex;
     preloadedStartPosition = startPosition;
     calls.add('preloadNext:${song.id}:${queueIndex}:${startPosition.inMilliseconds}');
+    await preloadNextGate?.future;
   }
 
   @override
@@ -1178,6 +1180,76 @@ void main() {
         await session.audioSessions.close();
         await session.states.close();
       }
+    });
+
+    test('defers crossfade without replacing the active queue while standby preload is slow', () async {
+      final session = _FakePlaybackSession()
+        ..preloadNextGate = Completer<void>();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('slow-preload-out');
+      final second = _song('slow-preload-in');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
+      await provider.setCrossfadeDuration(500);
+
+      session.positionValue = const Duration(milliseconds: 170000);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 100 && !session.calls.any((call) => call.startsWith('preloadNext:'));
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.calls.any((call) => call.startsWith('preloadNext:')), isTrue);
+
+      // Reach the normal trigger window while the native standby preparation
+      // is still deliberately blocked. The outgoing queue must remain intact.
+      session.positionValue = const Duration(milliseconds: 178000);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 2200));
+
+      expect(session.calls.where((call) => call == 'loadQueue').length, 1,
+          reason: 'A slow standby preload must not trigger a hard queue replacement.');
+      expect(session.calls.where((call) => call == 'play').length, 1,
+          reason: 'The active deck must not be restarted while preload is pending.');
+      expect(session.calls.where((call) => call.startsWith('crossfade:')), isEmpty);
+
+      session.preloadNextGate!.complete();
+      for (var attempt = 0;
+          attempt < 100 && !session.calls.any((call) => call.startsWith('deckSpeeds:'));
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 100 && session.currentSongValue?.id != second.id;
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.currentSongValue?.id, second.id,
+          reason: 'Once standby preparation completes, the safe crossfade should resume normally.');
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
     });
 
     test('fails over immediately when the native standby deck reports an error', () async {

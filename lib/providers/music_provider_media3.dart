@@ -152,6 +152,28 @@ extension MusicProviderMedia3 on MusicProvider {
         await Future<void>.delayed(const Duration(milliseconds: 25));
         if (!stillOwnsTransition()) return;
       }
+      if (_crossfadePreloadInFlight) {
+        // A slow local decoder is not a failed preload. Replacing the active
+        // queue here would stop the outgoing track while the standby deck is
+        // still preparing, which is especially audible at a reviewed phrase
+        // boundary. Leave playback untouched; the next position tick will
+        // retry once the in-flight preload has either completed or failed.
+        await ResonateDiagnostics.recordDj(
+          stage: 'media3_preload',
+          outcome: 'deferred_still_preparing',
+          reason: 'standby_preload_exceeded_transition_wait_window',
+          songId: nextSong.id,
+          extra: {
+            'waitWindowMs': 2000,
+            'positionMs': session.position.inMilliseconds,
+            'remainingMs': session.duration == null
+                ? null
+                : session.duration!.inMilliseconds -
+                    session.position.inMilliseconds,
+          },
+        );
+        return;
+      }
       var preparation = _media3DjTransitionPreparation;
       if (_preloadedNextSongId != nextSong.id || preparation == null) {
         await _preloadNextForMedia3Crossfade();
