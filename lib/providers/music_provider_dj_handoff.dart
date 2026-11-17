@@ -1,5 +1,44 @@
 part of 'music_provider.dart';
 
+/// Apply tempo correction only when both beat grids are trustworthy and
+/// genuinely close. A plausible but wrong BPM octave can otherwise produce
+/// a severe slow-motion / granular-sounding incoming deck on cross-genre pairs.
+DjTempoStretchPlan? _safeProfileTempoStretch(
+  DjTrackProfile outgoing,
+  DjTrackProfile incoming, {
+  required DjTransitionCandidate candidate,
+  required int maxStretchPercent,
+}) {
+  final a = outgoing.beatGrid;
+  final b = incoming.beatGrid;
+  if (!a.usable || !b.usable ||
+      a.confidence < 0.70 || b.confidence < 0.70 ||
+      candidate.risks.contains(DjRiskType.tempoInstability)) {
+    return null;
+  }
+
+  final bpmA = a.bpm!;
+  final bpmB = b.bpm!;
+  // Compare the closest valid half/double-time pulse before permitting stretch.
+  final alternatives = <double>[
+    bpmB,
+    if (bpmB / 2 >= 40) bpmB / 2,
+    if (bpmB * 2 <= 240) bpmB * 2,
+  ];
+  alternatives.sort((x, y) =>
+      (x - bpmA).abs().compareTo((y - bpmA).abs()));
+  final relativeDelta = (bpmA - alternatives.first).abs() / bpmA;
+  if (relativeDelta > 0.06) return null;
+
+  // Keep correction conservative even if the user allows a larger global
+  // stretch. Beat/phrase cues can still be used without tempo manipulation.
+  return computeTempoStretch(
+    bpmA: bpmA,
+    bpmB: bpmB,
+    maxStretchPercent: maxStretchPercent.clamp(3, 6),
+  );
+}
+
 extension MusicProviderDjHandoff on MusicProvider {
 
   /// Step 2–3: optional beat seek + tempo stretch for the incoming handoff.
@@ -313,9 +352,10 @@ extension MusicProviderDjHandoff on MusicProvider {
     if (_djTempoMatchActive &&
         profileA.beatGrid.bpm != null &&
         profileB.beatGrid.bpm != null) {
-      final stretch = computeTempoStretch(
-        bpmA: profileA.beatGrid.bpm!,
-        bpmB: profileB.beatGrid.bpm!,
+      final stretch = _safeProfileTempoStretch(
+        profileA,
+        profileB,
+        candidate: plan.candidate,
         maxStretchPercent: _djMaxStretchPercent,
       );
       if (stretch != null) {
@@ -465,9 +505,10 @@ extension MusicProviderDjHandoff on MusicProvider {
           if (_djTempoMatchActive &&
               profileA.beatGrid.bpm != null &&
               profileB.beatGrid.bpm != null) {
-            final stretch = computeTempoStretch(
-              bpmA: profileA.beatGrid.bpm!,
-              bpmB: profileB.beatGrid.bpm!,
+            final stretch = _safeProfileTempoStretch(
+              profileA,
+              profileB,
+              candidate: candidate,
               maxStretchPercent: _djMaxStretchPercent,
             );
             if (stretch != null) {
