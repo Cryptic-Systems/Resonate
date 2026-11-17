@@ -248,8 +248,36 @@ extension MusicProviderMedia3 on MusicProvider {
       final remainingMs = session.duration == null
           ? null
           : session.duration!.inMilliseconds - session.position.inMilliseconds;
-      if (remainingMs == null || remainingMs < 1200) {
-        throw StateError('Media3 crossfade trigger is outside the validated end window.');
+      if (remainingMs == null) {
+        throw StateError('Media3 crossfade trigger has no validated duration.');
+      }
+      if (remainingMs < 1200) {
+        // A standby deck that finishes preparing too close to the outgoing
+        // track's end must not force a queue reload. Let the canonical Media3
+        // queue completion path advance naturally; tear down only the unused
+        // transition resources and leave the active deck untouched.
+        await session.cancelCrossfade();
+        if (!stillOwnsTransition()) return;
+        await session.clearDeckEqOverlay(deck: 'standby');
+        if (!stillOwnsTransition()) return;
+        await session.setDeckPlaybackSpeeds(
+          activeSpeed: 1.0,
+          standbySpeed: 1.0,
+        );
+        if (!stillOwnsTransition()) return;
+        _preloadedNextSongId = null;
+        _media3DjTransitionPreparation = null;
+        await ResonateDiagnostics.recordDj(
+          stage: 'media3_crossfade',
+          outcome: 'deferred_to_gapless_completion',
+          reason: 'standby_ready_inside_unsafe_fade_tail',
+          songId: nextSong.id,
+          extra: {
+            'remainingMs': remainingMs,
+            'minimumFadeWindowMs': 1200,
+          },
+        );
+        return;
       }
       if (!hasApprovedCue && remainingMs > configuredDurationMs + 4500) {
         if (approvedCueMs != null) {
