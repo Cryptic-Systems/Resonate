@@ -74,7 +74,7 @@ void main() {
   Future<void> settleProvider(AudioEffectsProvider provider) async {
     // Let the stream callback's queued native work settle without issuing a
     // second settings mutation (which would itself trigger another attach).
-    await provider.ready;
+    await Future<void>.delayed(const Duration(milliseconds: 20));
   }
 
   test('restores canonical speaker protection and virtual bass before diagnostics', () async {
