@@ -262,6 +262,11 @@ class AutopilotController extends ChangeNotifier {
     final evaluatedSourceSongId = music.currentSong?.id;
     if (evaluatedSourceSongId == null) return;
     final evaluatedMode = modes?.mode;
+    final evaluatedUserGeneration = _authority.userGeneration;
+    bool evaluationContextIsCurrent() =>
+        evaluatedSourceSongId == music.currentSong?.id &&
+        evaluatedMode == modes?.mode &&
+        evaluatedUserGeneration == _authority.userGeneration;
     if (!music.isPlaying && !forceTransition) return;
 
     final now = DateTime.now();
@@ -337,8 +342,7 @@ class AutopilotController extends ChangeNotifier {
         final top = pool.isEmpty ? null : pool.first.song;
         if (top != null && top.id != music.currentSong?.id) {
           final arranged = await _arrangeForActiveMode([top]);
-          if (evaluatedSourceSongId != music.currentSong?.id ||
-              evaluatedMode != modes?.mode) {
+          if (!evaluationContextIsCurrent()) {
             _scheduleEvaluate();
             return;
           }
@@ -355,8 +359,7 @@ class AutopilotController extends ChangeNotifier {
 
     // The planner and diagnostics both await I/O. A manual skip, mode change,
     // or consent update during either await invalidates this decision.
-    if (evaluatedSourceSongId != music.currentSong?.id ||
-        evaluatedMode != modes?.mode) {
+    if (!evaluationContextIsCurrent()) {
       _scheduleEvaluate();
       return;
     }
@@ -382,8 +385,7 @@ class AutopilotController extends ChangeNotifier {
         // Do not surface an approval prompt for a track/mode that is no
         // longer active, or after the user has granted/revoked control while
         // diagnostics were being persisted.
-        if (evaluatedSourceSongId != music.currentSong?.id ||
-            evaluatedMode != modes?.mode ||
+        if (!evaluationContextIsCurrent() ||
             _consentGranted ||
             !intelligence.isEnabled ||
             !intelligence.isAutopilot) {
@@ -399,8 +401,7 @@ class AutopilotController extends ChangeNotifier {
       return;
     }
 
-    if (evaluatedSourceSongId != music.currentSong?.id ||
-        evaluatedMode != modes?.mode) {
+    if (!evaluationContextIsCurrent()) {
       _scheduleEvaluate();
       return;
     }
@@ -415,7 +416,7 @@ class AutopilotController extends ChangeNotifier {
 
     // Capture user intent and transition identity before any diagnostic
     // await. A manual command during logging must invalidate this decision.
-    final userGeneration = _authority.userGeneration;
+    final userGeneration = evaluatedUserGeneration;
     final automaticGeneration = _authority.beginAutomatic('intelligence_transition');
     final transitionSourceSongId = evaluatedSourceSongId;
     final transitionTargetSongId = nextSong.id;
@@ -557,6 +558,11 @@ class AutopilotController extends ChangeNotifier {
       final planningSourceSongId = music.currentSong?.id;
       if (planningSourceSongId == null) return;
       final planningMode = modes?.mode;
+      final planningUserGeneration = _authority.userGeneration;
+      bool planningContextIsCurrent() =>
+          planningSourceSongId == music.currentSong?.id &&
+          planningMode == modes?.mode &&
+          planningUserGeneration == _authority.userGeneration;
       final futureQueued = music.queue.skip(music.queueIndex + 1).map((song) => song.id).toSet();
       final modePolicy = modes?.policy;
       final sequenceCount = AutopilotModePolicy.predictedSequenceCount(modePolicy);
@@ -585,8 +591,7 @@ class AutopilotController extends ChangeNotifier {
           tracks: available,
         );
         if (!_requirePlaybackMutationPermission('queue_after_decision')) return;
-        if (planningSourceSongId != music.currentSong?.id ||
-            planningMode != modes?.mode) return;
+        if (!planningContextIsCurrent()) return;
         if (!result.isUsable) {
           _modeQueueBlockedReason = result.message ??
               'No analyzed tracks currently meet the active mode profile.';
@@ -619,10 +624,10 @@ class AutopilotController extends ChangeNotifier {
         final biased = _applyModeBias(candidates);
         considered = biased;
         arranged = await _arrangeForActiveMode(biased);
-        if (planningSourceSongId != music.currentSong?.id ||
-            planningMode != modes?.mode) return;
+        if (!planningContextIsCurrent()) return;
       }
       if (arranged.isNotEmpty) {
+        if (!planningContextIsCurrent()) return;
         if (!_requirePlaybackMutationPermission('queue_enqueue')) return;
         final added = await music.enqueueSongs(arranged, preserveOrder: true);
         await ResonateDiagnostics.record('intelligence_queue_decision', {
