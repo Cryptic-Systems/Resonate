@@ -82,6 +82,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   bool disposed = false;
   bool throwOnCrossfade = false;
   bool throwOnPreloadNext = false;
+  bool throwOnClearDeckEqOverlay = false;
   Completer<void>? cancelCrossfadeGate;
   Completer<void>? preloadNextGate;
   Song? currentSongValue;
@@ -300,6 +301,9 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   @override
   Future<void> clearDeckEqOverlay({required String deck}) async {
     calls.add('clearDeckEqOverlay:$deck');
+    if (throwOnClearDeckEqOverlay) {
+      throw StateError('simulated standby overlay cleanup failure');
+    }
   }
 
   @override
@@ -1557,6 +1561,52 @@ void main() {
       expect(session.calls, contains('deckSpeeds:1.0:1.0'));
       expect(provider.currentSong?.id, 'fade-in');
       expect(provider.media3ProviderSessionActive, isTrue);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('overlay cleanup failure does not skip DJ deck speed reset', () async {
+      final session = _FakePlaybackSession()
+        ..throwOnCrossfade = true
+        ..throwOnClearDeckEqOverlay = true;
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('cleanup-failure-out');
+      final second = _song('cleanup-failure-in');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
+      await provider.setCrossfadeDuration(500);
+
+      session.positionValue = const Duration(seconds: 178);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 100 && !session.calls.contains('crossfade:failed');
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.calls, contains('crossfade:failed'));
+      for (var attempt = 0;
+          attempt < 100 && !session.calls.contains('deckSpeeds:1.0:1.0');
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(session.calls, contains('clearDeckEqOverlay:standby'));
+      expect(
+        session.calls,
+        contains('deckSpeeds:1.0:1.0'),
+        reason: 'A failed overlay clear must not strand a tempo-matched deck rate.',
+      );
+      expect(session.calls, contains('loadQueue'),
+          reason: 'The selected queue fallback remains available after cleanup attempts.');
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
