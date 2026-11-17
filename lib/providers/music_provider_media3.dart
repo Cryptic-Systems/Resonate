@@ -172,7 +172,33 @@ extension MusicProviderMedia3 on MusicProvider {
       }
       if (!stillOwnsTransition()) return;
       if (_preloadedNextSongId != nextSong.id) {
-        throw StateError('Media3 standby deck did not preload the intended queue occurrence.');
+        // A failed standby decode is not permission to interrupt the active
+        // track with a queue reload. Clean up the unused deck and let Media3's
+        // canonical queue completion advance gaplessly when the outgoing item
+        // ends. The next track remains selected in the native queue.
+        await session.cancelCrossfade();
+        if (!stillOwnsTransition()) return;
+        await session.clearDeckEqOverlay(deck: 'standby');
+        if (!stillOwnsTransition()) return;
+        await session.setDeckPlaybackSpeeds(
+          activeSpeed: 1.0,
+          standbySpeed: 1.0,
+        );
+        if (!stillOwnsTransition()) return;
+        _preloadedNextSongId = null;
+        _media3DjTransitionPreparation = null;
+        await ResonateDiagnostics.recordDj(
+          stage: 'media3_preload',
+          outcome: 'deferred_to_gapless_completion',
+          reason: 'standby_preload_failed',
+          songId: nextSong.id,
+          extra: {
+            'outgoingSongId': outgoingSong.id,
+            'queueIndex': nextIndex,
+            'positionMs': session.position.inMilliseconds,
+          },
+        );
+        return;
       }
 
       final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;

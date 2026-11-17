@@ -81,6 +81,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   (double, double)? deckSpeeds;
   bool disposed = false;
   bool throwOnCrossfade = false;
+  bool throwOnPreloadNext = false;
   Completer<void>? cancelCrossfadeGate;
   Completer<void>? preloadNextGate;
   Song? currentSongValue;
@@ -231,10 +232,13 @@ class _FakePlaybackSession implements PlaybackEngineSession {
     int? queueIndex,
     Duration startPosition = Duration.zero,
   }) async {
+    calls.add('preloadNext:${song.id}:${queueIndex}:${startPosition.inMilliseconds}');
+    if (throwOnPreloadNext) {
+      throw StateError('simulated standby preload failure');
+    }
     preloadedSong = song;
     preloadedIndex = queueIndex;
     preloadedStartPosition = startPosition;
-    calls.add('preloadNext:${song.id}:${queueIndex}:${startPosition.inMilliseconds}');
     await preloadNextGate?.future;
   }
 
@@ -1370,6 +1374,58 @@ void main() {
         isTrue,
         reason: 'A stale preload completion must not leave the next queue occurrence permanently un-preloadable.',
       );
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('failed standby preload preserves the active queue for gapless completion', () async {
+      final session = _FakePlaybackSession()..throwOnPreloadNext = true;
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('preload-failure-out');
+      final second = _song('preload-failure-in');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
+      await provider.setCrossfadeDuration(500);
+
+      // Trigger the lead-in preload window, then wait for its failure to settle.
+      session.positionValue = const Duration(milliseconds: 170000);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 100 && !session.calls.any((call) => call.startsWith('preloadNext:'));
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.calls.any((call) => call.startsWith('preloadNext:')), isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      // Enter the normal fade trigger window after standby decoding has failed.
+      session.positionValue = const Duration(milliseconds: 178000);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 180));
+
+      expect(session.calls.where((call) => call == 'loadQueue').length, 1,
+          reason: 'A failed standby decode must not replace the playing queue.');
+      expect(session.calls.where((call) => call == 'play').length, 1,
+          reason: 'A failed standby decode must not restart playback.');
+      expect(session.calls, contains('cancelCrossfade'));
+      expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+      expect(session.currentSongValue?.id, first.id);
+      expect(session.playingValue, isTrue);
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
