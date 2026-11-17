@@ -108,6 +108,8 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryE
   @override
   bool get isBuffering => current.isBuffering;
   @override
+  String get crossfadeStatus => current.crossfadeStatus;
+  @override
   bool get isCompleted => current.isCompleted;
   @override
   bool get isReady => current.isReady;

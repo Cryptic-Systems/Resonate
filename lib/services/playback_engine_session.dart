@@ -27,6 +27,8 @@ abstract interface class PlaybackEngineSession
   Duration get bufferedPosition;
   Duration? get duration;
   bool get isBuffering;
+  /// Native A/B crossfade lifecycle, including standby decode failures.
+  String get crossfadeStatus;
   bool get isCompleted;
   bool get isReady;
   bool get hasError;

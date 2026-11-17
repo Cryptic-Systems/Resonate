@@ -33,6 +33,7 @@ Media3ProviderState _state({
   bool playWhenReady = false,
   Duration position = Duration.zero,
   String activeDeckId = 'A',
+  String crossfadeStatus = 'idle',
 }) => Media3ProviderState(
       currentSong: song,
       queueIndex: queueIndex,
@@ -49,6 +50,7 @@ Media3ProviderState _state({
       queueLength: queueIndex + 1,
       volume: 1.0,
       activeDeckId: activeDeckId,
+      crossfadeStatus: crossfadeStatus,
       hasError: false,
       error: null,
     );
@@ -85,6 +87,8 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   bool playingValue = false;
   bool readyValue = true;
   bool completedValue = false;
+  String crossfadeStatusValue = 'idle';
+  bool emitIncomingErrorOnCrossfade = false;
   String activeDeckIdValue = 'A';
   Duration positionValue = Duration.zero;
   Duration? durationValue;
@@ -106,6 +110,8 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   Duration? get duration => durationValue;
   @override
   bool get isBuffering => false;
+  @override
+  String get crossfadeStatus => crossfadeStatusValue;
   @override
   bool get isCompleted => completedValue;
   @override
@@ -232,6 +238,24 @@ class _FakePlaybackSession implements PlaybackEngineSession {
 
   @override
   Future<void> crossfade({required Duration duration}) async {
+    if (emitIncomingErrorOnCrossfade) {
+      crossfadeStatusValue = 'incoming_error';
+      calls.add('crossfade:incoming_error');
+      final current = currentSongValue;
+      final index = queueIndexValue;
+      if (current != null && index != null) {
+        states.add(_state(
+          song: current,
+          queueIndex: index,
+          playing: true,
+          position: positionValue,
+          playWhenReady: true,
+          activeDeckId: activeDeckIdValue,
+          crossfadeStatus: crossfadeStatusValue,
+        ));
+      }
+      return;
+    }
     if (throwOnCrossfade) {
       calls.add('crossfade:failed');
       throw StateError('simulated native crossfade failure');
@@ -1154,6 +1178,46 @@ void main() {
         await session.audioSessions.close();
         await session.states.close();
       }
+    });
+
+    test('fails over immediately when the native standby deck reports an error', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'crossfade_enabled': true,
+        'crossfade_duration': 500.0,
+      });
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('standby-error-out');
+      final second = _song('standby-error-in');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
+      session.emitIncomingErrorOnCrossfade = true;
+      session.positionValue = const Duration(milliseconds: 177600);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 100 && !session.calls.contains('crossfade:incoming_error');
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.calls, contains('crossfade:incoming_error'));
+      for (var attempt = 0;
+          attempt < 100 && session.loadedIndex != 1;
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.loadedIndex, 1,
+          reason: 'A failed standby deck must fall back to the selected queue item without waiting for the transition timeout.');
+      expect(session.calls, contains('play'));
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
     });
 
     test('does not consult retired just_audio duration when Media3 duration is unavailable', () async {

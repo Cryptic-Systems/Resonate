@@ -298,6 +298,12 @@ extension MusicProviderMedia3 on MusicProvider {
       while (session.currentSong?.id != nextSong.id ||
           session.queueIndex != nextIndex) {
         await Future<void>.delayed(const Duration(milliseconds: 36));
+        if (session.crossfadeStatus == 'incoming_error') {
+          throw StateError('Media3 standby deck failed while starting the DJ transition.');
+        }
+        if (session.crossfadeStatus == 'cancelled' && stillOwnsTransition()) {
+          throw StateError('Media3 crossfade was cancelled before deck promotion.');
+        }
         final now = DateTime.now();
         if (session.isPlaying) {
           elapsedMs += now.difference(lastTick).inMilliseconds;
