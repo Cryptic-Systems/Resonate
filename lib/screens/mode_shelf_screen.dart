@@ -229,12 +229,12 @@ class ModeShelfScreen extends StatelessWidget {
           icon: const Icon(Icons.play_arrow_rounded),
           onPressed: () {
             final idx = queue.indexWhere((x) => x.id == song.id);
-            _playShelf(context, queue, startIndex: idx < 0 ? 0 : idx);
+            _playShelf(context, queue, startIndex: idx < 0 ? 0 : idx, requireSelectedTrack: true);
           },
         ),
         onTap: () {
           final idx = queue.indexWhere((x) => x.id == song.id);
-          _playShelf(context, queue, startIndex: idx < 0 ? 0 : idx);
+          _playShelf(context, queue, startIndex: idx < 0 ? 0 : idx, requireSelectedTrack: true);
         },
       ),
     );
@@ -273,6 +273,7 @@ class ModeShelfScreen extends StatelessWidget {
     List<Song> tracks, {
     int startIndex = 0,
     bool shuffle = false,
+    bool requireSelectedTrack = false,
   }) async {
     if (tracks.isEmpty) return;
     final modes = context.read<ModeProvider>();
@@ -280,7 +281,7 @@ class ModeShelfScreen extends StatelessWidget {
     final result = await ModeAwareQueuePlanner().arrange(
       modes: modes,
       tracks: tracks,
-      requiredSongId: requested.id,
+      requiredSongId: requireSelectedTrack ? requested.id : null,
     );
     if (!context.mounted) return;
     if (!result.isUsable) {
@@ -296,8 +297,15 @@ class ModeShelfScreen extends StatelessWidget {
     }
     final music = context.read<MusicProvider>();
     final queue = List<Song>.from(result.songs);
-    var index = queue.indexWhere((song) => song.id == requested.id);
-    if (index < 0) index = 0;
+    var index = requireSelectedTrack
+        ? queue.indexWhere((song) => song.id == requested.id)
+        : 0;
+    if (index < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('The selected track is not eligible for this mode queue.')),
+      );
+      return;
+    }
     // DJ's planned order is retained for tempo-constrained modes. Ordinary
     // modes keep the existing user-requested shuffle behavior.
     if (shuffle && !result.usedDjPlanner && queue.length > 1) {
