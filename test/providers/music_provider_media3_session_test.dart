@@ -946,6 +946,62 @@ void main() {
       await session.states.close();
     });
 
+    test('removing the prepared incoming track invalidates a blocked Media3 preload', () async {
+      final session = _FakePlaybackSession()
+        ..preloadNextGate = Completer<void>();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('queue-edit-outgoing');
+      final second = _song('queue-edit-prepared-incoming');
+      final third = _song('queue-edit-new-incoming');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(
+        first,
+        queue: <Song>[first, second, third],
+      ), isTrue);
+      await provider.setCrossfadeDuration(500);
+
+      session.positionValue = const Duration(milliseconds: 170000);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 100 &&
+              !session.calls.any((call) =>
+                  call.startsWith('preloadNext:queue-edit-prepared-incoming:'));
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(
+        session.calls.any((call) =>
+            call.startsWith('preloadNext:queue-edit-prepared-incoming:')),
+        isTrue,
+        reason: 'The first upcoming track should be prepared before the edit.',
+      );
+
+      expect(await provider.removeFromQueue(1), isTrue);
+      expect(provider.upcomingQueue.map((song) => song.id).toList(),
+          <String>[third.id]);
+      expect(session.calls, contains('cancelCrossfade'));
+      expect(session.calls, contains('clearDeckEqOverlay:standby'));
+
+      session.preloadNextGate!.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(session.calls.where((call) => call.startsWith('crossfade:')),
+          isEmpty,
+          reason: 'A stale preload must never commit after its target is removed.');
+      expect(provider.currentSong?.id, first.id);
+      expect(provider.queueIndex, 0);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('restores the provider resume position into the new Media3 session before handoff', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
