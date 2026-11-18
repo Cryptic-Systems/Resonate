@@ -53,7 +53,7 @@ extension MusicProviderDjHandoff on MusicProvider {
     if (session is! PlaybackTransitionPreviewBackend) {
       throw UnsupportedError('The active playback session does not support isolated DJ preview.');
     }
-    await session.playTransitionPreview(
+    await (session as PlaybackTransitionPreviewBackend).playTransitionPreview(
       outgoingUri: outgoingUri, incomingUri: incomingUri,
       outgoingStart: outgoingStart, incomingStart: incomingStart, duration: duration,
     );
@@ -61,7 +61,9 @@ extension MusicProviderDjHandoff on MusicProvider {
 
   Future<void> stopDjTransitionPreview() async {
     final session = _media3ProviderSession;
-    if (session is PlaybackTransitionPreviewBackend) await session.stopTransitionPreview();
+    if (session is PlaybackTransitionPreviewBackend) {
+      await (session as PlaybackTransitionPreviewBackend).stopTransitionPreview();
+    }
   }
 
   /// Step 2–3: optional beat seek + tempo stretch for the incoming handoff.
