@@ -258,8 +258,8 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
         ]),
         actions: [
-          TextButton.icon(onPressed: _playAudioPreview, icon: const Icon(Icons.play_arrow_rounded), child: const Text('Play audio')),
-          TextButton.icon(onPressed: _stopAudioPreview, icon: const Icon(Icons.stop_rounded), child: const Text('Stop')),
+          TextButton.icon(onPressed: _playAudioPreview, icon: const Icon(Icons.play_arrow_rounded), label: const Text('Play audio')),
+          TextButton.icon(onPressed: _stopAudioPreview, icon: const Icon(Icons.stop_rounded), label: const Text('Stop')),
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
         ],
       ),

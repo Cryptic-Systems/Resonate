@@ -647,8 +647,6 @@ class Media3PlaybackRuntime {
     await _run(() => (_backend as PlaybackCrossfadeBackend).cancelCrossfade());
   }
 
-  /// Serializes every command that can mutate native playback state. Rapid
-  /// UI taps, queue replacement and a crossfade request must not race each
   /// Auditions two clips without mutating canonical playback state.
   Future<void> playTransitionPreview({
     required Uri outgoingUri, required Uri incomingUri,
@@ -663,7 +661,7 @@ class Media3PlaybackRuntime {
     if (backend is! PlaybackTransitionPreviewBackend) {
       throw UnsupportedError('The active backend has no isolated transition preview.');
     }
-    await backend.playTransitionPreview(
+    await (backend as PlaybackTransitionPreviewBackend).playTransitionPreview(
       outgoingUri: outgoingUri, incomingUri: incomingUri,
       outgoingStart: outgoingStart, incomingStart: incomingStart, duration: duration,
     );
@@ -671,7 +669,9 @@ class Media3PlaybackRuntime {
 
   Future<void> stopTransitionPreview() => _run(() async {
     final backend = _backend;
-    if (backend is PlaybackTransitionPreviewBackend) await backend.stopTransitionPreview();
+    if (backend is PlaybackTransitionPreviewBackend) {
+      await (backend as PlaybackTransitionPreviewBackend).stopTransitionPreview();
+    }
   });
 
   /// Dispatches auxiliary sample playback on the same serialized native
