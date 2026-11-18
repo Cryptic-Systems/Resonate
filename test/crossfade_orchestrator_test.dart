@@ -22,7 +22,7 @@ void main() {
       );
 
       expect(timing.effectiveFadeMs, 6500);
-      expect(timing.preloadWindowMs, 22000);
+      expect(timing.preloadWindowMs, 35000);
       expect(timing.fadeArmWindowMs, 14000);
       expect(timing.triggerWindowMs, 8350);
     });

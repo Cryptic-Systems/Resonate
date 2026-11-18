@@ -201,7 +201,7 @@ extension MusicProviderMedia3 on MusicProvider {
         return;
       }
 
-      final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
+      final djActive = _djHandoffsLive;
       final plannedDurationMs = preparation?.transitionDurationMs;
       final plannedCueMs =
           preparation?.outgoingStartPosition?.inMilliseconds;
@@ -761,6 +761,12 @@ extension MusicProviderMedia3 on MusicProvider {
       await session.setRepeatMode(PlaybackQueueRepeatMode.one);
       _preloadedNextSongId = null;
       _media3DjTransitionPreparation = null;
+      _repeatSelfDjPreparation = null;
+      _repeatSelfDjPlanSongId = null;
+      _repeatSelfDjPlanAttempted = false;
+      _repeatSelfDjPlanning = false;
+      _repeatSelfDjPlanGeneration++;
+      _repeatSelfDjPreloadInFlight = false;
       _lastCompletionSongId = null;
       _reconcileMedia3ProviderSession();
       _publishServiceState();
@@ -802,6 +808,7 @@ extension MusicProviderMedia3 on MusicProvider {
         _repeatSelfDjPreparation = null;
         _repeatSelfDjPlanSongId = null;
         _repeatSelfDjPlanAttempted = false;
+        _repeatSelfDjPlanning = false;
         _repeatSelfDjPlanGeneration++;
         _repeatSelfDjPreloadInFlight = false;
       }

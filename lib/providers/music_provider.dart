@@ -954,6 +954,9 @@ class MusicProvider extends ChangeNotifier {
       // provider commits Media3 as the sole observation/transport authority.
       if (currentPosition > Duration.zero) {
         await session.seek(currentPosition);
+        if (session is PlaybackStateRefreshSession) {
+          await (session as PlaybackStateRefreshSession).refreshState();
+        }
       }
     }
     await session.setRepeatMode(switch (_repeatMode) {
@@ -2413,10 +2416,23 @@ class MusicProvider extends ChangeNotifier {
           if (positionMs < 2000 &&
               _repeatSelfDjPlanAttempted &&
               !_repeatSelfHandoffInFlight) {
+            final staleRepeatStandby = _repeatSelfDjPreloadInFlight ||
+                _preloadedNextSongId == song.id;
             _repeatSelfDjPlanGeneration++;
             _repeatSelfDjPlanAttempted = false;
             _repeatSelfDjPlanning = false;
+            _repeatSelfDjPreloadInFlight = false;
             _repeatSelfDjPreparation = null;
+            if (staleRepeatStandby) {
+              final session = _media3ProviderSession;
+              if (session != null) {
+                unawaited(session.cancelCrossfade().catchError((Object _) {}));
+              }
+              if (_preloadedNextSongId == song.id) {
+                _preloadedNextSongId = null;
+              }
+              _media3DjTransitionPreparation = null;
+            }
           }
           if (!_repeatSelfDjPlanAttempted &&
               !_repeatSelfDjPlanning &&
@@ -2518,14 +2534,14 @@ class MusicProvider extends ChangeNotifier {
       final prepared = incoming != null && _preloadedNextSongId == incoming.id
           ? _media3DjTransitionPreparation
           : null;
-      final approvedCueMs = approved != null && !approved.fallback
+      final plannedCueMs = approved != null && !approved.fallback
           ? approved.candidate.outgoingStartMs
           : prepared?.outgoingStartPosition?.inMilliseconds;
-      if (approvedCueMs != null) {
+      if (plannedCueMs != null) {
         final positionMs = activePosition.inMilliseconds;
         if (CrossfadeOrchestrator.shouldPreloadForApprovedCue(
           positionMs: positionMs,
-          cueMs: approvedCueMs,
+          cueMs: plannedCueMs,
         )) {
           unawaited(this._preloadNextForCrossfade());
         }
@@ -2543,7 +2559,7 @@ class MusicProvider extends ChangeNotifier {
       }
     }
 
-    final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
+    final djActive = _djHandoffsLive;
     final timing = CrossfadeOrchestrator.timing(
       configuredDurationMs: _crossfadeDurationMs,
       djActive: djActive,

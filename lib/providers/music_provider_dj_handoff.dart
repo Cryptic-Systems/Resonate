@@ -427,7 +427,7 @@ extension MusicProviderDjHandoff on MusicProvider {
           cueMs != null &&
           cueMs >= outgoingPositionMs &&
           cueMs <= trackDurationMs - 2000 &&
-          trackDurationMs - cueMs <= 60000 &&
+          trackDurationMs - cueMs <= 30000 &&
           trackDurationMs - cueMs >= fadeMs + 1200 &&
           (profile.transitions.safeMixOuts.any(
                 (point) => point.timeMs == cueMs,
@@ -595,11 +595,16 @@ extension MusicProviderDjHandoff on MusicProvider {
           final executionDurationMs = execution.steps.isNotEmpty
               ? execution.steps.last.atMs
               : candidate.durationMs;
+          final outgoingMaterialAfterCueMs =
+              (profileA.durationMs ?? outgoingSong.duration.inMilliseconds) -
+                  candidate.outgoingStartMs;
           final hasProfileOutgoingCue =
-              profileA.transitions.safeMixOuts.any(
-                (point) => point.timeMs == candidate.outgoingStartMs,
-              ) ||
-              profileA.transitions.bestOutroMs == candidate.outgoingStartMs;
+              outgoingMaterialAfterCueMs <= 30000 &&
+              outgoingMaterialAfterCueMs >= executionDurationMs + 1200 &&
+              (profileA.transitions.safeMixOuts.any(
+                    (point) => point.timeMs == candidate.outgoingStartMs,
+                  ) ||
+                  profileA.transitions.bestOutroMs == candidate.outgoingStartMs);
           final hasPlannedOutgoingCue = approvedCueIsAhead || hasProfileOutgoingCue;
           final seekMs = candidate.incomingStartMs
               .clamp(0, incomingSong.duration.inMilliseconds > 0
