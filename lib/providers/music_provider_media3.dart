@@ -929,6 +929,9 @@ extension MusicProviderMedia3 on MusicProvider {
 
     _loadingSource = true;
     _userWantsPlaying = true;
+    _media3PendingSelectionSongId = selected.id;
+    _media3PendingSelectionPath = selected.filePath.trim();
+    _media3PendingSelectionQueueIndex = nextIndex;
     _queue = nextQueue;
     _queueIndex = nextIndex;
     _trackLevelingScale = selectedTrackLevel;
@@ -968,6 +971,9 @@ extension MusicProviderMedia3 on MusicProvider {
           session.currentSong?.filePath.trim() == selected.filePath.trim() &&
           session.queueIndex == nextIndex;
       if (nativeSelectionCommitted) {
+        _media3PendingSelectionSongId = null;
+        _media3PendingSelectionPath = null;
+        _media3PendingSelectionQueueIndex = null;
         _reconcileMedia3ProviderSession();
       } else {
         // loadQueue/play may complete before Media3 publishes its new timeline.
@@ -1010,6 +1016,9 @@ extension MusicProviderMedia3 on MusicProvider {
       });
       return true;
     } catch (error, stack) {
+      _media3PendingSelectionSongId = null;
+      _media3PendingSelectionPath = null;
+      _media3PendingSelectionQueueIndex = null;
       _userWantsPlaying = false;
       isPlaying = false;
       debugPrint('Media3 provider play failed: $error');
@@ -1055,6 +1064,19 @@ extension MusicProviderMedia3 on MusicProvider {
     if (!_media3ProviderSessionActive || _disposed) return;
     final session = _media3ProviderSession;
     if (session == null) return;
+    final pendingSongId = _media3PendingSelectionSongId;
+    if (pendingSongId != null) {
+      final pendingPath = _media3PendingSelectionPath;
+      final pendingIndex = _media3PendingSelectionQueueIndex;
+      final statePath = state.currentSong?.filePath.trim();
+      final matchesPending = state.mediaId == pendingSongId &&
+          (pendingPath == null || statePath == pendingPath) &&
+          (pendingIndex == null || state.queueIndex == pendingIndex);
+      if (!matchesPending) return;
+      _media3PendingSelectionSongId = null;
+      _media3PendingSelectionPath = null;
+      _media3PendingSelectionQueueIndex = null;
+    }
     final oldSongId = currentSong?.id;
     final previousQueueIndex = _queueIndex;
     final previousPosition = currentPosition;

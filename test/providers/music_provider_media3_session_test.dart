@@ -1164,6 +1164,20 @@ void main() {
       expect(provider.queueIndex, 1);
       expect(provider.currentPosition, Duration.zero);
 
+      // A delayed callback for the outgoing track must not overwrite the
+      // committed library selection while Media3 is publishing its timeline.
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: const Duration(seconds: 37),
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(provider.currentSong?.id, second.id);
+      expect(provider.queueIndex, 1);
+      expect(provider.currentPosition, Duration.zero);
+
       // Once the native timeline catches up, normal observation remains the
       // source of truth and must preserve the selected item.
       session.deferLoadQueueState = false;

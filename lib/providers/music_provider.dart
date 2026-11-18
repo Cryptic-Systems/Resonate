@@ -99,6 +99,11 @@ class MusicProvider extends ChangeNotifier {
   StreamSubscription<int?>? _media3AudioSessionSub;
   StreamSubscription<Media3ProviderState>? _media3StateSub;
   Media3ProviderState? _media3ShadowState;
+  // A library selection may commit before Media3 publishes its replacement timeline.
+  // Fence delayed snapshots from the previous item until the selected occurrence arrives.
+  String? _media3PendingSelectionSongId;
+  String? _media3PendingSelectionPath;
+  int? _media3PendingSelectionQueueIndex;
   Media3ProviderState? get media3ShadowState => _media3ShadowState;
   Future<void>? _playbackSettingsLoad;
   Future<void>? _queueRestore;
