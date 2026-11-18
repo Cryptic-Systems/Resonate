@@ -64,6 +64,16 @@ abstract interface class PlaybackDeckEqOverlayBackend {
 /// Optional capability for short auxiliary effects owned by the playback backend.
 /// Auxiliary audio is mixed by the Media3 service and never replaces the
 /// canonical queue item or creates a second MediaSession/transport authority.
+/// Isolated audition capability; never takes ownership of canonical playback.
+abstract interface class PlaybackTransitionPreviewBackend {
+  Future<void> playTransitionPreview({
+    required Uri outgoingUri, required Uri incomingUri,
+    required Duration outgoingStart, required Duration incomingStart,
+    required Duration duration,
+  });
+  Future<void> stopTransitionPreview();
+}
+
 abstract interface class PlaybackAuxiliaryEffectsBackend {
   Future<void> playAuxiliarySound(
     Uri uri, {

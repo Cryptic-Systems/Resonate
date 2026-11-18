@@ -313,6 +313,30 @@ class Media3PlaybackClient {
     await _invokeAccepted('clearDeckEqOverlay', <String, Object>{'deck': deck});
   }
 
+  /// Auditions two clipped music segments on isolated DSP-enabled preview decks.
+  Future<void> previewTransition({
+    required Uri outgoingUri, required Uri incomingUri,
+    required Duration outgoingStart, required Duration incomingStart,
+    required Duration duration,
+  }) async {
+    bool supported(Uri uri) => uri.hasScheme &&
+        const {'asset', 'file', 'content', 'http', 'https'}.contains(uri.scheme);
+    if (!supported(outgoingUri) || !supported(incomingUri)) {
+      throw ArgumentError('Both preview tracks must use supported media URIs.');
+    }
+    if (outgoingStart.isNegative || incomingStart.isNegative ||
+        duration < const Duration(seconds: 2) || duration > const Duration(seconds: 15)) {
+      throw ArgumentError('Preview cues must be non-negative and blend duration must be 2–15 seconds.');
+    }
+    await _invokeAccepted('previewTransition', <String, Object>{
+      'outgoingUri': outgoingUri.toString(), 'incomingUri': incomingUri.toString(),
+      'outgoingStartMs': outgoingStart.inMilliseconds,
+      'incomingStartMs': incomingStart.inMilliseconds, 'durationMs': duration.inMilliseconds,
+    });
+  }
+
+  Future<void> stopTransitionPreview() => _command('stopTransitionPreview');
+
   /// Plays a short sample through the service-owned auxiliary Media3 player.
   /// The main queue, MediaSession and audio-focus owner remain unchanged.
   Future<void> playAuxiliarySound(

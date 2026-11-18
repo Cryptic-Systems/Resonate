@@ -38,7 +38,7 @@ object DspEngineSinkHook {
             val allow = ENABLE_NATIVE_LIVE_DSP && DspSessionGate.isNativeAllowed()
             val proc = DspEngineAudioProcessor(deckId)
             proc.setNativeProcessEnabled(allow)
-            proc.setDeckActive(deckId == "legacy" || DspEngineRegistry.isActiveDeck(deckId))
+            proc.setDeckActive(deckId == "legacy" || deckId.startsWith("preview_") || DspEngineRegistry.isActiveDeck(deckId))
             processorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(proc)
             val active = DspEngineRegistry.activeCount()
             if (allow) {

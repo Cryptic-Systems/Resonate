@@ -41,6 +41,29 @@ DjTempoStretchPlan? _safeProfileTempoStretch(
 
 extension MusicProviderDjHandoff on MusicProvider {
 
+  Future<void> previewDjTransition({
+    required Uri outgoingUri, required Uri incomingUri,
+    required Duration outgoingStart, required Duration incomingStart,
+    required Duration duration,
+  }) async {
+    final session = _media3ProviderSession;
+    if (session == null || !_media3ProviderSessionActive) {
+      throw StateError('DJ audio preview requires an active Media3 playback session.');
+    }
+    if (session is! PlaybackTransitionPreviewBackend) {
+      throw UnsupportedError('The active playback session does not support isolated DJ preview.');
+    }
+    await session.playTransitionPreview(
+      outgoingUri: outgoingUri, incomingUri: incomingUri,
+      outgoingStart: outgoingStart, incomingStart: incomingStart, duration: duration,
+    );
+  }
+
+  Future<void> stopDjTransitionPreview() async {
+    final session = _media3ProviderSession;
+    if (session is PlaybackTransitionPreviewBackend) await session.stopTransitionPreview();
+  }
+
   /// Step 2–3: optional beat seek + tempo stretch for the incoming handoff.
   Future<void> _prepareDjHandoff({
     required dynamic outgoing,

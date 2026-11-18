@@ -172,6 +172,20 @@ class DspEngineRegistryTest {
     }
 
     @Test
+    fun preview_decks_inherit_the_same_sticky_dsp_profile_as_music_decks() {
+        DspEngineRegistry.applyDvcAll(true, -3f, true, 18f)
+        DspEngineRegistry.applyDitherAll(true, 2)
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.register(81, 8101L, "preview_out"))
+        assertTrue(DspEngineRegistry.register(82, 8202L, "preview_in"))
+        assertEquals(2, DspEngineRegistry.activeCount())
+        assertTrue(fake.calls.any { it == "dvc:8101:true:-3.0:true:18.0" })
+        assertTrue(fake.calls.any { it == "dvc:8202:true:-3.0:true:18.0" })
+        assertTrue(fake.calls.any { it == "dither:8101:true:2" })
+        assertTrue(fake.calls.any { it == "dither:8202:true:2" })
+    }
+
+    @Test
     fun register_rejects_engine_when_sticky_application_fails() {
         val failing = object : FakeApi() {
             override fun setVolume(handle: Long, linearGain: Double) {

@@ -346,12 +346,14 @@ class Media3PlaybackBridge(
                     // deck that may be preparing outside an active fade.
                     Media3PlaybackService.instance?.pauseAllDecks()
                     Media3PlaybackService.instance?.stopAuxiliarySound()
+                    Media3PlaybackService.instance?.stopTransitionPreview()
                     connected.pause()
                     result.success(true)
                 }
                 "stop" -> {
                     Media3PlaybackService.instance?.clearPreload()
                     Media3PlaybackService.instance?.stopAuxiliarySound()
+                    Media3PlaybackService.instance?.stopTransitionPreview()
                     connected.stop()
                     result.success(true)
                 }
@@ -447,6 +449,31 @@ class Media3PlaybackBridge(
                     val accepted = Media3PlaybackService.instance?.clearDeckEqOverlay(deck!!) == true
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_DSP_UNAVAILABLE", "The deck EQ overlay could not be cleared.", null)
+                }
+                "previewTransition" -> {
+                    val outRaw = call.argument<String>("outgoingUri")
+                    val inRaw = call.argument<String>("incomingUri")
+                    val outUri = outRaw?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+                    val inUri = inRaw?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+                    val outMs = call.argument<Number>("outgoingStartMs")?.toLong()
+                    val inMs = call.argument<Number>("incomingStartMs")?.toLong()
+                    val durationMs = call.argument<Number>("durationMs")?.toLong()
+                    if (outUri == null || inUri == null || outMs == null || inMs == null ||
+                        durationMs == null || outMs < 0L || inMs < 0L || durationMs !in 2000L..15000L
+                    ) {
+                        result.error("INVALID_TRANSITION_PREVIEW", "Supported track URIs, non-negative cues and a 2–15 second blend are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.playTransitionPreview(
+                        outUri, inUri, outMs, inMs, durationMs,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_PREVIEW_UNAVAILABLE", "The isolated DSP preview could not start.", null)
+                }
+                "stopTransitionPreview" -> {
+                    val accepted = Media3PlaybackService.instance?.stopTransitionPreview() == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_PREVIEW_UNAVAILABLE", "The preview could not be stopped.", null)
                 }
                 "playAuxiliarySound" -> {
                     val source = call.argument<String>("uri")

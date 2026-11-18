@@ -649,7 +649,31 @@ class Media3PlaybackRuntime {
 
   /// Serializes every command that can mutate native playback state. Rapid
   /// UI taps, queue replacement and a crossfade request must not race each
-  /// other across the Flutter/native boundary.
+  /// Auditions two clips without mutating canonical playback state.
+  Future<void> playTransitionPreview({
+    required Uri outgoingUri, required Uri incomingUri,
+    required Duration outgoingStart, required Duration incomingStart,
+    required Duration duration,
+  }) => _run(() async {
+    if (outgoingStart.isNegative || incomingStart.isNegative ||
+        duration < const Duration(seconds: 2) || duration > const Duration(seconds: 15)) {
+      throw ArgumentError('Invalid transition preview cue or duration.');
+    }
+    final backend = _backend;
+    if (backend is! PlaybackTransitionPreviewBackend) {
+      throw UnsupportedError('The active backend has no isolated transition preview.');
+    }
+    await backend.playTransitionPreview(
+      outgoingUri: outgoingUri, incomingUri: incomingUri,
+      outgoingStart: outgoingStart, incomingStart: incomingStart, duration: duration,
+    );
+  });
+
+  Future<void> stopTransitionPreview() => _run(() async {
+    final backend = _backend;
+    if (backend is PlaybackTransitionPreviewBackend) await backend.stopTransitionPreview();
+  });
+
   /// Dispatches auxiliary sample playback on the same serialized native
   /// command lane as transport and deck effects.
   Future<void> playAuxiliarySound(

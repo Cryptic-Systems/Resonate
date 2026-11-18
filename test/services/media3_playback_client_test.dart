@@ -540,4 +540,48 @@ void main() {
     });
   });
 
+  group('Media3 isolated transition audition', () {
+    const channel = MethodChannel('resonate/media3_test_audition');
+    late Media3PlaybackClient client;
+    setUp(() { client = Media3PlaybackClient(methodChannel: channel); });
+    tearDown(() { channel.setMockMethodCallHandler(null); });
+    test('sends both cues and a bounded blend duration', () async {
+      MethodCall? captured;
+      channel.setMockMethodCallHandler((call) async { captured = call; return true; });
+      final outUri = Uri.file('/music/outgoing.flac');
+      final inUri = Uri.file('/music/incoming.flac');
+      await client.previewTransition(
+        outgoingUri: outUri, incomingUri: inUri,
+        outgoingStart: const Duration(seconds: 92),
+        incomingStart: const Duration(seconds: 14),
+        duration: const Duration(milliseconds: 6500),
+      );
+      expect(captured?.method, 'previewTransition');
+      expect(captured?.arguments, {
+        'outgoingUri': outUri.toString(), 'incomingUri': inUri.toString(),
+        'outgoingStartMs': 92000, 'incomingStartMs': 14000, 'durationMs': 6500,
+      });
+      await client.stopTransitionPreview();
+      expect(captured?.method, 'stopTransitionPreview');
+    });
+    test('rejects unsupported URIs, negative cues and short blends', () async {
+      final uri = Uri.file('/music/track.flac');
+      await expectLater(client.previewTransition(
+        outgoingUri: Uri.parse('javascript:alert(1)'), incomingUri: uri,
+        outgoingStart: Duration.zero, incomingStart: Duration.zero,
+        duration: const Duration(seconds: 5),
+      ), throwsArgumentError);
+      await expectLater(client.previewTransition(
+        outgoingUri: uri, incomingUri: uri,
+        outgoingStart: const Duration(milliseconds: -1), incomingStart: Duration.zero,
+        duration: const Duration(seconds: 5),
+      ), throwsArgumentError);
+      await expectLater(client.previewTransition(
+        outgoingUri: uri, incomingUri: uri,
+        outgoingStart: Duration.zero, incomingStart: Duration.zero,
+        duration: const Duration(seconds: 1),
+      ), throwsArgumentError);
+    });
+  });
+
 }

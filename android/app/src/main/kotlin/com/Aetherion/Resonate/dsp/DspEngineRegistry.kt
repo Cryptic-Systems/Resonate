@@ -106,7 +106,7 @@ object DspEngineRegistry {
     @JvmStatic
     @Synchronized
     fun register(processorId: Int, handle: Long, deckId: String = "A"): Boolean {
-        if (handle == 0L || deckId !in setOf("A", "B", "legacy")) return false
+        if (handle == 0L || deckId !in setOf("A", "B", "legacy", "preview_out", "preview_in")) return false
 
         // Configure the new engine before publishing it to the live registry.
         // If JNI configuration fails, the caller still owns the handle and can

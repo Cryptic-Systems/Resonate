@@ -22,6 +22,9 @@ import com.Aetherion.Resonate.R
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Media3 playback service with active/standby decks. The provider owns the
@@ -38,6 +41,13 @@ class Media3PlaybackService : MediaSessionService() {
     // and never requests focus, so the canonical queue remains the sole transport owner.
     private var auxiliaryPlayer: ExoPlayer? = null
     private var auxiliaryBaseVolume = 0f
+    // Isolated music audition decks with independent native DSP processors.
+    private var previewOutgoingPlayer: ExoPlayer? = null
+    private var previewIncomingPlayer: ExoPlayer? = null
+    private var previewOutgoingListener: Player.Listener? = null
+    private var previewIncomingListener: Player.Listener? = null
+    private var previewRampRunnable: Runnable? = null
+    private var previewGeneration = 0
     private var fadeRunnable: Runnable? = null
     private var fadeGeneration = 0
     private val crossfadeClock = Media3CrossfadeClock()
@@ -131,6 +141,106 @@ class Media3PlaybackService : MediaSessionService() {
         } catch (_: Exception) {
             false
         }
+    }
+
+    /** Play an isolated two-track audition; canonical decks and focus remain untouched. */
+    fun playTransitionPreview(outgoingUri: Uri, incomingUri: Uri, outgoingStartMs: Long,
+        incomingStartMs: Long, durationMs: Long): Boolean {
+        fun supported(uri: Uri) = uri.isHierarchical &&
+            uri.scheme in setOf("asset", "file", "content", "http", "https")
+        if (isDestroyed || !supported(outgoingUri) || !supported(incomingUri) ||
+            outgoingStartMs < 0L || incomingStartMs < 0L || durationMs !in 2000L..15000L ||
+            outgoingStartMs > Long.MAX_VALUE - durationMs ||
+            incomingStartMs > Long.MAX_VALUE - durationMs || isCommunicationActive()
+        ) return false
+
+        stopTransitionPreview()
+        val generation = previewGeneration
+        return try {
+            val outgoing = previewOutgoingPlayer ?: newPlayer(false, "preview_out")
+                .also { previewOutgoingPlayer = it }
+            val incoming = previewIncomingPlayer ?: newPlayer(false, "preview_in")
+                .also { previewIncomingPlayer = it }
+            DspEngineSinkHook.activateDeck("preview_out")
+            DspEngineSinkHook.activateDeck("preview_in")
+            outgoing.volume = 0.78f
+            incoming.volume = 0f
+
+            fun maybeStart() {
+                if (generation != previewGeneration ||
+                    outgoing.playbackState != Player.STATE_READY ||
+                    incoming.playbackState != Player.STATE_READY ||
+                    previewRampRunnable != null) return
+                outgoing.playWhenReady = true
+                incoming.playWhenReady = true
+                val startedAt = android.os.SystemClock.elapsedRealtime()
+                val ramp = object : Runnable {
+                    override fun run() {
+                        if (generation != previewGeneration) return
+                        val progress = ((android.os.SystemClock.elapsedRealtime() - startedAt).toDouble() /
+                            durationMs.toDouble()).coerceIn(0.0, 1.0)
+                        val angle = progress * PI / 2.0
+                        outgoing.volume = (0.78 * cos(angle)).toFloat()
+                        incoming.volume = (0.78 * sin(angle)).toFloat()
+                        if (progress >= 1.0) stopTransitionPreview()
+                        else mainHandler.postDelayed(this, 20L)
+                    }
+                }
+                previewRampRunnable = ramp
+                mainHandler.post(ramp)
+            }
+            val outListener = object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) { maybeStart() }
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    if (generation == previewGeneration) stopTransitionPreview()
+                }
+            }
+            val inListener = object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) { maybeStart() }
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    if (generation == previewGeneration) stopTransitionPreview()
+                }
+            }
+            previewOutgoingListener = outListener
+            previewIncomingListener = inListener
+            outgoing.addListener(outListener)
+            incoming.addListener(inListener)
+            outgoing.setMediaItem(MediaItem.Builder().setUri(outgoingUri).setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder().setStartPositionMs(outgoingStartMs)
+                    .setEndPositionMs(outgoingStartMs + durationMs).build(),
+            ).build())
+            incoming.setMediaItem(MediaItem.Builder().setUri(incomingUri).setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder().setStartPositionMs(incomingStartMs)
+                    .setEndPositionMs(incomingStartMs + durationMs).build(),
+            ).build())
+            outgoing.prepare()
+            incoming.prepare()
+            maybeStart()
+            true
+        } catch (_: Exception) {
+            stopTransitionPreview()
+            false
+        }
+    }
+
+    /** Stop the audition and release both preview DSP handles. */
+    fun stopTransitionPreview(): Boolean {
+        previewGeneration++
+        previewRampRunnable?.let(mainHandler::removeCallbacks)
+        previewRampRunnable = null
+        previewOutgoingPlayer?.let { p ->
+            previewOutgoingListener?.let(p::removeListener)
+            runCatching { p.pause(); p.stop(); p.clearMediaItems(); p.volume = 0f }
+        }
+        previewIncomingPlayer?.let { p ->
+            previewIncomingListener?.let(p::removeListener)
+            runCatching { p.pause(); p.stop(); p.clearMediaItems(); p.volume = 0f }
+        }
+        previewOutgoingListener = null
+        previewIncomingListener = null
+        DspEngineSinkHook.suspendDeck("preview_out")
+        DspEngineSinkHook.suspendDeck("preview_in")
+        return true
     }
 
     /** Current deck session for session-bound DSP/effects attachment. */
@@ -342,6 +452,7 @@ class Media3PlaybackService : MediaSessionService() {
                 // never promote stale queue content over the user's selection.
                 if (deck === activePlayer) {
                     clearPreload()
+                    stopTransitionPreview()
                 }
             }
 
@@ -364,6 +475,7 @@ class Media3PlaybackService : MediaSessionService() {
                 if (deck === activePlayer && !playWhenReady) {
                     standbyPlayer?.pause()
                     pauseCrossfade()
+                    stopTransitionPreview()
                 }
                 // Never allow a deck to continue output in call/VoIP mode.
                 if (playWhenReady && isCommunicationActive()) {
@@ -629,6 +741,7 @@ class Media3PlaybackService : MediaSessionService() {
         activePlayer.pause()
         standbyPlayer?.pause()
         stopAuxiliarySound()
+        stopTransitionPreview()
         return true
     }
 
@@ -694,6 +807,7 @@ class Media3PlaybackService : MediaSessionService() {
     fun restorePrimaryDeckForNewSelection(): Boolean {
         if (!::activePlayer.isInitialized) return false
         clearPreload()
+        stopTransitionPreview()
         if (activeDeckId == "A") return true
 
         val outgoing = activePlayer
@@ -812,6 +926,13 @@ class Media3PlaybackService : MediaSessionService() {
         DspEngineSinkHook.forgetDeck("B")
         auxiliaryPlayer?.release()
         auxiliaryPlayer = null
+        stopTransitionPreview()
+        previewOutgoingPlayer?.release()
+        previewIncomingPlayer?.release()
+        previewOutgoingPlayer = null
+        previewIncomingPlayer = null
+        DspEngineSinkHook.forgetDeck("preview_out")
+        DspEngineSinkHook.forgetDeck("preview_in")
         if (instance === this) instance = null
         super.onDestroy()
     }

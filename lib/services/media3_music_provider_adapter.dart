@@ -11,7 +11,7 @@ import 'playback_snapshot.dart';
 /// Resonate's Song/queue model into immutable Media3 descriptors and forwards
 /// the native state stream. MusicProvider can migrate its transport boundary
 /// through this facade without exposing Media3 implementation details.
-class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackPlaylistSyncBackend, PlaybackSpeedBackend, PlaybackPitchBackend, PlaybackDeckSpeedBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend {
+class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackPlaylistSyncBackend, PlaybackSpeedBackend, PlaybackPitchBackend, PlaybackDeckSpeedBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend, PlaybackTransitionPreviewBackend {
   Media3MusicProviderAdapter({Media3PlaybackClient? client})
       : _client = client ?? Media3PlaybackClient();
 
@@ -182,6 +182,19 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
   @override
   Future<void> clearDeckEqOverlay({required String deck}) =>
       _client.clearDeckEqOverlay(deck: deck);
+
+  @override
+  Future<void> playTransitionPreview({
+    required Uri outgoingUri, required Uri incomingUri,
+    required Duration outgoingStart, required Duration incomingStart,
+    required Duration duration,
+  }) => _client.previewTransition(
+    outgoingUri: outgoingUri, incomingUri: incomingUri,
+    outgoingStart: outgoingStart, incomingStart: incomingStart, duration: duration,
+  );
+
+  @override
+  Future<void> stopTransitionPreview() => _client.stopTransitionPreview();
 
   @override
   Future<void> playAuxiliarySound(

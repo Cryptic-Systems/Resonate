@@ -342,7 +342,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
             Expanded(child: OutlinedButton.icon(
               onPressed: _recommended == null ? null : _showPreview,
               icon: const Icon(Icons.visibility_rounded),
-              label: const Text('Preview timing'),
+              label: const Text('Preview transition'),
             )),
             const SizedBox(width: 10),
             Expanded(child: FilledButton.icon(onPressed: _saving ? null : _save,

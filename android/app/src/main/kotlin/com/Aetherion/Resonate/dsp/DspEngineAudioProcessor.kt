@@ -61,7 +61,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
     private var nativeProcessEnabled = false
 
     private var engineHandle: Long = 0
-    @Volatile private var deckActive: Boolean = deckId == "A" || deckId == "legacy"
+    @Volatile private var deckActive: Boolean = deckId == "A" || deckId == "legacy" || deckId.startsWith("preview_")
     private var configuredRate: Int = 44100
     private var configuredChannels: Int = 2
     private var createAttempted = false
