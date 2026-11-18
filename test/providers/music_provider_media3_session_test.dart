@@ -35,6 +35,7 @@ Media3ProviderState _state({
   Duration position = Duration.zero,
   String activeDeckId = 'A',
   String crossfadeStatus = 'idle',
+  String repeatMode = 'off',
 }) => Media3ProviderState(
       currentSong: song,
       queueIndex: queueIndex,
@@ -52,6 +53,7 @@ Media3ProviderState _state({
       volume: 1.0,
       activeDeckId: activeDeckId,
       crossfadeStatus: crossfadeStatus,
+      repeatMode: repeatMode,
       hasError: false,
       error: null,
     );
@@ -864,6 +866,42 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       await session.audioSessions.close();
       await session.states.close();
+    });
+
+    test('external MediaSession repeat changes reconcile into provider state', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final song = _song('external-repeat');
+      await provider.enqueueSongs(<Song>[song]);
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
+      expect(provider.repeatMode, PlaybackRepeatMode.off);
+
+      // Simulates a repeat-mode update originating from Android's notification,
+      // a headset transport control or Android Auto rather than Flutter UI.
+      session.states.add(_state(
+        song: song,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        repeatMode: 'one',
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(provider.repeatMode, PlaybackRepeatMode.one);
+
+      session.states.add(_state(
+        song: song,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        repeatMode: 'all',
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(provider.repeatMode, PlaybackRepeatMode.all);
+      await provider.dispose();
+      await session.states.close();
+      await session.audioSessions.close();
     });
 
     test('planned queue order overrides Shuffle temporarily without changing its saved preference', () async {

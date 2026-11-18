@@ -1104,6 +1104,30 @@ extension MusicProviderMedia3 on MusicProvider {
       currentDuration = state.duration ?? currentSong!.duration;
       _lastCompletionSongId = null;
     }
+    // Notification, headset and Android Auto controls can change the native
+    // MediaSession repeat mode without going through MusicProvider.setRepeatMode.
+    // Ignore the temporary native repeat-off window used by Repeat One DJ handoffs.
+    final observedRepeatMode = switch (state.repeatMode) {
+      'one' => PlaybackRepeatMode.one,
+      'all' => PlaybackRepeatMode.all,
+      _ => PlaybackRepeatMode.off,
+    };
+    if (!_repeatSelfHandoffInFlight && !_repeatSelfHandoffArmed &&
+        observedRepeatMode != _repeatMode) {
+      final transitionActive = _crossfadeInProgress ||
+          _automaticCrossfadeInFlight || _crossfadePreloadInFlight ||
+          _preloadedNextSongId != null;
+      if (transitionActive) {
+        _cancelAutomaticPlaybackWork(reason: 'external_repeat_mode_changed');
+      }
+      _repeatSelfDjPlanGeneration++;
+      _repeatSelfDjPlanSongId = null;
+      _repeatSelfDjPlanAttempted = false;
+      _repeatSelfDjPlanning = false;
+      _repeatSelfDjPreloadInFlight = false;
+      _repeatSelfDjPreparation = null;
+      _repeatMode = observedRepeatMode;
+    }
     currentPosition = state.position;
     if (songChanged) {
       // The incoming snapshot already belongs to the next song. Finalize the
