@@ -4060,6 +4060,38 @@ class MusicProvider extends ChangeNotifier {
     });
   }
 
+  /// Retire a standby plan only when a queue edit changes the immediate
+  /// successor or its native queue index. Appending behind the prepared target
+  /// does not disturb the handoff and is intentionally left alone.
+  void _invalidatePreparedTransitionIfTargetChanged({
+    required String? previousTargetId,
+    required int previousTargetIndex,
+  }) {
+    final nextTarget = _crossfadeTargetSong;
+    final nextIndex = _crossfadeTargetIndex;
+    if (previousTargetId == nextTarget?.id &&
+        previousTargetIndex == nextIndex) {
+      return;
+    }
+    final transitionPrepared = _crossfadeInProgress ||
+        _automaticCrossfadeInFlight ||
+        _repeatSelfHandoffArmed ||
+        _repeatSelfHandoffInFlight ||
+        _crossfadePreloadInFlight ||
+        _preloadedNextSongId != null;
+    if (transitionPrepared) {
+      _cancelAutomaticPlaybackWork(reason: 'queue_target_changed');
+      unawaited(ResonateDiagnostics.record('queue_transition_invalidated', {
+        'reason': 'queue_target_changed',
+        'previousTargetId': previousTargetId,
+        'nextTargetId': nextTarget?.id,
+        'previousTargetIndex': previousTargetIndex,
+        'nextTargetIndex': nextIndex,
+        'currentSongId': currentSong?.id,
+      }));
+    }
+  }
+
   Future<bool> enqueueSongs(
     List<Song> songs, {
     bool preserveOrder = false,
@@ -4083,36 +4115,54 @@ class MusicProvider extends ChangeNotifier {
             !_queue.any((queued) => queued.id == song.id))
         .toList();
     if (additions.isEmpty) return false;
+    final previousTargetId = _crossfadeTargetSong?.id;
+    final previousTargetIndex = _crossfadeTargetIndex;
     if (preserveOrder) _queueOrderLocked = true;
     if (effectiveShuffleEnabled && additions.length > 1) {
       additions.shuffle(math.Random());
     }
     _queue.addAll(additions);
+    _invalidatePreparedTransitionIfTargetChanged(
+      previousTargetId: previousTargetId,
+      previousTargetIndex: previousTargetIndex,
+    );
     await _persistQueue();
     await this._syncMedia3ProviderQueue();
     notifyListeners();
     return true;
   }
   Future<bool> addToQueue(Song song) => enqueueSongs([song]);
-  Future<bool> playNext(Song song) async { await _visibility.load(); if (!_visibility.isVisible(song.id) || song.filePath.trim().isEmpty || currentSong?.id == song.id || _queue.any((q) => q.id == song.id)) return false; final insertAt = (_queueIndex + 1).clamp(0, _queue.length).toInt(); _queue.insert(insertAt, song); await _persistQueue(); await this._syncMedia3ProviderQueue(); notifyListeners(); return true; }
+  Future<bool> playNext(Song song) async { await _visibility.load(); if (!_visibility.isVisible(song.id) || song.filePath.trim().isEmpty || currentSong?.id == song.id || _queue.any((q) => q.id == song.id)) return false; final previousTargetId = _crossfadeTargetSong?.id; final previousTargetIndex = _crossfadeTargetIndex; final insertAt = (_queueIndex + 1).clamp(0, _queue.length).toInt(); _queue.insert(insertAt, song); _invalidatePreparedTransitionIfTargetChanged(previousTargetId: previousTargetId, previousTargetIndex: previousTargetIndex); await _persistQueue(); await this._syncMedia3ProviderQueue(); notifyListeners(); return true; }
   Future<bool> removeFromQueue(int index) async {
     if (index < 0 || index >= _queue.length || index == _queueIndex) return false;
+    final previousTargetId = _crossfadeTargetSong?.id;
+    final previousTargetIndex = _crossfadeTargetIndex;
     _queue.removeAt(index);
     if (index < _queueIndex) _queueIndex -= 1;
     if (_queueIndex >= _queue.length - 1) _queueOrderLocked = false;
+    _invalidatePreparedTransitionIfTargetChanged(
+      previousTargetId: previousTargetId,
+      previousTargetIndex: previousTargetIndex,
+    );
     await _persistQueue();
     await this._syncMedia3ProviderQueue();
     notifyListeners();
     return true;
   }
-  Future<bool> reorderQueue(int oldIndex, int newIndex) async { if (oldIndex <= _queueIndex || oldIndex >= _queue.length) return false; if (newIndex > oldIndex) newIndex--; newIndex = newIndex.clamp(_queueIndex + 1, _queue.length - 1).toInt(); final item = _queue.removeAt(oldIndex); _queue.insert(newIndex, item); await _persistQueue(); await this._syncMedia3ProviderQueue(); notifyListeners(); return true; }
+  Future<bool> reorderQueue(int oldIndex, int newIndex) async { if (oldIndex <= _queueIndex || oldIndex >= _queue.length) return false; final previousTargetId = _crossfadeTargetSong?.id; final previousTargetIndex = _crossfadeTargetIndex; if (newIndex > oldIndex) newIndex--; newIndex = newIndex.clamp(_queueIndex + 1, _queue.length - 1).toInt(); final item = _queue.removeAt(oldIndex); _queue.insert(newIndex, item); _invalidatePreparedTransitionIfTargetChanged(previousTargetId: previousTargetId, previousTargetIndex: previousTargetIndex); await _persistQueue(); await this._syncMedia3ProviderQueue(); notifyListeners(); return true; }
   Future<void> clearUpcomingQueue() async {
     if (_queueIndex >= _queue.length - 1) return;
 
     final previousQueue = List<Song>.of(_queue);
     final previousIndex = _queueIndex;
     final previousOrderLock = _queueOrderLocked;
+    final previousTargetId = _crossfadeTargetSong?.id;
+    final previousTargetIndex = _crossfadeTargetIndex;
     _queue = previousQueue.take(previousIndex + 1).toList(growable: true);
+    _invalidatePreparedTransitionIfTargetChanged(
+      previousTargetId: previousTargetId,
+      previousTargetIndex: previousTargetIndex,
+    );
     _queueOrderLocked = false;
 
     try {
