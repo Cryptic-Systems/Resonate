@@ -189,11 +189,14 @@ class DjAnalysisService {
     _inFlight.add(song.id);
     try {
       final size = await _fileSize(song.filePath);
-      final legacyEstimate = await _estimator.estimateFile(
-        song.filePath,
-        durationMs: song.duration.inMilliseconds,
-        isCancelled: cancelled,
-      );
+      var estimate = await _estimateWithV2Profile(song, null, isCancelled: cancelled);
+      if (estimate == null && !cancelled()) {
+        estimate = await _estimator.estimateFile(
+          song.filePath,
+          durationMs: song.duration.inMilliseconds,
+          isCancelled: cancelled,
+        );
+      }
       if (cancelled()) {
         return DjAnalysis(
           songId: song.id,
@@ -201,11 +204,6 @@ class DjAnalysisService {
           analysisVersion: DjAnalysis.currentVersion,
         );
       }
-      final estimate = await _estimateWithV2Profile(
-        song,
-        legacyEstimate,
-        isCancelled: cancelled,
-      );
       if (cancelled()) {
         return DjAnalysis(
           songId: song.id,
@@ -263,6 +261,25 @@ class DjAnalysisService {
     }
   }
 
+  @visibleForTesting
+  static List<int> analysisWindowStartPositions(
+    int durationMs, {
+    double sampleSeconds = 8.0,
+  }) {
+    if (durationMs <= 0) return const <int>[];
+    final windowMs = (sampleSeconds * 1000).round().clamp(4000, 25000).toInt();
+    final positions = <int>{0};
+    if (durationMs > windowMs * 2) {
+      positions
+        ..add((durationMs * 0.33).round().clamp(0, durationMs - windowMs).toInt())
+        ..add((durationMs * 0.66).round().clamp(0, durationMs - windowMs).toInt());
+    }
+    if (durationMs > windowMs) {
+      positions.add((durationMs - windowMs).clamp(0, durationMs - 1).toInt());
+    }
+    return positions.toList()..sort();
+  }
+
   Future<DjBpmEstimate?> _estimateWithV2Profile(
     Song song,
     DjBpmEstimate? legacy, {
@@ -291,19 +308,11 @@ class DjAnalysisService {
       );
     }
 
-    // Sample the full track rather than trusting only start/middle/end.
-    // Windows are intentionally short to keep idle analysis affordable.
-    final sampleSeconds = durationMs >= 180000 ? 12.0 : 15.0;
+    // Four short, distributed windows retain intro/middle/outro structure.
+    // This replaces six V2 windows plus two legacy PCM decodes per song.
+    const sampleSeconds = 8.0;
     final windowMs = (sampleSeconds * 1000).round();
-    final positions = <int>{0};
-    if (durationMs > windowMs) {
-      for (final fraction in const <double>[0.20, 0.40, 0.60, 0.80]) {
-        positions.add((durationMs * fraction).round());
-      }
-      positions.add((durationMs - windowMs).clamp(0, durationMs - 1000));
-    }
-
-    final ordered = positions.toList()..sort();
+    final ordered = analysisWindowStartPositions(durationMs, sampleSeconds: sampleSeconds);
     for (final startMs in ordered) {
       if (isCancelled?.call() ?? false) return null;
       final role = startMs == 0
