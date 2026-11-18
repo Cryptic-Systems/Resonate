@@ -31,7 +31,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
   }
   String _clock(int ms) {
     final seconds = (ms ~/ 1000).clamp(0, 1 << 30);
-    return seconds ~/ 60 .toString() + ':' + (seconds % 60).toString().padLeft(2, '0');
+    return (seconds ~/ 60).toString() + ':' + (seconds % 60).toString().padLeft(2, '0');
   }
 
   Future<Song?> _choose(String title, {String? excludeId}) async {
@@ -248,7 +248,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(title, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
         Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-        Slider(value: value.toDouble().clamp(0, max), min: 0, max: max, onChanged: (v) => changed(v.round())),
+        Slider(value: value.toDouble().clamp(0, max).toDouble(), min: 0, max: max, onChanged: (v) => changed(v.round())),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('0:00'), Text(_clock(max.round()))]),
       ]));
   }
