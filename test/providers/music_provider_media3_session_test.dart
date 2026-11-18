@@ -1067,6 +1067,65 @@ void main() {
       await session.states.close();
     });
 
+    test('rapid Next then Previous preempts a prepared Media3 DJ handoff', () async {
+      final session = _FakePlaybackSession()
+        ..preloadNextGate = Completer<void>();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('rapid-transport-outgoing');
+      final second = _song('rapid-transport-prepared');
+      final third = _song('rapid-transport-tail');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(
+        first,
+        queue: <Song>[first, second, third],
+      ), isTrue);
+      await provider.setCrossfadeDuration(500);
+
+      session.positionValue = const Duration(milliseconds: 170000);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 100 &&
+              !session.calls.any((call) =>
+                  call.startsWith('preloadNext:rapid-transport-prepared:'));
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(
+        session.calls.any((call) =>
+            call.startsWith('preloadNext:rapid-transport-prepared:')),
+        isTrue,
+      );
+
+      // Exercise two opposing transport commands while the incoming decoder
+      // is still blocked. The second command must own the final queue position.
+      await provider.nextSong();
+      await provider.previousSong();
+      expect(provider.currentSong?.id, first.id);
+      expect(provider.queueIndex, 0);
+      expect(session.calls, contains('cancelCrossfade'));
+
+      session.preloadNextGate!.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(
+        session.calls.where((call) => call.startsWith('crossfade:')),
+        isEmpty,
+        reason: 'The pre-transport standby plan must not commit after Next/Previous.',
+      );
+      expect(provider.currentSong?.id, first.id);
+      expect(provider.queueIndex, 0);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('restores the provider resume position into the new Media3 session before handoff', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
