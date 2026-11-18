@@ -83,6 +83,7 @@ class _EvolvingMixCardState extends State<EvolvingMixCard> {
       reason: reason,
       createdAt: createdAt,
       parentMixId: value['parentMixId'] as String?,
+      queueIntentId: value['queueIntentId'] as String?,
       edition: (value['edition'] as num?)?.toInt() ?? 1,
       previousContinuityScore: (value['previousContinuityScore'] as num?)?.toDouble(),
     );

@@ -156,6 +156,7 @@ class IntelligenceMixController extends ChangeNotifier {
               ? generated.reason
               : '${generated.reason} ${plan.reason}',
           parentMixId: generated.parentMixId,
+          queueIntentId: queueIntent.id,
           edition: generated.edition,
           previousContinuityScore: generated.previousContinuityScore,
         );
@@ -190,9 +191,29 @@ class IntelligenceMixController extends ChangeNotifier {
     try {
       if (!await IntelligenceMixSettingsStore.autoEvolutionEnabled() ||
           !requestIsCurrent()) return null;
-      final mix = await _service.evolveMix(
+      final queueIntent = QueueIntent.fromId(previous.queueIntentId);
+      var sourceRecommendations = queueIntent == null
+          ? intelligence.recommendations
+          : intelligence.candidatePool;
+      QueuePlan? candidatePoolPlan;
+      if (queueIntent != null) {
+        candidatePoolPlan = await _queuePlanner.plan(
+          sourceRecommendations.map((item) => item.song).toList(growable: false),
+          intent: queueIntent,
+        );
+        if (!requestIsCurrent()) return null;
+        _lastQueuePlan = candidatePoolPlan;
+        if (!candidatePoolPlan.isUsable) return null;
+        final byId = <String, IntelligenceRecommendation>{
+          for (final item in sourceRecommendations) item.song.id: item,
+        };
+        sourceRecommendations = candidatePoolPlan.songs
+            .map((song) => byId[song.id]!)
+            .toList(growable: false);
+      }
+      final generated = await _service.evolveMix(
         previousMix: previous,
-        recommendations: intelligence.recommendations,
+        recommendations: sourceRecommendations,
         currentSong: music.currentSong,
         sessionMode: intelligence.sessionMode,
         sessionSkipStreak: intelligence.sessionSkipStreak,
@@ -200,6 +221,43 @@ class IntelligenceMixController extends ChangeNotifier {
         sessionArtistCounts: intelligence.sessionArtistCounts,
         shouldContinue: requestIsCurrent,
       );
+      if (!requestIsCurrent()) return null;
+      var mix = generated;
+      if (queueIntent != null && generated.songs.isNotEmpty) {
+        final finalPlan = await _queuePlanner.plan(generated.songs, intent: queueIntent);
+        if (!requestIsCurrent()) return null;
+        if (!finalPlan.isUsable) {
+          _lastQueuePlan = finalPlan;
+          return null;
+        }
+        final coverage = candidatePoolPlan ?? finalPlan;
+        _lastQueuePlan = QueuePlan(
+          intentId: queueIntent.id,
+          songs: finalPlan.songs,
+          status: coverage.status == QueuePlanStatus.partial ||
+                  finalPlan.status == QueuePlanStatus.partial
+              ? QueuePlanStatus.partial
+              : QueuePlanStatus.ready,
+          analysisCoverage: coverage.analysisCoverage,
+          analyzedTrackCount: coverage.analyzedTrackCount,
+          eligibleTrackCount: coverage.eligibleTrackCount,
+          excludedSongIds: coverage.excludedSongIds,
+          reason: coverage.reason ?? finalPlan.reason,
+        );
+        mix = IntelligenceMix(
+          id: generated.id,
+          title: generated.title,
+          description: generated.description,
+          songs: finalPlan.songs,
+          targetDuration: generated.targetDuration,
+          createdAt: generated.createdAt,
+          reason: generated.reason,
+          parentMixId: generated.parentMixId,
+          queueIntentId: queueIntent.id,
+          edition: generated.edition,
+          previousContinuityScore: generated.previousContinuityScore,
+        );
+      }
       if (!requestIsCurrent()) return null;
       final continuity = await _service.evaluateMix(
         previous,
@@ -294,6 +352,7 @@ class IntelligenceMixController extends ChangeNotifier {
         targetDuration: Duration(minutes: targetMinutes),
         createdAt: createdAt, reason: reason,
         parentMixId: latest['parentMixId'] as String?,
+        queueIntentId: latest['queueIntentId'] as String?,
         edition: (latest['edition'] as num?)?.toInt() ?? 1,
         previousContinuityScore: (latest['previousContinuityScore'] as num?)?.toDouble(),
       );

@@ -54,6 +54,9 @@ class IntelligenceMix {
   final DateTime createdAt;
   final String reason;
   final String? parentMixId;
+  /// Stable DJ queue goal (for example calmer_mix, workout or driving).
+  /// Kept across mix editions so evolution cannot silently drop its constraints.
+  final String? queueIntentId;
   final int edition;
   final double? previousContinuityScore;
 
@@ -66,6 +69,7 @@ class IntelligenceMix {
     required this.createdAt,
     required this.reason,
     this.parentMixId,
+    this.queueIntentId,
     this.edition = 1,
     this.previousContinuityScore,
   });
