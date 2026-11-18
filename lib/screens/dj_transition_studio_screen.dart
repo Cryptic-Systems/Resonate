@@ -176,6 +176,13 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
     if (_outCue < 0 || _inCue < 0 || (da > 0 && _outCue >= da) || (db > 0 && _inCue >= db)) {
       setState(() => _error = 'Cue points must be inside their track durations.'); return;
     }
+    if (_repeatSameTrack && da > 0) {
+      final remainingMs = da - _outCue;
+      if (remainingMs < _fadeMs + 1200 || remainingMs > 30000) {
+        setState(() => _error = 'For repeat-one, Mix-Out must be within the final 30 seconds and leave at least 1.2 seconds beyond the blend duration.');
+        return;
+      }
+    }
     setState(() { _saving = true; _error = null; });
     try {
       await DjTransitionPresetStore.save(DjTransitionPreset(

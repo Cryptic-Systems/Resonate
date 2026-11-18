@@ -33,6 +33,10 @@ class DjTransitionPreset {
     if (outgoingDurationMs != null &&
         (outgoingCueMs >= outgoingDurationMs ||
          outgoingDurationMs - outgoingCueMs < 2000)) return false;
+    if (outgoingSongId == incomingSongId && outgoingDurationMs != null) {
+      final remainingMs = outgoingDurationMs - outgoingCueMs;
+      if (remainingMs < durationMs + 1200 || remainingMs > 30000) return false;
+    }
     if (incomingDurationMs != null &&
         (incomingCueMs >= incomingDurationMs ||
          incomingDurationMs - incomingCueMs < 2000)) return false;

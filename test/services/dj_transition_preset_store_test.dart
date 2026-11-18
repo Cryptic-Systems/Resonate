@@ -14,7 +14,7 @@ void main() {
     );
     await DjTransitionPresetStore.save(preset);
     final loaded = await DjTransitionPresetStore.get('track-a', 'track-b');
-    expect(loaded?.outgoingCueMs, 188000);
+    expect(loaded?.outgoingCueMs, 215000);
     expect(loaded?.incomingCueMs, 12000);
     expect(loaded?.durationMs, 7200);
     expect(loaded?.preferredKind, DjTransitionKind.phraseBlend);
@@ -66,7 +66,7 @@ void main() {
   test('persists and validates an explicit repeat-one self preset', () async {
     const preset = DjTransitionPreset(
       outgoingSongId: 'repeat-track', incomingSongId: 'repeat-track',
-      outgoingCueMs: 188000, incomingCueMs: 6000, durationMs: 7200,
+      outgoingCueMs: 215000, incomingCueMs: 6000, durationMs: 7200,
       preferredKind: DjTransitionKind.phraseBlend,
     );
     await DjTransitionPresetStore.save(preset);
@@ -77,12 +77,12 @@ void main() {
     expect(loaded?.incomingCueMs, 6000);
     expect(loaded?.preferredKind, DjTransitionKind.phraseBlend);
     expect(loaded?.isUsableFor(
-      outgoingPositionMs: 170000,
+      outgoingPositionMs: 200000,
       outgoingDurationMs: 240000,
       incomingDurationMs: 240000,
     ), isTrue);
     expect(loaded?.isUsableFor(
-      outgoingPositionMs: 188001,
+      outgoingPositionMs: 215001,
       outgoingDurationMs: 240000,
       incomingDurationMs: 240000,
     ), isFalse);
