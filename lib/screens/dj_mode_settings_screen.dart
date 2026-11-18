@@ -115,7 +115,7 @@ class DjModeSettingsScreen extends StatelessWidget {
                   title: const Text('Max tempo stretch'),
                   subtitle: Text(
                     on
-                        ? '±${dj.maxStretchPercent}% (used when tempo match is on)'
+                        ? '±${dj.maxStretchPercent}% (DJ tempo matching is capped at 6%)'
                         : 'Enable DJ Mode to adjust',
                   ),
                   trailing: Text('${dj.maxStretchPercent}%'),
@@ -125,8 +125,8 @@ class DjModeSettingsScreen extends StatelessWidget {
                 Slider(
                   value: dj.maxStretchPercent.toDouble(),
                   min: 3,
-                  max: 20,
-                  divisions: 17,
+                  max: 6,
+                  divisions: 3,
                   label: '±${dj.maxStretchPercent}%',
                   onChanged: (v) => dj.setMaxStretchPercent(v.round()),
                 ),

@@ -56,12 +56,12 @@ class DjModeSettingsStore {
 
   static Future<int> maxStretchPercent() async {
     final p = await SharedPreferences.getInstance();
-    return (p.getInt(_maxStretchKey) ?? 12).clamp(3, 20);
+    return (p.getInt(_maxStretchKey) ?? 6).clamp(3, 6);
   }
 
   static Future<void> setMaxStretchPercent(int value) async {
     final p = await SharedPreferences.getInstance();
-    await p.setInt(_maxStretchKey, value.clamp(3, 20));
+    await p.setInt(_maxStretchKey, value.clamp(3, 6));
   }
 
   static Future<bool> analyzeIdle() async {

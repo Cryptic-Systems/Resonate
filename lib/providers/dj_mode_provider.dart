@@ -30,7 +30,7 @@ class DjModeProvider extends ChangeNotifier {
   bool _beatAlign = true;
   bool _tempoMatch = false;
   bool _harmonicMix = false;
-  int _maxStretchPercent = 12;
+  int _maxStretchPercent = 6;
   bool _analyzeIdle = true;
   bool _transitionSfx = true;
   DjAggressiveness _aggressiveness = DjAggressiveness.balanced;
@@ -135,7 +135,7 @@ class DjModeProvider extends ChangeNotifier {
   }
 
   Future<void> setMaxStretchPercent(int value) async {
-    _maxStretchPercent = value.clamp(3, 20);
+    _maxStretchPercent = value.clamp(3, 6);
     _syncToMusic();
     notifyListeners();
     await DjModeSettingsStore.setMaxStretchPercent(_maxStretchPercent);

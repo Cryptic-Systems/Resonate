@@ -302,7 +302,7 @@ class MusicProvider extends ChangeNotifier {
   bool get _djTempoMatchActive => _djHandoff.tempoMatchActive;
   set _djTempoMatchActive(bool value) => _djHandoff.tempoMatchActive = value;
   int get _djMaxStretchPercent => _djHandoff.maxStretchPercent;
-  set _djMaxStretchPercent(int value) => _djHandoff.maxStretchPercent = value;
+  set _djMaxStretchPercent(int value) => _djHandoff.maxStretchPercent = value.clamp(3, 6);
   bool get _djSfxActive => _djHandoff.sfxActive;
   set _djSfxActive(bool value) => _djHandoff.sfxActive = value;
   DjPolicy get _djPolicy => _djHandoff.policy;
@@ -1163,7 +1163,7 @@ class MusicProvider extends ChangeNotifier {
   void configureDjMode({
     required bool beatAlignActive,
     bool tempoMatchActive = false,
-    int maxStretchPercent = 12,
+    int maxStretchPercent = 6,
     bool sfxActive = false,
     DjAnalysisService? analysis,
     DjPolicy policy = DjPolicy.balanced,
@@ -1173,7 +1173,7 @@ class MusicProvider extends ChangeNotifier {
         _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
     _djBeatAlignActive = beatAlignActive;
     _djTempoMatchActive = tempoMatchActive;
-    _djMaxStretchPercent = maxStretchPercent.clamp(3, 20);
+    _djMaxStretchPercent = maxStretchPercent.clamp(3, 6);
     _djSfxActive = sfxActive;
     _djAnalysis = analysis;
     if (wasActive &&
