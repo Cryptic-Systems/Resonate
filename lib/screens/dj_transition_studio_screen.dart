@@ -169,8 +169,8 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
     setState(() { _saving = true; _error = null; });
     try {
       await DjTransitionPresetStore.save(DjTransitionPreset(
-        outgoingSongId: a.id,
-        incomingSongId: b.id,
+        outgoingSongId: _outgoing!.id,
+        incomingSongId: _incoming!.id,
         outgoingCueMs: _outCue,
         incomingCueMs: _inCue,
         durationMs: _fadeMs,
@@ -302,7 +302,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
           if (_hasSavedPreset) Align(alignment: Alignment.centerLeft,
             child: TextButton.icon(
               onPressed: _saving ? null : () async {
-                await DjTransitionPresetStore.delete(a.id, b.id);
+                await DjTransitionPresetStore.delete(_outgoing!.id, _incoming!.id);
                 if (!mounted) return;
                 setState(() { _hasSavedPreset = false; _preferredKind = null; _status = 'Pair preset removed.'; });
                 _rebuild();
