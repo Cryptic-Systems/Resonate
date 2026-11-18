@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../dj_engine/core/dj_types.dart';
@@ -5,7 +6,9 @@ import '../dj_engine/intelligence/dj_transition_brain.dart';
 import '../models/song.dart';
 import '../providers/dj_mode_provider.dart';
 import '../providers/library_provider.dart';
+import '../providers/music_provider.dart';
 import '../services/dj_transition_preset_store.dart';
+import '../services/media3_playback_client.dart';
 import '../ui/resonate_glass.dart';
 
 /// Pair-based cue editor. Saved markers are consumed by the DJ profiles used
@@ -26,6 +29,8 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
   bool _hasSavedPreset = false;
   int _outCue = 0, _inCue = 0, _fadeMs = 6500;
   bool _busy = false, _saving = false;
+  bool _audioPreviewActive = false;
+  MusicProvider? _previewProvider;
   String? _status, _error;
 
   int _duration(Song? song, DjTrackProfile? profile) {
@@ -75,6 +80,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
   }
 
   Future<void> _pick(bool outgoing) async {
+    await _stopAudioPreview();
     final song = await _choose(outgoing ? 'Choose outgoing track' : 'Choose incoming track',
       excludeId: outgoing ? _incoming?.id : _outgoing?.id);
     if (song == null || !mounted) return;
@@ -189,6 +195,38 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
     }
   }
 
+  Future<void> _playAudioPreview() async {
+    final candidate = _recommended;
+    final outgoing = _outgoing, incoming = _incoming;
+    if (candidate == null || outgoing == null || incoming == null) return;
+    final provider = context.read<MusicProvider>();
+    try {
+      await provider.previewDjTransition(
+        outgoingUri: Media3QueueItem.fromSong(outgoing).uri,
+        incomingUri: Media3QueueItem.fromSong(incoming).uri,
+        outgoingStart: Duration(milliseconds: candidate.outgoingStartMs),
+        incomingStart: Duration(milliseconds: candidate.incomingStartMs),
+        duration: Duration(milliseconds: candidate.durationMs),
+      );
+      _previewProvider = provider;
+      _audioPreviewActive = true;
+      if (mounted) setState(() => _status = 'Audible transition preview is playing on isolated DSP decks.');
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Could not start audible preview: $e');
+    }
+  }
+
+  Future<void> _stopAudioPreview() async {
+    final provider = _previewProvider;
+    _audioPreviewActive = false;
+    if (provider == null) return;
+    try {
+      await provider.stopDjTransitionPreview();
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Could not stop audible preview: $e');
+    }
+  }
+
   void _showPreview() {
     final candidate = _recommended;
     if (candidate == null) return;
@@ -216,10 +254,14 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
               style: Theme.of(context).textTheme.bodySmall),
           ),
           const SizedBox(height: 10),
-          Text('Visual timing preview only. It does not interrupt or start playback.',
+          Text('Audible preview layers over current playback using dedicated DSP-enabled decks. The main queue and playback position remain unchanged.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
         ]),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+        actions: [
+          TextButton.icon(onPressed: _playAudioPreview, icon: const Icon(Icons.play_arrow_rounded), child: const Text('Play audio')),
+          TextButton.icon(onPressed: _stopAudioPreview, icon: const Icon(Icons.stop_rounded), child: const Text('Stop')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+        ],
       ),
     );
   }
@@ -244,6 +286,15 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
         ]));
       }),
     ]);
+  }
+
+  @override
+  void dispose() {
+    final provider = _previewProvider;
+    if (_audioPreviewActive && provider != null) {
+      unawaited(provider.stopDjTransitionPreview());
+    }
+    super.dispose();
   }
 
   @override
@@ -275,13 +326,13 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
           child: Text(_error!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error))),
         if (_profileA != null && _profileB != null) ...[
           const SizedBox(height: 24), _heading('Mix points'),
-          _cue('Mix-Out', 'Outgoing · ' + _clock(_outCue), _outCue, da, (v) { setState(() => _outCue = v); _rebuild(); }),
-          _cue('Mix-In', 'Incoming · ' + _clock(_inCue), _inCue, db, (v) { setState(() => _inCue = v); _rebuild(); }),
+          _cue('Mix-Out', 'Outgoing · ' + _clock(_outCue), _outCue, da, (v) { unawaited(_stopAudioPreview()); setState(() => _outCue = v); _rebuild(); }),
+          _cue('Mix-In', 'Incoming · ' + _clock(_inCue), _inCue, db, (v) { unawaited(_stopAudioPreview()); setState(() => _inCue = v); _rebuild(); }),
           const SizedBox(height: 8), _heading('Blend duration'),
           Text((_fadeMs / 1000).toStringAsFixed(1) + ' seconds'),
           Slider(value: _fadeMs.toDouble(), min: 2000, max: 15000, divisions: 26,
             label: (_fadeMs / 1000).toStringAsFixed(1) + ' s',
-            onChanged: (v) { setState(() => _fadeMs = v.round()); _rebuild(); }),
+            onChanged: (v) { unawaited(_stopAudioPreview()); setState(() => _fadeMs = v.round()); _rebuild(); }),
           const SizedBox(height: 12), _heading('Transition analysis'),
           if (_recommended != null) _recommendation(_recommended!),
           const SizedBox(height: 10),
@@ -371,6 +422,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
     margin: const EdgeInsets.only(bottom: 8), padding: EdgeInsets.zero,
     child: ListTile(
       onTap: () {
+        unawaited(_stopAudioPreview());
         setState(() {
           _preferredKind = c.kind;
           _outCue = c.outgoingStartMs;
