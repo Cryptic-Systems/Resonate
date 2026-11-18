@@ -618,3 +618,45 @@ DjTempoStretchPlan? computeTempoStretch({
   consider(bpmB * 2.0, 'match_incoming_double');
   return best;
 }
+/// Conservative execution gate shared by both DJ planning generations.
+/// BPM octave alternatives are accepted only when their effective pulse is
+/// within 6%; actual playback-rate correction is always capped at +/-6%.
+DjTempoStretchPlan? computeSafeTempoStretch({
+  required double bpmA,
+  required double bpmB,
+  required double confidenceA,
+  required double confidenceB,
+  required int maxStretchPercent,
+}) {
+  const confidenceFloor = 0.70;
+  const maxRelativeTempoDelta = 0.06;
+  if (!bpmA.isFinite ||
+      !bpmB.isFinite ||
+      !confidenceA.isFinite ||
+      !confidenceB.isFinite ||
+      bpmA < 40 ||
+      bpmA > 240 ||
+      bpmB < 40 ||
+      bpmB > 240 ||
+      confidenceA < confidenceFloor ||
+      confidenceB < confidenceFloor) {
+    return null;
+  }
+
+  final pulseAlternatives = <double>[
+    bpmB,
+    if (bpmB / 2 >= 40) bpmB / 2,
+    if (bpmB * 2 <= 240) bpmB * 2,
+  ];
+  pulseAlternatives.sort((x, y) =>
+      (x - bpmA).abs().compareTo((y - bpmA).abs()));
+  final relativeDelta = (pulseAlternatives.first - bpmA).abs() / bpmA;
+  if (relativeDelta > maxRelativeTempoDelta) return null;
+
+  return computeTempoStretch(
+    bpmA: bpmA,
+    bpmB: bpmB,
+    maxStretchPercent: maxStretchPercent.clamp(3, 6).toInt(),
+  );
+}
+

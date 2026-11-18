@@ -215,9 +215,11 @@ DjTransitionPlan planDjTransition({
 
   DjTempoStretchPlan? stretch;
   if (tempoMatchActive) {
-    stretch = computeTempoStretch(
+    stretch = computeSafeTempoStretch(
       bpmA: bpmA,
       bpmB: bpmB,
+      confidenceA: analysisA.bpmConfidence,
+      confidenceB: analysisB.bpmConfidence,
       maxStretchPercent: maxStretchPercent,
     );
   }

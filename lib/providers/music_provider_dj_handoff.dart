@@ -11,34 +11,20 @@ DjTempoStretchPlan? _safeProfileTempoStretch(
 }) {
   final a = outgoing.beatGrid;
   final b = incoming.beatGrid;
-  if (!a.usable || !b.usable ||
-      a.confidence < 0.70 || b.confidence < 0.70 ||
+  if (!a.usable ||
+      !b.usable ||
       candidate.risks.contains(DjRiskType.tempoInstability)) {
     return null;
   }
 
-  final bpmA = a.bpm!;
-  final bpmB = b.bpm!;
-  // Compare the closest valid half/double-time pulse before permitting stretch.
-  final alternatives = <double>[
-    bpmB,
-    if (bpmB / 2 >= 40) bpmB / 2,
-    if (bpmB * 2 <= 240) bpmB * 2,
-  ];
-  alternatives.sort((x, y) =>
-      (x - bpmA).abs().compareTo((y - bpmA).abs()));
-  final relativeDelta = (bpmA - alternatives.first).abs() / bpmA;
-  if (relativeDelta > 0.06) return null;
-
-  // Keep correction conservative even if the user allows a larger global
-  // stretch. Beat/phrase cues can still be used without tempo manipulation.
-  return computeTempoStretch(
-    bpmA: bpmA,
-    bpmB: bpmB,
-    maxStretchPercent: maxStretchPercent.clamp(3, 6).toInt(),
+  return computeSafeTempoStretch(
+    bpmA: a.bpm!,
+    bpmB: b.bpm!,
+    confidenceA: a.confidence,
+    confidenceB: b.confidence,
+    maxStretchPercent: maxStretchPercent,
   );
 }
-
 extension MusicProviderDjHandoff on MusicProvider {
 
   Future<void> previewDjTransition({
