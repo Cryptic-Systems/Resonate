@@ -114,6 +114,14 @@ void main() {
       expect(plan.status, QueuePlanStatus.insufficientAnalysis);
     });
 
+    test('restores stable queue intent identifiers for evolving mixes', () {
+      expect(QueueIntent.fromId('calmer_mix'), QueueIntent.calmerMix);
+      expect(QueueIntent.fromId('workout'), QueueIntent.workout);
+      expect(QueueIntent.fromId('driving'), QueueIntent.driving);
+      expect(QueueIntent.fromId('focus'), QueueIntent.focus);
+      expect(QueueIntent.fromId('unknown'), isNull);
+    });
+
     test('maps music modes to shared queue intents', () {
       expect(QueueIntent.forMode(ResonateMode.workout), QueueIntent.workout);
       expect(QueueIntent.forMode(ResonateMode.running), QueueIntent.workout);

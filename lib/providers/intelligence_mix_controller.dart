@@ -162,6 +162,12 @@ class IntelligenceMixController extends ChangeNotifier {
         );
       }
       if (!requestIsCurrent()) return null;
+      if (queueIntent != null) {
+        // The service initially remembers its unconstrained intermediate mix;
+        // replace that entry with the final DJ-ordered sequence and its intent.
+        await _memory.remember(mix);
+        if (!requestIsCurrent()) return null;
+      }
       _currentMix = mix;
       _currentContinuity = null;
       return mix;
@@ -259,6 +265,12 @@ class IntelligenceMixController extends ChangeNotifier {
         );
       }
       if (!requestIsCurrent()) return null;
+      if (queueIntent != null) {
+        // Persist the final revalidated order, not the intermediate generated
+        // sequence, so a restored mix retains the same DJ intent and ordering.
+        await _memory.remember(mix);
+        if (!requestIsCurrent()) return null;
+      }
       final continuity = await _service.evaluateMix(
         previous,
         shouldContinue: requestIsCurrent,
