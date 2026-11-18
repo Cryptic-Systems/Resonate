@@ -17,7 +17,7 @@ void main() {
       duration: const Duration(minutes: 3),
       dateAdded: DateTime(2026),
     );
-    const memory = IntelligenceMixMemory();
+    final memory = IntelligenceMixMemory();
     await memory.remember(IntelligenceMix(
       id: 'mix-calmer-1',
       title: 'Calmer local mix',
@@ -46,7 +46,7 @@ void main() {
       filePath: '/music/b.mp3', duration: const Duration(minutes: 3),
       dateAdded: DateTime(2026),
     );
-    const memory = IntelligenceMixMemory();
+    final memory = IntelligenceMixMemory();
     final intermediate = IntelligenceMix(
       id: 'mix-evolved', title: 'Calmer • Refined', description: 'intermediate',
       songs: [a], targetDuration: const Duration(minutes: 30),
