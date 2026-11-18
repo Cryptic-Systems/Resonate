@@ -94,6 +94,56 @@ void main() {
     expect(candidates.first.durationMs, greaterThanOrEqualTo(2000));
   });
 
+  test('honours manually saved Mix-Out and Mix-In cue markers', () {
+    final outgoing = track(id: 'manual-out');
+    final incoming = track(id: 'manual-in');
+    final editedOutgoing = DjTrackProfile(
+      songId: outgoing.songId,
+      durationMs: outgoing.durationMs,
+      beatGrid: outgoing.beatGrid,
+      keyRoot: outgoing.keyRoot,
+      keyMode: outgoing.keyMode,
+      keyConfidence: outgoing.keyConfidence,
+      sections: outgoing.sections,
+      energyCurve: outgoing.energyCurve,
+      spectrum: outgoing.spectrum,
+      transitions: const DjTransitionMarkers(
+        bestOutroMs: 190000,
+        safeMixOuts: [DjTimePoint(190000, confidence: 1)],
+      ),
+      analysisConfidence: outgoing.analysisConfidence,
+    );
+    final editedIncoming = DjTrackProfile(
+      songId: incoming.songId,
+      durationMs: incoming.durationMs,
+      beatGrid: incoming.beatGrid,
+      keyRoot: incoming.keyRoot,
+      keyMode: incoming.keyMode,
+      keyConfidence: incoming.keyConfidence,
+      sections: incoming.sections,
+      energyCurve: incoming.energyCurve,
+      spectrum: incoming.spectrum,
+      transitions: const DjTransitionMarkers(
+        bestIntroMs: 10000,
+        safeMixIns: [DjTimePoint(10000, confidence: 1)],
+      ),
+      analysisConfidence: incoming.analysisConfidence,
+    );
+
+    final candidates = engine.brain.generate(
+      outgoing: editedOutgoing,
+      incoming: editedIncoming,
+      outgoingPositionMs: 0,
+      preferredDurationMs: 6500,
+      maxDurationMs: 15000,
+    );
+    final safe = candidates.firstWhere(
+      (candidate) => candidate.kind == DjTransitionKind.safeCrossfade,
+    );
+    expect(safe.outgoingStartMs, 190000);
+    expect(safe.incomingStartMs, 10000);
+  });
+
   test('keeps a usable fallback when analysis is absent', () {
     const unknown = DjTrackProfile(songId: 'unknown');
     final plan = engine.planTransition(

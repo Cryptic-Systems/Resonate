@@ -83,6 +83,8 @@ void main() {
     expect(decoded.energyCurve.single.bass, 0.3);
     expect(decoded.spectrum.bassDensity, 0.65);
     expect(decoded.transitions.bestOutroMs, 166000);
+    expect(decoded.transitions.safeMixIns.single.timeMs, 12000);
+    expect(decoded.transitions.safeMixOuts.single.timeMs, 166000);
     expect(decoded.silenceRegions.single.startMs, 168000);
     expect(decoded.silenceRegions.single.durationMs, 4000);
     expect(decoded.silenceRegions.single.confidence, 0.88);
