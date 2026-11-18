@@ -46,9 +46,9 @@ extension MusicProviderDjHandoff on MusicProvider {
     required Duration outgoingStart, required Duration incomingStart,
     required Duration duration,
   }) async {
-    final session = await _ensureMedia3ProviderSessionActive();
-    if (session == null) {
-      throw StateError('DJ audio preview requires the Media3 playback backend.');
+    final session = _media3ProviderSession;
+    if (session == null || !_media3ProviderSessionActive) {
+      throw StateError('Start a track once to activate Media3 before auditioning a DJ transition.');
     }
     if (session is! PlaybackTransitionPreviewBackend) {
       throw UnsupportedError('The active playback session does not support isolated DJ preview.');
