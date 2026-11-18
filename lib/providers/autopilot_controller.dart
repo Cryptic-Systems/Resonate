@@ -586,7 +586,11 @@ class AutopilotController extends ChangeNotifier {
           planningSourceSongId == music.currentSong?.id &&
           planningMode == modes?.mode &&
           planningUserGeneration == _authority.userGeneration;
-      final futureQueued = music.queue.skip(music.queueIndex + 1).map((song) => song.id).toSet();
+      final plannedUpcomingIds = music.queue
+          .skip(music.queueIndex + 1)
+          .map((song) => song.id)
+          .toList(growable: false);
+      final futureQueued = plannedUpcomingIds.toSet();
       final modePolicy = modes?.policy;
       final sequenceCount = AutopilotModePolicy.predictedSequenceCount(modePolicy);
       final activeModes = modes;
@@ -652,7 +656,11 @@ class AutopilotController extends ChangeNotifier {
       if (arranged.isNotEmpty) {
         if (!planningContextIsCurrent()) return;
         if (!_requirePlaybackMutationPermission('queue_enqueue')) return;
-        final added = await music.enqueueSongs(arranged, preserveOrder: true);
+        final added = await music.enqueueSongs(
+          arranged,
+          preserveOrder: true,
+          expectedUpcomingIds: plannedUpcomingIds,
+        );
         await ResonateDiagnostics.record('intelligence_queue_decision', {
           'mode': intelligence.autonomyLabel,
           'candidates': arranged.map((song) => song.id).toList(),

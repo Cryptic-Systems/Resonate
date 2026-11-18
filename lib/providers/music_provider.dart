@@ -37,6 +37,7 @@ import '../services/audio_effects_controller.dart';
 import '../services/loudness_service.dart';
 import '../services/playback_coordinator.dart';
 import '../playback/queue_store.dart';
+import '../playback/queue_snapshot_guard.dart';
 import '../playback/resume_position_store.dart';
 import '../playback/audio_focus_settings.dart';
 import '../playback/crossfade_runtime.dart';
@@ -4039,8 +4040,19 @@ class MusicProvider extends ChangeNotifier {
   Future<bool> enqueueSongs(
     List<Song> songs, {
     bool preserveOrder = false,
+    List<String>? expectedUpcomingIds,
   }) async {
     await _visibility.load();
+    // Autopilot supplies the queue snapshot used during DJ planning. If the
+    // listener edited/reordered/cleared upcoming tracks while planning was
+    // awaiting analysis or storage, discard that stale append.
+    if (expectedUpcomingIds != null &&
+        !QueueSnapshotGuard.matches(
+          expected: expectedUpcomingIds,
+          actual: _queue.skip(_queueIndex + 1).map((song) => song.id).toList(),
+        )) {
+      return false;
+    }
     final additions = songs
         .where((song) =>
             _visibility.isVisible(song.id) &&
