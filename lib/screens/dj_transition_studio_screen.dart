@@ -254,7 +254,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
               style: Theme.of(context).textTheme.bodySmall),
           ),
           const SizedBox(height: 10),
-          Text('Audible preview layers over current playback using dedicated DSP-enabled decks. The main queue and playback position remain unchanged.',
+          Text('The current track is gently ducked while the two DSP-enabled preview decks audition the blend. Playback continues and its position is unchanged.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
         ]),
         actions: [

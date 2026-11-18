@@ -13,6 +13,7 @@ internal class Media3GainPolicy(initialMasterVolume: Float = 1f) {
     private var preampGain: Float = 1f
     private var sleepFadeGain: Float = 1f
     private var focusDuckGain: Float = 1f
+    private var previewDuckGain: Float = 1f
     private var activeDeckGain: Float = 1f
     private var standbyDeckGain: Float = 0f
 
@@ -42,6 +43,13 @@ internal class Media3GainPolicy(initialMasterVolume: Float = 1f) {
         return true
     }
 
+    /** Temporarily lowers only the canonical active deck under an audition. */
+    fun setPreviewDuckGain(value: Float): Boolean {
+        if (!value.isFinite() || value !in 0f..1f) return false
+        previewDuckGain = value
+        return true
+    }
+
     fun setCrossfadeGains(active: Float, standby: Float) {
         activeDeckGain = active.coerceFiniteUnit()
         standbyDeckGain = standby.coerceFiniteUnit()
@@ -56,7 +64,7 @@ internal class Media3GainPolicy(initialMasterVolume: Float = 1f) {
         (masterVolume * trackLevelGain * preampGain * sleepFadeGain * focusDuckGain)
             .coerceIn(0f, 1f)
 
-    fun activeVolume(): Float = (composedBaseGain() * activeDeckGain).coerceIn(0f, 1f)
+    fun activeVolume(): Float = (composedBaseGain() * previewDuckGain * activeDeckGain).coerceIn(0f, 1f)
     fun standbyVolume(): Float = (composedBaseGain() * standbyDeckGain).coerceIn(0f, 1f)
 
     private fun Float.coerceFiniteUnit(): Float =

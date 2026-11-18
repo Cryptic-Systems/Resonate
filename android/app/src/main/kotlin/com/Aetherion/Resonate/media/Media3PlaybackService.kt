@@ -153,7 +153,8 @@ class Media3PlaybackService : MediaSessionService() {
         if (isDestroyed || !supported(outgoingUri) || !supported(incomingUri) ||
             outgoingStartMs < 0L || incomingStartMs < 0L || durationMs !in 2000L..15000L ||
             outgoingStartMs > Long.MAX_VALUE - durationMs ||
-            incomingStartMs > Long.MAX_VALUE - durationMs || isCommunicationActive()
+            incomingStartMs > Long.MAX_VALUE - durationMs || isCommunicationActive() ||
+            standbyPlayer != null || crossfadeStatus in setOf("preparing", "waiting_ready", "ready", "starting", "fading")
         ) return false
 
         stopTransitionPreview()
@@ -197,6 +198,8 @@ class Media3PlaybackService : MediaSessionService() {
                     incoming.playbackState != Player.STATE_READY || previewStartRequested
                 ) return
                 previewStartRequested = true
+                gainPolicy.setPreviewDuckGain(0.22f)
+                applyDeckVolumes()
                 outgoing.playWhenReady = true
                 incoming.playWhenReady = true
                 maybeBeginRamp()
@@ -264,6 +267,8 @@ class Media3PlaybackService : MediaSessionService() {
         previewIncomingListener = null
         DspEngineSinkHook.suspendDeck("preview_out")
         DspEngineSinkHook.suspendDeck("preview_in")
+        gainPolicy.setPreviewDuckGain(1f)
+        applyDeckVolumes()
         return true
     }
 
@@ -575,6 +580,7 @@ class Media3PlaybackService : MediaSessionService() {
         if (items.isEmpty() || startIndex !in items.indices || startPositionMs < 0L ||
             items.any { it.localConfiguration?.uri == null } || !::activePlayer.isInitialized
         ) return false
+        stopTransitionPreview()
         cancelCrossfade()
         val standby = standbyPlayer ?: newPlayer(handleAudioFocus = false, deckId = standbyDeckId())
             .also { standbyPlayer = it }

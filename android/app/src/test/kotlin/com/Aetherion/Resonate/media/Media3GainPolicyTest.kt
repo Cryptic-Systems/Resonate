@@ -75,6 +75,19 @@ class Media3GainPolicyTest {
     }
 
     @Test
+    fun previewDuckOnlyLowersCanonicalActiveDeckAndRestoresItsGain() {
+        val policy = Media3GainPolicy(initialMasterVolume = 0.8f)
+        policy.setCrossfadeGains(active = 1f, standby = 0f)
+        assertTrue(policy.setPreviewDuckGain(0.22f))
+        assertEquals(0.176f, policy.activeVolume(), 0.0001f)
+        assertEquals(0f, policy.standbyVolume(), 0f)
+        assertFalse(policy.setPreviewDuckGain(Float.NaN))
+        assertEquals(0.176f, policy.activeVolume(), 0.0001f)
+        assertTrue(policy.setPreviewDuckGain(1f))
+        assertEquals(0.8f, policy.activeVolume(), 0.0001f)
+    }
+
+    @Test
     fun masterVolumeIsClampedAndNonFiniteUpdatesAreRejected() {
         val policy = Media3GainPolicy(initialMasterVolume = 1.5f)
         assertEquals(1f, policy.masterVolume, 0f)
