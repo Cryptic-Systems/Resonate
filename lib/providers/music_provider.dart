@@ -19,6 +19,7 @@ import '../services/dj_analysis_service.dart';
 import '../services/dj_bpm_estimator.dart';
 import '../services/dj_transition_planner.dart';
 import '../services/dj_transition_memory.dart';
+import '../services/dj_transition_preset_store.dart';
 import '../dj_engine/dj_engine.dart';
 import '../dj_engine/core/dj_policy.dart';
 import '../dj_engine/intelligence/dj_autopilot_planner.dart';

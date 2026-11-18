@@ -55,8 +55,20 @@ extension MusicProviderDjHandoff on MusicProvider {
     }
     if (outgoingSong == null) return;
     try {
-      final profileA = await _djAnalysis!.getProfile(outgoingSong.id);
-      final profileB = await _djAnalysis!.getProfile(incomingSong.id);
+      final loadedProfiles = await Future.wait<DjTrackProfile?>([
+        _djAnalysis!.getProfile(outgoingSong.id),
+        _djAnalysis!.getProfile(incomingSong.id),
+      ]);
+      final rawProfileA = loadedProfiles[0];
+      final rawProfileB = loadedProfiles[1];
+      final pairPreset = await DjTransitionPresetStore.get(outgoingSong.id, incomingSong.id);
+      final presetUsable = pairPreset?.isUsableFor(
+        outgoingPositionMs: outgoing.position.inMilliseconds,
+        outgoingDurationMs: rawProfileA?.durationMs ?? (outgoingSong.duration.inMilliseconds > 0 ? outgoingSong.duration.inMilliseconds : null),
+        incomingDurationMs: rawProfileB?.durationMs ?? (incomingSong.duration.inMilliseconds > 0 ? incomingSong.duration.inMilliseconds : null),
+      ) ?? false;
+      final profileA = rawProfileA != null && presetUsable ? pairPreset!.applyOutgoing(rawProfileA) : rawProfileA;
+      final profileB = rawProfileB != null && presetUsable ? pairPreset!.applyIncoming(rawProfileB) : rawProfileB;
       if (profileA != null && profileB != null) {
         // Autonomous layer: the musical brain proposes valid candidates;
         // local learning softly reranks them without ever removing fallback.
@@ -67,6 +79,7 @@ extension MusicProviderDjHandoff on MusicProvider {
           preferredDurationMs: _crossfadeDurationMs,
           maxDurationMs: 6500,
           policy: _djPolicy,
+          preferredKind: presetUsable ? pairPreset?.preferredKind : null,
         );
         final v2 = _djEngine.execution.plan(
           outgoing: profileA,
@@ -516,8 +529,16 @@ extension MusicProviderDjHandoff on MusicProvider {
         _djAnalysis!.getProfile(outgoingSong.id),
         _djAnalysis!.getProfile(incomingSong.id),
       ]);
-      final profileA = profiles[0];
-      final profileB = profiles[1];
+      final rawProfileA = profiles[0];
+      final rawProfileB = profiles[1];
+      final pairPreset = await DjTransitionPresetStore.get(outgoingSong.id, incomingSong.id);
+      final presetUsable = pairPreset?.isUsableFor(
+        outgoingPositionMs: outgoingPositionMs,
+        outgoingDurationMs: rawProfileA?.durationMs ?? (outgoingSong.duration.inMilliseconds > 0 ? outgoingSong.duration.inMilliseconds : null),
+        incomingDurationMs: rawProfileB?.durationMs ?? (incomingSong.duration.inMilliseconds > 0 ? incomingSong.duration.inMilliseconds : null),
+      ) ?? false;
+      final profileA = rawProfileA != null && presetUsable ? pairPreset!.applyOutgoing(rawProfileA) : rawProfileA;
+      final profileB = rawProfileB != null && presetUsable ? pairPreset!.applyIncoming(rawProfileB) : rawProfileB;
       if (profileA != null && profileB != null) {
         // Prefer the exact candidate the user reviewed and approved. The
         // execution planner revalidates it against the real outgoing position
@@ -535,6 +556,7 @@ extension MusicProviderDjHandoff on MusicProvider {
                 preferredDurationMs: _crossfadeDurationMs,
                 maxDurationMs: 6500,
                 policy: _djPolicy,
+                preferredKind: presetUsable ? pairPreset?.preferredKind : null,
               );
         final execution = _djEngine.execution.plan(
           outgoing: profileA,
@@ -605,7 +627,7 @@ extension MusicProviderDjHandoff on MusicProvider {
                     (point) => point.timeMs == candidate.outgoingStartMs,
                   ) ||
                   profileA.transitions.bestOutroMs == candidate.outgoingStartMs);
-          final hasPlannedOutgoingCue = approvedCueIsAhead || hasProfileOutgoingCue;
+          final hasPlannedOutgoingCue = approvedCueIsAhead || presetUsable || hasProfileOutgoingCue;
           final seekMs = candidate.incomingStartMs
               .clamp(0, incomingSong.duration.inMilliseconds > 0
                   ? incomingSong.duration.inMilliseconds

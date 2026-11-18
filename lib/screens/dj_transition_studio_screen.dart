@@ -5,6 +5,7 @@ import '../dj_engine/intelligence/dj_transition_brain.dart';
 import '../models/song.dart';
 import '../providers/dj_mode_provider.dart';
 import '../providers/library_provider.dart';
+import '../services/dj_transition_preset_store.dart';
 import '../ui/resonate_glass.dart';
 
 /// Pair-based cue editor. Saved markers are consumed by the DJ profiles used
@@ -21,6 +22,8 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
   DjTrackProfile? _profileA, _profileB;
   List<DjTransitionCandidate> _candidates = const [];
   DjTransitionCandidate? _recommended;
+  DjTransitionKind? _preferredKind;
+  bool _hasSavedPreset = false;
   int _outCue = 0, _inCue = 0, _fadeMs = 6500;
   bool _busy = false, _saving = false;
   String? _status, _error;
@@ -78,7 +81,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
     setState(() {
       if (outgoing) { _outgoing = song; _profileA = null; }
       else { _incoming = song; _profileB = null; }
-      _candidates = const []; _recommended = null; _status = null; _error = null;
+      _candidates = const []; _recommended = null; _preferredKind = null; _hasSavedPreset = false; _status = null; _error = null;
     });
   }
 
@@ -107,11 +110,22 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
         });
         return;
       }
+      final saved = await DjTransitionPresetStore.get(a.id, b.id);
+      if (!mounted) return;
+      final usable = saved?.isUsableFor(
+        outgoingPositionMs: 0,
+        outgoingDurationMs: pa.durationMs ?? (a.duration.inMilliseconds > 0 ? a.duration.inMilliseconds : null),
+        incomingDurationMs: pb.durationMs ?? (b.duration.inMilliseconds > 0 ? b.duration.inMilliseconds : null),
+      ) ?? false;
       setState(() {
         _profileA = pa; _profileB = pb;
-        _outCue = pa.transitions.bestOutroMs ?? (pa.durationMs ?? a.duration.inMilliseconds).clamp(0, 1 << 30);
-        _inCue = pb.transitions.bestIntroMs ?? 0;
-        _status = null;
+        _hasSavedPreset = usable;
+        _outCue = usable ? saved!.outgoingCueMs :
+          (pa.transitions.bestOutroMs ?? (pa.durationMs ?? a.duration.inMilliseconds).clamp(0, 1 << 30));
+        _inCue = usable ? saved!.incomingCueMs : (pb.transitions.bestIntroMs ?? 0);
+        _fadeMs = usable ? saved!.durationMs : 6500;
+        _preferredKind = usable ? saved!.preferredKind : null;
+        _status = usable ? 'Loaded your saved settings for this track pair.' : null;
       });
       _rebuild();
     } catch (e) {
@@ -121,34 +135,27 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
     }
   }
 
-  DjTrackProfile _edited(DjTrackProfile p, int cue, bool outgoing) {
-    final old = p.transitions;
-    final point = DjTimePoint(cue, confidence: 1);
-    return DjTrackProfile(
-      songId: p.songId, durationMs: p.durationMs, fingerprint: p.fingerprint,
-      beatGrid: p.beatGrid, keyRoot: p.keyRoot, keyMode: p.keyMode,
-      keyConfidence: p.keyConfidence, harmonicChanges: p.harmonicChanges,
-      sections: p.sections, energyCurve: p.energyCurve, spectrum: p.spectrum,
-      transitions: DjTransitionMarkers(
-        bestIntroMs: outgoing ? old.bestIntroMs : cue,
-        bestOutroMs: outgoing ? cue : old.bestOutroMs,
-        safeMixIns: outgoing ? old.safeMixIns : [point],
-        safeMixOuts: outgoing ? [point] : old.safeMixOuts,
-        riskyPoints: old.riskyPoints),
-      silenceRegions: p.silenceRegions,
-      analysisConfidence: p.analysisConfidence, analysisVersion: p.analysisVersion);
-  }
-
   void _rebuild() {
     final pa = _profileA, pb = _profileB;
     if (pa == null || pb == null) return;
-    final a = _edited(pa, _outCue, true), b = _edited(pb, _inCue, false);
+    final pair = DjTransitionPreset(
+      outgoingSongId: _outgoing!.id,
+      incomingSongId: _incoming!.id,
+      outgoingCueMs: _outCue,
+      incomingCueMs: _inCue,
+      durationMs: _fadeMs,
+      preferredKind: _preferredKind,
+    );
+    final a = pair.applyOutgoing(pa), b = pair.applyIncoming(pb);
     final policy = context.read<DjModeProvider>().policy;
     final rows = _brain.generate(outgoing: a, incoming: b, outgoingPositionMs: 0,
       preferredDurationMs: _fadeMs, maxDurationMs: 15000, policy: policy)
       ..sort((x, y) => y.score.compareTo(x.score));
-    final best = _brain.choose(outgoing: a, incoming: b, outgoingPositionMs: 0,
-      preferredDurationMs: _fadeMs, maxDurationMs: 15000, policy: policy);
+    final preferred = _preferredKind == null ? <DjTransitionCandidate>[] :
+      rows.where((c) => c.kind == _preferredKind && policy.acceptsCandidate(c)).toList();
+    final best = preferred.isNotEmpty ? preferred.first :
+      _brain.choose(outgoing: a, incoming: b, outgoingPositionMs: 0,
+        preferredDurationMs: _fadeMs, maxDurationMs: 15000, policy: policy);
     setState(() { _candidates = rows; _recommended = best; });
   }
 
@@ -161,14 +168,18 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
     }
     setState(() { _saving = true; _error = null; });
     try {
-      final editedA = _edited(a, _outCue, true), editedB = _edited(b, _inCue, false);
-      final service = context.read<DjModeProvider>().analysis;
-      await service.saveProfile(editedA);
-      await service.saveProfile(editedB);
+      await DjTransitionPresetStore.save(DjTransitionPreset(
+        outgoingSongId: a.id,
+        incomingSongId: b.id,
+        outgoingCueMs: _outCue,
+        incomingCueMs: _inCue,
+        durationMs: _fadeMs,
+        preferredKind: _preferredKind,
+      ));
       if (!mounted) return;
       setState(() {
-        _profileA = editedA; _profileB = editedB;
-        _status = 'Cue points saved. Future DJ handoffs can use these markers.';
+        _hasSavedPreset = true;
+        _status = 'Pair preset saved. DJ playback will prefer these cues and strategy when safe.';
       });
       _rebuild();
     } catch (e) {
@@ -176,6 +187,63 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  void _showPreview() {
+    final candidate = _recommended;
+    if (candidate == null) return;
+    final outDuration = _duration(_outgoing, _profileA);
+    final inDuration = _duration(_incoming, _profileB);
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Transition preview'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(_kind(candidate.kind), style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 6),
+          Text('Outgoing cue ' + _clock(candidate.outgoingStartMs) + ' · Incoming cue ' + _clock(candidate.incomingStartMs)),
+          const SizedBox(height: 16),
+          _previewLane('OUTGOING', candidate.outgoingStartMs, outDuration, Theme.of(context).colorScheme.primary),
+          const SizedBox(height: 12),
+          _previewLane('INCOMING', candidate.incomingStartMs, inDuration, Theme.of(context).colorScheme.tertiary),
+          const SizedBox(height: 14),
+          Text('Blend ' + (candidate.durationMs / 1000).toStringAsFixed(1) + ' s · Score ' +
+            (candidate.score * 100).round().toString() + '% · Confidence ' +
+            (candidate.confidence * 100).round().toString() + '%'),
+          if (candidate.risks.isNotEmpty) Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text('Risk checks: ' + candidate.risks.map((r) => r.name).join(', '),
+              style: Theme.of(context).textTheme.bodySmall),
+          ),
+          const SizedBox(height: 10),
+          Text('Visual timing preview only. It does not interrupt or start playback.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        ]),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+      ),
+    );
+  }
+
+  Widget _previewLane(String label, int cueMs, int durationMs, Color color) {
+    final fraction = durationMs > 0 ? (cueMs / durationMs).clamp(0.0, 1.0) : 0.0;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label + ' · ' + _clock(cueMs), style: Theme.of(context).textTheme.labelSmall),
+      const SizedBox(height: 5),
+      LayoutBuilder(builder: (context, constraints) {
+        final left = constraints.maxWidth * fraction;
+        return SizedBox(height: 12, child: Stack(children: [
+          Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+          ))),
+          Positioned(left: 0, top: 0, bottom: 0, width: left,
+            child: DecoratedBox(decoration: BoxDecoration(color: color.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(8)))),
+          Positioned(left: (left - 1).clamp(0.0, constraints.maxWidth - 2), top: 0, bottom: 0,
+            child: Container(width: 2, color: color)),
+        ]));
+      }),
+    ]);
   }
 
   @override
@@ -187,7 +255,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
         Text('Shape how two tracks meet',
           style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
-        Text('Compare beat, phrase, energy, harmonic and structure compatibility. Edit cue points and save them into the profiles used by DJ playback.',
+        Text('Compare beat, phrase, energy, harmonic and structure compatibility. Edit pair-specific cues without changing either track’s global analysis.',
           style: theme.textTheme.bodyMedium),
         const SizedBox(height: 18),
         _track('OUTGOING', 'The track being mixed out', _outgoing, () => _pick(true)),
@@ -219,12 +287,31 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
           const SizedBox(height: 10),
           for (final candidate in _candidates) _candidate(candidate),
           const SizedBox(height: 12),
-          OutlinedButton.icon(onPressed: _saving ? null : _save,
-            icon: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.save_rounded),
-            label: Text(_saving ? 'Saving…' : 'Save Mix-In / Mix-Out points')),
+          Row(children: [
+            Expanded(child: OutlinedButton.icon(
+              onPressed: _recommended == null ? null : _showPreview,
+              icon: const Icon(Icons.visibility_rounded),
+              label: const Text('Preview timing'),
+            )),
+            const SizedBox(width: 10),
+            Expanded(child: FilledButton.icon(onPressed: _saving ? null : _save,
+              icon: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.save_rounded),
+              label: Text(_saving ? 'Saving…' : 'Save pair preset'))),
+          ]),
+          if (_hasSavedPreset) Align(alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _saving ? null : () async {
+                await DjTransitionPresetStore.delete(a.id, b.id);
+                if (!mounted) return;
+                setState(() { _hasSavedPreset = false; _preferredKind = null; _status = 'Pair preset removed.'; });
+                _rebuild();
+              },
+              icon: const Icon(Icons.delete_outline_rounded),
+              label: const Text('Remove pair preset'),
+            )),
           const SizedBox(height: 8),
-          Text('Saved markers are used by the DJ track profiles. The recommendation is advisory; playback still applies confidence and risk checks.',
+          Text('Pair cues are stored separately from global track analysis. The selected strategy is a preference; playback still applies confidence and risk checks.',
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ],
       ]));
@@ -283,6 +370,15 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
   Widget _candidate(DjTransitionCandidate c) => ResonateGlassCard(
     margin: const EdgeInsets.only(bottom: 8), padding: EdgeInsets.zero,
     child: ListTile(
+      onTap: () {
+        setState(() {
+          _preferredKind = c.kind;
+          _outCue = c.outgoingStartMs;
+          _inCue = c.incomingStartMs;
+          _fadeMs = c.durationMs.clamp(2000, 15000);
+        });
+        _rebuild();
+      },
       leading: Icon(c.kind == _recommended?.kind ? Icons.check_circle_rounded : Icons.graphic_eq_rounded,
         color: c.kind == _recommended?.kind ? Theme.of(context).colorScheme.primary : null),
       title: Text(_kind(c.kind)),
