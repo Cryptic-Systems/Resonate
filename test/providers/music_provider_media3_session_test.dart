@@ -2153,6 +2153,7 @@ void main() {
         playWhenReady: true,
         position: session.positionValue,
         activeDeckId: 'A',
+        repeatMode: 'one',
       ));
       await Future<void>.delayed(const Duration(milliseconds: 240));
 
@@ -2191,6 +2192,7 @@ void main() {
         playWhenReady: true,
         position: session.positionValue,
         activeDeckId: 'A',
+        repeatMode: 'one',
       ));
       for (var attempt = 0;
           attempt < 100 &&
