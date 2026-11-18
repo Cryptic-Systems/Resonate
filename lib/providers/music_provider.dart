@@ -2547,7 +2547,7 @@ class MusicProvider extends ChangeNotifier {
         }
         if (!CrossfadeOrchestrator.shouldStartAtApprovedCue(
           positionMs: positionMs,
-          cueMs: approvedCueMs,
+          cueMs: plannedCueMs,
         )) {
           return;
         }
