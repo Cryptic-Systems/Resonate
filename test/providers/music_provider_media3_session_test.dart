@@ -451,6 +451,8 @@ void main() {
       expect(provider.media3ProviderSessionActive, isFalse);
 
       settingsReady.complete();
+      // Let the barrier's completion continuation publish readiness first.
+      await Future<void>.delayed(Duration.zero);
       await provider.setPlaybackSpeedForFeatures(1.4);
       expect(provider.media3ProviderSessionActive, isTrue);
       expect(session.playbackSpeedValue, 1.4);
