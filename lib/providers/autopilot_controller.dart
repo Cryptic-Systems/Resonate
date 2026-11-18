@@ -355,8 +355,11 @@ class AutopilotController extends ChangeNotifier {
       // DJ constraints before Autopilot is allowed to choose one.
       if (music.queueIndex < music.queue.length - 1) {
         final upcoming = music.queue.skip(music.queueIndex + 1).toList();
-        final modeSafe = _applyModeBias(upcoming);
-        final arranged = await _arrangeForActiveMode(modeSafe);
+        // Existing queue order carries user-authored spoken-content anchors.
+        // ModeAwareQueuePlanner applies the accept/avoid policy and rearranges
+        // only music slots; applying preferred-content bias first would move
+        // allowed speech (notably in Work mode) out of its intended position.
+        final arranged = await _arrangeForActiveMode(upcoming);
         if (arranged.isNotEmpty) nextSong = arranged.first;
       } else if (_mayMutatePlayback) {
         await _ensurePredictedQueue(threshold);

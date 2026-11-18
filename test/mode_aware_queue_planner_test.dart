@@ -52,6 +52,28 @@ void main() {
     modes.dispose();
   });
 
+  test('Work mode preserves allowed spoken anchors while arranging music', () async {
+    final modes = ModeProvider();
+    await modes.ready;
+    await modes.setMode(ResonateMode.work);
+    final musicA = _song('music-a', '/music/a.mp3');
+    final speech = _song('speech', '/podcasts/work/briefing.mp3');
+    final musicB = _song('music-b', '/music/b.mp3');
+    final plan = QueuePlan(
+      intentId: QueueIntent.focus.id,
+      songs: [musicB, musicA],
+      status: QueuePlanStatus.ready,
+      analysisCoverage: 1,
+      analyzedTrackCount: 2,
+      eligibleTrackCount: 2,
+    );
+    final result = await ModeAwareQueuePlanner(
+      planner: _FixedPlanner(plan),
+    ).arrange(modes: modes, tracks: [musicA, speech, musicB]);
+    expect(result.songs.map((song) => song.id), ['music-b', 'speech', 'music-a']);
+    modes.dispose();
+  });
+
   test('insufficient DJ analysis preserves the original mixed-media order', () async {
     final modes = ModeProvider();
     await modes.ready;
