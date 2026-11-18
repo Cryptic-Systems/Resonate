@@ -47,6 +47,8 @@ class Media3PlaybackService : MediaSessionService() {
     private var previewOutgoingListener: Player.Listener? = null
     private var previewIncomingListener: Player.Listener? = null
     private var previewRampRunnable: Runnable? = null
+    private var previewPrepareTimeout: Runnable? = null
+    private var previewStartRequested = false
     private var previewGeneration = 0
     private var fadeRunnable: Runnable? = null
     private var fadeGeneration = 0
@@ -165,14 +167,14 @@ class Media3PlaybackService : MediaSessionService() {
             DspEngineSinkHook.activateDeck("preview_in")
             outgoing.volume = 0.78f
             incoming.volume = 0f
+            previewStartRequested = false
 
-            fun maybeStart() {
-                if (generation != previewGeneration ||
-                    outgoing.playbackState != Player.STATE_READY ||
-                    incoming.playbackState != Player.STATE_READY ||
-                    previewRampRunnable != null) return
-                outgoing.playWhenReady = true
-                incoming.playWhenReady = true
+            fun maybeBeginRamp() {
+                if (generation != previewGeneration || !previewStartRequested ||
+                    !outgoing.isPlaying || !incoming.isPlaying || previewRampRunnable != null
+                ) return
+                previewPrepareTimeout?.let(mainHandler::removeCallbacks)
+                previewPrepareTimeout = null
                 val startedAt = android.os.SystemClock.elapsedRealtime()
                 val ramp = object : Runnable {
                     override fun run() {
@@ -189,14 +191,26 @@ class Media3PlaybackService : MediaSessionService() {
                 previewRampRunnable = ramp
                 mainHandler.post(ramp)
             }
+            fun maybeStart() {
+                if (generation != previewGeneration ||
+                    outgoing.playbackState != Player.STATE_READY ||
+                    incoming.playbackState != Player.STATE_READY || previewStartRequested
+                ) return
+                previewStartRequested = true
+                outgoing.playWhenReady = true
+                incoming.playWhenReady = true
+                maybeBeginRamp()
+            }
             val outListener = object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) { maybeStart() }
+                override fun onIsPlayingChanged(isPlaying: Boolean) { maybeBeginRamp() }
                 override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                     if (generation == previewGeneration) stopTransitionPreview()
                 }
             }
             val inListener = object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) { maybeStart() }
+                override fun onIsPlayingChanged(isPlaying: Boolean) { maybeBeginRamp() }
                 override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                     if (generation == previewGeneration) stopTransitionPreview()
                 }
@@ -215,6 +229,13 @@ class Media3PlaybackService : MediaSessionService() {
             ).build())
             outgoing.prepare()
             incoming.prepare()
+            val timeout = Runnable {
+                if (generation == previewGeneration && previewRampRunnable == null) {
+                    stopTransitionPreview()
+                }
+            }
+            previewPrepareTimeout = timeout
+            mainHandler.postDelayed(timeout, 12000L)
             maybeStart()
             true
         } catch (_: Exception) {
@@ -228,6 +249,9 @@ class Media3PlaybackService : MediaSessionService() {
         previewGeneration++
         previewRampRunnable?.let(mainHandler::removeCallbacks)
         previewRampRunnable = null
+        previewPrepareTimeout?.let(mainHandler::removeCallbacks)
+        previewPrepareTimeout = null
+        previewStartRequested = false
         previewOutgoingPlayer?.let { p ->
             previewOutgoingListener?.let(p::removeListener)
             runCatching { p.pause(); p.stop(); p.clearMediaItems(); p.volume = 0f }
