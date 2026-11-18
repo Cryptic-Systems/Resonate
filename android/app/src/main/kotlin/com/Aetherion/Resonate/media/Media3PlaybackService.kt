@@ -893,6 +893,7 @@ class Media3PlaybackService : MediaSessionService() {
         clearOverlays: Boolean = true,
         resetStandbySpeed: Boolean = true,
     ): Boolean {
+        stopTransitionPreview()
         pendingCrossfadeDurationMs = null
         startingCrossfadeDurationMs = null
         fadeGeneration++
