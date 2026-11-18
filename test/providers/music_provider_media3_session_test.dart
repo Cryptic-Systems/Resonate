@@ -899,7 +899,7 @@ void main() {
       ));
       await Future<void>.delayed(const Duration(milliseconds: 30));
       expect(provider.repeatMode, PlaybackRepeatMode.all);
-      await provider.dispose();
+      provider.dispose();
       await session.states.close();
       await session.audioSessions.close();
     });
