@@ -388,7 +388,11 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
               onPressed: _saving ? null : () async {
                 await DjTransitionPresetStore.delete(_outgoing!.id, _incoming!.id);
                 if (!mounted) return;
-                setState(() { _hasSavedPreset = false; _preferredKind = null; _status = 'Pair preset removed.'; });
+                setState(() {
+                   _hasSavedPreset = false;
+                   _preferredKind = null;
+                   _status = _repeatSameTrack ? 'Repeat preset removed.' : 'Pair preset removed.';
+                 });
                 _rebuild();
               },
               icon: const Icon(Icons.delete_outline_rounded),
