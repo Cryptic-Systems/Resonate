@@ -1070,8 +1070,9 @@ extension MusicProviderMedia3 on MusicProvider {
       final pendingIndex = _media3PendingSelectionQueueIndex;
       final statePath = state.currentSong?.filePath.trim();
       final matchesPending = state.mediaId == pendingSongId &&
-          (pendingPath == null || statePath == pendingPath) &&
-          (pendingIndex == null || state.queueIndex == pendingIndex);
+          (pendingPath == null || statePath == null || statePath == pendingPath) &&
+          (pendingIndex == null || state.queueIndex == null ||
+              state.queueIndex == pendingIndex);
       if (!matchesPending) return;
       _media3PendingSelectionSongId = null;
       _media3PendingSelectionPath = null;
