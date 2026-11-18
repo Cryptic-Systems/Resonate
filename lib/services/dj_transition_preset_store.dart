@@ -28,7 +28,7 @@ class DjTransitionPreset {
     int? incomingDurationMs,
   }) {
     if (outgoingSongId.isEmpty || incomingSongId.isEmpty ||
-        outgoingSongId == incomingSongId || outgoingCueMs < outgoingPositionMs ||
+        outgoingCueMs < outgoingPositionMs ||
         incomingCueMs < 0 || durationMs < 2000 || durationMs > 15000) return false;
     if (outgoingDurationMs != null &&
         (outgoingCueMs >= outgoingDurationMs ||
@@ -80,7 +80,7 @@ class DjTransitionPreset {
     final incoming = map['incomingCueMs'];
     final duration = map['durationMs'];
     if (from is! String || from.isEmpty || to is! String || to.isEmpty ||
-        from == to || out is! int || incoming is! int || duration is! int ||
+        out is! int || incoming is! int || duration is! int ||
         out < 0 || incoming < 0 || duration < 2000 || duration > 15000) return null;
     DjTransitionKind? kind;
     final kindName = map['preferredKind']?.toString();
@@ -126,7 +126,7 @@ class DjTransitionPresetStore {
   static String _pairKey(String from, String to) => jsonEncode([from, to]);
 
   static Future<DjTransitionPreset?> get(String from, String to) async {
-    if (from.isEmpty || to.isEmpty || from == to) return null;
+    if (from.isEmpty || to.isEmpty) return null;
     try {
       await _writeTail;
       final prefs = await SharedPreferences.getInstance();
@@ -142,7 +142,6 @@ class DjTransitionPresetStore {
 
   static Future<void> save(DjTransitionPreset preset) {
     if (preset.outgoingSongId.isEmpty || preset.incomingSongId.isEmpty ||
-        preset.outgoingSongId == preset.incomingSongId ||
         preset.outgoingCueMs < 0 || preset.incomingCueMs < 0 ||
         preset.durationMs < 2000 || preset.durationMs > 15000) {
       return Future<void>.error(ArgumentError('Invalid DJ transition preset'));

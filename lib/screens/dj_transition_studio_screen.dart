@@ -27,6 +27,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
   DjTransitionCandidate? _recommended;
   DjTransitionKind? _preferredKind;
   bool _hasSavedPreset = false;
+  bool _repeatSameTrack = false;
   int _outCue = 0, _inCue = 0, _fadeMs = 6500;
   bool _busy = false, _saving = false;
   bool _audioPreviewActive = false;
@@ -81,11 +82,14 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
 
   Future<void> _pick(bool outgoing) async {
     await _stopAudioPreview();
-    final song = await _choose(outgoing ? 'Choose outgoing track' : 'Choose incoming track',
-      excludeId: outgoing ? _incoming?.id : _outgoing?.id);
+    final song = await _choose(_repeatSameTrack ? 'Choose track to repeat' :
+      (outgoing ? 'Choose outgoing track' : 'Choose incoming track'),
+      excludeId: _repeatSameTrack ? null : (outgoing ? _incoming?.id : _outgoing?.id));
     if (song == null || !mounted) return;
     setState(() {
-      if (outgoing) { _outgoing = song; _profileA = null; }
+      if (_repeatSameTrack) {
+        _outgoing = song; _incoming = song; _profileA = null; _profileB = null;
+      } else if (outgoing) { _outgoing = song; _profileA = null; }
       else { _incoming = song; _profileB = null; }
       _candidates = const []; _recommended = null; _preferredKind = null; _hasSavedPreset = false; _status = null; _error = null;
     });
@@ -185,7 +189,9 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
       if (!mounted) return;
       setState(() {
         _hasSavedPreset = true;
-        _status = 'Pair preset saved. DJ playback will prefer these cues and strategy when safe.';
+        _status = _repeatSameTrack
+          ? 'Repeat preset saved. DJ repeat-one will prefer these cues when safe.'
+          : 'Pair preset saved. DJ playback will prefer these cues and strategy when safe.';
       });
       _rebuild();
     } catch (e) {
@@ -303,17 +309,44 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
     final da = _duration(_outgoing, _profileA), db = _duration(_incoming, _profileB);
     return ResonateGlassScaffold(title: const Text('DJ Transition Studio'),
       body: ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 32), children: [
-        Text('Shape how two tracks meet',
+        Text(_repeatSameTrack ? 'Shape how a track repeats' : 'Shape how two tracks meet',
           style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
-        Text('Compare beat, phrase, energy, harmonic and structure compatibility. Edit pair-specific cues without changing either track’s global analysis.',
+        Text(_repeatSameTrack
+          ? 'Design a clean self-transition using the track’s outro, intro, beat grid and energy. Repeat settings stay separate from global analysis.'
+          : 'Compare beat, phrase, energy, harmonic and structure compatibility. Edit pair-specific cues without changing either track’s global analysis.',
           style: theme.textTheme.bodyMedium),
         const SizedBox(height: 18),
-        _track('OUTGOING', 'The track being mixed out', _outgoing, () => _pick(true)),
-        const SizedBox(height: 10),
-        Center(child: Icon(Icons.south_rounded, color: theme.colorScheme.primary)),
-        const SizedBox(height: 10),
-        _track('INCOMING', 'The track being mixed in', _incoming, () => _pick(false)),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          value: _repeatSameTrack,
+          title: const Text('Configure repeat-one transition'),
+          subtitle: const Text('Design the handoff from this track back into itself.'),
+          onChanged: (enabled) {
+            unawaited(_stopAudioPreview());
+            setState(() {
+              _repeatSameTrack = enabled;
+              if (enabled && _outgoing != null) _incoming = _outgoing;
+              if (!enabled && identical(_outgoing, _incoming)) _incoming = null;
+              _profileA = null; _profileB = null; _candidates = const [];
+              _recommended = null; _preferredKind = null; _hasSavedPreset = false;
+              _status = null; _error = null;
+            });
+          },
+        ),
+        _track(_repeatSameTrack ? 'REPEATING TRACK' : 'OUTGOING',
+          _repeatSameTrack ? 'Choose the track whose next play should blend in' : 'The track being mixed out',
+          _outgoing, () => _pick(true)),
+        if (!_repeatSameTrack) ...[
+          const SizedBox(height: 10),
+          Center(child: Icon(Icons.south_rounded, color: theme.colorScheme.primary)),
+          const SizedBox(height: 10),
+          _track('INCOMING', 'The track being mixed in', _incoming, () => _pick(false)),
+        ] else if (_outgoing != null) ...[
+          const SizedBox(height: 8),
+          Text('The same analyzed track supplies both decks. Mix-Out and Mix-In remain independently editable.',
+            style: theme.textTheme.bodySmall),
+        ],
         const SizedBox(height: 14),
         FilledButton.icon(
           onPressed: _busy || _outgoing == null || _incoming == null ? null : _analyze,
@@ -348,7 +381,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
             Expanded(child: FilledButton.icon(onPressed: _saving ? null : _save,
               icon: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.save_rounded),
-              label: Text(_saving ? 'Saving…' : 'Save pair preset'))),
+              label: Text(_saving ? 'Saving…' : (_repeatSameTrack ? 'Save repeat preset' : 'Save pair preset')))),
           ]),
           if (_hasSavedPreset) Align(alignment: Alignment.centerLeft,
             child: TextButton.icon(
@@ -359,7 +392,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
                 _rebuild();
               },
               icon: const Icon(Icons.delete_outline_rounded),
-              label: const Text('Remove pair preset'),
+              label: Text(_repeatSameTrack ? 'Remove repeat preset' : 'Remove pair preset'),
             )),
           const SizedBox(height: 8),
           Text('Pair cues are stored separately from global track analysis. The selected strategy is a preference; playback still applies confidence and risk checks.',
