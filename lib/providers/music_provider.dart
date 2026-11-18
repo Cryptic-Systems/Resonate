@@ -102,6 +102,8 @@ class MusicProvider extends ChangeNotifier {
   Future<void>? _playbackSettingsLoad;
   Future<void>? _queueRestore;
   Future<void> _startupSettingsReady = Future<void>.value();
+  bool _startupSettingsBarrierInstalled = false;
+  bool _startupSettingsReadyComplete = false;
   double _featureNormalizationScale = 1.0;
   Future<void>? _media3HandoffFuture;
   bool _media3ProviderSessionPrepared = false;
@@ -660,13 +662,17 @@ class MusicProvider extends ChangeNotifier {
   /// only supported backend when it has been injected; never instantiate a
   /// legacy just_audio player merely to apply a feature during handoff.
   void setStartupSettingsReady(Future<void> ready) {
-    _startupSettingsReady = ready;
+    _startupSettingsBarrierInstalled = true;
+    _startupSettingsReadyComplete = false;
+    _startupSettingsReady = ready.then((_) {
+      _startupSettingsReadyComplete = true;
+    });
   }
 
   Future<void> setPlaybackSpeedForFeatures(double value) async {
     final session = _media3ProviderSession;
     if (session != null) {
-      if (!_media3ProviderSessionActive) return;
+      if (_startupSettingsBarrierInstalled && !_startupSettingsReadyComplete) return;
       final activeSession = (await _ensureMedia3ProviderSessionActive())!;
       await activeSession.setPlaybackSpeed(value);
       return;
