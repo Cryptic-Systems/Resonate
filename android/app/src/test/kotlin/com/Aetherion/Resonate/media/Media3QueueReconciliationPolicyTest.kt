@@ -84,6 +84,39 @@ class Media3QueueReconciliationPolicyTest {
     }
 
     @Test
+    fun preservesPreparedTargetWhenAnAppendLeavesItsIdentityAndIndexUnchanged() {
+        val queue = listOf(item("a"), item("prepared"), item("c"), item("appended"))
+
+        assertTrue(
+            Media3QueueReconciliationPolicy.preservesPreparedOccurrence(
+                newQueue = queue,
+                preparedIndex = 1,
+                preparedItem = item("prepared"),
+            ),
+        )
+    }
+
+    @Test
+    fun rejectsPreparedTargetWhenItsIndexOrIdentityChanges() {
+        val queue = listOf(item("a"), item("other"), item("prepared"))
+
+        assertFalse(
+            Media3QueueReconciliationPolicy.preservesPreparedOccurrence(
+                newQueue = queue,
+                preparedIndex = 1,
+                preparedItem = item("prepared"),
+            ),
+        )
+        assertFalse(
+            Media3QueueReconciliationPolicy.preservesPreparedOccurrence(
+                newQueue = queue,
+                preparedIndex = 2,
+                preparedItem = item("prepared", "file:///music/different.mp3"),
+            ),
+        )
+    }
+
+    @Test
     fun negativeOldPositionIsNormalizedToZero() {
         val result = Media3QueueReconciliationPolicy.resolve(
             newQueue = listOf(item("a")),

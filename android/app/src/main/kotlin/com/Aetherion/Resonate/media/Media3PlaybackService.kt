@@ -600,6 +600,53 @@ class Media3PlaybackService : MediaSessionService() {
     }
 
     /**
+     * Reconcile a live queue edit on the standby deck without discarding a
+     * prepared incoming decoder. The current standby occurrence must remain at
+     * the same index with the same media ID and URI; otherwise it is stale and
+     * must be retired before it can be promoted.
+     */
+    fun synchronizePreload(items: List<MediaItem>): Boolean {
+        val standby = standbyPlayer ?: return false
+        val preparedIndex = standby.currentMediaItemIndex
+        val preparedItem = standby.currentMediaItem ?: run {
+            clearPreload()
+            return false
+        }
+        val preparedIdentity = Media3QueueEntryIdentity(
+            mediaId = preparedItem.mediaId,
+            uri = preparedItem.localConfiguration?.uri?.toString().orEmpty(),
+        )
+        val nextIdentity = items.map { item ->
+            Media3QueueEntryIdentity(
+                mediaId = item.mediaId,
+                uri = item.localConfiguration?.uri?.toString().orEmpty(),
+            )
+        }
+        if (!Media3QueueReconciliationPolicy.preservesPreparedOccurrence(
+                newQueue = nextIdentity,
+                preparedIndex = preparedIndex,
+                preparedItem = preparedIdentity,
+            )
+        ) {
+            clearPreload()
+            return false
+        }
+
+        // Keep the prepared current MediaItem attached to the standby player.
+        // Updating only the entries around it preserves its decoder, position,
+        // and readiness while making the promoted deck's future queue canonical.
+        standby.removeMediaItems(preparedIndex + 1, standby.mediaItemCount)
+        standby.removeMediaItems(0, preparedIndex)
+        if (preparedIndex > 0) {
+            standby.addMediaItems(0, items.subList(0, preparedIndex))
+        }
+        if (preparedIndex < items.lastIndex) {
+            standby.addMediaItems(preparedIndex + 1, items.subList(preparedIndex + 1, items.size))
+        }
+        return true
+    }
+
+    /**
      * Starts a cancellable gain ramp. Equal-power curves avoid the large perceived
      * dip of a linear crossfade. Calls are main-thread serialized by the bridge.
      */

@@ -22,6 +22,12 @@ internal data class Media3QueueReconciliation(
 }
 
 internal object Media3QueueReconciliationPolicy {
+    fun preservesPreparedOccurrence(
+        newQueue: List<Media3QueueEntryIdentity>,
+        preparedIndex: Int,
+        preparedItem: Media3QueueEntryIdentity,
+    ): Boolean = newQueue.getOrNull(preparedIndex) == preparedItem
+
     fun resolve(
         newQueue: List<Media3QueueEntryIdentity>,
         oldIndex: Int,

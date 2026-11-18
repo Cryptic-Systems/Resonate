@@ -191,7 +191,6 @@ class Media3PlaybackBridge(
                             .build()
                     }
 
-                    Media3PlaybackService.instance?.clearPreload()
                     val oldIndex = connected.currentMediaItemIndex
                     val oldItem = connected.currentMediaItem
                     val oldPosition = connected.currentPosition.coerceAtLeast(0L)
@@ -200,6 +199,7 @@ class Media3PlaybackBridge(
                         connected.setMediaItems(items, 0, 0L)
                         connected.prepare()
                         if (oldPlayIntent) connected.play()
+                        Media3PlaybackService.instance?.synchronizePreload(items)
                         result.success(true)
                         return
                     }
@@ -248,6 +248,7 @@ class Media3PlaybackBridge(
                     if (!currentOccurrenceSurvives) {
                         connected.seekTo(targetIndex, 0L)
                     }
+                    Media3PlaybackService.instance?.synchronizePreload(items)
                     result.success(true)
                 }
                 "clearQueue" -> {
