@@ -126,6 +126,7 @@ class MusicProvider extends ChangeNotifier {
   final PodcastSessionBridge _podcastSession = PodcastSessionBridge();
   final AudiobookSessionBridge _audiobookSession = AudiobookSessionBridge();
   ModeProvider? _modes;
+  Object? _lastObservedMode;
   final LibraryVisibilityStore _visibility = LibraryVisibilityStore.instance;
   EnginePair? _engines;
   bool _legacyEngineObserversInitialized = false;
@@ -587,6 +588,7 @@ class MusicProvider extends ChangeNotifier {
   void attachModes(ModeProvider modes) {
     _modes?.removeListener(_onModesChangedForSessions);
     _modes = modes;
+    _lastObservedMode = modes.mode;
     modes.addListener(_onModesChangedForSessions);
     _podcastSession.sync(modes: modes, song: currentSong, position: currentPosition, playing: isPlaying);
     _audiobookSession.sync(modes: modes, song: currentSong, position: currentPosition, playing: isPlaying);
@@ -596,6 +598,27 @@ class MusicProvider extends ChangeNotifier {
   void _onModesChangedForSessions() {
     final modes = _modes;
     if (modes == null) return;
+    final currentMode = modes.mode;
+    final modeChanged = _lastObservedMode != currentMode;
+    _lastObservedMode = currentMode;
+    if (modeChanged &&
+        (_crossfadeInProgress ||
+            _automaticCrossfadeInFlight ||
+            _repeatSelfHandoffArmed ||
+            _repeatSelfHandoffInFlight ||
+            _crossfadePreloadInFlight ||
+            _preloadedNextSongId != null)) {
+      // Even when two Modes both permit crossfade, their content policies can
+      // differ (for example Work permits speech while Driving does not).
+      // Retire the old standby plan at every Mode boundary; the active deck
+      // keeps playing and a later preload is rebuilt under the new Mode.
+      _cancelAutomaticPlaybackWork(reason: 'mode_boundary_changed');
+      unawaited(ResonateDiagnostics.record('mode_transition_invalidated', {
+        'reason': 'mode_boundary_changed',
+        'mode': currentMode.toString(),
+        'songId': currentSong?.id,
+      }));
+    }
     _podcastSession.sync(modes: modes, song: currentSong, position: currentPosition, playing: isPlaying);
     _audiobookSession.sync(modes: modes, song: currentSong, position: currentPosition, playing: isPlaying);
   }
@@ -4325,7 +4348,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   /// Phase 4: user transport always wins over automatic work.
-  void _cancelAutomaticPlaybackWork() {
+  void _cancelAutomaticPlaybackWork({String reason = 'manual_transport_preemption'}) {
     // Invalidate all in-flight automatic A/B work before starting the user's
     // transport operation. Old futures may still unwind, but cannot commit.
     final hadRepeatSelfHandoff = _repeatSelfHandoffArmed || _repeatSelfHandoffInFlight;
@@ -4345,7 +4368,7 @@ class MusicProvider extends ChangeNotifier {
     _clearTransitionFlags(clearRepeatSelf: false);
     if (hadRepeatSelfHandoff) {
       unawaited(ResonateDiagnostics.record('repeat_self_cancel', {
-        'reason': 'transport_cancel',
+        'reason': reason,
         'songId': _repeatSelfTargetSongId,
       }));
     }
@@ -4376,7 +4399,7 @@ class MusicProvider extends ChangeNotifier {
           );
         } catch (error) {
           await ResonateDiagnostics.record('media3_crossfade_cancel_failed', {
-            'reason': 'manual_transport_preemption',
+            'reason': reason,
             'error': error.toString(),
           });
         }
