@@ -207,19 +207,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final song = songs[index];
     final fromHere = songs.sublist(index);
     final resumeAt = music.resumePositionFor(song.id);
-    final playback = music.playSong(
+    final ok = await music.playSong(
       song,
       queue: List<Song>.from(fromHere),
       startIndex: 0,
       resumeIfPossible: resumeAt != null,
       resumeAtMs: resumeAt,
     );
-    if (mounted) {
-      openShellPlayer(context);
-    }
-    final ok = await playback;
     if (!mounted) return;
     if (ok) {
+      // Do not reveal the Player tab until Media3 has committed this selection.
+      // This avoids briefly presenting the outgoing track's stale UI snapshot.
+      openShellPlayer(context);
       await library.updatePlayCount(song.id);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -416,8 +415,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       onTap: () async {
                         Navigator.pop(ctx);
                         final music = context.read<MusicProvider>();
-                        await music.playSong(s);
-                        if (mounted) {
+                        final started = await music.playSong(s);
+                        if (mounted && started) {
                           openShellPlayer(context);
                         }
                       },
@@ -696,12 +695,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       if (songs.isEmpty) return;
                       final music = context.read<MusicProvider>();
                       await music.setShuffleEnabled(false);
-                      await music.playSong(
+                      final started = await music.playSong(
                         songs.first,
                         queue: List.from(songs),
                         startIndex: 0,
                       );
-                      if (mounted) {
+                      if (mounted && started) {
                         openShellPlayer(context);
                       }
                     },

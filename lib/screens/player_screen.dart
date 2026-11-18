@@ -44,6 +44,8 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver {
   double? _dragPosition;
   bool _swipeTutorialChecked = false;
+  MusicProvider? _music;
+  String? _observedSongId;
 
   @override
   void initState() {
@@ -52,8 +54,32 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextMusic = context.read<MusicProvider>();
+    if (identical(_music, nextMusic)) return;
+    _music?.removeListener(_handleMusicChanged);
+    _music = nextMusic;
+    _observedSongId = nextMusic.currentSong?.id;
+    nextMusic.addListener(_handleMusicChanged);
+  }
+
+  void _handleMusicChanged() {
+    final nextSongId = _music?.currentSong?.id;
+    if (nextSongId == _observedSongId) return;
+    _observedSongId = nextSongId;
+    if (!mounted) {
+      _dragPosition = null;
+      return;
+    }
+    setState(() => _dragPosition = null);
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _music?.removeListener(_handleMusicChanged);
+    _music = null;
     // Leaving the player must not silence active playback.
     _keepAudioAlive();
     super.dispose();
