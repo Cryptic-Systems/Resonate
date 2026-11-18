@@ -117,6 +117,19 @@ class IntelligenceMixController extends ChangeNotifier {
       );
       if (!requestIsCurrent()) return null;
 
+      if (queueIntent != null && generated.songs.isEmpty) {
+        _lastQueuePlan = QueuePlan(
+          intentId: queueIntent.id,
+          songs: const [],
+          status: QueuePlanStatus.noEligibleTracks,
+          analysisCoverage: candidatePoolPlan?.analysisCoverage ?? 0,
+          analyzedTrackCount: candidatePoolPlan?.analyzedTrackCount ?? 0,
+          eligibleTrackCount: 0,
+          excludedSongIds: candidatePoolPlan?.excludedSongIds ?? const [],
+          reason: 'The evolved mix did not contain enough eligible tracks for its original DJ goal.',
+        );
+        return null;
+      }
       var mix = generated;
       if (queueIntent != null && generated.songs.isNotEmpty) {
         final finalPlan = await _queuePlanner.plan(
@@ -181,7 +194,12 @@ class IntelligenceMixController extends ChangeNotifier {
 
   Future<IntelligenceMix?> evolveCurrentMix() async {
     final previous = _currentMix;
-    if (previous == null || !intelligence.isEnabled || intelligence.recommendations.isEmpty) return null;
+    if (previous == null || !intelligence.isEnabled) return null;
+    final queueIntent = QueueIntent.fromId(previous.queueIntentId);
+    final availableRecommendations = queueIntent == null
+        ? intelligence.recommendations
+        : intelligence.candidatePool;
+    if (availableRecommendations.isEmpty) return null;
     final requestGeneration = _requestGuard.begin();
     final sourceSongId = music.currentSong?.id;
     bool requestIsCurrent() =>
@@ -197,10 +215,7 @@ class IntelligenceMixController extends ChangeNotifier {
     try {
       if (!await IntelligenceMixSettingsStore.autoEvolutionEnabled() ||
           !requestIsCurrent()) return null;
-      final queueIntent = QueueIntent.fromId(previous.queueIntentId);
-      var sourceRecommendations = queueIntent == null
-          ? intelligence.recommendations
-          : intelligence.candidatePool;
+      var sourceRecommendations = availableRecommendations;
       QueuePlan? candidatePoolPlan;
       if (queueIntent != null) {
         candidatePoolPlan = await _queuePlanner.plan(
