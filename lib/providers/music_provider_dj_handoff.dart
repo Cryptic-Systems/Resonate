@@ -76,8 +76,8 @@ extension MusicProviderDjHandoff on MusicProvider {
           outgoing: profileA,
           incoming: profileB,
           outgoingPositionMs: outgoing.position.inMilliseconds,
-          preferredDurationMs: _crossfadeDurationMs,
-          maxDurationMs: 6500,
+          preferredDurationMs: presetUsable ? pairPreset!.durationMs : _crossfadeDurationMs,
+          maxDurationMs: presetUsable ? 15000 : 6500,
           policy: _djPolicy,
           preferredKind: presetUsable ? pairPreset?.preferredKind : null,
         );
@@ -553,8 +553,8 @@ extension MusicProviderDjHandoff on MusicProvider {
                 outgoing: profileA,
                 incoming: profileB,
                 outgoingPositionMs: outgoingPositionMs,
-                preferredDurationMs: _crossfadeDurationMs,
-                maxDurationMs: 6500,
+                preferredDurationMs: presetUsable ? pairPreset!.durationMs : _crossfadeDurationMs,
+                maxDurationMs: presetUsable ? 15000 : 6500,
                 policy: _djPolicy,
                 preferredKind: presetUsable ? pairPreset?.preferredKind : null,
               );
