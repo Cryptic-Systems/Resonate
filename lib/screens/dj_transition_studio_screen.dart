@@ -210,7 +210,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
       );
       _previewProvider = provider;
       _audioPreviewActive = true;
-      if (mounted) setState(() => _status = 'Audible transition preview is playing on isolated DSP decks.');
+      if (mounted) setState(() => _status = 'Audible preview started. It stops automatically when the blend finishes.');
     } catch (e) {
       if (mounted) setState(() => _error = 'Could not start audible preview: $e');
     }
