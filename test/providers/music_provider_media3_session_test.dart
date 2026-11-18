@@ -438,6 +438,29 @@ void main() {
       await session.states.close();
     });
 
+    test('startup settings barrier holds feature activation until restoration completes', () async {
+      final session = _PitchCapableFakePlaybackSession();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        deferMedia3UntilSettingsReady: true,
+      );
+      final settingsReady = Completer<void>();
+      provider.setStartupSettingsReady(settingsReady.future);
+
+      await provider.setPlaybackSpeedForFeatures(1.4);
+      expect(provider.media3ProviderSessionActive, isFalse);
+
+      settingsReady.complete();
+      await provider.setPlaybackSpeedForFeatures(1.4);
+      expect(provider.media3ProviderSessionActive, isTrue);
+      expect(session.playbackSpeedValue, 1.4);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('playback feature changes activate and remain on injected Media3', () async {
       final session = _PitchCapableFakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);

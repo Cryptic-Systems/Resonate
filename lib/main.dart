@@ -265,6 +265,7 @@ class ResonateApp extends StatelessWidget {
           create: (_) {
             final provider = MusicProvider(
               media3ProviderSession: Media3ProviderSession(),
+              deferMedia3UntilSettingsReady: true,
             );
             // Media3 starts after persisted DSP and playback settings are restored.
             return provider;

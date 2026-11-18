@@ -683,7 +683,7 @@ class MusicProvider extends ChangeNotifier {
   Future<void> setPlaybackPitchForFeatures(double value) async {
     final session = _media3ProviderSession;
     if (session != null) {
-      if (!_media3ProviderSessionActive) return;
+      if (_startupSettingsBarrierInstalled && !_startupSettingsReadyComplete) return;
       final activeSession = (await _ensureMedia3ProviderSessionActive())!;
       try {
         await activeSession.setPlaybackPitch(value);
@@ -704,7 +704,7 @@ class MusicProvider extends ChangeNotifier {
     final session = _media3ProviderSession;
     if (session != null) {
       _featureNormalizationScale = enabled ? trackLevel : 1.0;
-      if (!_media3ProviderSessionActive) return;
+      if (_startupSettingsBarrierInstalled && !_startupSettingsReadyComplete) return;
       final activeSession = (await _ensureMedia3ProviderSessionActive())!;
       final composedTrackLevel = _levelingRuntime.composeAdditionalTrackScale(_featureNormalizationScale);
       await activeSession.setGainFactors(trackLevel: composedTrackLevel);
@@ -807,7 +807,10 @@ class MusicProvider extends ChangeNotifier {
   MusicProvider({
     this.audioHandler,
     PlaybackEngineSession? media3ProviderSession,
+    bool deferMedia3UntilSettingsReady = false,
   }) : _media3ProviderSession = media3ProviderSession {
+    _startupSettingsBarrierInstalled = deferMedia3UntilSettingsReady;
+    _startupSettingsReadyComplete = !deferMedia3UntilSettingsReady;
     // A Media3-backed provider must not construct Flutter audio players at
     // startup. Initialize legacy decks only when the explicit fallback is used.
     if (_media3ProviderSession == null) {
