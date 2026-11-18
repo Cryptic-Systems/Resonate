@@ -361,8 +361,13 @@ class Media3PlaybackBridge(
                         result.error("INVALID_POSITION", "positionMs must be non-negative.", null)
                         return
                     }
-                    connected.seekTo(positionMs)
-                    result.success(true)
+                    val accepted = Media3PlaybackService.instance?.seekTo(positionMs)
+                    if (accepted == false) {
+                        result.error("MEDIA3_SEEK_FAILED", "The active Media3 deck rejected the seek.", null)
+                    } else {
+                        if (accepted == null) connected.seekTo(positionMs)
+                        result.success(true)
+                    }
                 }
                 "setPlaybackSpeed" -> {
                     val speed = call.argument<Number>("speed")?.toFloat()

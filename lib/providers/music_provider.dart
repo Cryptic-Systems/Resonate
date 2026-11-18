@@ -101,6 +101,8 @@ class MusicProvider extends ChangeNotifier {
   Media3ProviderState? get media3ShadowState => _media3ShadowState;
   Future<void>? _playbackSettingsLoad;
   Future<void>? _queueRestore;
+  Future<void> _startupSettingsReady = Future<void>.value();
+  double _featureNormalizationScale = 1.0;
   Future<void>? _media3HandoffFuture;
   bool _media3ProviderSessionPrepared = false;
   bool _media3ProviderSessionActive = false;
@@ -657,9 +659,14 @@ class MusicProvider extends ChangeNotifier {
   /// Engine-neutral playback feature commands. The Media3 session is the
   /// only supported backend when it has been injected; never instantiate a
   /// legacy just_audio player merely to apply a feature during handoff.
+  void setStartupSettingsReady(Future<void> ready) {
+    _startupSettingsReady = ready;
+  }
+
   Future<void> setPlaybackSpeedForFeatures(double value) async {
     final session = _media3ProviderSession;
     if (session != null) {
+      if (!_media3ProviderSessionActive) return;
       final activeSession = (await _ensureMedia3ProviderSessionActive())!;
       await activeSession.setPlaybackSpeed(value);
       return;
@@ -670,6 +677,7 @@ class MusicProvider extends ChangeNotifier {
   Future<void> setPlaybackPitchForFeatures(double value) async {
     final session = _media3ProviderSession;
     if (session != null) {
+      if (!_media3ProviderSessionActive) return;
       final activeSession = (await _ensureMedia3ProviderSessionActive())!;
       try {
         await activeSession.setPlaybackPitch(value);
@@ -689,14 +697,10 @@ class MusicProvider extends ChangeNotifier {
   }) async {
     final session = _media3ProviderSession;
     if (session != null) {
+      _featureNormalizationScale = enabled ? trackLevel : 1.0;
+      if (!_media3ProviderSessionActive) return;
       final activeSession = (await _ensureMedia3ProviderSessionActive())!;
-      // The canonical RMS analysis trim belongs to MusicProvider. Preserve it
-      // when the older PlaybackFeatures normalization is disabled, and
-      // multiply any optional secondary trim instead of overwriting it.
-      final composedTrackLevel =
-          _levelingRuntime.composeAdditionalTrackScale(
-        enabled ? trackLevel : 1.0,
-      );
+      final composedTrackLevel = _levelingRuntime.composeAdditionalTrackScale(_featureNormalizationScale);
       await activeSession.setGainFactors(trackLevel: composedTrackLevel);
       return;
     }
@@ -887,6 +891,7 @@ class MusicProvider extends ChangeNotifier {
       throw StateError('No Media3ProviderSession was supplied to MusicProvider.');
     }
     if (_disposed) throw StateError('MusicProvider is disposed.');
+    await _startupSettingsReady;
     await _playbackSettingsLoad;
     await _queueRestore;
     if (_disposed) throw StateError('MusicProvider is disposed.');
@@ -944,7 +949,7 @@ class MusicProvider extends ChangeNotifier {
     await session.setShuffleMode(effectiveShuffleEnabled);
     await session.setVolume(1.0);
     await session.setGainFactors(
-      trackLevel: _trackLevelingScale,
+      trackLevel: _levelingRuntime.composeAdditionalTrackScale(_featureNormalizationScale),
       preamp: _eqPreampScale,
       sleepFade: _sleepFadeScale,
       focusDuck: _isDucked ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel) : 1.0,
@@ -1653,7 +1658,7 @@ class MusicProvider extends ChangeNotifier {
         if (await _isCommunicationActive()) return;
         try {
           await session.setGainFactors(
-            trackLevel: _trackLevelingScale,
+            trackLevel: _levelingRuntime.composeAdditionalTrackScale(_featureNormalizationScale),
             preamp: _eqPreampUserScale,
             sleepFade: _sleepFadeScale,
             focusDuck: _isDucked
@@ -1755,7 +1760,7 @@ class MusicProvider extends ChangeNotifier {
     if (_media3ProviderSessionActive) {
       try {
         await _media3ProviderSession!.setGainFactors(
-          trackLevel: _trackLevelingScale,
+          trackLevel: _levelingRuntime.composeAdditionalTrackScale(_featureNormalizationScale),
           preamp: _eqPreampUserScale,
           sleepFade: _sleepFadeScale,
           focusDuck: _isDucked
@@ -1867,7 +1872,7 @@ class MusicProvider extends ChangeNotifier {
       final focusGeneration = _focusInterruption.focusEventGeneration;
       _isDucked = false;
       await session.setGainFactors(
-        trackLevel: _trackLevelingScale,
+        trackLevel: _levelingRuntime.composeAdditionalTrackScale(_featureNormalizationScale),
         preamp: _eqPreampUserScale,
         sleepFade: _sleepFadeScale,
         focusDuck: 1.0,
@@ -1947,7 +1952,9 @@ class MusicProvider extends ChangeNotifier {
     if (_media3ProviderSession != null) {
       _isDucked = false;
       await this.resumePlayback(source: 'system');
+      await Future<void>.delayed(const Duration(milliseconds: 350));
       if (generation == _focusResumeGeneration && _userWantsPlaying) {
+        await onAppForegrounded();
         await _applyActiveMasterVolume();
       }
       return;
@@ -1968,6 +1975,22 @@ class MusicProvider extends ChangeNotifier {
           } catch (_) {}
         }
       } catch (_) {}
+    }
+  }
+
+  Future<void> onAppForegrounded() async {
+    final session = _media3ProviderSession;
+    if (session == null || !_media3ProviderSessionActive || _disposed) return;
+    try {
+      if (session is PlaybackStateRefreshSession) {
+        await (session as PlaybackStateRefreshSession).refreshState();
+      }
+      if (_disposed || !identical(session, _media3ProviderSession) || !_media3ProviderSessionActive) return;
+      _reconcileMedia3ProviderSession();
+      _publishServiceState();
+      notifyListeners();
+    } catch (error) {
+      debugPrint('Media3 foreground state reconciliation failed: $error');
     }
   }
 

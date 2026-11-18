@@ -88,6 +88,11 @@ abstract interface class PlaybackEngineSession
 }
 
 
+/// Optional explicit snapshot refresh for lifecycle/focus reconciliation.
+abstract interface class PlaybackStateRefreshSession {
+  Future<void> refreshState();
+}
+
 /// Optional session-level playback-pitch control.
 abstract interface class PlaybackPitchSession {
   Future<void> setPlaybackPitch(double pitch);

@@ -180,7 +180,7 @@ class EqualizerProvider extends ChangeNotifier {
         _music = music,
         _bluetooth = bluetooth {
     _initStudioBands();
-    _initialize();
+    ready = _initialize();
     _music?.addListener(_onMusicChanged);
     _bluetooth?.addListener(_onBluetoothChanged);
     // Output route → speaker protection / virtual bass on live DSP engines.
@@ -706,6 +706,7 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   bool _hardwareBound = false;
+  late final Future<void> ready;
   int _leanRequestRevision = 0;
   int _manualPresetRevision = 0;
 

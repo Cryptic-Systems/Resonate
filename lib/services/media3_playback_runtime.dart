@@ -49,6 +49,14 @@ class Media3PlaybackRuntime {
     return result;
   }
 
+  Future<void> refreshState() async {
+    _ensureAlive();
+    final revisionBeforeRead = _snapshotRevision;
+    final snapshot = await _backend.currentState();
+    if (_disposed) return;
+    if (_snapshotRevision == revisionBeforeRead) _acceptSnapshot(snapshot);
+  }
+
   Future<void> _connectOnce() async {
     await _subscription?.cancel();
     _ensureAlive();

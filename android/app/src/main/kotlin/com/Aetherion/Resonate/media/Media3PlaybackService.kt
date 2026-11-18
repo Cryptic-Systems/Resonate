@@ -724,6 +724,16 @@ class Media3PlaybackService : MediaSessionService() {
     }
 
     /** Atomically restore primary A and load a fresh user-selected queue. */
+    fun seekTo(positionMs: Long): Boolean {
+        if (!::activePlayer.isInitialized || positionMs < 0L) return false
+        return try {
+            activePlayer.seekTo(positionMs)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun loadNewQueue(items: List<MediaItem>, startIndex: Int): Boolean {
         if (items.isEmpty() || startIndex !in items.indices ||
             items.any { it.localConfiguration?.uri == null } ||

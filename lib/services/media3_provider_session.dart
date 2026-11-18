@@ -14,7 +14,7 @@ import 'playback_engine_session.dart';
 /// constructing multiple clients or listening to native snapshots independently.
 /// The app composition root injects it and commits the provider handoff after
 /// settings and queue restoration.
-class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryEffectsBackend, PlaybackPitchSession {
+class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryEffectsBackend, PlaybackPitchSession, PlaybackStateRefreshSession {
   Media3ProviderSession({PlaybackBackend? backend})
       : _runtime = Media3PlaybackRuntime(
           backend ?? Media3MusicProviderAdapter(),
@@ -89,6 +89,9 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryE
         output.onCancel = subscription.cancel;
       });
   Media3ProviderState get current => _bridge.current;
+
+  @override
+  Future<void> refreshState() => _runtime.refreshState();
 
   // Synchronous reads are projections of the exact state stream that belongs
   // to this command session. MusicProvider can reconcile state without

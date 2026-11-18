@@ -266,16 +266,7 @@ class ResonateApp extends StatelessWidget {
             final provider = MusicProvider(
               media3ProviderSession: Media3ProviderSession(),
             );
-            // Startup restoration completes before the provider mirrors its
-            // queue and commits the Media3 transport/state handoff. A failed
-            // native startup is surfaced in diagnostics and leaves the
-            // existing player available rather than creating two active decks.
-            unawaited(provider.prepareMedia3ProviderSession().catchError(
-              (Object error, StackTrace stack) {
-                debugPrint('Media3 provider handoff failed: $error');
-                debugPrint('$stack');
-              },
-            ));
+            // Media3 starts after persisted DSP and playback settings are restored.
             return provider;
           },
         ),
@@ -329,6 +320,7 @@ class ResonateApp extends StatelessWidget {
           ),
         ),
         ChangeNotifierProvider(
+          lazy: false,
           create: (context) => EqualizerProvider(
             music: context.read<MusicProvider>(),
             bluetooth: context.read<BluetoothProvider>(),
@@ -413,6 +405,20 @@ class _LifecycleHomeState extends State<_LifecycleHome>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Install the barrier before any screen can issue a transport command.
+    final startupSettingsReady = Future.wait<void>([
+      context.read<EqualizerProvider>().ready,
+      context.read<AudioEffectsProvider>().ready,
+      context.read<PlaybackFeaturesProvider>().ready,
+    ]);
+    context.read<MusicProvider>().setStartupSettingsReady(startupSettingsReady);
+    unawaited(startupSettingsReady.then((_) async {
+      if (!mounted) return;
+      await context.read<MusicProvider>().prepareMedia3ProviderSession();
+    }).catchError((Object error, StackTrace stack) {
+      debugPrint('Media3 startup after settings restore failed: $error');
+      debugPrint('$stack');
+    }));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _startForegroundAnalysisOpportunities();
@@ -501,6 +507,7 @@ class _LifecycleHomeState extends State<_LifecycleHome>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      unawaited(context.read<MusicProvider>().onAppForegrounded());
       _startForegroundAnalysisOpportunities();
       try {
         context.read<DjModeProvider>().onAnalysisOpportunity('app_resumed');
