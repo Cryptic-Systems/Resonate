@@ -203,19 +203,19 @@ extension MusicProviderMedia3 on MusicProvider {
 
       final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
       final plannedDurationMs = preparation?.transitionDurationMs;
-      final approvedCueMs =
+      final plannedCueMs =
           preparation?.outgoingStartPosition?.inMilliseconds;
-      var hasApprovedCue = false;
+      var hasPlannedCue = false;
 
-      // A reviewed phrase cue is a time on the outgoing deck, not permission
+      // A selected outgoing mix point is a time on the outgoing deck, not permission
       // to start the fade immediately. Wait for that musical boundary while
-      // playback continues. If it has already passed or cannot be reached in
-      // a bounded window, discard phrase timing and use the ordinary safe fade.
-      if (approvedCueMs != null) {
+      // playback continues. If it cannot be reached in a bounded window, use
+      // the ordinary safe fade.
+      if (plannedCueMs != null) {
         final initialPositionMs = session.position.inMilliseconds;
-        if (approvedCueMs >= initialPositionMs - 250) {
+        if (plannedCueMs >= initialPositionMs - 250) {
           final cueWait = Stopwatch()..start();
-          while (session.position.inMilliseconds + 80 < approvedCueMs) {
+          while (session.position.inMilliseconds + 80 < plannedCueMs) {
             if (!stillOwnsTransition() ||
                 !session.isPlaying ||
                 session.currentSong?.id != outgoingSong.id ||
@@ -223,40 +223,40 @@ extension MusicProviderMedia3 on MusicProvider {
                 _crossfadeTargetSong?.id != nextSong.id ||
                 _crossfadeTargetIndex != nextIndex) {
               await ResonateDiagnostics.recordDj(
-                stage: 'media3_phrase_cue',
+                stage: 'media3_transition_cue',
                 outcome: 'cancelled_before_cue',
                 reason: 'playback_or_queue_ownership_changed',
                 songId: nextSong.id,
-                extra: {'cueMs': approvedCueMs},
+                extra: {'cueMs': plannedCueMs},
               );
               return;
             }
             if (cueWait.elapsed >= const Duration(seconds: 20)) break;
             await Future<void>.delayed(const Duration(milliseconds: 24));
           }
-          hasApprovedCue =
-              session.position.inMilliseconds + 250 >= approvedCueMs;
+          hasPlannedCue =
+              session.position.inMilliseconds + 250 >= plannedCueMs;
           await ResonateDiagnostics.recordDj(
-            stage: 'media3_phrase_cue',
-            outcome: hasApprovedCue ? 'reached' : 'wait_window_expired',
-            reason: hasApprovedCue
-                ? 'outgoing_phrase_boundary_reached'
+            stage: 'media3_transition_cue',
+            outcome: hasPlannedCue ? 'reached' : 'wait_window_expired',
+            reason: hasPlannedCue
+                ? 'outgoing_mix_point_reached'
                 : 'cue_not_reached_in_time',
             songId: nextSong.id,
             extra: {
-              'cueMs': approvedCueMs,
+              'cueMs': plannedCueMs,
               'positionMs': session.position.inMilliseconds,
               'waitMs': cueWait.elapsedMilliseconds,
             },
           );
         } else {
           await ResonateDiagnostics.recordDj(
-            stage: 'media3_phrase_cue',
+            stage: 'media3_transition_cue',
             outcome: 'stale',
-            reason: 'outgoing_phrase_boundary_already_passed',
+            reason: 'outgoing_mix_point_already_passed',
             songId: nextSong.id,
             extra: {
-              'cueMs': approvedCueMs,
+              'cueMs': plannedCueMs,
               'positionMs': initialPositionMs,
             },
           );
@@ -264,7 +264,7 @@ extension MusicProviderMedia3 on MusicProvider {
       }
 
       final effectivePlannedDurationMs =
-          hasApprovedCue ? plannedDurationMs : null;
+          hasPlannedCue ? plannedDurationMs : null;
       final configuredDurationMs = effectivePlannedDurationMs != null
           ? effectivePlannedDurationMs.clamp(2000, 15000).toInt()
           : (djActive
@@ -305,18 +305,18 @@ extension MusicProviderMedia3 on MusicProvider {
         );
         return;
       }
-      if (!hasApprovedCue && remainingMs > configuredDurationMs + 4500) {
-        if (approvedCueMs != null) {
+      if (!hasPlannedCue && remainingMs > configuredDurationMs + 4500) {
+        if (plannedCueMs != null) {
           // A reviewed cue that is stale or not yet reached must never turn
           // into an immediate queue advance. Leave the outgoing deck playing
           // and let the normal end-window trigger retry with a safe crossfade.
           await ResonateDiagnostics.recordDj(
-            stage: 'media3_phrase_cue',
+            stage: 'media3_transition_cue',
             outcome: 'deferred_to_safe_crossfade',
             reason: 'phrase_boundary_not_executable_yet',
             songId: nextSong.id,
             extra: {
-              'cueMs': approvedCueMs,
+              'cueMs': plannedCueMs,
               'positionMs': session.position.inMilliseconds,
               'remainingMs': remainingMs,
             },
@@ -414,6 +414,11 @@ extension MusicProviderMedia3 on MusicProvider {
       ));
       _preloadedNextSongId = null;
       _media3DjTransitionPreparation = null;
+      _repeatSelfDjPreparation = null;
+      _repeatSelfDjPlanSongId = null;
+      _repeatSelfDjPlanAttempted = false;
+      _repeatSelfDjPlanGeneration++;
+      _repeatSelfDjPreloadInFlight = false;
       _lastCompletionSongId = null;
       _crossfadeInProgress = false;
       _automaticCrossfadeInFlight = false;
@@ -592,12 +597,74 @@ extension MusicProviderMedia3 on MusicProvider {
     }
   }
 
-  /// Same-track repeat-one handoff on the physical standby deck. The
-  /// canonical queue occurrence remains unchanged; only the active A/B deck
-  /// changes after the native equal-power fade has completed.
+  Future<void> _preloadMedia3RepeatSelfDjTransition(
+    Song song,
+    Media3DjTransitionPreparation preparation,
+    int generation,
+  ) async {
+    final session = _media3ProviderSession;
+    if (session == null ||
+        !_media3ProviderSessionActive ||
+        _repeatSelfDjPreloadInFlight ||
+        _preloadedNextSongId == song.id) return;
+    final transportEpoch = _userTransportEpoch;
+    _repeatSelfDjPreloadInFlight = true;
+    bool stillOwnsPreload() =>
+        generation == _repeatSelfDjPlanGeneration &&
+        transportEpoch == _userTransportEpoch &&
+        _repeatMode == PlaybackRepeatMode.one &&
+        _repeatSelfDjPlanSongId == song.id &&
+        identical(_repeatSelfDjPreparation, preparation) &&
+        currentSong?.id == song.id &&
+        _media3ProviderSessionActive &&
+        effectiveCrossfadeEnabled;
+    try {
+      await session.preloadNext(
+        song,
+        queueIndex: _queueIndex,
+        startPosition: preparation.incomingStartPosition,
+      );
+      if (!stillOwnsPreload()) return;
+      await session.setDeckPlaybackSpeeds(
+        activeSpeed: preparation.activeSpeed,
+        standbySpeed: preparation.standbySpeed,
+      );
+      if (!stillOwnsPreload()) return;
+      _preloadedNextSongId = song.id;
+      _media3DjTransitionPreparation = preparation;
+      await ResonateDiagnostics.recordDj(
+        stage: 'repeat_self_preload',
+        outcome: 'prepared',
+        reason: 'incoming_intro_cue_ready',
+        songId: song.id,
+        extra: {
+          'incomingCueMs': preparation.incomingStartPosition.inMilliseconds,
+          'outgoingCueMs': preparation.outgoingStartPosition?.inMilliseconds,
+        },
+      );
+    } catch (error) {
+      if (stillOwnsPreload()) {
+        await ResonateDiagnostics.recordDj(
+          stage: 'repeat_self_preload',
+          outcome: 'fallback',
+          reason: 'standby_preload_failed: $error',
+          songId: song.id,
+        );
+      }
+    } finally {
+      if (generation == _repeatSelfDjPlanGeneration) {
+        _repeatSelfDjPreloadInFlight = false;
+      }
+    }
+  }
+
+  /// Same-track repeat-one handoff on the physical standby deck. The queue
+  /// occurrence remains unchanged; an analyzed loop enters at its safe intro.
   Future<void> _runMedia3RepeatSelfCrossfade({
     required int loopMs,
     required int remainingMs,
+    Duration incomingStartPosition = Duration.zero,
+    bool standbyPreloaded = false,
   }) async {
     final session = _media3ProviderSession;
     final song = currentSong;
@@ -618,7 +685,7 @@ extension MusicProviderMedia3 on MusicProvider {
     final transportEpoch = _userTransportEpoch;
     final outgoingDeckId = _media3ShadowState?.activeDeckId ?? 'A';
     final durationMs = math.min(loopMs, remainingMs - 180)
-        .clamp(500, 4000)
+        .clamp(500, 6500)
         .toInt();
     bool stillOwnsTransition() =>
         _media3ProviderSessionActive &&
@@ -639,11 +706,16 @@ extension MusicProviderMedia3 on MusicProvider {
       await session.setRepeatMode(PlaybackQueueRepeatMode.off);
       if (!stillOwnsTransition()) return;
 
-      await session.preloadNext(
-        song,
-        queueIndex: queueIndex,
-        startPosition: Duration.zero,
-      );
+      final preparedForCue = standbyPreloaded &&
+          _preloadedNextSongId == song.id &&
+          identical(_media3DjTransitionPreparation, _repeatSelfDjPreparation);
+      if (!preparedForCue) {
+        await session.preloadNext(
+          song,
+          queueIndex: queueIndex,
+          startPosition: incomingStartPosition,
+        );
+      }
       if (!stillOwnsTransition()) {
         await session.cancelCrossfade();
         return;
@@ -727,6 +799,11 @@ extension MusicProviderMedia3 on MusicProvider {
           transportEpoch == _userTransportEpoch) {
         _preloadedNextSongId = null;
         _media3DjTransitionPreparation = null;
+        _repeatSelfDjPreparation = null;
+        _repeatSelfDjPlanSongId = null;
+        _repeatSelfDjPlanAttempted = false;
+        _repeatSelfDjPlanGeneration++;
+        _repeatSelfDjPreloadInFlight = false;
       }
     } finally {
       try {

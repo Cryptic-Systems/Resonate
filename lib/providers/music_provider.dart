@@ -279,6 +279,12 @@ class MusicProvider extends ChangeNotifier {
   /// Old async preload completions must not leave the shared in-flight flag set
   /// or clear a newer preload after manual transport takes ownership.
   int _media3PreloadGeneration = 0;
+  Media3DjTransitionPreparation? _repeatSelfDjPreparation;
+  String? _repeatSelfDjPlanSongId;
+  bool _repeatSelfDjPlanAttempted = false;
+  bool _repeatSelfDjPlanning = false;
+  bool _repeatSelfDjPreloadInFlight = false;
+  int _repeatSelfDjPlanGeneration = 0;
   String? get _repeatSelfTargetSongId =>
       _crossfadeRuntime.repeatSelfTargetSongId;
   set _repeatSelfTargetSongId(String? value) =>
@@ -1107,11 +1113,20 @@ class MusicProvider extends ChangeNotifier {
         _automaticCrossfadeInFlight ||
         _repeatSelfHandoffInFlight ||
         _crossfadePreloadInFlight ||
+        _repeatSelfDjPlanning ||
+        _repeatSelfDjPreloadInFlight ||
+        _repeatSelfDjPreparation != null ||
         _preloadedNextSongId != null;
     // Repeat mode changes the meaning of an in-flight transition. In
     // particular, turning Repeat One off must invalidate its self-loop before
     // that stale operation can commit or fall back to replaying the old track.
     if (transitionActive) _cancelAutomaticPlaybackWork();
+    _repeatSelfDjPlanGeneration++;
+    _repeatSelfDjPlanSongId = null;
+    _repeatSelfDjPlanAttempted = false;
+    _repeatSelfDjPlanning = false;
+    _repeatSelfDjPreloadInFlight = false;
+    _repeatSelfDjPreparation = null;
     _repeatMode = mode;
     if (_media3ProviderSession != null) {
       final session = (await _ensureMedia3ProviderSessionActive())!;
@@ -2370,8 +2385,8 @@ class MusicProvider extends ChangeNotifier {
     final remaining = duration - activePosition;
     if (remaining <= Duration.zero) return;
 
-    // Repeat-one + crossfade: dual-engine A→B self-handoff (same song).
-    // Soft single-engine loop is the fallback if the idle engine load times out.
+    // Repeat-one + crossfade: use the same DJ mix-in/mix-out intelligence
+    // as song-to-song transitions whenever a trustworthy profile is available.
     if (_repeatMode == PlaybackRepeatMode.one) {
       if (_media3ProviderSessionActive) {
         if (!effectiveCrossfadeEnabled ||
@@ -2380,21 +2395,92 @@ class MusicProvider extends ChangeNotifier {
             _crossfadeInProgress) {
           return;
         }
-        if (currentSong == null) return;
-        // Repeat-one deliberately uses the standby physical deck. Keep the
-        // same queue occurrence and start the incoming copy at zero.
-        final loopMs = _crossfadeDurationMs.clamp(1600, 4000).toInt();
+        final song = currentSong;
+        if (song == null) return;
+        final positionMs = activePosition.inMilliseconds;
+        final remainingMs = remaining.inMilliseconds;
+        final loopMs = _crossfadeDurationMs.clamp(1600, 6500).toInt();
         final triggerMs = (loopMs + 500).clamp(1500, 4500).toInt();
-        if (remaining > Duration(milliseconds: triggerMs) ||
-            remaining < const Duration(milliseconds: 1200)) {
-          return;
+
+        if (_djHandoffsLive && _djAnalysis != null) {
+          if (_repeatSelfDjPlanSongId != song.id) {
+            _repeatSelfDjPlanGeneration++;
+            _repeatSelfDjPlanSongId = song.id;
+            _repeatSelfDjPlanAttempted = false;
+            _repeatSelfDjPlanning = false;
+            _repeatSelfDjPreparation = null;
+          }
+          if (positionMs < 2000 &&
+              _repeatSelfDjPlanAttempted &&
+              !_repeatSelfHandoffInFlight) {
+            _repeatSelfDjPlanGeneration++;
+            _repeatSelfDjPlanAttempted = false;
+            _repeatSelfDjPlanning = false;
+            _repeatSelfDjPreparation = null;
+          }
+          if (!_repeatSelfDjPlanAttempted &&
+              !_repeatSelfDjPlanning &&
+              remainingMs <= 60000) {
+            _repeatSelfDjPlanAttempted = true;
+            _repeatSelfDjPlanning = true;
+            final planGeneration = ++_repeatSelfDjPlanGeneration;
+            unawaited(_prepareMedia3RepeatSelfDjTransition(
+              song,
+              positionMs,
+              planGeneration,
+            ));
+          }
+
+          final preparation = _repeatSelfDjPreparation;
+          final cueMs = preparation?.outgoingStartPosition?.inMilliseconds;
+          if (preparation != null && cueMs != null) {
+            if (positionMs < cueMs) {
+              if (CrossfadeOrchestrator.shouldPreloadForApprovedCue(
+                positionMs: positionMs,
+                cueMs: cueMs,
+              )) {
+                unawaited(_preloadMedia3RepeatSelfDjTransition(
+                  song,
+                  preparation,
+                  _repeatSelfDjPlanGeneration,
+                ));
+              }
+              return;
+            }
+            if (_repeatSelfDjPreloadInFlight || _repeatSelfHandoffInFlight) return;
+            _repeatSelfHandoffInFlight = true;
+            _automaticCrossfadeInFlight = true;
+            _transitionArmedAt = DateTime.now();
+            unawaited(_runMedia3RepeatSelfCrossfade(
+              loopMs: preparation.transitionDurationMs ?? loopMs,
+              remainingMs: remainingMs,
+              incomingStartPosition: preparation.incomingStartPosition,
+              standbyPreloaded: _preloadedNextSongId == song.id &&
+                  identical(_media3DjTransitionPreparation, preparation),
+            ));
+            return;
+          }
+          if (_repeatSelfDjPlanning && remainingMs <= triggerMs + 500) return;
+        } else if (_repeatSelfDjPlanSongId != null ||
+            _repeatSelfDjPreparation != null ||
+            _repeatSelfDjPlanning) {
+          _repeatSelfDjPlanGeneration++;
+          _repeatSelfDjPlanSongId = null;
+          _repeatSelfDjPlanAttempted = false;
+          _repeatSelfDjPlanning = false;
+          _repeatSelfDjPreloadInFlight = false;
+          _repeatSelfDjPreparation = null;
         }
+
+        // If no trustworthy outgoing cue exists, retain the short native-safe
+        // repeat fallback rather than inventing a musical boundary.
+        if (remainingMs > triggerMs || remainingMs < 1200) return;
         _repeatSelfHandoffInFlight = true;
         _automaticCrossfadeInFlight = true;
         _transitionArmedAt = DateTime.now();
         unawaited(_runMedia3RepeatSelfCrossfade(
           loopMs: loopMs,
-          remainingMs: remaining.inMilliseconds,
+          remainingMs: remainingMs,
         ));
         return;
       }
@@ -2420,9 +2506,9 @@ class MusicProvider extends ChangeNotifier {
 
     if (!canCrossfadeNext) return;
 
-    // An approved Suggestion Mix owns its reviewed cue timing. Preload the
-    // standby deck ahead of that cue, then start the native fade at the cue
-    // instead of waiting for the ordinary end-of-track trigger window.
+    // A reviewed Suggestion Mix or live DJ analysis can nominate an outgoing
+    // mix point. Preload the standby deck ahead of that cue, then start the
+    // native fade at the selected musical boundary.
     if (media3Session != null) {
       final outgoing = currentSong;
       final incoming = _crossfadeTargetSong;
@@ -4232,6 +4318,12 @@ class MusicProvider extends ChangeNotifier {
     _repeatSelfHandoffArmed = false;
     _repeatSelfHandoffInFlight = false;
     _repeatSelfTargetSongId = null;
+    _repeatSelfDjPlanGeneration++;
+    _repeatSelfDjPlanSongId = null;
+    _repeatSelfDjPlanAttempted = false;
+    _repeatSelfDjPlanning = false;
+    _repeatSelfDjPreloadInFlight = false;
+    _repeatSelfDjPreparation = null;
     unawaited(_restoreDjTransitionSfx());
     if (_media3ProviderSessionActive && _media3ProviderSession != null) {
       final session = _media3ProviderSession!;

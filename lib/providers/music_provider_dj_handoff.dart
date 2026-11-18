@@ -397,6 +397,77 @@ extension MusicProviderDjHandoff on MusicProvider {
   /// Builds a player-agnostic DJ handoff for the injected Media3 session.
   /// The incoming phrase offset and independent deck rates are applied during
   /// standby preload, before the native equal-power crossfade is armed.
+  Future<void> _prepareMedia3RepeatSelfDjTransition(
+    Song song,
+    int outgoingPositionMs,
+    int generation,
+  ) async {
+    final transportEpoch = _userTransportEpoch;
+    try {
+      final preparation = await _prepareMedia3DjHandoff(
+        outgoingSong: song,
+        incomingSong: song,
+        outgoingPositionMs: outgoingPositionMs,
+      );
+      if (_disposed ||
+          generation != _repeatSelfDjPlanGeneration ||
+          transportEpoch != _userTransportEpoch ||
+          _repeatMode != PlaybackRepeatMode.one ||
+          currentSong?.id != song.id ||
+          !_djHandoffsLive) {
+        return;
+      }
+
+      final profile = preparation.outgoingProfile;
+      final cueMs = preparation.outgoingStartPosition?.inMilliseconds;
+      final trackDurationMs =
+          profile?.durationMs ?? song.duration.inMilliseconds;
+      final fadeMs = preparation.transitionDurationMs ?? _crossfadeDurationMs;
+      final hasSafeOutro = profile != null &&
+          cueMs != null &&
+          cueMs >= outgoingPositionMs &&
+          cueMs <= trackDurationMs - 2000 &&
+          trackDurationMs - cueMs <= 60000 &&
+          trackDurationMs - cueMs >= fadeMs + 1200 &&
+          (profile.transitions.safeMixOuts.any(
+                (point) => point.timeMs == cueMs,
+              ) ||
+              profile.transitions.bestOutroMs == cueMs);
+      if (hasSafeOutro) {
+        _repeatSelfDjPreparation = preparation;
+        await ResonateDiagnostics.recordDj(
+          stage: 'repeat_self_dj_plan',
+          outcome: 'prepared',
+          reason: 'safe_outro_to_same_track_intro',
+          songId: song.id,
+          extra: {
+            'outgoingCueMs': cueMs,
+            'incomingCueMs': preparation.incomingStartPosition.inMilliseconds,
+            'durationMs': fadeMs,
+          },
+        );
+      } else {
+        await ResonateDiagnostics.recordDj(
+          stage: 'repeat_self_dj_plan',
+          outcome: 'safe_fallback',
+          reason: 'no_confident_outgoing_mix_point',
+          songId: song.id,
+        );
+      }
+    } catch (error) {
+      await ResonateDiagnostics.recordDj(
+        stage: 'repeat_self_dj_plan',
+        outcome: 'safe_fallback',
+        reason: 'planning_failed: $error',
+        songId: song.id,
+      );
+    } finally {
+      if (generation == _repeatSelfDjPlanGeneration) {
+        _repeatSelfDjPlanning = false;
+      }
+    }
+  }
+
   Future<Media3DjTransitionPreparation> _prepareMedia3DjHandoff({
     required Song outgoingSong,
     required Song incomingSong,
@@ -524,6 +595,12 @@ extension MusicProviderDjHandoff on MusicProvider {
           final executionDurationMs = execution.steps.isNotEmpty
               ? execution.steps.last.atMs
               : candidate.durationMs;
+          final hasProfileOutgoingCue =
+              profileA.transitions.safeMixOuts.any(
+                (point) => point.timeMs == candidate.outgoingStartMs,
+              ) ||
+              profileA.transitions.bestOutroMs == candidate.outgoingStartMs;
+          final hasPlannedOutgoingCue = approvedCueIsAhead || hasProfileOutgoingCue;
           final seekMs = candidate.incomingStartMs
               .clamp(0, incomingSong.duration.inMilliseconds > 0
                   ? incomingSong.duration.inMilliseconds
@@ -561,11 +638,11 @@ extension MusicProviderDjHandoff on MusicProvider {
             standbySpeed: standbySpeed,
             outgoingProfile: profileA,
             transitionKind: candidate.kind,
-            outgoingStartPosition: approvedCueIsAhead
+            outgoingStartPosition: hasPlannedOutgoingCue
                 ? Duration(milliseconds: candidate.outgoingStartMs)
                 : null,
             transitionDurationMs:
-                approvedCueIsAhead ? executionDurationMs : null,
+                hasPlannedOutgoingCue ? executionDurationMs : null,
             incomingBassDuckAmount: _djBassDuckAmount(execution),
             incomingBassDuckDurationMs: _djBassDuckDuration(execution),
           );
@@ -837,9 +914,9 @@ class Media3DjTransitionPreparation {
   final double standbySpeed;
   final DjTrackProfile? outgoingProfile;
   final DjTransitionKind? transitionKind;
-  /// Present only when a reviewed Suggestion Mix cue was accepted.
+  /// Selected outgoing mix point from a reviewed cue or live DJ analysis.
   final Duration? outgoingStartPosition;
-  /// Present only when a reviewed Suggestion Mix duration was accepted.
+  /// Validated duration for the selected outgoing mix point.
   final int? transitionDurationMs;
   /// Temporary low-frequency attenuation requested by the execution plan.
   final double? incomingBassDuckAmount;

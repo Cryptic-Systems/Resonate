@@ -125,14 +125,16 @@ class DjModeSettingsScreen extends StatelessWidget {
                 value: dj.transitionSfx,
                 onChanged: on ? dj.setTransitionSfx : null,
               ),
-              _prefTile(
-                context,
-                enabled: on,
-                title: 'Analyze library when idle',
-                subtitle:
-                    'Quiet background BPM / energy / structure scan while idle. Never blocks play.',
-                value: dj.analyzeIdle,
-                onChanged: on ? dj.setAnalyzeIdle : null,
+              ResonateGlassCard(
+                margin: EdgeInsets.zero,
+                padding: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'Library analysis runs automatically after Resonate scans your music. It builds BPM, beat-grid, energy and transition profiles for DJ features, pauses while music is playing, and resumes when the player is idle or the app returns to the foreground. Android Battery Saver can defer background work.',
+                    style: text.bodySmall,
+                  ),
+                ),
               ),
               const SizedBox(height: 24),
               ResonateGlassCard(

@@ -78,6 +78,22 @@ void main() {
     expect(harmonicSafe.score, greaterThan(neutralSafe.score));
   });
 
+  test('plans repeat-one from a safe outro cue into the same track intro', () {
+    final self = track(id: 'repeat-self', section: DjSectionType.outro);
+    final candidates = engine.brain.generate(
+      outgoing: self,
+      incoming: self,
+      outgoingPositionMs: 200000,
+      preferredDurationMs: 6500,
+      maxDurationMs: 12000,
+    );
+
+    expect(candidates, isNotEmpty);
+    expect(candidates.first.outgoingStartMs, 220000);
+    expect(candidates.first.incomingStartMs, 0);
+    expect(candidates.first.durationMs, greaterThanOrEqualTo(2000));
+  });
+
   test('keeps a usable fallback when analysis is absent', () {
     const unknown = DjTrackProfile(songId: 'unknown');
     final plan = engine.planTransition(
