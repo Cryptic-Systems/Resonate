@@ -78,6 +78,72 @@ void main() {
     expect(harmonicSafe.score, greaterThan(neutralSafe.score));
   });
 
+
+  test('requires phrase and bar confidence before proposing phrase blends', () {
+    final reliable = track(id: 'reliable');
+    final weakPhrase = DjTrackProfile(
+      songId: 'weak-phrase',
+      durationMs: reliable.durationMs,
+      beatGrid: const DjBeatGrid(
+        bpm: 128,
+        confidence: 0.95,
+        firstBeatMs: 0,
+        beatMs: [0, 469, 938, 1406, 1875, 2344, 2813, 3281],
+        downbeatMs: [0, 1875],
+        downbeatConfidence: 0.90,
+        barConfidence: 0.90,
+        phraseConfidence: 0.35,
+      ),
+      transitions: const DjTransitionMarkers(bestIntroMs: 0, bestOutroMs: 220000),
+      analysisConfidence: 0.9,
+    );
+    final candidates = engine.brain.generate(
+      outgoing: reliable,
+      incoming: weakPhrase,
+      outgoingPositionMs: 220000,
+    );
+
+    expect(candidates.any((c) => c.kind == DjTransitionKind.beatBlend), isTrue);
+    expect(candidates.any((c) => c.kind == DjTransitionKind.phraseBlend), isFalse);
+  });
+
+  test('does not phrase-align tracks with incompatible phrase meters', () {
+    final outgoing = DjTrackProfile(
+      songId: 'meter-16',
+      durationMs: 240000,
+      beatGrid: const DjBeatGrid(
+        bpm: 128, confidence: 0.95, firstBeatMs: 0,
+        beatMs: [0, 469, 938, 1406, 1875, 2344, 2813, 3281],
+        downbeatMs: [0, 1875], downbeatConfidence: 0.9,
+        barConfidence: 0.9, phraseConfidence: 0.9,
+        beatsPerPhrase: 16,
+      ),
+      transitions: const DjTransitionMarkers(bestIntroMs: 0, bestOutroMs: 220000),
+      analysisConfidence: 0.9,
+    );
+    final incoming = DjTrackProfile(
+      songId: 'meter-32',
+      durationMs: 240000,
+      beatGrid: const DjBeatGrid(
+        bpm: 128, confidence: 0.95, firstBeatMs: 0,
+        beatMs: [0, 469, 938, 1406, 1875, 2344, 2813, 3281],
+        downbeatMs: [0, 1875], downbeatConfidence: 0.9,
+        barConfidence: 0.9, phraseConfidence: 0.9,
+        beatsPerPhrase: 32,
+      ),
+      transitions: const DjTransitionMarkers(bestIntroMs: 0, bestOutroMs: 220000),
+      analysisConfidence: 0.9,
+    );
+    final candidates = engine.brain.generate(
+      outgoing: outgoing,
+      incoming: incoming,
+      outgoingPositionMs: 220000,
+    );
+
+    expect(candidates.any((c) => c.kind == DjTransitionKind.beatBlend), isTrue);
+    expect(candidates.any((c) => c.kind == DjTransitionKind.phraseBlend), isFalse);
+  });
+
   test('plans repeat-one from a safe outro cue into the same track intro', () {
     final self = track(id: 'repeat-self', section: DjSectionType.outro);
     final candidates = engine.brain.generate(

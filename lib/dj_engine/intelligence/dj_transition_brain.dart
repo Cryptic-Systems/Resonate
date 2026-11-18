@@ -113,13 +113,20 @@ class DjTransitionBrain {
         _scorePair(outgoing, incoming, outgoingAnchor, aligned, 0.80, 0.78, policy: policy),
       );
 
-      final phrase = _nextPhrase(incoming, aligned);
-      add(
-        DjTransitionKind.phraseBlend,
-        phrase,
-        (baseDuration * 1.15).round().clamp(2000, effectiveMaxDurationMs).toInt(),
-        _scorePair(outgoing, incoming, outgoingAnchor, phrase, 0.92, 0.88, policy: policy),
-      );
+      // Phrase boundaries are a stronger claim than beat alignment. Only
+      // propose them when both grids carry independent phrase/bar evidence
+      // and agree on meter; otherwise retain the safer beat-level candidate.
+      if (_phraseGridTrusted(outgoing.beatGrid) &&
+          _phraseGridTrusted(incoming.beatGrid) &&
+          outgoing.beatGrid.beatsPerPhrase == incoming.beatGrid.beatsPerPhrase) {
+        final phrase = _nextPhrase(incoming, aligned);
+        add(
+          DjTransitionKind.phraseBlend,
+          phrase,
+          (baseDuration * 1.15).round().clamp(2000, effectiveMaxDurationMs).toInt(),
+          _scorePair(outgoing, incoming, outgoingAnchor, phrase, 0.92, 0.88, policy: policy),
+        );
+      }
     }
 
     final breakdown = _findSection(incoming, DjSectionType.breakdown);
@@ -148,6 +155,12 @@ class DjTransitionBrain {
     );
 
     return result;
+  }
+
+  bool _phraseGridTrusted(DjBeatGrid grid) {
+    if (!grid.usable || grid.phraseConfidence < 0.60) return false;
+    if (grid.downbeatMs.isNotEmpty) return grid.downbeatConfidence >= 0.55;
+    return grid.barConfidence >= 0.60;
   }
 
   Map<String, double> _scorePair(
