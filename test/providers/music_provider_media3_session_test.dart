@@ -2135,6 +2135,61 @@ void main() {
       await session.states.close();
     });
 
+    test('turning Repeat One off invalidates a blocked same-track DJ preload', () async {
+      final session = _FakePlaybackSession()
+        ..preloadNextGate = Completer<void>();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final song = _song('repeat-one-cancel-preload');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
+      await provider.setRepeatMode(PlaybackRepeatMode.one);
+      await provider.setCrossfadeDuration(500);
+
+      session.positionValue = const Duration(milliseconds: 178000);
+      session.states.add(_state(
+        song: song,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+        activeDeckId: 'A',
+      ));
+      for (var attempt = 0;
+          attempt < 100 &&
+              !session.calls.any((call) =>
+                  call.startsWith('preloadNext:repeat-one-cancel-preload:'));
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(
+        session.calls.any((call) =>
+            call.startsWith('preloadNext:repeat-one-cancel-preload:')),
+        isTrue,
+        reason: 'Repeat One should prepare the same-track standby deck before the loop.',
+      );
+
+      await provider.setRepeatMode(PlaybackRepeatMode.off);
+      expect(provider.repeatMode, PlaybackRepeatMode.off);
+      expect(session.repeatModeSet, PlaybackQueueRepeatMode.off);
+      expect(session.calls, contains('cancelCrossfade'));
+
+      session.preloadNextGate!.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(
+        session.calls.where((call) => call.startsWith('crossfade:')),
+        isEmpty,
+        reason: 'A stale Repeat One preload must not start after Repeat Off.',
+      );
+      expect(session.repeatModeSet, PlaybackQueueRepeatMode.off);
+      expect(provider.currentSong?.id, song.id);
+      expect(provider.queueIndex, 0);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('clears an empty shadow queue and forwards Media3 audio-session IDs', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
