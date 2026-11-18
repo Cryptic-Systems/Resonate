@@ -1002,6 +1002,71 @@ void main() {
       await session.states.close();
     });
 
+    test('appending behind the prepared target preserves the Media3 preload', () async {
+      final session = _FakePlaybackSession()
+        ..preloadNextGate = Completer<void>();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('queue-append-outgoing');
+      final second = _song('queue-append-prepared-target');
+      final third = _song('queue-append-existing-tail');
+      final fourth = _song('queue-append-new-tail');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(
+        first,
+        queue: <Song>[first, second, third],
+      ), isTrue);
+      await provider.setCrossfadeDuration(500);
+
+      session.positionValue = const Duration(milliseconds: 170000);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 100 &&
+              !session.calls.any((call) =>
+                  call.startsWith('preloadNext:queue-append-prepared-target:'));
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(
+        session.calls.any((call) =>
+            call.startsWith('preloadNext:queue-append-prepared-target:')),
+        isTrue,
+      );
+
+      session.calls.clear();
+      expect(await provider.enqueueSongs(<Song>[fourth]), isTrue);
+      expect(provider.upcomingQueue.map((song) => song.id).toList(),
+          <String>[second.id, third.id, fourth.id]);
+      expect(session.calls, contains('synchronizeQueue'));
+      expect(
+        session.calls,
+        isNot(contains('cancelCrossfade')),
+        reason: 'Appending after the prepared successor must not retire its standby deck.',
+      );
+
+      session.preloadNextGate!.complete();
+      for (var attempt = 0;
+          attempt < 100 && session.calls.where((call) => call.startsWith('deckSpeeds:')).isEmpty;
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.preloadedSong?.id, second.id);
+      expect(session.preloadedIndex, 1);
+      expect(session.calls, isNot(contains('cancelCrossfade')));
+      expect(provider.currentSong?.id, first.id);
+      expect(provider.queueIndex, 0);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('restores the provider resume position into the new Media3 session before handoff', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
