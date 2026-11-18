@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/dj_mode_provider.dart';
 import '../dj_engine/core/dj_policy.dart';
+import 'dj_transition_studio_screen.dart';
 
 /// Settings surface for optional DJ Mode (Intelligence-style master switch).
 class DjModeSettingsScreen extends StatelessWidget {
@@ -56,6 +57,20 @@ class DjModeSettingsScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
+              ResonateGlassCard(
+                margin: EdgeInsets.zero,
+                padding: EdgeInsets.zero,
+                child: ListTile(
+                  leading: Icon(Icons.tune_rounded, color: scheme.primary),
+                  title: const Text('DJ Transition Studio', style: TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: const Text('Compare track pairs, edit Mix-In / Mix-Out cues and inspect transition recommendations.'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const DjTransitionStudioScreen()),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
               Text(
                 'Features',
                 style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
