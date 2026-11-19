@@ -244,60 +244,100 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
 
   void _showPreview() {
     final candidate = _recommended;
-    if (candidate == null) return;
-    final outDuration = _duration(_outgoing, _profileA);
-    final inDuration = _duration(_incoming, _profileB);
+    final outgoing = _outgoing, incoming = _incoming;
+    if (candidate == null || outgoing == null || incoming == null) return;
+    final outDuration = _duration(outgoing, _profileA);
+    final inDuration = _duration(incoming, _profileB);
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Transition preview'),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(_kind(candidate.kind), style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 6),
-          Text('Outgoing cue ' + _clock(candidate.outgoingStartMs) + ' · Incoming cue ' + _clock(candidate.incomingStartMs)),
-          const SizedBox(height: 16),
-          _previewLane('OUTGOING', candidate.outgoingStartMs, outDuration, Theme.of(context).colorScheme.primary),
-          const SizedBox(height: 12),
-          _previewLane('INCOMING', candidate.incomingStartMs, inDuration, Theme.of(context).colorScheme.tertiary),
-          const SizedBox(height: 14),
-          Text('Blend ' + (candidate.durationMs / 1000).toStringAsFixed(1) + ' s · Score ' +
-            (candidate.score * 100).round().toString() + '% · Confidence ' +
-            (candidate.confidence * 100).round().toString() + '%'),
-          if (candidate.risks.isNotEmpty) Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text('Risk checks: ' + candidate.risks.map((r) => r.name).join(', '),
-              style: Theme.of(context).textTheme.bodySmall),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(_kind(candidate.kind), style: Theme.of(dialogContext).textTheme.titleMedium),
+              const SizedBox(height: 6),
+              Text(outgoing.title + ' → ' + incoming.title,
+                maxLines: 2, overflow: TextOverflow.ellipsis,
+                style: Theme.of(dialogContext).textTheme.bodySmall),
+              const SizedBox(height: 12),
+              Text('Synchronized blend window · ' + (candidate.durationMs / 1000).toStringAsFixed(1) + ' s',
+                style: Theme.of(dialogContext).textTheme.labelLarge),
+              const SizedBox(height: 4),
+              Text('Both preview decks start at their own cue; the highlighted regions show the shared audition interval.',
+                style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(dialogContext).colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 14),
+              _previewLane('OUTGOING', candidate.outgoingStartMs, outDuration,
+                candidate.durationMs, Theme.of(dialogContext).colorScheme.primary),
+              const SizedBox(height: 12),
+              _previewLane('INCOMING', candidate.incomingStartMs, inDuration,
+                candidate.durationMs, Theme.of(dialogContext).colorScheme.tertiary),
+              const SizedBox(height: 14),
+              Text('Mix-Out ' + _clock(candidate.outgoingStartMs) + ' · Mix-In ' +
+                _clock(candidate.incomingStartMs)),
+              const SizedBox(height: 6),
+              Text('Overall score ' + (candidate.score * 100).round().toString() +
+                '% · Analysis confidence ' + (candidate.confidence * 100).round().toString() + '%'),
+              const SizedBox(height: 14),
+              _scoreBreakdown(candidate),
+              if (candidate.risks.isNotEmpty) Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text('Risk checks: ' + candidate.risks.map((r) => r.name).join(', '),
+                  style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(dialogContext).colorScheme.error)),
+              ),
+              const SizedBox(height: 12),
+              Text('Audition uses the isolated Media3 preview decks. Canonical playback continues and its position and queue state are not changed.',
+                style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(dialogContext).colorScheme.onSurfaceVariant)),
+            ]),
           ),
-          const SizedBox(height: 10),
-          Text('The current track is gently ducked while the two DSP-enabled preview decks audition the blend. Playback continues and its position is unchanged.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        ]),
+        ),
         actions: [
           TextButton.icon(onPressed: _playAudioPreview, icon: const Icon(Icons.play_arrow_rounded), label: const Text('Play audio')),
           TextButton.icon(onPressed: _stopAudioPreview, icon: const Icon(Icons.stop_rounded), label: const Text('Stop')),
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close')),
         ],
       ),
     );
   }
 
-  Widget _previewLane(String label, int cueMs, int durationMs, Color color) {
-    final fraction = durationMs > 0 ? (cueMs / durationMs).clamp(0.0, 1.0) : 0.0;
+  Widget _previewLane(String label, int cueMs, int trackDurationMs,
+      int blendDurationMs, Color color) {
+    final startFraction = trackDurationMs > 0
+        ? (cueMs / trackDurationMs).clamp(0.0, 1.0).toDouble()
+        : 0.0;
+    final endFraction = trackDurationMs > 0
+        ? ((cueMs + blendDurationMs) / trackDurationMs).clamp(0.0, 1.0).toDouble()
+        : startFraction;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label + ' · ' + _clock(cueMs), style: Theme.of(context).textTheme.labelSmall),
+      Text(label + ' · ' + _clock(cueMs) + ' → ' +
+        _clock(cueMs + blendDurationMs), style: Theme.of(context).textTheme.labelSmall),
       const SizedBox(height: 5),
       LayoutBuilder(builder: (context, constraints) {
-        final left = constraints.maxWidth * fraction;
-        return SizedBox(height: 12, child: Stack(children: [
+        final width = constraints.maxWidth;
+        final left = width * startFraction;
+        final blendWidth = (width * endFraction - left).clamp(0.0, width - left);
+        return SizedBox(height: 14, child: Stack(children: [
           Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(8),
           ))),
-          Positioned(left: 0, top: 0, bottom: 0, width: left,
-            child: DecoratedBox(decoration: BoxDecoration(color: color.withValues(alpha: 0.55),
-              borderRadius: BorderRadius.circular(8)))),
-          Positioned(left: (left - 1).clamp(0.0, constraints.maxWidth - 2), top: 0, bottom: 0,
+          if (blendWidth > 0)
+            Positioned(left: left, top: 0, bottom: 0, width: blendWidth,
+              child: DecoratedBox(decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.42),
+                borderRadius: BorderRadius.circular(4),
+              ))),
+          Positioned(left: (left - 1).clamp(0.0, (width - 2).clamp(0.0, width)),
+            top: 0, bottom: 0,
             child: Container(width: 2, color: color)),
+          if (blendWidth > 0)
+            Positioned(left: (left + blendWidth - 1).clamp(0.0, (width - 2).clamp(0.0, width)),
+              top: 0, bottom: 0,
+              child: Container(width: 2, color: color.withValues(alpha: 0.8))),
         ]));
       }),
     ]);
