@@ -446,6 +446,9 @@ class _RecordingDeckOverlaySession implements PlaybackEngineSession, PlaybackAux
   @override
   Future<void> clearDeckEqOverlay({required String deck}) async {
     clearCalls.add(deck);
+    if (throwOnClearDeck == deck) {
+      throw StateError('clear failed for $deck');
+    }
   }
 
   @override
