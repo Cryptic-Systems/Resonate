@@ -971,9 +971,10 @@ extension MusicProviderMedia3 on MusicProvider {
           session.currentSong?.filePath.trim() == selected.filePath.trim() &&
           session.queueIndex == nextIndex;
       if (nativeSelectionCommitted) {
-        _media3PendingSelectionSongId = null;
-        _media3PendingSelectionPath = null;
-        _media3PendingSelectionQueueIndex = null;
+        // Synchronous session getters can expose the incoming item before the
+        // state stream has drained older outgoing-item snapshots. Reconcile the
+        // readable native state, but retain the selection fence until a matching
+        // state-stream event confirms this exact occurrence.
         _reconcileMedia3ProviderSession();
       } else {
         // loadQueue/play may complete before Media3 publishes its new timeline.
