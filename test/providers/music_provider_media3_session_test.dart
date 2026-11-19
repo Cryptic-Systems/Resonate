@@ -1370,6 +1370,20 @@ void main() {
         queue: <Song>[first, second, third],
       ), isTrue);
 
+      // Resolve the initial optimistic selection first. Real Media3 publishes
+      // the selected item after loadQueue; without this acknowledgement the
+      // provider correctly treats the next different item as a delayed
+      // outgoing snapshot while the initial selection is still pending.
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(provider.currentSong?.id, first.id);
+      expect(provider.queueIndex, 0);
+
       // Android notification, headset and Auto commands bypass Flutter
       // transport methods. Their canonical Media3 observations must still
       // update the provider's selected occurrence and transport controls.
