@@ -33,6 +33,8 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
   int _outCue = 0, _inCue = 0, _fadeMs = 6500;
   bool _busy = false, _saving = false;
   bool _audioPreviewActive = false;
+  bool _audioPreviewStarting = false;
+  int _previewGeneration = 0;
   MusicProvider? _previewProvider;
   String? _status, _error;
 
@@ -213,8 +215,21 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
   Future<void> _playAudioPreview() async {
     final candidate = _recommended;
     final outgoing = _outgoing, incoming = _incoming;
-    if (candidate == null || outgoing == null || incoming == null) return;
+    if (candidate == null || outgoing == null || incoming == null ||
+        _audioPreviewStarting || _audioPreviewActive) return;
     final provider = context.read<MusicProvider>();
+    final generation = ++_previewGeneration;
+    // Register ownership before awaiting the native command. If the screen is
+    // popped while Media3 is preparing, dispose can now still stop this session.
+    _previewProvider = provider;
+    _audioPreviewActive = true;
+    _audioPreviewStarting = true;
+    if (mounted) {
+      setState(() {
+        _status = 'Preparing synchronized audio preview…';
+        _error = null;
+      });
+    }
     try {
       await provider.previewDjTransition(
         outgoingUri: Media3QueueItem.fromSong(outgoing).uri,
@@ -223,17 +238,39 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
         incomingStart: Duration(milliseconds: candidate.incomingStartMs),
         duration: Duration(milliseconds: candidate.durationMs),
       );
-      _previewProvider = provider;
-      _audioPreviewActive = true;
-      if (mounted) setState(() => _status = 'Audible preview started. It stops automatically when the blend finishes.');
+      // A stop, track change, or route disposal may have happened while the
+      // platform command was in flight. Issue a final stop after it completes
+      // so a late native prepare cannot resurrect an abandoned audition.
+      if (!mounted || generation != _previewGeneration) {
+        await provider.stopDjTransitionPreview();
+        return;
+      }
+      setState(() => _status =
+        'Audible preview started. It stops automatically when the blend finishes.');
     } catch (e) {
-      if (mounted) setState(() => _error = 'Could not start audible preview: $e');
+      if (generation == _previewGeneration) {
+        _audioPreviewActive = false;
+        _previewProvider = null;
+        if (mounted) setState(() => _error = 'Could not start audible preview: $e');
+      }
+      // A failed/partially completed platform start must not leave either
+      // preview deck or its temporary duck gain active.
+      try {
+        await provider.stopDjTransitionPreview();
+      } catch (_) {
+        // Preserve the original start error for the operator.
+      }
+    } finally {
+      if (generation == _previewGeneration) _audioPreviewStarting = false;
     }
   }
 
   Future<void> _stopAudioPreview() async {
+    ++_previewGeneration;
     final provider = _previewProvider;
     _audioPreviewActive = false;
+    _audioPreviewStarting = false;
+    _previewProvider = null;
     if (provider == null) return;
     try {
       await provider.stopDjTransitionPreview();
@@ -301,7 +338,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close')),
         ],
       ),
-    );
+    ).whenComplete(() => unawaited(_stopAudioPreview()));
   }
 
   Widget _previewLane(String label, int cueMs, int trackDurationMs,
