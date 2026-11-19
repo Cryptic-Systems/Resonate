@@ -2169,8 +2169,8 @@ void main() {
       expect(audioHandler.playbackState.value.playing, isFalse);
       expect(
         audioHandler.playbackState.value.controls
-            .map((control) => control.type),
-        contains(MediaControlType.play),
+            .map((control) => control.action),
+        contains(MediaControl.play.action),
         reason: 'A stale outgoing timeline must not leave system transport on Pause.',
       );
 
@@ -2191,8 +2191,8 @@ void main() {
       expect(audioHandler.playbackState.value.playing, isTrue);
       expect(
         audioHandler.playbackState.value.controls
-            .map((control) => control.type),
-        contains(MediaControlType.pause),
+            .map((control) => control.action),
+        contains(MediaControl.pause.action),
         reason: 'A stale outgoing timeline must not leave system transport on Play.',
       );
 
