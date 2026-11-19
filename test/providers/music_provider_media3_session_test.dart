@@ -2166,6 +2166,60 @@ void main() {
       await session.states.close();
     });
 
+    test('incoming deck error recovers the selected track on the active Media3 deck', () async {
+      final session = _FakePlaybackSession()
+        ..emitIncomingErrorOnCrossfade = true;
+      final provider = MusicProvider(media3ProviderSession: session);
+      final outgoing = _song('incoming-error-outgoing');
+      final incoming = _song('incoming-error-incoming');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(
+        outgoing,
+        queue: <Song>[outgoing, incoming],
+      ), isTrue);
+      await provider.setCrossfadeDuration(500);
+
+      session.positionValue = const Duration(seconds: 178);
+      session.states.add(_state(
+        song: outgoing,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+
+      for (var attempt = 0;
+          attempt < 120 &&
+              !session.calls.skip(1).contains('loadQueue');
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(session.calls, contains('crossfade:incoming_error'));
+      expect(session.calls, contains('cancelCrossfade'));
+      expect(session.calls, contains('clearDeckEqOverlay:standby'));
+      expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+      expect(
+        session.calls.where((call) => call == 'loadQueue').length,
+        greaterThanOrEqualTo(2),
+        reason: 'An incoming-deck failure must recover through the canonical Media3 queue.',
+      );
+      expect(
+        session.calls.where((call) => call == 'play').length,
+        greaterThanOrEqualTo(2),
+        reason: 'The same-session fallback must resume the selected incoming occurrence.',
+      );
+      expect(provider.currentSong?.id, incoming.id);
+      expect(provider.queueIndex, 1);
+      expect(provider.media3ProviderSessionActive, isTrue);
+      expect(provider.debugLegacyEngineConstructed, isFalse);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('library selection after crossfade promotion resists delayed outgoing state', () async {
       final session = _FakePlaybackSession();
       final audioHandler = AudioServiceHandler();
