@@ -90,7 +90,9 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   bool throwOnClearDeckEqOverlay = false;
   bool deferLoadQueueState = false;
   Completer<void>? cancelCrossfadeGate;
+  Completer<void>? crossfadeGate;
   Completer<void>? preloadNextGate;
+  bool crossfadeCancelled = false;
   Song? currentSongValue;
   int? queueIndexValue;
   bool playingValue = false;
@@ -283,8 +285,14 @@ class _FakePlaybackSession implements PlaybackEngineSession {
       calls.add('crossfade:failed');
       throw StateError('simulated native crossfade failure');
     }
+    crossfadeCancelled = false;
     crossfadeDuration = duration;
     calls.add('crossfade:${duration.inMilliseconds}');
+    await crossfadeGate?.future;
+    if (crossfadeCancelled) {
+      crossfadeStatusValue = 'cancelled';
+      return;
+    }
     activeDeckIdValue = activeDeckIdValue == 'A' ? 'B' : 'A';
     final index = preloadedIndex;
     if (index != null && index >= 0 && index < queue.length) {
@@ -325,6 +333,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   @override
   Future<void> cancelCrossfade() async {
     calls.add('cancelCrossfade');
+    crossfadeCancelled = true;
     await cancelCrossfadeGate?.future;
   }
 
@@ -2544,6 +2553,70 @@ void main() {
       );
       expect(session.calls, contains('loadQueue'),
           reason: 'The selected queue fallback remains available after cleanup attempts.');
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('manual pause cancels an active native fade without promoting or restarting', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final outgoing = _song('pause-active-fade-out');
+      final incoming = _song('pause-active-fade-in');
+      await provider.prepareMedia3ProviderSession();
+      expect(
+        await provider.playSong(outgoing, queue: <Song>[outgoing, incoming]),
+        isTrue,
+      );
+      await provider.setCrossfadeDuration(500);
+      session.crossfadeGate = Completer<void>();
+
+      session.positionValue = const Duration(seconds: 178);
+      session.states.add(_state(
+        song: outgoing,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 100 && !session.calls.any((call) => call.startsWith('crossfade:'));
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.calls, contains('crossfade:500'));
+      expect(session.currentSongValue?.id, outgoing.id);
+
+      final playCallsBeforePause =
+          session.calls.where((call) => call == 'play').length;
+      final pause = provider.pause();
+      for (var attempt = 0;
+          attempt < 100 && !session.calls.contains('cancelCrossfade');
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(session.calls, contains('cancelCrossfade'));
+      session.crossfadeGate!.complete();
+      await pause;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(session.currentSongValue?.id, outgoing.id);
+      expect(session.playingValue, isFalse);
+      expect(session.crossfadeStatus, 'cancelled');
+      expect(session.calls, contains('clearDeckEqOverlay:standby'));
+      expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+      expect(
+        session.calls.where((call) => call == 'play').length,
+        playCallsBeforePause,
+        reason: 'The cancelled fade continuation must not restart playback.',
+      );
+      expect(
+        session.calls.where((call) => call == 'loadQueue').length,
+        1,
+        reason: 'Cancellation must not trigger a stale queue-reload fallback.',
+      );
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
