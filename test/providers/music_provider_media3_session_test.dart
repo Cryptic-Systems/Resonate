@@ -2588,7 +2588,7 @@ void main() {
       }
 
       expect(session.calls, contains('deckSpeeds:partial_failure'));
-      expect(session.calls, contains('clearDeckEqOverlay:standby'));
+      expect(session.calls, contains('cancelCrossfade'));
       expect(
         session.calls,
         contains('deckSpeeds:1.0:1.0'),
