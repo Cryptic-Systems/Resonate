@@ -600,25 +600,42 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
     Text(label, style: Theme.of(context).textTheme.bodySmall),
   ]);
 
-  Widget _candidate(DjTransitionCandidate c) => ResonateGlassCard(
-    margin: const EdgeInsets.only(bottom: 8), padding: EdgeInsets.zero,
-    child: ListTile(
-      onTap: () {
-        unawaited(_stopAudioPreview());
-        setState(() {
-          _preferredKind = c.kind;
-          _outCue = c.outgoingStartMs;
-          _inCue = c.incomingStartMs;
-          _fadeMs = c.durationMs.clamp(2000, 15000);
-        });
-        _rebuild();
-      },
-      leading: Icon(c.kind == _recommended?.kind ? Icons.check_circle_rounded : Icons.graphic_eq_rounded,
-        color: c.kind == _recommended?.kind ? Theme.of(context).colorScheme.primary : null),
-      title: Text(_kind(c.kind)),
-      subtitle: Text('Score ' + (c.score * 100).round().toString() + '% · Confidence ' +
-        (c.confidence * 100).round().toString() + '% · ' + _clock(c.outgoingStartMs) + ' → ' + _clock(c.incomingStartMs)),
-      trailing: Text((c.durationMs / 1000).toStringAsFixed(1) + 's')));
+  Widget _candidate(DjTransitionCandidate c) {
+    final accepted = context.read<DjModeProvider>().policy.acceptsCandidate(c);
+    final selected = _preferredKind == c.kind ||
+        (_preferredKind == null && c.kind == _recommended?.kind);
+    final colors = Theme.of(context).colorScheme;
+    final details = 'Score ' + (c.score * 100).round().toString() +
+        '% · Confidence ' + (c.confidence * 100).round().toString() +
+        '% · ' + _clock(c.outgoingStartMs) + ' → ' + _clock(c.incomingStartMs);
+    return ResonateGlassCard(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.zero,
+      child: ListTile(
+        enabled: accepted,
+        onTap: accepted ? () {
+          unawaited(_stopAudioPreview());
+          setState(() {
+            _preferredKind = c.kind;
+            _outCue = c.outgoingStartMs;
+            _inCue = c.incomingStartMs;
+            _fadeMs = c.durationMs.clamp(2000, 15000);
+          });
+          _rebuild();
+        } : null,
+        leading: Icon(
+          !accepted ? Icons.lock_outline_rounded :
+              selected ? Icons.check_circle_rounded : Icons.graphic_eq_rounded,
+          color: !accepted ? colors.onSurfaceVariant :
+              selected ? colors.primary : null,
+        ),
+        title: Text(_kind(c.kind)),
+        subtitle: Text(accepted ? details :
+          '$details · Unavailable under the current DJ safety policy'),
+        trailing: Text((c.durationMs / 1000).toStringAsFixed(1) + 's'),
+      ),
+    );
+  }
 
   String _kind(DjTransitionKind kind) => switch (kind) {
     DjTransitionKind.outroIntro => 'Outro → Intro',
