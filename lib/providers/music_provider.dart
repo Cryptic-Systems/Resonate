@@ -4435,22 +4435,36 @@ class MusicProvider extends ChangeNotifier {
     if (_media3ProviderSessionActive && _media3ProviderSession != null) {
       final session = _media3ProviderSession!;
       unawaited(() async {
+        final cleanupErrors = <String>[];
+        // Keep each cleanup independent: a native cancel or EQ-clear failure
+        // must never prevent the deck-rate reset from running.
         try {
           await session.cancelCrossfade();
-          if (!stillOwnsCancellation()) return;
-          // Bass ducking is a temporary standby-deck overlay. Clear it on
-          // every user transport cancellation so it cannot leak into a later
-          // preload or become audible after the standby deck is promoted.
+        } catch (error) {
+          cleanupErrors.add('cancel_crossfade: $error');
+        }
+        if (!stillOwnsCancellation()) return;
+        // Bass ducking is a temporary standby-deck overlay. Clear it on
+        // every user transport cancellation so it cannot leak into a later
+        // preload or become audible after the standby deck is promoted.
+        try {
           await session.clearDeckEqOverlay(deck: 'standby');
-          if (!stillOwnsCancellation()) return;
+        } catch (error) {
+          cleanupErrors.add('clear_standby_eq: $error');
+        }
+        if (!stillOwnsCancellation()) return;
+        try {
           await session.setDeckPlaybackSpeeds(
             activeSpeed: 1.0,
             standbySpeed: 1.0,
           );
         } catch (error) {
+          cleanupErrors.add('reset_deck_speeds: $error');
+        }
+        if (cleanupErrors.isNotEmpty) {
           await ResonateDiagnostics.record('media3_crossfade_cancel_failed', {
             'reason': reason,
-            'error': error.toString(),
+            'errors': cleanupErrors,
           });
         }
       }());

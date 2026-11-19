@@ -1904,6 +1904,38 @@ void main() {
       await session.states.close();
     });
 
+    test('manual pause still resets DJ deck speeds when standby EQ cleanup fails', () async {
+      final session = _FakePlaybackSession()
+        ..throwOnClearDeckEqOverlay = true
+        ..deckSpeeds = (1.04, 0.96);
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('pause-cleanup-out');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(first, queue: <Song>[first]), isTrue);
+      session.calls.clear();
+
+      await provider.pause();
+      for (var attempt = 0;
+          attempt < 100 && !session.calls.contains('deckSpeeds:1.0:1.0');
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(session.calls, contains('cancelCrossfade'));
+      expect(session.calls, contains('clearDeckEqOverlay:standby'));
+      expect(
+        session.calls,
+        contains('deckSpeeds:1.0:1.0'),
+        reason: 'EQ cleanup failure must not strand tempo-matched rates after manual pause.',
+      );
+      expect(session.deckSpeeds, (1.0, 1.0));
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('failed standby preload preserves the active queue for gapless completion', () async {
       final session = _FakePlaybackSession()..throwOnPreloadNext = true;
       final provider = MusicProvider(media3ProviderSession: session);
