@@ -673,11 +673,28 @@ extension MusicProviderMedia3 on MusicProvider {
       );
     } catch (error) {
       if (stillOwnsPreload()) {
+        final cleanupErrors = <String>[];
+        try {
+          await session.clearDeckEqOverlay(deck: 'standby');
+        } catch (cleanupError) {
+          cleanupErrors.add('clear_standby_overlay: $cleanupError');
+        }
+        if (stillOwnsPreload()) {
+          try {
+            await session.setDeckPlaybackSpeeds(
+              activeSpeed: 1.0,
+              standbySpeed: 1.0,
+            );
+          } catch (cleanupError) {
+            cleanupErrors.add('reset_deck_speeds: $cleanupError');
+          }
+        }
         await ResonateDiagnostics.recordDj(
           stage: 'repeat_self_preload',
           outcome: 'fallback',
           reason: 'standby_preload_failed: $error',
           songId: song.id,
+          extra: {'cleanupErrors': cleanupErrors},
         );
       }
     } finally {
