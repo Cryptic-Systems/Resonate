@@ -423,19 +423,16 @@ class DjSfxRack {
         );
       }
     }
-    try {
-      // Keep the final state reset in one place even when every native cleanup
-      // operation fails; the next engage starts with a fresh generation.
-    } finally {
-      engaged = false;
-      _eqTouched = false;
-      activePreset = null;
-      _savedEqGainsA = null;
-      _savedEqGainsB = null;
-      _playbackSession = null;
-      _beatMs = const <int>[];
-      _phraseAnchors = const <int>[];
-    }
+    // Keep the final state reset in one place even when every native
+    // cleanup operation fails; the next engage starts with a fresh generation.
+    engaged = false;
+    _eqTouched = false;
+    activePreset = null;
+    _savedEqGainsA = null;
+    _savedEqGainsB = null;
+    _playbackSession = null;
+    _beatMs = const <int>[];
+    _phraseAnchors = const <int>[];
   }
 
   /// Schedule an actual-track SFX without blocking transition playback.
