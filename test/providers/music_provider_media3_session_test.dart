@@ -91,6 +91,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   bool deferLoadQueueState = false;
   Completer<void>? cancelCrossfadeGate;
   Completer<void>? crossfadeGate;
+  Completer<void>? deckSpeedResetGate;
   Completer<void>? preloadNextGate;
   bool crossfadeCancelled = false;
   Song? currentSongValue;
@@ -240,6 +241,14 @@ class _FakePlaybackSession implements PlaybackEngineSession {
       deckSpeeds = (1.04, 0.96);
       calls.add('deckSpeeds:partial_failure');
       throw StateError('simulated partial deck speed update');
+    }
+    if (activeSpeed == 1.0 &&
+        standbySpeed == 1.0 &&
+        deckSpeedResetGate != null) {
+      final gate = deckSpeedResetGate!;
+      deckSpeedResetGate = null;
+      calls.add('deckSpeeds:reset_waiting');
+      await gate.future;
     }
     deckSpeeds = (activeSpeed, standbySpeed);
     calls.add('deckSpeeds:${activeSpeed}:${standbySpeed}');
@@ -2616,6 +2625,67 @@ void main() {
         session.calls.where((call) => call == 'loadQueue').length,
         1,
         reason: 'Cancellation must not trigger a stale queue-reload fallback.',
+      );
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('pause during post-promotion deck reset prevents stale transition finalization', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final outgoing = _song('pause-promotion-reset-out');
+      final incoming = _song('pause-promotion-reset-in');
+      await provider.prepareMedia3ProviderSession();
+      expect(
+        await provider.playSong(outgoing, queue: <Song>[outgoing, incoming]),
+        isTrue,
+      );
+      await provider.setCrossfadeDuration(500);
+      session.deckSpeedResetGate = Completer<void>();
+
+      session.positionValue = const Duration(seconds: 178);
+      session.states.add(_state(
+        song: outgoing,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 120 &&
+              !session.calls.contains('deckSpeeds:reset_waiting');
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.calls, contains('crossfade:500'));
+      expect(session.currentSongValue?.id, incoming.id);
+      expect(session.calls, contains('deckSpeeds:reset_waiting'));
+
+      final volumeWritesBeforePause = session.calls
+          .where((call) => call.startsWith('volume:'))
+          .length;
+      final pause = provider.pause();
+      await pause;
+      expect(session.playingValue, isFalse);
+      // Let the older transition's native reset complete only after Pause
+      // has invalidated its generation and completed its own cleanup.
+      session.deckSpeedResetGate!.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      expect(provider.isPlaying, isFalse);
+      expect(session.playingValue, isFalse);
+      expect(
+        session.calls.where((call) => call.startsWith('volume:')).length,
+        volumeWritesBeforePause,
+        reason: 'A stale post-promotion continuation must not rewrite master gain after Pause.',
+      );
+      expect(
+        session.calls.where((call) => call == 'play').length,
+        1,
+        reason: 'Promotion cleanup must not issue a new Play after Pause.',
       );
 
       provider.dispose();
