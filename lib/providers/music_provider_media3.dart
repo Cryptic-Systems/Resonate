@@ -1091,22 +1091,29 @@ extension MusicProviderMedia3 on MusicProvider {
     final oldSongId = currentSong?.id;
     final previousQueueIndex = _queueIndex;
     final previousPosition = currentPosition;
-    final resolvedIndex = Media3MusicProviderAdapter.resolveCurrentQueueIndex(
-      _queue,
-      mediaId: state.mediaId,
-      playableIndex: state.queueIndex ?? -1,
-    );
-    if (resolvedIndex != null) {
-      _queueIndex = resolvedIndex;
-      currentSong = _queue[resolvedIndex];
-    } else if (state.currentSong != null) {
-      // State with an unresolved queue occurrence is not allowed to rewrite
-      // the provider queue index. A unique ID match is safe; duplicates are not.
-      final matches = _queue.where((song) =>
-          song.id == state.currentSong!.id && song.filePath.trim().isNotEmpty);
-      if (matches.length == 1) {
-        currentSong = matches.first;
-        _queueIndex = _queue.indexOf(matches.first);
+    // While a library selection is awaiting its matching native timeline
+    // event, an outgoing snapshot must not mutate the optimistic selection.
+    // Keep this guard around identity reconciliation itself (not merely around
+    // the later position update); otherwise the stale row is assigned before
+    // the pending-selection early return can protect the UI.
+    if (!pendingSelectionMismatch) {
+      final resolvedIndex = Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+        _queue,
+        mediaId: state.mediaId,
+        playableIndex: state.queueIndex ?? -1,
+      );
+      if (resolvedIndex != null) {
+        _queueIndex = resolvedIndex;
+        currentSong = _queue[resolvedIndex];
+      } else if (state.currentSong != null) {
+        // State with an unresolved queue occurrence is not allowed to rewrite
+        // the provider queue index. A unique ID match is safe; duplicates are not.
+        final matches = _queue.where((song) =>
+            song.id == state.currentSong!.id && state.currentSong!.filePath.trim().isNotEmpty);
+        if (matches.length == 1) {
+          currentSong = matches.first;
+          _queueIndex = _queue.indexOf(matches.first);
+        }
       }
     }
     final songChanged = currentSong != null && oldSongId != currentSong!.id;
