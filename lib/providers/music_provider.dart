@@ -4413,8 +4413,11 @@ class MusicProvider extends ChangeNotifier {
         _userTransportEpoch == cancellationEpoch &&
         _automaticTransitionGeneration == cancellationGeneration;
     // A resume/duck/route-recovery fade must not keep writing volume after
-    // a newer manual transport command takes ownership.
+    // a newer manual transport command takes ownership. Also invalidate any
+    // cached loudness lookup that could otherwise apply its master-gain trim
+    // after Pause/Stop has taken transport ownership.
     _volumeFadeGen++;
+    _trackLevelingGeneration++;
     _clearTransitionFlags(clearRepeatSelf: false);
     if (hadRepeatSelfHandoff) {
       unawaited(ResonateDiagnostics.record('repeat_self_cancel', {
