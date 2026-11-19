@@ -365,6 +365,12 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
         if (_error != null) Padding(padding: const EdgeInsets.only(top: 10),
           child: Text(_error!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error))),
         if (_profileA != null && _profileB != null) ...[
+          const SizedBox(height: 24), _heading('Track structure'),
+          _timeline('OUTGOING', _outgoing, _profileA!, _outCue, da,
+            Theme.of(context).colorScheme.primary),
+          const SizedBox(height: 10),
+          _timeline('INCOMING', _incoming, _profileB!, _inCue, db,
+            Theme.of(context).colorScheme.tertiary),
           const SizedBox(height: 24), _heading('Mix points'),
           _cue('Mix-Out', 'Outgoing · ' + _clock(_outCue), _outCue, da, (v) { unawaited(_stopAudioPreview()); setState(() => _outCue = v); _rebuild(); }),
           _cue('Mix-In', 'Incoming · ' + _clock(_inCue), _inCue, db, (v) { unawaited(_stopAudioPreview()); setState(() => _inCue = v); _rebuild(); }),
@@ -422,6 +428,68 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
 
   Widget _heading(String text) => Padding(padding: const EdgeInsets.only(bottom: 8),
     child: Text(text, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)));
+
+  Widget _timeline(String label, Song? song, DjTrackProfile profile,
+      int cueMs, int durationMs, Color accent) {
+    final duration = durationMs > 0 ? durationMs : 1;
+    final bpm = profile.beatGrid.usable
+        ? profile.beatGrid.bpm!.toStringAsFixed(1)
+        : '—';
+    final confidence = (profile.analysisConfidence.clamp(0.0, 1.0) * 100).round();
+    return ResonateGlassCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Expanded(child: Text(label,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w800, letterSpacing: 1.0))),
+            Text('${bpm} BPM · ${confidence}% analysis',
+              style: Theme.of(context).textTheme.bodySmall),
+          ]),
+          const SizedBox(height: 3),
+          Text(song?.title ?? 'Track',
+            maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 88,
+            width: double.infinity,
+            child: CustomPaint(
+              painter: _DjTimelinePainter(
+                profile: profile,
+                durationMs: duration,
+                cueMs: cueMs.clamp(0, duration),
+                accent: accent,
+                baseline: Theme.of(context).colorScheme.outlineVariant,
+                surface: Theme.of(context).colorScheme.surfaceContainerHighest,
+              ),
+            ),
+          ),
+          const SizedBox(height: 5),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text('0:00', style: Theme.of(context).textTheme.labelSmall),
+            Text('Mix cue · ${_clock(cueMs)}',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: accent, fontWeight: FontWeight.w700)),
+            Text(_clock(duration), style: Theme.of(context).textTheme.labelSmall),
+          ]),
+          if (profile.beatGrid.usable)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                '${profile.beatGrid.beatsPerBar}/4 beat grid'
+                '${profile.beatGrid.phraseConfidence >= 0.6 ? ' · phrase markers available' : ''}',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
   Widget _cue(String title, String subtitle, int value, int duration, ValueChanged<int> changed) {
     final max = (duration > 0 ? duration : 1).toDouble();
@@ -490,4 +558,144 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
     DjTransitionKind.energyBridge => 'Energy bridge',
     DjTransitionKind.safeCrossfade => 'Safe crossfade',
   };
+}
+
+
+class _DjTimelinePainter extends CustomPainter {
+  const _DjTimelinePainter({
+    required this.profile,
+    required this.durationMs,
+    required this.cueMs,
+    required this.accent,
+    required this.baseline,
+    required this.surface,
+  });
+
+  final DjTrackProfile profile;
+  final int durationMs;
+  final int cueMs;
+  final Color accent;
+  final Color baseline;
+  final Color surface;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0 || durationMs <= 0) return;
+    double xFor(int ms) =>
+        (ms.clamp(0, durationMs) / durationMs) * size.width;
+    final trackRect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      const Radius.circular(8),
+    );
+    canvas.drawRRect(trackRect, Paint()..color = surface.withOpacity(0.55));
+
+    for (final section in profile.sections) {
+      if (section.endMs <= section.startMs ||
+          section.endMs <= 0 || section.startMs >= durationMs) continue;
+      final rect = Rect.fromLTRB(
+        xFor(section.startMs), 0, xFor(section.endMs), size.height,
+      );
+      canvas.drawRect(rect, Paint()..color = accent.withOpacity(
+        (0.035 + section.confidence.clamp(0.0, 1.0) * 0.075),
+      ));
+    }
+
+    final energy = profile.energyCurve
+        .where((point) => point.timeMs >= 0 && point.timeMs <= durationMs)
+        .toList(growable: false);
+    if (energy.length > 1) {
+      final path = Path();
+      for (var i = 0; i < energy.length; i++) {
+        final point = energy[i];
+        final x = xFor(point.timeMs);
+        final value = point.value.isFinite
+            ? point.value.clamp(0.0, 1.0).toDouble()
+            : 0.5;
+        final y = size.height * (0.82 - value * 0.66);
+        if (i == 0) {
+          path.moveTo(x, y);
+        } else {
+          path.lineTo(x, y);
+        }
+      }
+      canvas.drawPath(path, Paint()
+        ..color = accent.withOpacity(0.9)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0
+        ..strokeJoin = StrokeJoin.round);
+      final fill = Path.from(path)
+        ..lineTo(xFor(energy.last.timeMs), size.height)
+        ..lineTo(xFor(energy.first.timeMs), size.height)
+        ..close();
+      canvas.drawPath(fill, Paint()..color = accent.withOpacity(0.10));
+    } else {
+      canvas.drawLine(
+        Offset(0, size.height * 0.58),
+        Offset(size.width, size.height * 0.58),
+        Paint()..color = accent.withOpacity(0.25)..strokeWidth = 1.5,
+      );
+    }
+
+    canvas.drawLine(
+      Offset(0, size.height - 1),
+      Offset(size.width, size.height - 1),
+      Paint()..color = baseline.withOpacity(0.65)..strokeWidth = 1,
+    );
+
+    final beats = profile.beatGrid.beatMs;
+    final stride = beats.length > 180 ? (beats.length / 180).ceil() : 1;
+    for (var i = 0; i < beats.length; i += stride) {
+      final beat = beats[i];
+      if (beat < 0 || beat > durationMs) continue;
+      final isDownbeat = profile.beatGrid.downbeatMs.contains(beat);
+      final x = xFor(beat);
+      canvas.drawLine(
+        Offset(x, isDownbeat ? 2 : size.height * 0.68),
+        Offset(x, size.height - 2),
+        Paint()
+          ..color = (isDownbeat ? accent : baseline).withOpacity(
+            isDownbeat ? 0.75 : 0.42,
+          )
+          ..strokeWidth = isDownbeat ? 1.35 : 0.7,
+      );
+    }
+
+    final intro = profile.transitions.bestIntroMs;
+    final outro = profile.transitions.bestOutroMs;
+    for (final marker in [intro, outro]) {
+      if (marker == null || marker < 0 || marker > durationMs) continue;
+      final x = xFor(marker);
+      canvas.drawLine(
+        Offset(x, 1),
+        Offset(x, size.height - 1),
+        Paint()
+          ..color = baseline.withOpacity(0.85)
+          ..strokeWidth = 1
+          ..style = PaintingStyle.stroke,
+      );
+    }
+
+    final cueX = xFor(cueMs);
+    canvas.drawLine(
+      Offset(cueX, 0),
+      Offset(cueX, size.height),
+      Paint()
+        ..color = accent
+        ..strokeWidth = 2.2,
+    );
+    canvas.drawCircle(
+      Offset(cueX, 5),
+      3.2,
+      Paint()..color = accent,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _DjTimelinePainter oldDelegate) =>
+      oldDelegate.profile != profile ||
+      oldDelegate.durationMs != durationMs ||
+      oldDelegate.cueMs != cueMs ||
+      oldDelegate.accent != accent ||
+      oldDelegate.baseline != baseline ||
+      oldDelegate.surface != surface;
 }
