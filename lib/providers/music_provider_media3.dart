@@ -1065,6 +1065,7 @@ extension MusicProviderMedia3 on MusicProvider {
     final session = _media3ProviderSession;
     if (session == null) return;
     final pendingSongId = _media3PendingSelectionSongId;
+    var pendingSelectionMismatch = false;
     if (pendingSongId != null) {
       final pendingPath = _media3PendingSelectionPath;
       final pendingIndex = _media3PendingSelectionQueueIndex;
@@ -1073,10 +1074,18 @@ extension MusicProviderMedia3 on MusicProvider {
           (pendingPath == null || statePath == null || statePath == pendingPath) &&
           (pendingIndex == null || state.queueIndex == null ||
               state.queueIndex == pendingIndex);
-      if (!matchesPending) return;
-      _media3PendingSelectionSongId = null;
-      _media3PendingSelectionPath = null;
-      _media3PendingSelectionQueueIndex = null;
+      if (matchesPending) {
+        _media3PendingSelectionSongId = null;
+        _media3PendingSelectionPath = null;
+        _media3PendingSelectionQueueIndex = null;
+      } else {
+        // Fence track identity, duration, position and completion from the
+        // outgoing timeline, but do not discard the native transport state.
+        // isPlaying belongs to the MediaSession itself, not to a queue row;
+        // dropping these snapshots made the Play/Pause control stale until a
+        // later timeline refresh happened to match the selected occurrence.
+        pendingSelectionMismatch = true;
+      }
     }
     final oldSongId = currentSong?.id;
     final previousQueueIndex = _queueIndex;
@@ -1127,6 +1136,15 @@ extension MusicProviderMedia3 on MusicProvider {
       _repeatSelfDjPreloadInFlight = false;
       _repeatSelfDjPreparation = null;
       _repeatMode = observedRepeatMode;
+    }
+    if (pendingSelectionMismatch) {
+      // Preserve the optimistic library selection and its zero/resume position
+      // until Media3 confirms the selected occurrence, while still reflecting
+      // the authoritative session-level play/pause state immediately.
+      isPlaying = state.isPlaying;
+      _publishServiceState(positionOnly: true);
+      notifyListeners();
+      return;
     }
     currentPosition = state.position;
     if (songChanged) {

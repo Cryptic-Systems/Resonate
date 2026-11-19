@@ -1396,6 +1396,22 @@ void main() {
       expect(provider.queueIndex, 1);
       expect(provider.currentPosition, Duration.zero);
 
+      // A pause edge from the still-visible outgoing timeline is global to the
+      // MediaSession. It must update the Play/Pause control even while the
+      // selected track identity remains fenced against that stale timeline.
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: false,
+        playWhenReady: false,
+        position: const Duration(seconds: 38),
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(provider.isPlaying, isFalse);
+      expect(provider.currentSong?.id, second.id);
+      expect(provider.queueIndex, 1);
+      expect(provider.currentPosition, Duration.zero);
+
       // Once the native timeline catches up, normal observation remains the
       // source of truth and must preserve the selected item.
       session.deferLoadQueueState = false;
