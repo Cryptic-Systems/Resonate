@@ -40,7 +40,7 @@ PlaybackSnapshot snapshot({
       error: null,
     );
 
-class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackPitchBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend {
+class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackPitchBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend, PlaybackTransitionPreviewBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   PlaybackSnapshot value = snapshot();
@@ -62,6 +62,8 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, 
   int cancelCrossfadeCalls = 0;
   final List<String> deckEqCalls = <String>[];
   final List<String> auxiliaryCalls = <String>[];
+  final List<String> previewCalls = <String>[];
+  Completer<void>? previewGate;
   Completer<void>? loadGate;
   Completer<PlaybackSnapshot>? stateGate;
   Completer<void>? stateReadStarted;
@@ -141,6 +143,22 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, 
   @override
   Future<void> stopAuxiliarySound() async { auxiliaryCalls.add('stop'); }
   @override
+  Future<void> playTransitionPreview({
+    required Uri outgoingUri,
+    required Uri incomingUri,
+    required Duration outgoingStart,
+    required Duration incomingStart,
+    required Duration duration,
+  }) async {
+    previewCalls.add('start');
+    await previewGate?.future;
+    previewCalls.add('started');
+  }
+  @override
+  Future<void> stopTransitionPreview() async {
+    previewCalls.add('stop');
+  }
+  @override
   Future<void> setAudioFocusHandling(bool enabled) async {
     lastAudioFocusHandling = enabled;
     commandOrder.add('audioFocus:$enabled');
@@ -208,6 +226,52 @@ void main() {
       ]);
       await expectLater(runtime.setAuxiliarySoundVolume(1.2), throwsArgumentError);
       await expectLater(runtime.playAuxiliarySound(uri, volume: double.nan), throwsArgumentError);
+    });
+
+    test('serializes preview teardown behind an in-flight preview start', () async {
+      backend.previewGate = Completer<void>();
+      final outgoing = Uri.parse('content://media/outgoing');
+      final incoming = Uri.parse('content://media/incoming');
+      final start = runtime.playTransitionPreview(
+        outgoingUri: outgoing,
+        incomingUri: incoming,
+        outgoingStart: const Duration(seconds: 30),
+        incomingStart: const Duration(seconds: 12),
+        duration: const Duration(seconds: 6),
+      );
+      final stop = runtime.stopTransitionPreview();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(backend.previewCalls, ['start']);
+      backend.previewGate!.complete();
+      await Future.wait<void>([start, stop]);
+
+      expect(backend.previewCalls, ['start', 'started', 'stop']);
+    });
+
+    test('rejects invalid transition preview cues before reaching backend', () async {
+      final uri = Uri.parse('content://media/track');
+      await expectLater(
+        runtime.playTransitionPreview(
+          outgoingUri: uri,
+          incomingUri: uri,
+          outgoingStart: const Duration(milliseconds: -1),
+          incomingStart: Duration.zero,
+          duration: const Duration(seconds: 6),
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        runtime.playTransitionPreview(
+          outgoingUri: uri,
+          incomingUri: uri,
+          outgoingStart: Duration.zero,
+          incomingStart: Duration.zero,
+          duration: const Duration(milliseconds: 1999),
+        ),
+        throwsArgumentError,
+      );
+      expect(backend.previewCalls, isEmpty);
     });
 
     test('validates and serializes deck EQ overlay commands', () async {
