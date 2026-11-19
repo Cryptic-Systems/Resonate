@@ -399,7 +399,8 @@ class _RecordingDeckOverlaySession implements PlaybackEngineSession, PlaybackAux
   final List<String> clearCalls = <String>[];
   final List<Duration> seekCalls = <Duration>[];
   final List<double> speedCalls = <double>[];
-  final List<String> auxiliaryCalls = <String>[];\n  String? throwOnClearDeck;
+  final List<String> auxiliaryCalls = <String>[];
+  String? throwOnClearDeck;
 
   @override
   double playbackSpeed = 1.25;
