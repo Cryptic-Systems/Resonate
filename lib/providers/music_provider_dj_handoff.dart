@@ -652,7 +652,8 @@ extension MusicProviderDjHandoff on MusicProvider {
           _lastDjTransitionConfidence = candidate.confidence;
           _lastDjTransitionRisks =
               candidate.risks.map((risk) => risk.name).toList();
-          _lastDjTransitionDurationMs = candidate.durationMs;
+          _lastDjTransitionDurationMs =
+              hasPlannedOutgoingCue ? executionDurationMs : null;
           _lastDjRecoveryAttempts = 0;
           await ResonateDiagnostics.recordDj(
             stage: 'media3_handoff_prepare',
