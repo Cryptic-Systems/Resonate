@@ -86,6 +86,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   bool disposed = false;
   bool throwOnCrossfade = false;
   bool throwOnPreloadNext = false;
+  bool throwOnDeckSpeedOnce = false;
   bool throwOnClearDeckEqOverlay = false;
   bool deferLoadQueueState = false;
   Completer<void>? cancelCrossfadeGate;
@@ -230,6 +231,14 @@ class _FakePlaybackSession implements PlaybackEngineSession {
     required double activeSpeed,
     required double standbySpeed,
   }) async {
+    if (throwOnDeckSpeedOnce) {
+      throwOnDeckSpeedOnce = false;
+      // Simulate a native command that partially changes both deck rates
+      // before reporting failure to Flutter.
+      deckSpeeds = (1.04, 0.96);
+      calls.add('deckSpeeds:partial_failure');
+      throw StateError('simulated partial deck speed update');
+    }
     deckSpeeds = (activeSpeed, standbySpeed);
     calls.add('deckSpeeds:${activeSpeed}:${standbySpeed}');
   }
@@ -1772,6 +1781,44 @@ void main() {
       }
       expect(session.currentSongValue?.id, second.id,
           reason: 'Once standby preparation completes, the safe crossfade should resume normally.');
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('partial DJ preload speed failure independently restores both deck rates', () async {
+      final session = _FakePlaybackSession()..throwOnDeckSpeedOnce = true;
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('partial-speed-preload-out');
+      final second = _song('partial-speed-preload-in');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
+      await provider.setCrossfadeDuration(500);
+
+      session.positionValue = const Duration(milliseconds: 170000);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 100 &&
+              !session.calls.contains('deckSpeeds:1.0:1.0');
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(session.calls, contains('deckSpeeds:partial_failure'));
+      expect(session.calls, contains('clearDeckEqOverlay:standby'));
+      expect(session.calls, contains('deckSpeeds:1.0:1.0'),
+          reason: 'A partially applied tempo match must be reset after preload failure.');
+      expect(session.deckSpeeds, (1.0, 1.0));
+      expect(provider.currentSong?.id, first.id);
+      expect(session.calls.where((call) => call.startsWith('crossfade:')), isEmpty);
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
