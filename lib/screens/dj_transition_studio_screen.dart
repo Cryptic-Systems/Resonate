@@ -8,6 +8,7 @@ import '../providers/dj_mode_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
 import '../services/dj_transition_preset_store.dart';
+import '../services/dj_cue_snapper.dart';
 import '../services/media3_playback_client.dart';
 import '../ui/resonate_glass.dart';
 
@@ -28,6 +29,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
   DjTransitionKind? _preferredKind;
   bool _hasSavedPreset = false;
   bool _repeatSameTrack = false;
+  bool _snapCues = true;
   int _outCue = 0, _inCue = 0, _fadeMs = 6500;
   bool _busy = false, _saving = false;
   bool _audioPreviewActive = false;
@@ -372,8 +374,17 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
           _timeline('INCOMING', _incoming, _profileB!, _inCue, db,
             Theme.of(context).colorScheme.tertiary),
           const SizedBox(height: 24), _heading('Mix points'),
-          _cue('Mix-Out', 'Outgoing · ' + _clock(_outCue), _outCue, da, (v) { unawaited(_stopAudioPreview()); setState(() => _outCue = v); _rebuild(); }),
-          _cue('Mix-In', 'Incoming · ' + _clock(_inCue), _inCue, db, (v) { unawaited(_stopAudioPreview()); setState(() => _inCue = v); _rebuild(); }),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: _snapCues,
+            title: const Text('Snap to analyzed markers'),
+            subtitle: const Text('Uses confident beats, phrase boundaries and safe mix points; free positioning remains available.'),
+            onChanged: (value) => setState(() => _snapCues = value),
+          ),
+          _cue('Mix-Out', 'Outgoing · ' + _clock(_outCue), _outCue, da, (v) { unawaited(_stopAudioPreview()); final cue = _snapCues ? DjCueSnapper.snap(_profileA!, v, da, outgoing: true) : v; setState(() => _outCue = cue); _rebuild(); }),
+          _cue('Mix-In', 'Incoming · ' + _clock(_inCue), _inCue, db, (v) { unawaited(_stopAudioPreview()); final cue = _snapCues ? DjCueSnapper.snap(_profileB!, v, db, outgoing: false) : v; setState(() => _inCue = cue); _rebuild(); }),
+          const SizedBox(height: 10),
+          _overlapWindow(da, db),
           const SizedBox(height: 8), _heading('Blend duration'),
           Text((_fadeMs / 1000).toStringAsFixed(1) + ' seconds'),
           Slider(value: _fadeMs.toDouble(), min: 2000, max: 15000, divisions: 26,
@@ -489,6 +500,42 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
         ],
       ),
     );
+  }
+
+  Widget _overlapWindow(int outgoingDuration, int incomingDuration) {
+    final fade = _fadeMs;
+    final outEnd = (_outCue + fade).clamp(0, outgoingDuration);
+    final inEnd = (_inCue + fade).clamp(0, incomingDuration);
+    return ResonateGlassCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.all(14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Synchronized blend window', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 4),
+        Text('Both lanes represent the same ${_clock(fade)} blend interval, positioned at their independent track cues.', style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 12),
+        _overlapLane('OUT', _outCue, outEnd, outgoingDuration, Theme.of(context).colorScheme.primary),
+        const SizedBox(height: 9),
+        _overlapLane('IN', _inCue, inEnd, incomingDuration, Theme.of(context).colorScheme.tertiary),
+        const SizedBox(height: 8),
+        Text('Mix-Out ${_clock(_outCue)} → ${_clock(outEnd)}  ·  Mix-In ${_clock(_inCue)} → ${_clock(inEnd)}', style: Theme.of(context).textTheme.labelSmall),
+      ]),
+    );
+  }
+
+  Widget _overlapLane(String label, int start, int end, int duration, Color color) {
+    final safeDuration = duration > 0 ? duration : 1;
+    return Row(children: [
+      SizedBox(width: 30, child: Text(label, style: Theme.of(context).textTheme.labelSmall)),
+      Expanded(child: LayoutBuilder(builder: (context, constraints) {
+        final left = constraints.maxWidth * (start / safeDuration).clamp(0.0, 1.0);
+        final right = constraints.maxWidth * (end / safeDuration).clamp(0.0, 1.0);
+        return SizedBox(height: 12, child: Stack(children: [
+          Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(6)))),
+          Positioned(left: left, width: (right - left).clamp(0.0, constraints.maxWidth - left), top: 0, bottom: 0, child: DecoratedBox(decoration: BoxDecoration(color: color.withOpacity(0.72), borderRadius: BorderRadius.circular(5)))),
+        ]));
+      })),
+    ]);
   }
 
   Widget _cue(String title, String subtitle, int value, int duration, ValueChanged<int> changed) {
@@ -658,6 +705,23 @@ class _DjTimelinePainter extends CustomPainter {
           )
           ..strokeWidth = isDownbeat ? 1.35 : 0.7,
       );
+    }
+
+    // Confidence-qualified safe windows and risk evidence are distinct from
+    // the neutral beat grid so the operator can see why a cue may be unsafe.
+    final safePoints = [
+      ...profile.transitions.safeMixIns.where((p) => p.confidence >= 0.6),
+      ...profile.transitions.safeMixOuts.where((p) => p.confidence >= 0.6),
+    ];
+    for (final point in safePoints) {
+      if (point.timeMs < 0 || point.timeMs > durationMs) continue;
+      final x = xFor(point.timeMs);
+      canvas.drawCircle(Offset(x, size.height - 5), 2.4, Paint()..color = Colors.greenAccent.withOpacity(0.9));
+    }
+    for (final point in profile.transitions.riskyPoints) {
+      if (point.confidence < 0.55 || point.timeMs < 0 || point.timeMs > durationMs) continue;
+      final x = xFor(point.timeMs);
+      canvas.drawLine(Offset(x, 2), Offset(x, size.height - 2), Paint()..color = Colors.redAccent.withOpacity(0.8)..strokeWidth = 1.5);
     }
 
     final intro = profile.transitions.bestIntroMs;
