@@ -369,10 +369,10 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
         if (_profileA != null && _profileB != null) ...[
           const SizedBox(height: 24), _heading('Track structure'),
           _timeline('OUTGOING', _outgoing, _profileA!, _outCue, da,
-            Theme.of(context).colorScheme.primary),
+            Theme.of(context).colorScheme.primary, outgoing: true),
           const SizedBox(height: 10),
           _timeline('INCOMING', _incoming, _profileB!, _inCue, db,
-            Theme.of(context).colorScheme.tertiary),
+            Theme.of(context).colorScheme.tertiary, outgoing: false),
           const SizedBox(height: 24), _heading('Mix points'),
           SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
@@ -440,8 +440,24 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
   Widget _heading(String text) => Padding(padding: const EdgeInsets.only(bottom: 8),
     child: Text(text, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)));
 
+  void _moveTimelineCue({required bool outgoing, required double dx,
+      required double width, required int durationMs}) {
+    if (width <= 0 || durationMs <= 0) return;
+    final requested = (dx.clamp(0.0, width) / width * durationMs).round();
+    final profile = outgoing ? _profileA : _profileB;
+    if (profile == null) return;
+    final cue = _snapCues
+        ? DjCueSnapper.snap(profile, requested, durationMs, outgoing: outgoing)
+        : requested.clamp(0, durationMs).toInt();
+    unawaited(_stopAudioPreview());
+    setState(() {
+      if (outgoing) { _outCue = cue; } else { _inCue = cue; }
+    });
+    _rebuild();
+  }
+
   Widget _timeline(String label, Song? song, DjTrackProfile profile,
-      int cueMs, int durationMs, Color accent) {
+      int cueMs, int durationMs, Color accent, {required bool outgoing}) {
     final duration = durationMs > 0 ? durationMs : 1;
     final bpm = profile.beatGrid.usable
         ? profile.beatGrid.bpm!.toStringAsFixed(1)
@@ -465,20 +481,27 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
             maxLines: 1, overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 8),
-          SizedBox(
-            height: 88,
-            width: double.infinity,
-            child: CustomPaint(
-              painter: _DjTimelinePainter(
-                profile: profile,
-                durationMs: duration,
-                cueMs: cueMs.clamp(0, duration).toInt(),
-                accent: accent,
-                baseline: Theme.of(context).colorScheme.outlineVariant,
-                surface: Theme.of(context).colorScheme.surfaceContainerHighest,
+          LayoutBuilder(builder: (context, constraints) => GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (details) => _moveTimelineCue(outgoing: outgoing,
+              dx: details.localPosition.dx, width: constraints.maxWidth, durationMs: duration),
+            onHorizontalDragUpdate: (details) => _moveTimelineCue(outgoing: outgoing,
+              dx: details.localPosition.dx, width: constraints.maxWidth, durationMs: duration),
+            child: SizedBox(
+              height: 88,
+              width: double.infinity,
+              child: CustomPaint(
+                painter: _DjTimelinePainter(
+                  profile: profile,
+                  durationMs: duration,
+                  cueMs: cueMs.clamp(0, duration).toInt(),
+                  accent: accent,
+                  baseline: Theme.of(context).colorScheme.outlineVariant,
+                  surface: Theme.of(context).colorScheme.surfaceContainerHighest,
+                ),
               ),
             ),
-          ),
+          )),
           const SizedBox(height: 5),
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text('0:00', style: Theme.of(context).textTheme.labelSmall),
