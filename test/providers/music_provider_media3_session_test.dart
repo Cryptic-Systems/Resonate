@@ -1718,6 +1718,156 @@ void main() {
       }
     });
 
+    test('shortens a late crossfade to preserve the outgoing deck tail guard', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('late-shortened-fade-out');
+      final second = _song('late-shortened-fade-in');
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
+        await provider.setCrossfadeDuration(12000);
+
+        session.positionValue = const Duration(milliseconds: 170000);
+        session.states.add(_state(
+          song: first,
+          queueIndex: 0,
+          playing: true,
+          playWhenReady: true,
+          position: session.positionValue,
+        ));
+        for (var attempt = 0;
+            attempt < 100 && session.preloadedSong == null;
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(session.preloadedSong?.id, second.id);
+
+        // Five seconds remain, shorter than the configured 12-second blend.
+        session.positionValue = const Duration(milliseconds: 175000);
+        session.states.add(_state(
+          song: first,
+          queueIndex: 0,
+          playing: true,
+          playWhenReady: true,
+          position: session.positionValue,
+        ));
+        for (var attempt = 0;
+            attempt < 100 && session.crossfadeDuration == null;
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+
+        expect(session.crossfadeDuration, const Duration(milliseconds: 4850),
+            reason: 'The fade must end 150ms before the outgoing item ends.');
+        expect(provider.currentSong?.id, second.id);
+      } finally {
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('starts the exact minimum safe fade window but defers one millisecond below it', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('minimum-window-fade-out');
+      final second = _song('minimum-window-fade-in');
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
+        await provider.setCrossfadeDuration(12000);
+
+        session.positionValue = const Duration(milliseconds: 170000);
+        session.states.add(_state(
+          song: first,
+          queueIndex: 0,
+          playing: true,
+          playWhenReady: true,
+          position: session.positionValue,
+        ));
+        for (var attempt = 0;
+            attempt < 100 && session.preloadedSong == null;
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(session.preloadedSong?.id, second.id);
+
+        // Exactly 1,200ms is accepted; the 150ms tail guard leaves 1,050ms.
+        session.positionValue = const Duration(milliseconds: 178800);
+        session.states.add(_state(
+          song: first,
+          queueIndex: 0,
+          playing: true,
+          playWhenReady: true,
+          position: session.positionValue,
+        ));
+        for (var attempt = 0;
+            attempt < 100 && session.crossfadeDuration == null;
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(session.crossfadeDuration, const Duration(milliseconds: 1050));
+
+        // A separate session verifies the strict lower boundary (1,199ms).
+      } finally {
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+
+      final unsafeSession = _FakePlaybackSession();
+      final unsafeProvider = MusicProvider(media3ProviderSession: unsafeSession);
+      final unsafeOutgoing = _song('unsafe-tail-out');
+      final unsafeIncoming = _song('unsafe-tail-in');
+      try {
+        await unsafeProvider.prepareMedia3ProviderSession();
+        expect(
+          await unsafeProvider.playSong(
+            unsafeOutgoing,
+            queue: <Song>[unsafeOutgoing, unsafeIncoming],
+          ),
+          isTrue,
+        );
+        await unsafeProvider.setCrossfadeDuration(12000);
+        unsafeSession.positionValue = const Duration(milliseconds: 170000);
+        unsafeSession.states.add(_state(
+          song: unsafeOutgoing,
+          queueIndex: 0,
+          playing: true,
+          playWhenReady: true,
+          position: unsafeSession.positionValue,
+        ));
+        for (var attempt = 0;
+            attempt < 100 && unsafeSession.preloadedSong == null;
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(unsafeSession.preloadedSong?.id, unsafeIncoming.id);
+
+        unsafeSession.positionValue = const Duration(milliseconds: 178801);
+        unsafeSession.states.add(_state(
+          song: unsafeOutgoing,
+          queueIndex: 0,
+          playing: true,
+          playWhenReady: true,
+          position: unsafeSession.positionValue,
+        ));
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        expect(unsafeSession.crossfadeDuration, isNull);
+        expect(unsafeSession.currentSongValue?.id, unsafeOutgoing.id);
+        expect(unsafeSession.calls, contains('cancelCrossfade'));
+        expect(unsafeSession.calls, contains('deckSpeeds:1.0:1.0'));
+      } finally {
+        unsafeProvider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await unsafeSession.audioSessions.close();
+        await unsafeSession.states.close();
+      }
+    });
+
     test('defers crossfade without replacing the active queue while standby preload is slow', () async {
       final session = _FakePlaybackSession()
         ..preloadNextGate = Completer<void>();
