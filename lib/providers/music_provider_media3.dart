@@ -82,12 +82,30 @@ extension MusicProviderMedia3 on MusicProvider {
       if (stillOwnsPreload()) {
         _preloadedNextSongId = null;
         _media3DjTransitionPreparation = null;
+        // A preload may fail after tempo matching has partially reached the
+        // native decks. Treat overlay removal and speed restoration as
+        // independent teardown operations so one native failure cannot leave
+        // the standby deck at a DJ stretch rate.
+        final cleanupErrors = <String>[];
         try {
           await session.clearDeckEqOverlay(deck: 'standby');
-        } catch (_) {}
+        } catch (cleanupError) {
+          cleanupErrors.add('clear_standby_overlay: $cleanupError');
+        }
+        if (stillOwnsPreload()) {
+          try {
+            await session.setDeckPlaybackSpeeds(
+              activeSpeed: 1.0,
+              standbySpeed: 1.0,
+            );
+          } catch (cleanupError) {
+            cleanupErrors.add('reset_deck_speeds: $cleanupError');
+          }
+        }
         await ResonateDiagnostics.record('media3_crossfade_preload_failed', {
           'songId': next.id,
           'error': error.toString(),
+          'cleanupErrors': cleanupErrors,
         });
       }
     } finally {
