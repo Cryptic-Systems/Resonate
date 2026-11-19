@@ -45,6 +45,17 @@ class DjExecutionPlanner {
       );
     }
 
+    // Reviewed/approved plans can outlive a DJ policy change. Re-check the
+    // current policy at the final execution boundary, not only in the brain.
+    if (!policy.acceptsCandidate(candidate)) {
+      return DjExecutionPlan(
+        candidate: candidate,
+        fallback: true,
+        reason: 'policy_rejected_candidate',
+        steps: const [],
+      );
+    }
+
     final outgoingAvailable = outgoing.durationMs == null
         ? null
         : outgoing.durationMs! - candidate.outgoingStartMs;

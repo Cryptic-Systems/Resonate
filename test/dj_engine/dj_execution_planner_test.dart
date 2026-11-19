@@ -47,6 +47,37 @@ void main() {
     expect(plan.steps, isEmpty);
   });
 
+  test('revalidates reviewed musical candidates against the current policy', () {
+    const lowConfidence = DjTransitionCandidate(
+      kind: DjTransitionKind.phraseBlend,
+      outgoingStartMs: 220000,
+      incomingStartMs: 0,
+      durationMs: 8000,
+      score: 0.9,
+      confidence: 0.2,
+    );
+    const lowScore = DjTransitionCandidate(
+      kind: DjTransitionKind.energyBridge,
+      outgoingStartMs: 220000,
+      incomingStartMs: 0,
+      durationMs: 8000,
+      score: 0.2,
+      confidence: 0.9,
+    );
+
+    for (final candidate in [lowConfidence, lowScore]) {
+      final plan = planner.plan(
+        outgoing: outgoing,
+        incoming: incoming,
+        candidate: candidate,
+        policy: DjPolicy.balanced,
+      );
+      expect(plan.fallback, isTrue);
+      expect(plan.reason, 'policy_rejected_candidate');
+      expect(plan.steps, isEmpty);
+    }
+  });
+
   test('does not force fallback for one contained musical conflict', () {
     const candidate = DjTransitionCandidate(
       kind: DjTransitionKind.phraseBlend,
