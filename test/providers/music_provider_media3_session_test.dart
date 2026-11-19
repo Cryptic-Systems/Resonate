@@ -2086,6 +2086,109 @@ void main() {
       await session.states.close();
     });
 
+    test('library selection after crossfade promotion resists delayed outgoing state', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('promotion-outgoing');
+      final second = _song('promotion-promoted');
+      final third = _song('promotion-library-selection');
+      final queue = <Song>[first, second, third];
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(first, queue: queue), isTrue);
+
+      // Confirm the initial native selection before exercising a real
+      // crossfade promotion from deck A to deck B.
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await provider.setCrossfadeDuration(500);
+      session.positionValue = const Duration(seconds: 178);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 180));
+
+      expect(session.activeDeckIdValue, 'B');
+      expect(provider.currentSong?.id, second.id);
+      expect(provider.queueIndex, 1);
+      expect(provider.isPlaying, isTrue);
+
+      // Immediately selecting a library track after promotion must win over
+      // delayed snapshots still describing the promoted/outgoing timeline.
+      session.deferLoadQueueState = true;
+      expect(await provider.playSong(
+        third,
+        queue: queue,
+        startIndex: 2,
+      ), isTrue);
+      expect(provider.currentSong?.id, third.id);
+      expect(provider.queueIndex, 2);
+      expect(provider.currentPosition, Duration.zero);
+
+      session.states.add(_state(
+        song: second,
+        queueIndex: 1,
+        playing: true,
+        playWhenReady: true,
+        position: const Duration(seconds: 24),
+        activeDeckId: 'B',
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 15));
+      expect(provider.currentSong?.id, third.id);
+      expect(provider.queueIndex, 2);
+      expect(provider.currentPosition, Duration.zero);
+      expect(provider.isPlaying, isTrue);
+
+      // The session-level pause edge must still update immediately while the
+      // stale timeline is fenced from changing the selected library track.
+      session.states.add(_state(
+        song: second,
+        queueIndex: 1,
+        playing: false,
+        playWhenReady: false,
+        position: const Duration(seconds: 25),
+        activeDeckId: 'B',
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 15));
+      expect(provider.isPlaying, isFalse);
+      expect(provider.currentSong?.id, third.id);
+      expect(provider.queueIndex, 2);
+      expect(provider.currentPosition, Duration.zero);
+
+      // Once the selected item is published by Media3, its own state becomes
+      // canonical again, including position and resumed transport state.
+      session.deferLoadQueueState = false;
+      session.currentSongValue = third;
+      session.queueIndexValue = 2;
+      session.durationValue = third.duration;
+      session.positionValue = const Duration(seconds: 2);
+      session.states.add(_state(
+        song: third,
+        queueIndex: 2,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(provider.currentSong?.id, third.id);
+      expect(provider.queueIndex, 2);
+      expect(provider.currentPosition, const Duration(seconds: 2));
+      expect(provider.isPlaying, isTrue);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('overlay cleanup failure does not skip DJ deck speed reset', () async {
       final session = _FakePlaybackSession()
         ..throwOnCrossfade = true
