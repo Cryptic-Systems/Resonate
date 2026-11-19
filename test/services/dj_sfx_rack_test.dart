@@ -68,6 +68,23 @@ void main() {
       expect(session.clearCalls, ['active', 'standby']);
     });
 
+    test('clears standby overlay even when active overlay cleanup fails', () async {
+      final rack = DjSfxRack(random: _SequenceRandom());
+      final session = _RecordingDeckOverlaySession()
+        ..throwOnClearDeck = 'active';
+
+      await rack.engage(
+        energyScore: 0.5,
+        preset: DjSfxPreset.filterOpen,
+        playbackSession: session,
+      );
+      await rack.restore();
+
+      expect(session.clearCalls, ['active', 'standby']);
+      expect(rack.engaged, isFalse);
+      expect(rack.activePreset, isNull);
+    });
+
     test('routes auxiliary samples and track automation through Media3 session capabilities', () async {
       final rack = DjSfxRack(random: _SequenceRandom());
       final session = _RecordingDeckOverlaySession();
@@ -363,7 +380,7 @@ class _RecordingDeckOverlaySession implements PlaybackEngineSession, PlaybackAux
   final List<String> clearCalls = <String>[];
   final List<Duration> seekCalls = <Duration>[];
   final List<double> speedCalls = <double>[];
-  final List<String> auxiliaryCalls = <String>[];
+  final List<String> auxiliaryCalls = <String>[];\n  String? throwOnClearDeck;
 
   @override
   double playbackSpeed = 1.25;

@@ -379,10 +379,19 @@ class DjSfxRack {
       await _stopOneshot();
       return;
     }
-    try {
-      final session = playbackSession ?? _playbackSession;
-      await _stopOneshot();
-      if (session == null) {
+    final session = playbackSession ?? _playbackSession;
+    Future<void> attemptRestore(String stage, Future<void> Function() action) async {
+      try {
+        await action();
+      } catch (error) {
+        debugPrint('DjSfxRack.restore ($stage): $error');
+      }
+    }
+    // Teardown is deliberately independent. A failed auxiliary stop or one
+    // deck's overlay clear must never prevent cleanup of the other deck.
+    await attemptRestore('stop_oneshot', _stopOneshot);
+    if (session == null) {
+      await attemptRestore('restore_global_effects', () async {
         final prefs = await SharedPreferences.getInstance();
         final effectsEnabled = prefs.getBool('effects_enabled') ?? true;
         final reverb = prefs.getDouble('reverb') ?? 0.0;
@@ -391,18 +400,32 @@ class DjSfxRack {
         await AudioEffectsBridge.setBassBoost(effectsEnabled ? bass : 0.0);
         await AudioEffectsBridge.setReverb(effectsEnabled ? reverb : 0.0);
         await AudioEffectsBridge.setVirtualizer(effectsEnabled ? virt : 0.0);
+      });
+    }
+    if (_eqTouched) {
+      if (session != null) {
+        await attemptRestore(
+          'clear_active_overlay',
+          () => session.clearDeckEqOverlay(deck: 'active'),
+        );
+        await attemptRestore(
+          'clear_standby_overlay',
+          () => session.clearDeckEqOverlay(deck: 'standby'),
+        );
+      } else {
+        await attemptRestore(
+          'restore_equalizer_a',
+          () => _restoreEq(equalizerA, _savedEqGainsA),
+        );
+        await attemptRestore(
+          'restore_equalizer_b',
+          () => _restoreEq(equalizerB, _savedEqGainsB),
+        );
       }
-      if (_eqTouched) {
-        if (session != null) {
-          await session.clearDeckEqOverlay(deck: 'active');
-          await session.clearDeckEqOverlay(deck: 'standby');
-        } else {
-          await _restoreEq(equalizerA, _savedEqGainsA);
-          await _restoreEq(equalizerB, _savedEqGainsB);
-        }
-      }
-    } catch (e) {
-      debugPrint('DjSfxRack.restore: $e');
+    }
+    try {
+      // Keep the final state reset in one place even when every native cleanup
+      // operation fails; the next engage starts with a fresh generation.
     } finally {
       engaged = false;
       _eqTouched = false;
