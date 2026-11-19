@@ -244,6 +244,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
     }
     if (activeSpeed == 1.0 &&
         standbySpeed == 1.0 &&
+        queueIndexValue == 1 &&
         deckSpeedResetGate != null) {
       final gate = deckSpeedResetGate!;
       deckSpeedResetGate = null;
