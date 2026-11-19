@@ -1358,6 +1358,88 @@ void main() {
       await session.states.close();
     });
 
+    test('external MediaSession transport keeps track, queue and controls synchronized', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final first = _song('external-transport-first');
+      final second = _song('external-transport-second');
+      final third = _song('external-transport-third');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(
+        first,
+        queue: <Song>[first, second, third],
+      ), isTrue);
+
+      // Android notification, headset and Auto commands bypass Flutter
+      // transport methods. Their canonical Media3 observations must still
+      // update the provider's selected occurrence and transport controls.
+      session.currentSongValue = second;
+      session.queueIndexValue = 1;
+      session.positionValue = const Duration(seconds: 11);
+      session.playingValue = true;
+      session.states.add(_state(
+        song: second,
+        queueIndex: 1,
+        playing: true,
+        playWhenReady: true,
+        position: const Duration(seconds: 11),
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(provider.currentSong?.id, second.id);
+      expect(provider.queueIndex, 1);
+      expect(provider.currentPosition, const Duration(seconds: 11));
+      expect(provider.isPlaying, isTrue);
+
+      session.currentSongValue = third;
+      session.queueIndexValue = 2;
+      session.positionValue = const Duration(seconds: 3);
+      session.playingValue = true;
+      session.states.add(_state(
+        song: third,
+        queueIndex: 2,
+        playing: true,
+        playWhenReady: true,
+        position: const Duration(seconds: 3),
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(provider.currentSong?.id, third.id);
+      expect(provider.queueIndex, 2);
+      expect(provider.currentPosition, const Duration(seconds: 3));
+      expect(provider.isPlaying, isTrue);
+
+      // A native pause/resume affects the session-level control even when
+      // the queue occurrence itself does not change.
+      session.playingValue = false;
+      session.states.add(_state(
+        song: third,
+        queueIndex: 2,
+        playing: false,
+        playWhenReady: false,
+        position: const Duration(seconds: 4),
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(provider.isPlaying, isFalse);
+      expect(provider.currentSong?.id, third.id);
+
+      session.playingValue = true;
+      session.states.add(_state(
+        song: third,
+        queueIndex: 2,
+        playing: true,
+        playWhenReady: true,
+        position: const Duration(seconds: 5),
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(provider.isPlaying, isTrue);
+      expect(provider.currentSong?.id, third.id);
+      expect(provider.queueIndex, 2);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('fresh library selection is not reverted by a delayed native timeline snapshot', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
