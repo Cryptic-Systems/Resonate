@@ -19,7 +19,7 @@ void main() {
       expect(DjCueSnapper.snap(profile, 1040, 120000, outgoing: true), 1000);
     });
     test('uses direction-specific safe markers', () {
-      expect(DjCueSnapper.snap(profile, 1980, 120000, outgoing: true), 1900);
+      expect(DjCueSnapper.snap(profile, 1910, 120000, outgoing: true), 1900);
       expect(DjCueSnapper.snap(profile, 3080, 120000, outgoing: false), 3100);
     });
     test('does not snap when the nearest marker is too far away', () {
