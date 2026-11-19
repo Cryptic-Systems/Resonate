@@ -2556,6 +2556,51 @@ void main() {
       await session.states.close();
     });
 
+    test('repeat-one preload failure restores a partially applied deck stretch', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final song = _song('repeat-one-speed-recovery');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
+      await provider.setRepeatMode(PlaybackRepeatMode.one);
+      await provider.setCrossfadeDuration(500);
+
+      // Inject the failure only after initial transport setup, so it belongs
+      // to the repeat-self DJ preload's tempo-match command.
+      session.throwOnDeckSpeedOnce = true;
+      session.positionValue = const Duration(seconds: 178);
+      session.states.add(_state(
+        song: song,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+        activeDeckId: 'A',
+        repeatMode: 'one',
+      ));
+
+      for (var attempt = 0;
+          attempt < 120 &&
+              !session.calls.contains('deckSpeeds:1.0:1.0');
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(session.calls, contains('deckSpeeds:partial_failure'));
+      expect(session.calls, contains('clearDeckEqOverlay:standby'));
+      expect(
+        session.calls,
+        contains('deckSpeeds:1.0:1.0'),
+        reason: 'A partial repeat-one tempo-match failure must restore both deck rates.',
+      );
+      expect(session.deckSpeeds, (1.0, 1.0));
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('turning Repeat One off invalidates a blocked same-track DJ preload', () async {
       final session = _FakePlaybackSession()
         ..preloadNextGate = Completer<void>();
