@@ -43,6 +43,25 @@ void main() {
   });
 
   group('DjSfxRack Media3 deck overlays', () {
+    test('restore invalidates a delayed SFX before it can engage', () async {
+      final rack = DjSfxRack(random: _SequenceRandom());
+      final session = _RecordingDeckOverlaySession();
+
+      await rack.engageDelayed(
+        delay: const Duration(milliseconds: 40),
+        energyScore: 0.5,
+        preset: DjSfxPreset.filterOpen,
+        playbackSession: session,
+      );
+      await rack.restore();
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      expect(rack.engaged, isFalse);
+      expect(rack.activePreset, isNull);
+      expect(session.setCalls, isEmpty,
+          reason: 'A cancelled delayed SFX must not touch either deck');
+    });
+
     test('routes transition EQ through both Media3 decks and clears on restore', () async {
       final rack = DjSfxRack(random: _SequenceRandom());
       final session = _RecordingDeckOverlaySession();
