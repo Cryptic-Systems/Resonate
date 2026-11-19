@@ -2088,7 +2088,11 @@ void main() {
 
     test('library selection after crossfade promotion resists delayed outgoing state', () async {
       final session = _FakePlaybackSession();
-      final provider = MusicProvider(media3ProviderSession: session);
+      final audioHandler = AudioServiceHandler();
+      final provider = MusicProvider(
+        audioHandler: audioHandler,
+        media3ProviderSession: session,
+      );
       final first = _song('promotion-outgoing');
       final second = _song('promotion-promoted');
       final third = _song('promotion-library-selection');
@@ -2162,6 +2166,35 @@ void main() {
       expect(provider.currentSong?.id, third.id);
       expect(provider.queueIndex, 2);
       expect(provider.currentPosition, Duration.zero);
+      expect(audioHandler.playbackState.value.playing, isFalse);
+      expect(
+        audioHandler.playbackState.value.controls
+            .map((control) => control.type),
+        contains(MediaControlType.play),
+        reason: 'A stale outgoing timeline must not leave system transport on Pause.',
+      );
+
+      // The opposite transport edge must also publish without waiting for the
+      // selected timeline to catch up.
+      session.states.add(_state(
+        song: second,
+        queueIndex: 1,
+        playing: true,
+        playWhenReady: true,
+        position: const Duration(seconds: 26),
+        activeDeckId: 'B',
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 15));
+      expect(provider.isPlaying, isTrue);
+      expect(provider.currentSong?.id, third.id);
+      expect(provider.currentPosition, Duration.zero);
+      expect(audioHandler.playbackState.value.playing, isTrue);
+      expect(
+        audioHandler.playbackState.value.controls
+            .map((control) => control.type),
+        contains(MediaControlType.pause),
+        reason: 'A stale outgoing timeline must not leave system transport on Play.',
+      );
 
       // Once the selected item is published by Media3, its own state becomes
       // canonical again, including position and resumed transport state.
