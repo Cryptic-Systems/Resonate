@@ -2567,6 +2567,7 @@ void main() {
 
       // Inject the failure only after initial transport setup, so it belongs
       // to the repeat-self DJ preload's tempo-match command.
+      session.calls.clear();
       session.throwOnDeckSpeedOnce = true;
       session.positionValue = const Duration(seconds: 178);
       session.states.add(_state(
