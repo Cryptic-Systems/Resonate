@@ -461,7 +461,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
               painter: _DjTimelinePainter(
                 profile: profile,
                 durationMs: duration,
-                cueMs: cueMs.clamp(0, duration),
+                cueMs: cueMs.clamp(0, duration).toInt(),
                 accent: accent,
                 baseline: Theme.of(context).colorScheme.outlineVariant,
                 surface: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -596,7 +596,7 @@ class _DjTimelinePainter extends CustomPainter {
         xFor(section.startMs), 0, xFor(section.endMs), size.height,
       );
       canvas.drawRect(rect, Paint()..color = accent.withOpacity(
-        (0.035 + section.confidence.clamp(0.0, 1.0) * 0.075),
+        (0.035 + section.confidence.clamp(0.0, 1.0) * 0.075).toDouble(),
       ));
     }
 
