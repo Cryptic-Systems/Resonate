@@ -108,6 +108,8 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
   }
 
   Future<void> _analyze() async {
+    await _stopAudioPreview();
+    if (!mounted) return;
     final a = _outgoing, b = _incoming;
     if (a == null || b == null || _busy) return;
     setState(() { _busy = true; _status = 'Analyzing outgoing track…'; _error = null; });
