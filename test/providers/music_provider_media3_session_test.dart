@@ -2645,7 +2645,8 @@ void main() {
         isTrue,
       );
       await provider.setCrossfadeDuration(500);
-      session.deckSpeedResetGate = Completer<void>();
+      final resetGate = Completer<void>();
+      session.deckSpeedResetGate = resetGate;
 
       session.positionValue = const Duration(seconds: 178);
       session.states.add(_state(
@@ -2673,7 +2674,7 @@ void main() {
       expect(session.playingValue, isFalse);
       // Let the older transition's native reset complete only after Pause
       // has invalidated its generation and completed its own cleanup.
-      session.deckSpeedResetGate!.complete();
+      resetGate.complete();
       await Future<void>.delayed(const Duration(milliseconds: 120));
 
       expect(provider.isPlaying, isFalse);
