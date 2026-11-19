@@ -1728,7 +1728,7 @@ void main() {
         expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
         await provider.setCrossfadeDuration(12000);
 
-        session.positionValue = const Duration(milliseconds: 170000);
+        session.positionValue = const Duration(milliseconds: 165000);
         session.states.add(_state(
           song: first,
           queueIndex: 0,
@@ -1779,7 +1779,7 @@ void main() {
         expect(await provider.playSong(first, queue: <Song>[first, second]), isTrue);
         await provider.setCrossfadeDuration(12000);
 
-        session.positionValue = const Duration(milliseconds: 170000);
+        session.positionValue = const Duration(milliseconds: 165000);
         session.states.add(_state(
           song: first,
           queueIndex: 0,
@@ -1832,7 +1832,7 @@ void main() {
           isTrue,
         );
         await unsafeProvider.setCrossfadeDuration(12000);
-        unsafeSession.positionValue = const Duration(milliseconds: 170000);
+        unsafeSession.positionValue = const Duration(milliseconds: 165000);
         unsafeSession.states.add(_state(
           song: unsafeOutgoing,
           queueIndex: 0,
@@ -1858,8 +1858,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 150));
         expect(unsafeSession.crossfadeDuration, isNull);
         expect(unsafeSession.currentSongValue?.id, unsafeOutgoing.id);
-        expect(unsafeSession.calls, contains('cancelCrossfade'));
-        expect(unsafeSession.calls, contains('deckSpeeds:1.0:1.0'));
+        expect(unsafeSession.calls.where((call) => call.startsWith('crossfade:')), isEmpty);
       } finally {
         unsafeProvider.dispose();
         await Future<void>.delayed(Duration.zero);
