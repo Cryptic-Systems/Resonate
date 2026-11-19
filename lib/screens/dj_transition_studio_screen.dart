@@ -590,10 +590,78 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
       ]),
       const SizedBox(height: 10),
       Text('Mix-Out ' + _clock(c.outgoingStartMs) + ' → Mix-In ' + _clock(c.incomingStartMs)),
-      if (c.risks.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8),
+      const SizedBox(height: 14),
+      _scoreBreakdown(c),
+      if (c.risks.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10),
         child: Text('Risks: ' + c.risks.map((r) => r.name).join(', '),
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.error))),
     ]));
+
+  Widget _scoreBreakdown(DjTransitionCandidate candidate) {
+    const labels = <String, String>{
+      'tempo': 'Tempo compatibility',
+      'harmonic': 'Harmonic compatibility',
+      'energy': 'Energy trajectory',
+      'spectrum': 'Frequency balance',
+      'phrase': 'Phrase alignment',
+      'structure': 'Track structure',
+      'silence': 'Outgoing silence safety',
+    };
+    const explanations = <String, String>{
+      'tempo': 'BPM relationship and beat-grid compatibility',
+      'harmonic': 'Key compatibility when harmonic mixing is enabled',
+      'energy': 'How the outgoing and incoming energy curves connect',
+      'spectrum': 'Bass, midrange and high-frequency compatibility',
+      'phrase': 'Confidence in phrase and bar alignment',
+      'structure': 'Intro, outro and section-boundary evidence',
+      'silence': 'Silence or near-silence around the outgoing cue',
+    };
+    final order = labels.keys.where(candidate.scores.containsKey).toList();
+    if (order.isEmpty) {
+      return Text('Detailed scoring evidence is unavailable for this candidate.',
+        style: Theme.of(context).textTheme.bodySmall);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Why this blend', style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 8),
+        for (final key in order)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 9),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Expanded(child: Text(labels[key]!,
+                    style: Theme.of(context).textTheme.bodySmall)),
+                  Text('${(candidate.scores[key]!.clamp(0.0, 1.0) * 100).round()}%',
+                    style: Theme.of(context).textTheme.labelMedium),
+                ]),
+                const SizedBox(height: 3),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: candidate.scores[key]!.isFinite
+                        ? candidate.scores[key]!.clamp(0.0, 1.0).toDouble()
+                        : 0.0,
+                    minHeight: 5,
+                    backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(explanations[key]!,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
+        Text('These are the transition engine’s component scores, not independent probabilities. Overall score and confidence remain separate.',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant)),
+      ],
+    );
+  }
 
   Widget _metric(String label, double value) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Text((value * 100).round().toString() + '%', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
