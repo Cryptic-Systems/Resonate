@@ -504,8 +504,8 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
 
   Widget _overlapWindow(int outgoingDuration, int incomingDuration) {
     final fade = _fadeMs;
-    final outEnd = (_outCue + fade).clamp(0, outgoingDuration);
-    final inEnd = (_inCue + fade).clamp(0, incomingDuration);
+    final outEnd = (_outCue + fade).clamp(0, outgoingDuration).toInt();
+    final inEnd = (_inCue + fade).clamp(0, incomingDuration).toInt();
     return ResonateGlassCard(
       margin: EdgeInsets.zero,
       padding: const EdgeInsets.all(14),
@@ -532,7 +532,7 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
         final right = constraints.maxWidth * (end / safeDuration).clamp(0.0, 1.0);
         return SizedBox(height: 12, child: Stack(children: [
           Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(6)))),
-          Positioned(left: left, width: (right - left).clamp(0.0, constraints.maxWidth - left), top: 0, bottom: 0, child: DecoratedBox(decoration: BoxDecoration(color: color.withOpacity(0.72), borderRadius: BorderRadius.circular(5)))),
+          Positioned(left: left, width: (right - left).clamp(0.0, constraints.maxWidth - left).toDouble(), top: 0, bottom: 0, child: DecoratedBox(decoration: BoxDecoration(color: color.withOpacity(0.72), borderRadius: BorderRadius.circular(5)))),
         ]));
       })),
     ]);

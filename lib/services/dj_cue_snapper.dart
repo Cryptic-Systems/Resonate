@@ -9,7 +9,7 @@ class DjCueSnapper {
       {required bool outgoing}) {
     final duration = durationMs > 0 ? durationMs : profile.durationMs ?? 0;
     if (duration <= 0) return requestedMs < 0 ? 0 : requestedMs;
-    final requested = requestedMs.clamp(0, duration);
+    final requested = requestedMs.clamp(0, duration).toInt();
     final grid = profile.beatGrid;
     final markers = <int>{};
     final confidentGrid = grid.usable && grid.confidence >= 0.55;
