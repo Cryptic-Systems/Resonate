@@ -685,6 +685,7 @@ extension MusicProviderDjHandoff on MusicProvider {
                 hasPlannedOutgoingCue ? executionDurationMs : null,
             incomingBassDuckAmount: _djBassDuckAmount(execution),
             incomingBassDuckDurationMs: _djBassDuckDuration(execution),
+            transitionSfxTriggerMs: _djSfxTriggerMs(execution),
           );
         }
 
@@ -926,6 +927,13 @@ double? _djBassDuckAmount(DjExecutionPlan plan) {
   return null;
 }
 
+int? _djSfxTriggerMs(DjExecutionPlan plan) {
+  for (final step in plan.steps) {
+    if (step.action == 'trigger_sfx') return step.atMs;
+  }
+  return null;
+}
+
 int? _djBassDuckDuration(DjExecutionPlan plan) {
   for (final step in plan.steps) {
     if (step.action == 'duck_incoming_bass') {
@@ -947,6 +955,7 @@ class Media3DjTransitionPreparation {
     this.transitionDurationMs,
     this.incomingBassDuckAmount,
     this.incomingBassDuckDurationMs,
+    this.transitionSfxTriggerMs,
   });
 
   final Duration incomingStartPosition;
@@ -961,4 +970,6 @@ class Media3DjTransitionPreparation {
   /// Temporary low-frequency attenuation requested by the execution plan.
   final double? incomingBassDuckAmount;
   final int? incomingBassDuckDurationMs;
+  /// Phrase-snapped SFX trigger offset within the validated fade timeline.
+  final int? transitionSfxTriggerMs;
 }

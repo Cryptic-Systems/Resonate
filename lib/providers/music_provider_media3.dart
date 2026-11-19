@@ -335,9 +335,20 @@ extension MusicProviderMedia3 on MusicProvider {
       await session.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
       if (!stillOwnsTransition()) return;
       if (_djSfxActive) {
+        final plannedSfxMs = preparation?.transitionSfxTriggerMs;
+        final sfxDelay = plannedSfxMs == null
+            ? Duration.zero
+            : _snapSfxDelayToPhrase(
+                planned: Duration(
+                  milliseconds: plannedSfxMs.clamp(0, durationMs - 120).toInt(),
+                ),
+                fadeMs: durationMs,
+                outgoingProfile: preparation?.outgoingProfile,
+              );
         await _engageDjTransitionSfx(
           energyScore: _lastDjEnergyScore,
           transitionKind: preparation?.transitionKind,
+          delay: sfxDelay,
           outgoingProfile: preparation?.outgoingProfile,
         );
       }
