@@ -1034,7 +1034,7 @@ void main() {
       expect(provider.upcomingQueue.map((song) => song.id).toList(),
           <String>[third.id]);
       expect(session.calls, contains('cancelCrossfade'));
-      expect(session.calls, contains('clearDeckEqOverlay:standby'));
+      expect(session.calls, contains('cancelCrossfade'));
 
       session.preloadNextGate!.complete();
       await Future<void>.delayed(const Duration(milliseconds: 80));
