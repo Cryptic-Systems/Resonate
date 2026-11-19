@@ -2190,7 +2190,7 @@ void main() {
 
       for (var attempt = 0;
           attempt < 120 &&
-              !session.calls.skip(1).contains('loadQueue');
+              session.calls.where((call) => call == 'loadQueue').length < 2;
           attempt++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
