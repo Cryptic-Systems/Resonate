@@ -398,7 +398,8 @@ extension MusicProviderDjHandoff on MusicProvider {
     _lastDjTransitionScore = candidate.score;
     _lastDjTransitionConfidence = candidate.confidence;
     _lastDjTransitionRisks = candidate.risks.map((r) => r.name).toList();
-    _lastDjTransitionDurationMs = candidate.durationMs;
+    _lastDjTransitionDurationMs =
+              hasPlannedOutgoingCue ? executionDurationMs : null;
     _lastDjRecoveryAttempts = 0;
     notifyListeners(); // dj transition chip
     await ResonateDiagnostics.recordDj(
@@ -662,7 +663,8 @@ extension MusicProviderDjHandoff on MusicProvider {
             extra: {
               'kind': candidate.kind.name,
               'incomingStartMs': seekMs,
-              'durationMs': candidate.durationMs,
+              'durationMs': hasPlannedOutgoingCue ? executionDurationMs : null,
+              'candidateDurationMs': candidate.durationMs,
               'activeSpeed': activeSpeed,
               'standbySpeed': standbySpeed,
               'crossfadeBiasMs': _lastDjCrossfadeBiasMs,
