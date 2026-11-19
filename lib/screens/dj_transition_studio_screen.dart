@@ -261,7 +261,10 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
         // Preserve the original start error for the operator.
       }
     } finally {
-      if (generation == _previewGeneration) _audioPreviewStarting = false;
+      // Keep a second audition from racing an older in-flight native prepare.
+      // Stop invalidates its generation, but this operation owns the start lock
+      // until its platform Future has settled.
+      _audioPreviewStarting = false;
     }
   }
 
@@ -269,7 +272,6 @@ class _DjTransitionStudioScreenState extends State<DjTransitionStudioScreen> {
     ++_previewGeneration;
     final provider = _previewProvider;
     _audioPreviewActive = false;
-    _audioPreviewStarting = false;
     _previewProvider = null;
     if (provider == null) return;
     try {
