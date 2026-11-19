@@ -408,6 +408,10 @@ extension MusicProviderMedia3 on MusicProvider {
         if (!stillOwnsTransition()) return;
         if (!bassDuckCleared && elapsedMs >= bassDuckReleaseMs) {
           await session.clearDeckEqOverlay(deck: 'standby');
+          // Pause/Stop or a new queue selection can take ownership while the
+          // native overlay clear is in flight. Do not let this stale transition
+          // continue its FX work after that command has superseded it.
+          if (!stillOwnsTransition()) return;
           bassDuckCleared = true;
         }
         if (_djSfxEngaged) {
@@ -431,8 +435,11 @@ extension MusicProviderMedia3 on MusicProvider {
         activeSpeed: 1.0,
         standbySpeed: 1.0,
       );
+      if (!stillOwnsTransition()) return;
       await session.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
+      if (!stillOwnsTransition()) return;
       await _restoreDjTransitionSfx();
+      if (!stillOwnsTransition()) return;
       // The polling loop can observe promotion before the Flutter state stream
       // delivers its media-item transition. Finalize the outgoing history row
       // explicitly here and start the incoming row after reconciling its position.
