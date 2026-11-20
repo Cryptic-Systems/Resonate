@@ -56,6 +56,7 @@ class DjProfileSerializer {
           'rmsDb': profile.dspAnalysis.rmsDb,
           'crestDb': profile.dspAnalysis.crestDb,
           'bassEnergyDb': profile.dspAnalysis.bassEnergyDb,
+          'maxSafeBassDb': profile.dspAnalysis.maxSafeBassDb,
         },
         'spectrum': {
           'bass': profile.spectrum.bass,
@@ -150,6 +151,12 @@ class DjProfileSerializer {
       rmsDb: level('rmsDb', -160, -160, 0.1),
       crestDb: level('crestDb', 0, 0, 30),
       bassEnergyDb: level('bassEnergyDb', -160, -160, 0.1),
+      maxSafeBassDb: map['maxSafeBassDb'] is num &&
+              (map['maxSafeBassDb'] as num).isFinite &&
+              (map['maxSafeBassDb'] as num) >= 0 &&
+              (map['maxSafeBassDb'] as num) <= 18
+          ? (map['maxSafeBassDb'] as num).toDouble()
+          : null,
     );
   }
 
