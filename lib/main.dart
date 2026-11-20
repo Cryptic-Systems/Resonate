@@ -279,7 +279,7 @@ class ResonateApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ShellNav()),
         ChangeNotifierProvider(create: (_) => AskResonateController()),
         ChangeNotifierProvider(
-          create: (_) {
+          create: (context) {
             final provider = MusicProvider(
               media3ProviderSession: Media3ProviderSession(),
               playbackControlArbiter: context.read<PlaybackControlArbiter>(),
