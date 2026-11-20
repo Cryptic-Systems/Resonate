@@ -75,6 +75,16 @@ object DspEngineJni {
         silenceHoldMs: Float,
     )
 
+    external fun nativeSetAnalysisHint(
+        handle: Long,
+        enabled: Boolean,
+        samplePeakDb: Float,
+        truePeakDb: Float,
+        rmsDb: Float,
+        crestDb: Float,
+        bassEnergyDb: Float,
+    )
+
     /** [processCalls, avgUs, maxUs, overruns, lastFrames, sampleRate] */
     external fun nativeGetStats(handle: Long): DoubleArray?
 
