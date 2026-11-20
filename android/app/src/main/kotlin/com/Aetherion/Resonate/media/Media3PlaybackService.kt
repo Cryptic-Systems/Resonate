@@ -474,6 +474,17 @@ class Media3PlaybackService : MediaSessionService() {
                 mediaItem: MediaItem?,
                 reason: Int,
             ) {
+                // Analysis hints are keyed to the physical A/B deck and exact
+                // MediaItem identity. Queue changes and standby reuse invalidate
+                // old track hints before the next PCM block can consume them.
+                val physicalDeckId = when {
+                    deck === activePlayer -> activeDeckId
+                    deck === standbyPlayer -> standbyDeckId()
+                    else -> null
+                }
+                if (physicalDeckId != null) {
+                    DspEngineRegistry.setDeckTrack(physicalDeckId, mediaItem?.mediaId)
+                }
                 // MediaSession controllers (headsets, Bluetooth, notification,
                 // Android Auto) can navigate the active playlist without going
                 // through the Flutter command lane. Invalidate any preloaded
@@ -865,11 +876,13 @@ class Media3PlaybackService : MediaSessionService() {
         cancelCrossfade()
         val standby = standbyPlayer
         if (standby != null) {
+            val retiringDeckId = standbyDeckId()
+            DspEngineRegistry.setDeckTrack(retiringDeckId, null)
             standby.pause()
             standby.clearMediaItems()
             standbyPlayer = null
-            DspEngineSinkHook.suspendDeck(standbyDeckId())
-            DspEngineSinkHook.forgetDeck(standbyDeckId())
+            DspEngineSinkHook.suspendDeck(retiringDeckId)
+            DspEngineSinkHook.forgetDeck(retiringDeckId)
             standby.release()
         }
         crossfadeStatus = "idle"
@@ -888,6 +901,8 @@ class Media3PlaybackService : MediaSessionService() {
         if (activeDeckId == "A") return true
 
         val outgoing = activePlayer
+        DspEngineRegistry.setDeckTrack("A", null)
+        DspEngineRegistry.setDeckTrack("B", null)
         val primary = newPlayer(
             handleAudioFocus = media3AudioFocusEnabled,
             deckId = "A",
