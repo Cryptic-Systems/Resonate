@@ -2827,6 +2827,9 @@ void main() {
       await provider.setRepeatMode(PlaybackRepeatMode.one);
       await provider.setCrossfadeDuration(500);
 
+      // Ignore the legitimate Repeat Off setup performed before Repeat One
+      // is selected; this assertion covers only the self-fade handoff window.
+      session.calls.clear();
       session.positionValue = const Duration(seconds: 178);
       session.states.add(_state(
         song: song,
