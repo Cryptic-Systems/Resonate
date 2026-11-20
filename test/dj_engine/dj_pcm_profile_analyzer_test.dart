@@ -138,10 +138,12 @@ void main() {
           role: 'mid',
         ),
       ],
+      maxSafeBassDb: 5.25,
     );
     final metrics = profile.dspAnalysis;
     expect(metrics.isMeasured, isTrue);
     expect(metrics.isValid, isTrue);
+    expect(metrics.maxSafeBassDb, 5.25);
     expect(metrics.samplePeakDb, closeTo(-6.02, 0.15));
     expect(metrics.truePeakDb, greaterThanOrEqualTo(metrics.samplePeakDb));
     expect(metrics.rmsDb, closeTo(-9.03, 0.2));
