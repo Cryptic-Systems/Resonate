@@ -23,9 +23,8 @@ SRC entry point are not used in this live path.
 - The vendored `src/core/processor.cpp` retains Resonate-local real-time fixes:
   - shaped-dither feedback is converted from integer LSB units back to normalized
     sample units before feeding the quantizer, preventing large silence noise;
-  - accepting `DSP_LIMITER_TWOBAND` in `dsp_limiter_set_mode`, and
-  - accepting `DSP_LIMITER_TWOBAND` in `dsp_limiter_set_mode`;
-  - refreshing the two-band limiter after attack and release changes. Native
+  - `DSP_LIMITER_TWOBAND` is accepted by `dsp_limiter_set_mode`;
+  - the two-band limiter is refreshed after attack and release changes. Native
     regression tests and the PCM16 smoke test protect these behaviours.
 - The upstream v0.6.0 analysis, headroom, auto-preamp, auto-virtual-bass,
   crest-hint and silence-hygiene APIs are now present in the vendored C ABI.
