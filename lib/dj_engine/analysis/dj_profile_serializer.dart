@@ -50,6 +50,13 @@ class DjProfileSerializer {
                   'slope': p.slope,
                 })
             .toList(),
+        'dspAnalysis': {
+          'samplePeakDb': profile.dspAnalysis.samplePeakDb,
+          'truePeakDb': profile.dspAnalysis.truePeakDb,
+          'rmsDb': profile.dspAnalysis.rmsDb,
+          'crestDb': profile.dspAnalysis.crestDb,
+          'bassEnergyDb': profile.dspAnalysis.bassEnergyDb,
+        },
         'spectrum': {
           'bass': profile.spectrum.bass,
           'mids': profile.spectrum.mids,
@@ -84,6 +91,7 @@ class DjProfileSerializer {
         : null;
     final beat = _map(map['beatGrid']);
     final spectrum = _map(map['spectrum']);
+    final dsp = _map(map['dspAnalysis']);
     final transition = _map(map['transitions']);
     return DjTrackProfile(
       songId: map['songId'] as String,
@@ -109,6 +117,7 @@ class DjProfileSerializer {
       harmonicChanges: _points(map['harmonicChanges'], durationMs),
       sections: _sections(map['sections'], durationMs),
       energyCurve: _energy(map['energyCurve'], durationMs),
+      dspAnalysis: _dspAnalysis(dsp),
       spectrum: DjSpectralProfile(
         bass: _unit(spectrum['bass'], fallback: 0.5),
         mids: _unit(spectrum['mids'], fallback: 0.5),
@@ -126,6 +135,21 @@ class DjProfileSerializer {
         safeMixOuts: _points(transition['safeMixOuts'], durationMs),
         riskyPoints: _points(transition['riskyPoints'], durationMs),
       ),
+    );
+  }
+
+  DspAnalysisMetrics _dspAnalysis(Map<String, dynamic> map) {
+    double level(String key, double fallback, double min, double max) {
+      final value = map[key];
+      if (value is! num || !value.isFinite || value < min || value > max) return fallback;
+      return value.toDouble();
+    }
+    return DspAnalysisMetrics(
+      samplePeakDb: level('samplePeakDb', -160, -160, 6),
+      truePeakDb: level('truePeakDb', -160, -160, 6),
+      rmsDb: level('rmsDb', -160, -160, 0.1),
+      crestDb: level('crestDb', 0, 0, 30),
+      bassEnergyDb: level('bassEnergyDb', -160, -160, 0.1),
     );
   }
 
