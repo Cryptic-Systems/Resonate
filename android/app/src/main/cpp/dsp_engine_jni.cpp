@@ -707,6 +707,37 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetAnalysisHint(
     }
 }
 
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeGetMeters(
+        JNIEnv* env, jclass, jlong value) {
+    jfloatArray arr = env->NewFloatArray(12);
+    if (!arr) return nullptr;
+    float vals[12] = {-160.f, -160.f, -160.f, -160.f, 0.f, -160.f,
+                      0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+    if (auto* h = fromHandle(value); h && h->engine) {
+        DspLevelMeter levels{};
+        DspLimiterMeter limiter{};
+        if (dsp_get_level_meter(h->engine, &levels) == DSP_OK) {
+            vals[0] = levels.in_peak_db;
+            vals[1] = levels.in_true_peak_db;
+            vals[2] = levels.post_eq_peak_db;
+            vals[3] = levels.bass_band_peak_db;
+            vals[4] = levels.headroom_db;
+            vals[5] = levels.short_term_rms_db;
+        }
+        if (dsp_limiter_get_meter(h->engine, &limiter) == DSP_OK) {
+            vals[6] = limiter.gr_db;
+            vals[7] = limiter.gr_peak_db;
+        }
+        vals[8] = dsp_auto_bass_get_applied_db(h->engine);
+        vals[9] = dsp_auto_gain_get_applied_db(h->engine);
+        vals[10] = dsp_auto_preamp_get_applied_db(h->engine);
+        vals[11] = dsp_auto_vb_get_applied(h->engine);
+    }
+    env->SetFloatArrayRegion(arr, 0, 12, vals);
+    return arr;
+}
+
 extern "C" JNIEXPORT jdoubleArray JNICALL
 Java_com_aetherion_resonate_dsp_DspEngineJni_nativeGetStats(
         JNIEnv* env, jclass, jlong value) {
