@@ -56,20 +56,21 @@ jobs:
       - name: Flutter tests
         run: flutter test --reporter expanded
 
-      - name: Native DSP-ENGINE compile and integration smoke test
+      - name: Native DSP-ENGINE compile, unit tests and integration smoke test
         working-directory: android/app/src/main/cpp
         run: |
           set -euo pipefail
           cmake -S third_party/DSP-ENGINE -B /tmp/resonate-dsp-build \
             -DDSP_BUILD_SHARED=OFF \
             -DDSP_BUILD_STATIC=ON \
-            -DDSP_BUILD_TESTS=OFF \
+            -DDSP_BUILD_TESTS=ON \
             -DDSP_BUILD_EXAMPLES=OFF \
             -DDSP_BACKEND_AAUDIO=OFF \
             -DDSP_BACKEND_ALSA=OFF \
             -DDSP_BACKEND_COREAUDIO=OFF \
             -DDSP_BACKEND_WASAPI=OFF
           cmake --build /tmp/resonate-dsp-build --parallel 2
+          ctest --test-dir /tmp/resonate-dsp-build --output-on-failure
           g++ -std=c++17 -O2 \
             -Ithird_party/DSP-ENGINE/include \
             tests/dsp_engine_smoke.cpp \
