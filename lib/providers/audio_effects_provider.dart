@@ -209,6 +209,56 @@ class AudioEffectsProvider extends ChangeNotifier {
     );
   }
 
+  /// Apply the complete live DSP profile under one exclusive controller lease.
+  /// Screen controls and startup restoration therefore share the same authority.
+  Future<void> applyDspSettings(DspSettings settings, {bool pushSpeaker = true}) async {
+    await _withDspProfileLease(
+      operation: 'apply_dsp_settings',
+      priority: PlaybackControlPriority.interactive,
+      action: (lease) async {
+        if (!_authorizeDspWrite(lease, 'dvc')) return;
+        await AudioEffectsBridge.setLiveDspDvc(
+          enabled: settings.dvcEnabled, db: settings.dvcDb,
+          smoothing: settings.dvcSmoothing, smoothingMs: settings.dvcSmoothingMs,
+        );
+        if (!_authorizeDspWrite(lease, 'limiter_config')) return;
+        await AudioEffectsBridge.setLiveDspLimiterConfig(
+          enabled: settings.limiterEnabled, mode: settings.limiterMode,
+          thresholdDb: settings.limiterThresholdDb, releaseMs: settings.limiterReleaseMs,
+          attackMs: settings.limiterAttackMs, lookaheadMs: settings.limiterLookaheadMs,
+          kneeDb: settings.limiterKneeDb,
+        );
+        if (!_authorizeDspWrite(lease, 'limiter_ceiling')) return;
+        await AudioEffectsBridge.setLiveDspLimiterCeiling(
+          highDb: settings.limiterHighCeilingDb, lowDb: settings.limiterLowCeilingDb,
+        );
+        if (!_authorizeDspWrite(lease, 'crossover')) return;
+        await AudioEffectsBridge.setLiveDspCrossoverHz(settings.crossoverHz);
+        if (pushSpeaker) {
+          if (!_authorizeDspWrite(lease, 'speaker_protection')) return;
+          await AudioEffectsBridge.setLiveDspSpeakerMode(settings.speakerProtectionEnabled);
+          if (!_authorizeDspWrite(lease, 'virtual_bass')) return;
+          await AudioEffectsBridge.setLiveDspVirtualBass(settings.virtualBassAmount);
+        }
+        if (!_authorizeDspWrite(lease, 'dither')) return;
+        await AudioEffectsBridge.setLiveDspDither(enabled: settings.ditherEnabled, mode: settings.ditherMode);
+        if (!_authorizeDspWrite(lease, 'dsp_intelligence')) return;
+        await AudioEffectsBridge.setLiveDspIntelligenceConfig(
+          bassWeight: settings.headroomBassWeight,
+          preampWeight: settings.headroomPreampWeight,
+          gainWeight: settings.headroomGainWeight,
+          autoPreampEnabled: settings.autoPreampEnabled,
+          autoPreampTargetDb: settings.autoPreampTargetDb,
+          autoVirtualBassEnabled: settings.autoVirtualBassEnabled,
+          autoVirtualBassTarget: settings.autoVirtualBassTarget,
+          silenceHygieneEnabled: settings.silenceHygieneEnabled,
+          silenceThresholdDb: settings.silenceThresholdDb,
+          silenceHoldMs: settings.silenceHoldMs,
+        );
+      },
+    );
+  }
+
   Future<void> _load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -256,6 +306,19 @@ class AudioEffectsProvider extends ChangeNotifier {
           await AudioEffectsBridge.setLiveDspDither(
             enabled: canonical.ditherEnabled,
             mode: canonical.ditherMode,
+          );
+          if (!_authorizeDspWrite(lease, 'dsp_intelligence')) return;
+          await AudioEffectsBridge.setLiveDspIntelligenceConfig(
+            bassWeight: canonical.headroomBassWeight,
+            preampWeight: canonical.headroomPreampWeight,
+            gainWeight: canonical.headroomGainWeight,
+            autoPreampEnabled: canonical.autoPreampEnabled,
+            autoPreampTargetDb: canonical.autoPreampTargetDb,
+            autoVirtualBassEnabled: canonical.autoVirtualBassEnabled,
+            autoVirtualBassTarget: canonical.autoVirtualBassTarget,
+            silenceHygieneEnabled: canonical.silenceHygieneEnabled,
+            silenceThresholdDb: canonical.silenceThresholdDb,
+            silenceHoldMs: canonical.silenceHoldMs,
           );
         },
       );
