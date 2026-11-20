@@ -74,6 +74,14 @@ class DspEngineRegistryTest {
             calls += "dither:" + handle + ":" + enabled + ":" + mode
         }
 
+        override fun setAnalysisHint(
+            handle: Long, enabled: Boolean, samplePeakDb: Float, truePeakDb: Float,
+            rmsDb: Float, crestDb: Float, bassEnergyDb: Float,
+        ) {
+            calls += "analysis:" + handle + ":" + enabled + ":" + samplePeakDb + ":" +
+                truePeakDb + ":" + rmsDb + ":" + crestDb + ":" + bassEnergyDb
+        }
+
         override fun setIntelligenceConfig(
             handle: Long, bassWeight: Float, preampWeight: Float, gainWeight: Float,
             autoPreampEnabled: Boolean, autoPreampTargetDb: Float,
@@ -433,6 +441,47 @@ class DspEngineRegistryTest {
         assertTrue(DspEngineRegistry.register(3, 3003L))
         assertTrue(fake.calls.contains("limiter:3003:-12.0:-0.05"))
         assertTrue(fake.calls.contains("crossover:3003:200.0"))
+    }
+
+    @Test
+    fun analysis_hints_are_isolated_by_physical_deck_and_media_identity() {
+        assertTrue(DspEngineRegistry.setDeckTrack("A", "track-a"))
+        assertTrue(DspEngineRegistry.setDeckTrack("B", "track-b"))
+        assertTrue(DspEngineRegistry.register(101, 10101L, "A"))
+        assertTrue(DspEngineRegistry.register(102, 10202L, "B"))
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.applyDeckAnalysisHint(
+            "A", "track-a", -1f, -0.5f, -14f, 13f, -8f,
+        ))
+        assertFalse(DspEngineRegistry.applyDeckAnalysisHint(
+            "A", "track-b", -2f, -1f, -16f, 10f, -12f,
+        ))
+        assertTrue(fake.calls.any { it.startsWith("analysis:10101:true:-1.0:-0.5:-14.0:13.0:-8.0") })
+        assertFalse(fake.calls.any { it.startsWith("analysis:10202:true:") })
+
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.setDeckTrack("A", "track-c"))
+        assertTrue(fake.calls.any { it == "analysis:10101:false:-160.0:-160.0:-160.0:0.0:-160.0" })
+        assertFalse(fake.calls.any { it.startsWith("analysis:10202:false:") })
+        assertFalse(DspEngineRegistry.applyDeckAnalysisHint(
+            "A", "track-a", -1f, -0.5f, -14f, 13f, -8f,
+        ))
+    }
+
+    @Test
+    fun deck_analysis_hint_is_inherited_only_by_engine_for_same_current_track() {
+        assertTrue(DspEngineRegistry.setDeckTrack("B", "incoming"))
+        assertTrue(DspEngineRegistry.applyDeckAnalysisHint(
+            "B", "incoming", -3f, -2f, -18f, 15f, -10f,
+        ))
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.register(111, 11111L, "A"))
+        assertTrue(DspEngineRegistry.register(112, 11212L, "B"))
+
+        assertFalse(fake.calls.any { it.startsWith("analysis:11111:true:") })
+        assertTrue(fake.calls.any { it.startsWith("analysis:11212:true:-3.0:-2.0:-18.0:15.0:-10.0") })
     }
 
     @Test
