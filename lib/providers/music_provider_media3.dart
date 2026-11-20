@@ -138,7 +138,7 @@ extension MusicProviderMedia3 on MusicProvider {
       return;
     }
 
-    late final int transitionGeneration;
+    var transitionGeneration = _automaticTransitionGeneration;
     final controlLease = await playbackControlArbiter.acquire(
       owner: 'media3_automatic_crossfade',
       priority: PlaybackControlPriority.automatic,
@@ -753,7 +753,7 @@ extension MusicProviderMedia3 on MusicProvider {
       return;
     }
 
-    late final int generation;
+    var generation = _automaticTransitionGeneration;
     final controlLease = await playbackControlArbiter.acquire(
       owner: 'media3_repeat_self_fade',
       priority: PlaybackControlPriority.automatic,
