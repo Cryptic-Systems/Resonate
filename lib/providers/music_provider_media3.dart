@@ -798,14 +798,18 @@ extension MusicProviderMedia3 on MusicProvider {
           promoted.complete(state);
         }
       });
-      await ResonateDiagnostics.record('media3_repeat_self_crossfade_start', {
+      // Publish the audible-fade phase before any diagnostic await. The
+      // UI can change Repeat One as soon as the native crossfade is requested;
+      // an intervening async diagnostics write must not leave a cancellation
+      // window in which the provider still classifies this as preload-only.
+      _repeatSelfFadeExecuting = true;
+      unawaited(ResonateDiagnostics.record('media3_repeat_self_crossfade_start', {
         'songId': song.id,
         'queueIndex': queueIndex,
         'fromDeck': outgoingDeckId,
         'durationMs': durationMs,
         'remainingMs': remainingMs,
-      });
-      _repeatSelfFadeExecuting = true;
+      }));
       await session.crossfade(duration: Duration(milliseconds: durationMs));
       final promotedState = await promoted.future.timeout(
         Duration(milliseconds: durationMs + 6500),
