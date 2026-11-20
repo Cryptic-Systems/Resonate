@@ -120,37 +120,23 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
             crossoverHz: current.crossoverHz,
             speakerProtectionEnabled: current.speakerProtectionEnabled,
             virtualBassAmount: current.virtualBassAmount,
+            headroomBassWeight: current.headroomBassWeight,
+            headroomPreampWeight: current.headroomPreampWeight,
+            headroomGainWeight: current.headroomGainWeight,
+            autoPreampEnabled: current.autoPreampEnabled,
+            autoPreampTargetDb: current.autoPreampTargetDb,
+            autoVirtualBassEnabled: current.autoVirtualBassEnabled,
+            autoVirtualBassTarget: current.autoVirtualBassTarget,
+            silenceHygieneEnabled: current.silenceHygieneEnabled,
+            silenceThresholdDb: current.silenceThresholdDb,
+            silenceHoldMs: current.silenceHoldMs,
             ditherEnabled: current.ditherEnabled,
             ditherMode: current.ditherMode,
           ));
       if (!mounted) return;
-      await AudioEffectsBridge.setLiveDspDvc(
-        enabled: current.dvcEnabled,
-        db: current.dvcDb,
-        smoothing: current.dvcSmoothing,
-        smoothingMs: current.dvcSmoothingMs,
-      );
-      await AudioEffectsBridge.setLiveDspLimiterConfig(
-        enabled: current.limiterEnabled,
-        mode: current.limiterMode,
-        thresholdDb: current.limiterThresholdDb,
-        releaseMs: current.limiterReleaseMs,
-        attackMs: current.limiterAttackMs,
-        lookaheadMs: current.limiterLookaheadMs,
-        kneeDb: current.limiterKneeDb,
-      );
-      await AudioEffectsBridge.setLiveDspLimiterCeiling(
-        highDb: current.limiterHighCeilingDb,
-        lowDb: current.limiterLowCeilingDb,
-      );
-      await AudioEffectsBridge.setLiveDspCrossoverHz(current.crossoverHz);
-      if (pushSpeaker) {
-        await AudioEffectsBridge.setLiveDspSpeakerMode(current.speakerProtectionEnabled);
-        await AudioEffectsBridge.setLiveDspVirtualBass(current.virtualBassAmount);
-      }
-      await AudioEffectsBridge.setLiveDspDither(
-        enabled: current.ditherEnabled,
-        mode: current.ditherMode,
+      await context.read<AudioEffectsProvider>().applyDspSettings(
+        current,
+        pushSpeaker: pushSpeaker,
       );
       if (mounted) {
         setState(() => _statusFuture = AudioEffectsBridge.getLiveDspStatus());
@@ -483,6 +469,112 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
                           suffix: 'dB',
                           divisions: 48,
                           onChanged: (v) => _changeSettings((s) => s.copyWith(preampDb: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                      ],
+                    ),
+                    _advancedSection(
+                      'DSP intelligence and headroom',
+                      'Adaptive controls are independent of your manual EQ preamp. Headroom weights are normalized by the native engine.',
+                      [
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Automatic preamp'),
+                          subtitle: const Text('DSP adjusts preamp toward the selected target using its live signal analysis.'),
+                          value: settings.autoPreampEnabled,
+                          onChanged: (v) {
+                            _changeSettings((s) => s.copyWith(autoPreampEnabled: v));
+                            _commit();
+                          },
+                        ),
+                        _valueSlider(
+                          label: 'Auto-preamp target',
+                          value: settings.autoPreampTargetDb,
+                          min: -12,
+                          max: 12,
+                          suffix: 'dB',
+                          divisions: 96,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(autoPreampTargetDb: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Automatic virtual bass'),
+                          subtitle: const Text('Lets DSP adapt virtual-bass intensity to the configured target.'),
+                          value: settings.autoVirtualBassEnabled,
+                          onChanged: (v) {
+                            _changeSettings((s) => s.copyWith(autoVirtualBassEnabled: v));
+                            _commit();
+                          },
+                        ),
+                        _valueSlider(
+                          label: 'Auto virtual-bass target',
+                          value: settings.autoVirtualBassTarget,
+                          min: 0,
+                          max: 1,
+                          suffix: 'level',
+                          divisions: 100,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(autoVirtualBassTarget: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Silence hygiene'),
+                          subtitle: const Text('Suppresses shaped-dither residue during sustained digital silence.'),
+                          value: settings.silenceHygieneEnabled,
+                          onChanged: (v) {
+                            _changeSettings((s) => s.copyWith(silenceHygieneEnabled: v));
+                            _commit();
+                          },
+                        ),
+                        _valueSlider(
+                          label: 'Silence threshold',
+                          value: settings.silenceThresholdDb,
+                          min: -120,
+                          max: -20,
+                          suffix: 'dBFS',
+                          divisions: 100,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(silenceThresholdDb: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                        _valueSlider(
+                          label: 'Silence hold',
+                          value: settings.silenceHoldMs,
+                          min: 50,
+                          max: 5000,
+                          suffix: 'ms',
+                          divisions: 99,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(silenceHoldMs: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                        _valueSlider(
+                          label: 'Bass headroom allocation',
+                          value: settings.headroomBassWeight,
+                          min: 0,
+                          max: 1,
+                          suffix: 'weight',
+                          divisions: 100,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(headroomBassWeight: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                        _valueSlider(
+                          label: 'Preamp headroom allocation',
+                          value: settings.headroomPreampWeight,
+                          min: 0,
+                          max: 1,
+                          suffix: 'weight',
+                          divisions: 100,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(headroomPreampWeight: v)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                        _valueSlider(
+                          label: 'Gain headroom allocation',
+                          value: settings.headroomGainWeight,
+                          min: 0,
+                          max: 1,
+                          suffix: 'weight',
+                          divisions: 100,
+                          onChanged: (v) => _changeSettings((s) => s.copyWith(headroomGainWeight: v)),
                           onChangeEnd: (_) => _commit(),
                         ),
                       ],
