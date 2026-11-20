@@ -42,16 +42,16 @@ void main() {
       var cleanupSawCurrentLease = true;
       PlaybackControlRevocation? observedRevocation;
 
-      final automatic = await arbiter.acquire(
+      late PlaybackControlLease automaticLease;
+      automaticLease = (await arbiter.acquire(
         owner: 'dj_autopilot',
         priority: PlaybackControlPriority.automatic,
         onRevoked: (revocation) {
-          cleanupSawCurrentLease = automaticLease!.isCurrent;
+          cleanupSawCurrentLease = automaticLease.isCurrent;
           observedRevocation = revocation;
         },
-      );
-      final automaticLease = automatic;
-      expect(automaticLease, isNotNull);
+      ))!;
+      expect(automaticLease.isCurrent, isTrue);
 
       final manual = await arbiter.acquire(
         owner: 'user_transport',
