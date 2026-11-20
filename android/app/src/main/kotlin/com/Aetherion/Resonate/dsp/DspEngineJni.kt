@@ -101,6 +101,10 @@ object DspEngineJni {
     /** [processCalls, avgUs, maxUs, overruns, lastFrames, sampleRate] */
     external fun nativeGetMeters(handle: Long): FloatArray?
     external fun nativeGetStats(handle: Long): DoubleArray?
+    external fun nativeProbeMaxBassGainDb(
+        pcm16: ByteArray, channels: Int, sampleRate: Float,
+        shelfFreqHz: Float, ceilingDb: Float, marginDb: Float,
+    ): Float
 
     external fun nativeResetStats(handle: Long)
 
