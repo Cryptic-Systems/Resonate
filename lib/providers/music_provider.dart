@@ -3606,8 +3606,8 @@ class MusicProvider extends ChangeNotifier {
     // Mark transport intent synchronously, before the diagnostic write or
     // coordinator await. Otherwise a near-end position callback can launch a
     // fresh automatic crossfade in the gap before a tapped track starts.
-    final transportPriority = userInitiated &&
-        TransportCommandPolicy.hasTransportPriority(command);
+    final transportPriority = TransportCommandPolicy.hasTransportPriority(command) &&
+        (userInitiated || source == 'system' || source == 'becoming_noisy');
     if (transportPriority) _pendingUserTransportCount++;
     try {
       final effectiveIntent = intentToken ??
