@@ -204,12 +204,19 @@ object DspEngineRegistry {
         if (deckId !in setOf("A", "B")) return false
         val normalized = songId?.trim()?.takeIf { it.isNotEmpty() }
         if (deckTracks[deckId] == normalized) return true
+        val siblingDeckId = if (deckId == "A") "B" else "A"
+        // Repeat One can prepare the same media item on the opposite physical
+        // deck. Carry its hint only when the exact stable song ID matches.
+        val inheritedHint = normalized?.let { songId ->
+            deckAnalysisHints[siblingDeckId]?.takeIf { it.songId == songId }
+        }
         if (normalized == null) deckTracks.remove(deckId) else deckTracks[deckId] = normalized
         deckAnalysisHints.remove(deckId)
         handles.values.filter { it.deckId == deckId }.forEach { engine ->
             runCatching { clearAnalysisHint(engine.handle) }
                 .onFailure { Log.w(TAG, "clear deck analysis hint failed deck=$deckId handle=${engine.handle}", it) }
         }
+        if (inheritedHint != null) applyAnalysisHintToDeck(deckId, inheritedHint)
         return true
     }
 
@@ -228,16 +235,27 @@ object DspEngineRegistry {
             bassEnergyDb !in -160f..0.1f
         ) return false
         val hint = DeckAnalysisHint(songId, samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb)
+        if (!applyAnalysisHintToDeck(deckId, hint)) return false
+        // If both physical decks currently hold the exact same track (Repeat
+        // One), keep their independent engines on the same measured profile.
+        val siblingDeckId = if (deckId == "A") "B" else "A"
+        if (deckTracks[siblingDeckId] == songId) {
+            applyAnalysisHintToDeck(siblingDeckId, hint)
+        }
+        return true
+    }
+
+    private fun applyAnalysisHintToDeck(deckId: String, hint: DeckAnalysisHint): Boolean {
         val engines = handles.values.filter { it.deckId == deckId }
-        try {
+        return try {
             engines.forEach { engine -> applyAnalysisHint(engine.handle, hint) }
             deckAnalysisHints[deckId] = hint
-            return true
+            true
         } catch (t: Throwable) {
-            Log.w(TAG, "apply deck analysis hint failed deck=$deckId song=$songId", t)
+            Log.w(TAG, "apply deck analysis hint failed deck=$deckId song=${hint.songId}", t)
             engines.forEach { engine -> runCatching { clearAnalysisHint(engine.handle) } }
             deckAnalysisHints.remove(deckId)
-            return false
+            false
         }
     }
 
