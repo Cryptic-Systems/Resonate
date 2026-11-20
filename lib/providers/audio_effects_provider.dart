@@ -242,6 +242,19 @@ class AudioEffectsProvider extends ChangeNotifier {
         }
         if (!_authorizeDspWrite(lease, 'dither')) return;
         await AudioEffectsBridge.setLiveDspDither(enabled: settings.ditherEnabled, mode: settings.ditherMode);
+        if (!_authorizeDspWrite(lease, 'auto_dynamics')) return;
+        await AudioEffectsBridge.setLiveDspAutoDynamicsConfig(
+          autoBassEnabled: settings.autoBassEnabled,
+          autoBassTargetDb: settings.autoBassTargetDb,
+          autoBassMarginDb: settings.autoBassMarginDb,
+          autoBassFreqHz: settings.autoBassFreqHz,
+          autoGainEnabled: settings.autoGainEnabled,
+          autoGainTargetRmsDb: settings.autoGainTargetRmsDb,
+          autoGainBiasDb: settings.autoGainBiasDb,
+          autoGainMaxBoostDb: settings.autoGainMaxBoostDb,
+          autoGainMaxCutDb: settings.autoGainMaxCutDb,
+          autoGainWindowMs: settings.autoGainWindowMs,
+        );
         if (!_authorizeDspWrite(lease, 'dsp_intelligence')) return;
         await AudioEffectsBridge.setLiveDspIntelligenceConfig(
           bassWeight: settings.headroomBassWeight,
@@ -306,6 +319,19 @@ class AudioEffectsProvider extends ChangeNotifier {
           await AudioEffectsBridge.setLiveDspDither(
             enabled: canonical.ditherEnabled,
             mode: canonical.ditherMode,
+          );
+          if (!_authorizeDspWrite(lease, 'auto_dynamics')) return;
+          await AudioEffectsBridge.setLiveDspAutoDynamicsConfig(
+            autoBassEnabled: canonical.autoBassEnabled,
+            autoBassTargetDb: canonical.autoBassTargetDb,
+            autoBassMarginDb: canonical.autoBassMarginDb,
+            autoBassFreqHz: canonical.autoBassFreqHz,
+            autoGainEnabled: canonical.autoGainEnabled,
+            autoGainTargetRmsDb: canonical.autoGainTargetRmsDb,
+            autoGainBiasDb: canonical.autoGainBiasDb,
+            autoGainMaxBoostDb: canonical.autoGainMaxBoostDb,
+            autoGainMaxCutDb: canonical.autoGainMaxCutDb,
+            autoGainWindowMs: canonical.autoGainWindowMs,
           );
           if (!_authorizeDspWrite(lease, 'dsp_intelligence')) return;
           await AudioEffectsBridge.setLiveDspIntelligenceConfig(
