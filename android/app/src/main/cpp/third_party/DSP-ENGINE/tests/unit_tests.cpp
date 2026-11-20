@@ -673,4 +673,33 @@ TEST(resonate_twoband_limiter_mode_and_timing_updates) {
     dsp_destroy(eng);
 }
 
+TEST(resonate_shaped_dither_noise_is_bounded) {
+    DspConfig cfg{};
+    cfg.sample_rate = 48000.f;
+    cfg.channels = 2;
+    cfg.max_block = 256;
+    cfg.enable_eq = 0;
+    cfg.enable_dvc = 0;
+    cfg.enable_limiter = 0;
+    cfg.enable_dither = 1;
+    cfg.dither_mode = DSP_DITHER_SHAPED;
+    DspEngine* eng = dsp_create(&cfg);
+    EXPECT_TRUE(eng != nullptr);
+
+    constexpr int frames = 256;
+    std::vector<int16_t> pcm(frames * 2, 0);
+    int max_abs = 0;
+    for (int block = 0; block < 64; ++block) {
+        std::fill(pcm.begin(), pcm.end(), 0);
+        EXPECT_EQ(dsp_process_pcm16(eng, pcm.data(), frames), DSP_OK);
+        for (int16_t sample : pcm) {
+            int magnitude = static_cast<int>(sample);
+            if (magnitude < 0) magnitude = -magnitude;
+            if (magnitude > max_abs) max_abs = magnitude;
+        }
+    }
+    EXPECT_TRUE(max_abs <= 2);
+    dsp_destroy(eng);
+}
+
 int main() { return run_all(); }
