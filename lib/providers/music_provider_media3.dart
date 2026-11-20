@@ -755,7 +755,8 @@ extension MusicProviderMedia3 on MusicProvider {
         _userWantsPlaying &&
         effectiveCrossfadeEnabled &&
         (_repeatMode == PlaybackRepeatMode.one ||
-            (_repeatSelfHandoffInFlight && _crossfadeInProgress));
+            (_repeatSelfHandoffInFlight &&
+                (_crossfadeInProgress || _repeatSelfFadeExecuting)));
 
     StreamSubscription<Media3ProviderState>? promotionSubscription;
     try {
