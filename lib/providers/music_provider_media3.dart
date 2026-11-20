@@ -138,9 +138,14 @@ extension MusicProviderMedia3 on MusicProvider {
       return;
     }
 
+    late final int transitionGeneration;
     final controlLease = await playbackControlArbiter.acquire(
       owner: 'media3_automatic_crossfade',
       priority: PlaybackControlPriority.automatic,
+      onRevoked: (revocation) => _onPlaybackControlLeaseRevoked(
+        transitionGeneration: transitionGeneration,
+        revocation: revocation,
+      ),
     );
     if (controlLease == null) {
       _automaticCrossfadeInFlight = false;
@@ -150,7 +155,7 @@ extension MusicProviderMedia3 on MusicProvider {
       return;
     }
     final generation = _authority.beginAutomatic('media3_automatic_crossfade');
-    final transitionGeneration = ++_automaticTransitionGeneration;
+    transitionGeneration = ++_automaticTransitionGeneration;
     final transportEpoch = _userTransportEpoch;
     bool stillOwnsTransition() =>
         controlLease.isCurrent &&
@@ -748,9 +753,14 @@ extension MusicProviderMedia3 on MusicProvider {
       return;
     }
 
+    late final int generation;
     final controlLease = await playbackControlArbiter.acquire(
       owner: 'media3_repeat_self_fade',
       priority: PlaybackControlPriority.automatic,
+      onRevoked: (revocation) => _onPlaybackControlLeaseRevoked(
+        transitionGeneration: generation,
+        revocation: revocation,
+      ),
     );
     if (controlLease == null) {
       _repeatSelfHandoffInFlight = false;
@@ -761,7 +771,7 @@ extension MusicProviderMedia3 on MusicProvider {
 
     // Claim the repeat-self handoff before issuing native transition commands.
     _repeatSelfHandoffInFlight = true;
-    final generation = ++_automaticTransitionGeneration;
+    generation = ++_automaticTransitionGeneration;
     final transportEpoch = _userTransportEpoch;
     final outgoingDeckId = _media3ShadowState?.activeDeckId ?? 'A';
     final durationMs = math.min(loopMs, remainingMs - 180)
