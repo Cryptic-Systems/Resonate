@@ -24,6 +24,7 @@ object DspEngineRegistry {
         val rmsDb: Float,
         val crestDb: Float,
         val bassEnergyDb: Float,
+        val maxSafeBassDb: Float,
     )
 
     private val handles = ConcurrentHashMap<Int, RegisteredEngine>()
@@ -54,7 +55,7 @@ object DspEngineRegistry {
         fun setDither(handle: Long, enabled: Boolean, mode: Int) {}
         fun setAnalysisHint(
             handle: Long, enabled: Boolean, samplePeakDb: Float, truePeakDb: Float,
-            rmsDb: Float, crestDb: Float, bassEnergyDb: Float,
+            rmsDb: Float, crestDb: Float, bassEnergyDb: Float, maxSafeBassDb: Float,
         ) {}
         fun setAutoDynamicsConfig(
             handle: Long, autoBassEnabled: Boolean, autoBassTargetDb: Float,
@@ -93,9 +94,9 @@ object DspEngineRegistry {
             DspEngineJni.nativeSetDither(handle, enabled, mode)
         override fun setAnalysisHint(
             handle: Long, enabled: Boolean, samplePeakDb: Float, truePeakDb: Float,
-            rmsDb: Float, crestDb: Float, bassEnergyDb: Float,
+            rmsDb: Float, crestDb: Float, bassEnergyDb: Float, maxSafeBassDb: Float,
         ) = DspEngineJni.nativeSetAnalysisHint(
-            handle, enabled, samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb,
+            handle, enabled, samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb, maxSafeBassDb,
         )
         override fun setAutoDynamicsConfig(
             handle: Long, autoBassEnabled: Boolean, autoBassTargetDb: Float,
@@ -253,16 +254,17 @@ object DspEngineRegistry {
     @Synchronized
     fun applyDeckAnalysisHint(
         deckId: String, songId: String, samplePeakDb: Float, truePeakDb: Float,
-        rmsDb: Float, crestDb: Float, bassEnergyDb: Float,
+        rmsDb: Float, crestDb: Float, bassEnergyDb: Float, maxSafeBassDb: Float = 24f,
     ): Boolean {
         if (deckId !in setOf("A", "B") || songId.isBlank() || deckTracks[deckId] != songId) return false
-        val metrics = floatArrayOf(samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb)
+        val metrics = floatArrayOf(samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb, maxSafeBassDb)
         if (metrics.any { !it.isFinite() } ||
             samplePeakDb !in -160f..6f || truePeakDb !in -160f..6f ||
             rmsDb !in -160f..0.1f || crestDb !in 0f..30f ||
-            bassEnergyDb !in -160f..0.1f
+            bassEnergyDb !in -160f..0.1f ||
+            (maxSafeBassDb != 24f && maxSafeBassDb !in 0f..18f)
         ) return false
-        val hint = DeckAnalysisHint(songId, samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb)
+        val hint = DeckAnalysisHint(songId, samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb, maxSafeBassDb)
         if (!applyAnalysisHintToDeck(deckId, hint)) return false
         // If both physical decks currently hold the exact same track (Repeat
         // One), keep their independent engines on the same measured profile.
@@ -290,14 +292,14 @@ object DspEngineRegistry {
     private fun applyAnalysisHint(handle: Long, hint: DeckAnalysisHint) {
         nativeApi.setAnalysisHint(
             handle, true, hint.samplePeakDb, hint.truePeakDb, hint.rmsDb,
-            hint.crestDb, hint.bassEnergyDb,
+            hint.crestDb, hint.bassEnergyDb, hint.maxSafeBassDb,
         )
     }
 
     private fun clearAnalysisHint(handle: Long) {
         // Finite digital-silence sentinels clear bass/level context. JNI applies
         // crest=0 explicitly to restore the engine's base limiter personality.
-        nativeApi.setAnalysisHint(handle, false, -160f, -160f, -160f, 0f, -160f)
+        nativeApi.setAnalysisHint(handle, false, -160f, -160f, -160f, 0f, -160f, 24f)
     }
 
     /** True when this physical deck currently owns the canonical MediaSession role. */
