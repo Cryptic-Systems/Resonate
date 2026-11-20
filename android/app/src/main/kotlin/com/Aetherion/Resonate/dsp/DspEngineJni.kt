@@ -75,6 +75,19 @@ object DspEngineJni {
         silenceHoldMs: Float,
     )
 
+    external fun nativeSetAutoDynamicsConfig(
+        handle: Long,
+        autoBassEnabled: Boolean,
+        autoBassTargetDb: Float,
+        autoBassMarginDb: Float,
+        autoBassFreqHz: Float,
+        autoGainEnabled: Boolean,
+        autoGainTargetRmsDb: Float,
+        autoGainBiasDb: Float,
+        autoGainMaxBoostDb: Float,
+        autoGainMaxCutDb: Float,
+        autoGainWindowMs: Float,
+    )
     external fun nativeSetAnalysisHint(
         handle: Long,
         enabled: Boolean,
