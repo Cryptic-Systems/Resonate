@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <mutex>
+#include <vector>
 #include <new>
 
 #define LOG_TAG "DspEngineJni"
@@ -76,6 +77,7 @@ struct PendingSettings {
     std::atomic<float> analysisRmsDb{-160.f};
     std::atomic<float> analysisCrestDb{0.f};
     std::atomic<float> analysisBassEnergyDb{-160.f};
+    std::atomic<float> analysisMaxSafeBassDb{24.f};
 
     PendingSettings() {
         for (int i = 0; i < kMaxEqBands; ++i) {
@@ -147,6 +149,7 @@ struct Snapshot {
     float analysisRmsDb = -160.f;
     float analysisCrestDb = 0.f;
     float analysisBassEnergyDb = -160.f;
+    float analysisMaxSafeBassDb = 24.f;
 };
 
 struct NativeHandle {
@@ -226,6 +229,7 @@ bool readSnapshot(const PendingSettings& p, Snapshot* out) {
         s.analysisRmsDb = p.analysisRmsDb.load(std::memory_order_relaxed);
         s.analysisCrestDb = p.analysisCrestDb.load(std::memory_order_relaxed);
         s.analysisBassEnergyDb = p.analysisBassEnergyDb.load(std::memory_order_relaxed);
+        s.analysisMaxSafeBassDb = p.analysisMaxSafeBassDb.load(std::memory_order_relaxed);
         const uint32_t after = p.sequence.load(std::memory_order_acquire);
         if (before == after && (after & 1U) == 0U) {
             *out = s;
@@ -355,16 +359,16 @@ void applyPending(NativeHandle* h) {
         s.analysisTruePeakDb != old.analysisTruePeakDb ||
         s.analysisRmsDb != old.analysisRmsDb ||
         s.analysisCrestDb != old.analysisCrestDb ||
-        s.analysisBassEnergyDb != old.analysisBassEnergyDb) {
+        s.analysisBassEnergyDb != old.analysisBassEnergyDb ||
+        s.analysisMaxSafeBassDb != old.analysisMaxSafeBassDb) {
         DspAnalysisResult analysis{};
         analysis.sample_peak_db = s.analysisHintEnabled ? s.analysisSamplePeakDb : -160.f;
         analysis.true_peak_db = s.analysisHintEnabled ? s.analysisTruePeakDb : -160.f;
         analysis.rms_db = s.analysisHintEnabled ? s.analysisRmsDb : -160.f;
         analysis.crest_db = s.analysisHintEnabled ? s.analysisCrestDb : 0.f;
         analysis.bass_energy_db = s.analysisHintEnabled ? s.analysisBassEnergyDb : -160.f;
-        // 24 dB is the upstream sentinel for no max-safe-bass cap. Resonate
-        // does not yet measure that value, so never fabricate it.
-        dsp_apply_analysis_hint(e, &analysis, 24.f);
+        // 24 dB is upstream's no-cap sentinel; otherwise use the measured probe.
+        dsp_apply_analysis_hint(e, &analysis, s.analysisHintEnabled ? s.analysisMaxSafeBassDb : 24.f);
         // Upstream only updates crest for positive hints; explicitly clear a
         // previous track's limiter personality when a physical deck is reused.
         dsp_limiter_set_crest_hint(e, analysis.crest_db > 0.f ? analysis.crest_db : 0.f);
@@ -690,12 +694,13 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetAnalysisHint(
         JNIEnv*, jclass, jlong value, jboolean enabled,
         jfloat samplePeakDb, jfloat truePeakDb, jfloat rmsDb,
-        jfloat crestDb, jfloat bassEnergyDb) {
+        jfloat crestDb, jfloat bassEnergyDb, jfloat maxSafeBassDb) {
     if (auto* h = fromHandle(value)) {
         const bool useHint = enabled == JNI_TRUE &&
             std::isfinite(samplePeakDb) && std::isfinite(truePeakDb) &&
             std::isfinite(rmsDb) && std::isfinite(crestDb) &&
-            std::isfinite(bassEnergyDb);
+            std::isfinite(bassEnergyDb) &&
+            (maxSafeBassDb == 24.f || (std::isfinite(maxSafeBassDb) && maxSafeBassDb >= 0.f && maxSafeBassDb <= 18.f));
         h->pending.update([&] {
             h->pending.analysisHintEnabled.store(useHint ? 1 : 0, std::memory_order_relaxed);
             h->pending.analysisSamplePeakDb.store(useHint ? std::clamp(samplePeakDb, -160.f, 6.f) : -160.f, std::memory_order_relaxed);
@@ -703,6 +708,7 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetAnalysisHint(
             h->pending.analysisRmsDb.store(useHint ? std::clamp(rmsDb, -160.f, 0.1f) : -160.f, std::memory_order_relaxed);
             h->pending.analysisCrestDb.store(useHint ? std::clamp(crestDb, 0.f, 30.f) : 0.f, std::memory_order_relaxed);
             h->pending.analysisBassEnergyDb.store(useHint ? std::clamp(bassEnergyDb, -160.f, 0.1f) : -160.f, std::memory_order_relaxed);
+            h->pending.analysisMaxSafeBassDb.store(useHint ? maxSafeBassDb : 24.f, std::memory_order_relaxed);
         });
     }
 }
