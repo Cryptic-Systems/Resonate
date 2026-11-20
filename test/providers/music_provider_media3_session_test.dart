@@ -2880,7 +2880,8 @@ void main() {
       // the same-track deck promotion has completed.
       final repeatGate = Completer<void>();
       session.repeatModeGate = repeatGate;
-      session.repeatModeGateOnCall = session.repeatModeCallCount + 2;
+      final finalizationRepeatCall = session.repeatModeCallCount + 2;
+      session.repeatModeGateOnCall = finalizationRepeatCall;
       session.positionValue = const Duration(seconds: 178);
       session.states.add(_state(
         song: song,
@@ -2905,12 +2906,13 @@ void main() {
       // The final native restore is the second repeat write in this handoff:
       // the first is the success-path restore, the second is finalization.
       for (var attempt = 0;
-          attempt < 100 && session.repeatModeGate != null;
+          attempt < 100 &&
+              session.repeatModeCallCount < finalizationRepeatCall;
           attempt++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
-      expect(session.repeatModeGate, isNull,
-          reason: 'The finalization repeat write should be held by the test gate.');
+      expect(session.repeatModeCallCount, greaterThanOrEqualTo(finalizationRepeatCall),
+          reason: 'The finalization repeat write should reach the held test gate.');
 
       // Re-enable Repeat One while the native Off write is blocked. This newer
       // command must run after that write, not be swallowed by fade cleanup.
