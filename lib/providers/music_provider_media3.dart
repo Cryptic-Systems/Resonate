@@ -126,13 +126,34 @@ extension MusicProviderMedia3 on MusicProvider {
       _drainPendingMedia3Completion();
       return;
     }
-    final generation = _authority.beginAutomatic('media3_automatic_crossfade');
-    final transitionGeneration = ++_automaticTransitionGeneration;
-    final transportEpoch = _userTransportEpoch;
     final outgoingSong = currentSong;
     final nextSong = _crossfadeTargetSong;
     final nextIndex = _crossfadeTargetIndex;
+    if (outgoingSong == null || nextSong == null || nextIndex < 0 ||
+        !session.isPlaying) {
+      _automaticCrossfadeInFlight = false;
+      _crossfadeInProgress = false;
+      _transitionArmedAt = null;
+      _drainPendingMedia3Completion();
+      return;
+    }
+
+    final controlLease = await playbackControlArbiter.acquire(
+      owner: 'media3_automatic_crossfade',
+      priority: PlaybackControlPriority.automatic,
+    );
+    if (controlLease == null) {
+      _automaticCrossfadeInFlight = false;
+      _crossfadeInProgress = false;
+      _transitionArmedAt = null;
+      _drainPendingMedia3Completion();
+      return;
+    }
+    final generation = _authority.beginAutomatic('media3_automatic_crossfade');
+    final transitionGeneration = ++_automaticTransitionGeneration;
+    final transportEpoch = _userTransportEpoch;
     bool stillOwnsTransition() =>
+        controlLease.isCurrent &&
         _media3ProviderSessionActive &&
         !_disposed &&
         _userWantsPlaying &&
@@ -142,14 +163,6 @@ extension MusicProviderMedia3 on MusicProvider {
         !_authority.isStale(generation) &&
         !_transportInFlight &&
         !_userTransportPending;
-    if (outgoingSong == null || nextSong == null || nextIndex < 0 ||
-        !session.isPlaying) {
-      _automaticCrossfadeInFlight = false;
-      _crossfadeInProgress = false;
-      _transitionArmedAt = null;
-      _drainPendingMedia3Completion();
-      return;
-    }
 
     _crossfadeInProgress = true;
     _transitionArmedAt = DateTime.now();
@@ -629,6 +642,7 @@ extension MusicProviderMedia3 on MusicProvider {
         _lastDjIncomingBeatMs = const <int>[];
         _lastDjIncomingBpm = null;
       }
+      await controlLease.release();
       _drainPendingMedia3Completion();
     }
   }
