@@ -224,10 +224,10 @@ int main() {
     ok &= verify_midrange_boost(1000.f, 1250.f);
 
     if (!ok) {
-        std::fprintf(stderr, "DSP v0.4 integration smoke test failed\n");
+        std::fprintf(stderr, "DSP v0.6 integration smoke test failed\n");
         return 2;
     }
-    std::printf("DSP v0.4 integration smoke test passed (%d bands, %d frames)\n",
+    std::printf("DSP v0.6 integration smoke test passed (%d bands, %d frames)\n",
                 DSP_EQ_MAX_BANDS, frames);
     return 0;
 }
