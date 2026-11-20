@@ -273,11 +273,13 @@ class EqualizerProvider extends ChangeNotifier {
     final route = AudioOutputRouteService.instance;
     // Auto DSP posture: phone speaker → protection + virtual bass;
     // headphones / BT → full DSP, light bass; car → full DSP, no virtual bass.
-    syncSpeakerPolicy(
+    unawaited(syncSpeakerPolicy(
       needsSpeakerProtection: route.needsSpeakerProtection,
       virtualBassAmount: route.suggestedVirtualBass,
       route: route.route,
-    );
+      arbiter: _music?.playbackControlArbiter,
+      priority: PlaybackControlPriority.background,
+    ));
   }
 
 
@@ -1183,11 +1185,11 @@ class EqualizerProvider extends ChangeNotifier {
 
           // _applyPreamp() owns the effective gain, including automatic headroom.
           final route = AudioOutputRouteService.instance;
-          if (!_authorizeDspWrite(lease, 'speaker_policy')) return;
-          syncSpeakerPolicy(
+          await syncSpeakerPolicy(
             needsSpeakerProtection: route.needsSpeakerProtection,
             virtualBassAmount: route.suggestedVirtualBass,
             route: route.route,
+            lease: lease,
           );
         } catch (e) {
           debugPrint('pushLiveDspCurve failed: $e');
