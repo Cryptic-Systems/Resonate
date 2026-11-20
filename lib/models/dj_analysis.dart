@@ -7,9 +7,10 @@
 /// [analysisVersion] lets the engine re-analyze in the background when the
 /// estimator improves, without discarding older rows or blocking playback.
 class DjAnalysis {
-  /// Bump when the analyzer pipeline changes in a meaningful way
-  /// (v1: native PCM BPM; v2: energy/loudness; v3: beatOffset + ID3+PCM merge).
-  static const int currentVersion = 7;
+  /// Bump when the analyzer pipeline changes in a meaningful way.
+  /// v8 adds measured sample/true peak, RMS, crest and bass-energy metrics
+  /// from decoded PCM windows for deck-local DSP intelligence.
+  static const int currentVersion = 8;
 
   final String songId;
   final double? bpm;
