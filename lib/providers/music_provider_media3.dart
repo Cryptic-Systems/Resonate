@@ -748,10 +748,18 @@ extension MusicProviderMedia3 on MusicProvider {
       return;
     }
 
-    // Claim the repeat-self handoff before the temporary native repeat-off
-    // command. Media3 emits that policy change through stateStream; without
-    // this early ownership marker, the observer mistakes our internal
-    // repeat-off window for an external user change and cancels the fade.
+    final controlLease = await playbackControlArbiter.acquire(
+      owner: 'media3_repeat_self_fade',
+      priority: PlaybackControlPriority.automatic,
+    );
+    if (controlLease == null) {
+      _repeatSelfHandoffInFlight = false;
+      _automaticCrossfadeInFlight = false;
+      _transitionArmedAt = null;
+      return;
+    }
+
+    // Claim the repeat-self handoff before issuing native transition commands.
     _repeatSelfHandoffInFlight = true;
     final generation = ++_automaticTransitionGeneration;
     final transportEpoch = _userTransportEpoch;
@@ -760,6 +768,7 @@ extension MusicProviderMedia3 on MusicProvider {
         .clamp(500, 6500)
         .toInt();
     bool stillOwnsTransition() =>
+        controlLease.isCurrent &&
         _media3ProviderSessionActive &&
         !_disposed &&
         generation == _automaticTransitionGeneration &&
@@ -935,7 +944,9 @@ extension MusicProviderMedia3 on MusicProvider {
         });
         _repeatModeCommandTail = reconcileRepeatCommand;
         try {
-          await reconcileRepeatCommand;
+          if (controlLease.isCurrent) {
+            await reconcileRepeatCommand;
+          }
         } catch (error) {
           await ResonateDiagnostics.record('media3_repeat_mode_reconcile_failed', {
             'songId': song.id,
@@ -944,6 +955,7 @@ extension MusicProviderMedia3 on MusicProvider {
           });
         }
       }
+      await controlLease.release();
       _drainPendingMedia3Completion();
     }
   }
