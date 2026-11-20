@@ -760,12 +760,11 @@ extension MusicProviderMedia3 on MusicProvider {
 
     StreamSubscription<Media3ProviderState>? promotionSubscription;
     try {
-      // Prevent the outgoing deck from repeating itself while the incoming
-      // copy is being prepared and faded in. The new active deck is restored
-      // to repeat-one immediately after promotion.
-      await session.setRepeatMode(PlaybackQueueRepeatMode.off);
-      if (!stillOwnsTransition()) return;
-
+      // Keep the user's repeat policy enabled on the outgoing and prepared
+      // incoming decks throughout the handoff. The fade is scheduled to finish
+      // before the outgoing tail guard, so disabling native repeat here is
+      // unnecessary and creates a window where Media3 can advance its playlist
+      // before the promoted deck receives the restored policy.
       final preparedForCue = standbyPreloaded &&
           _preloadedNextSongId == song.id &&
           identical(_media3DjTransitionPreparation, _repeatSelfDjPreparation);
