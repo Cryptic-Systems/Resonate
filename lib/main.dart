@@ -353,6 +353,7 @@ class ResonateApp extends StatelessWidget {
               // DSP/session-bound effects follow the same canonical Media3
               // session as transport and state after the provider handoff.
               playbackSession: music.media3PlaybackSession,
+              playbackControlArbiter: music.playbackControlArbiter,
             );
           },
         ),
