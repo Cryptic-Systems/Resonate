@@ -78,6 +78,8 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   Completer<void>? focusEnableGate;
   Completer<void>? startGate;
   Completer<void>? repeatModeGate;
+  int repeatModeCallCount = 0;
+  int? repeatModeGateOnCall;
   Map<String, double?>? gainFactors;
   Song? preloadedSong;
   int? preloadedIndex;
@@ -209,9 +211,13 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   @override
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) async {
     calls.add('repeat:${mode.nativeValue}');
+    repeatModeCallCount++;
     final gate = repeatModeGate;
-    if (gate != null) {
+    if (gate != null &&
+        (repeatModeGateOnCall == null ||
+            repeatModeCallCount >= repeatModeGateOnCall!)) {
       repeatModeGate = null;
+      repeatModeGateOnCall = null;
       await gate.future;
     }
     repeatModeSet = mode;
@@ -2853,6 +2859,70 @@ void main() {
       expect(provider.activeEngineLabel, 'B');
       expect(provider.currentSong?.id, song.id);
       expect(provider.queueIndex, 0);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('repeat mode changed during self-fade finalization is serialized after native restore', () async {
+      final session = _FakePlaybackSession()
+        ..crossfadeGate = Completer<void>();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final song = _song('repeat-one-finalization-race');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
+      await provider.setRepeatMode(PlaybackRepeatMode.one);
+      await provider.setCrossfadeDuration(500);
+
+      // Hold the audible fade. Turning Repeat One off here is deferred until
+      // the same-track deck promotion has completed.
+      final repeatGate = Completer<void>();
+      session.repeatModeGate = repeatGate;
+      session.repeatModeGateOnCall = session.repeatModeCallCount + 2;
+      session.positionValue = const Duration(seconds: 178);
+      session.states.add(_state(
+        song: song,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+        activeDeckId: 'A',
+        repeatMode: 'one',
+      ));
+      for (var attempt = 0;
+          attempt < 100 &&
+              !session.calls.any((call) => call.startsWith('crossfade:'));
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.calls.any((call) => call.startsWith('crossfade:')), isTrue);
+
+      await provider.setRepeatMode(PlaybackRepeatMode.off);
+      session.crossfadeGate!.complete();
+
+      // The final native restore is the second repeat write in this handoff:
+      // the first is the success-path restore, the second is finalization.
+      for (var attempt = 0;
+          attempt < 100 && session.repeatModeGate != null;
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.repeatModeGate, isNull,
+          reason: 'The finalization repeat write should be held by the test gate.');
+
+      // Re-enable Repeat One while the native Off write is blocked. This newer
+      // command must run after that write, not be swallowed by fade cleanup.
+      final reenable = provider.setRepeatMode(PlaybackRepeatMode.one);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      repeatGate.complete();
+      await reenable;
+
+      expect(provider.repeatMode, PlaybackRepeatMode.one);
+      expect(session.repeatModeSet, PlaybackQueueRepeatMode.one);
+      expect(session.calls.last, 'repeat:one',
+          reason: 'The latest Repeat One selection must win native command ordering.');
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
