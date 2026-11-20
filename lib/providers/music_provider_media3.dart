@@ -1412,7 +1412,7 @@ extension MusicProviderMedia3 on MusicProvider {
           !profile.dspAnalysis.isValid) return;
 
       final lease = await playbackControlArbiter.acquire(
-        owner: 'dsp_analysis_hint_$deckId',
+        owner: 'dsp_analysis_hint',
         priority: PlaybackControlPriority.background,
       );
       if (lease == null) return;
