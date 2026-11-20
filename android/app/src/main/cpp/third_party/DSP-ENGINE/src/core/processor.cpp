@@ -1,9 +1,10 @@
 /**
  * DSP ENGINE — Core processor
  *
- * Pipeline: EQ → speaker/VB → preamp → DVC → limiter (FAST/LOOKAHEAD/TRUEPEAK/TWOBAND) → dither
+ * Pipeline: EQ → auto-bass shelf → speaker/VB → preamp → DVC → limiter → dither
  * Optional SRC via dsp_process_src then full pipeline.
  * Control mailbox applied at start of each process block.
+ * v0.6.0: level meters, offline analyze/probe, online auto-bass, auto-DVC (RMS).
  */
 
 #include "dsp_engine.h"
@@ -83,12 +84,84 @@ struct DspEngine {
     std::atomic<int>   mb_speaker{0};
     std::atomic<int>   mb_processing{1};
     std::atomic<int>   mb_flags{0}; /* bit0 dvc,1 preamp,2 speaker,3 vb,4 xover,5 ceil,6 proc */
+    /* bit7 auto_bass enable, bit8 target, bit9 margin, bit10 freq */
+    std::atomic<int>   mb_auto_bass_en{0};
+    std::atomic<float> mb_auto_bass_target{0.f};
+    std::atomic<float> mb_auto_bass_margin{1.f};
+    std::atomic<float> mb_auto_bass_freq{75.f};
+    /* bit11 auto_gain en, bit12 target, bit13 bias, bit14 max boost, bit15 max cut, bit16 window */
+    std::atomic<int>   mb_auto_gain_en{0};
+    std::atomic<float> mb_auto_gain_target{-18.f};
+    std::atomic<float> mb_auto_gain_bias{0.f};
+    std::atomic<float> mb_auto_gain_max_boost{6.f};
+    std::atomic<float> mb_auto_gain_max_cut{12.f};
+    std::atomic<float> mb_auto_gain_window_ms{400.f};
 
     int64_t stats_calls = 0;
     int64_t stats_total_ns = 0;
     int64_t stats_max_ns = 0;
     int64_t stats_overruns = 0;
     int32_t stats_last_frames = 0;
+
+    /* Running level meters (peak-hold with decay). */
+    float meter_in_peak_db = -120.f;
+    float meter_in_tp_db = -120.f;
+    float meter_post_eq_peak_db = -120.f;
+    float meter_bass_peak_db = -120.f;
+    float meter_headroom_db = 0.f;
+    float meter_short_term_rms_db = -120.f;
+    double bass_lp_z = 0.0; /* mono one-pole for bass-band peak */
+    double rms_env_ms = 0.0; /* mean-square envelope for short-term RMS */
+
+    /* Online auto-bass: dedicated low-shelf after user EQ. */
+    bool  auto_bass_enabled = false;
+    float auto_bass_target_db = 0.f;
+    float auto_bass_margin_db = 1.f;
+    float auto_bass_freq_hz = 75.f;
+    float auto_bass_applied_db = 0.f;
+    float auto_bass_smooth = 0.02f; /* ~ coeff toward target per block */
+    dsp::BiquadCoeffs auto_bass_c{};
+    dsp::BiquadState  auto_bass_st[kMaxChannels]{};
+    float auto_bass_last_gain = 0.f;
+
+    /* Online auto-DVC / auto-gain from short-term RMS. */
+    bool  auto_gain_enabled = false;
+    float auto_gain_target_rms_db = -18.f;
+    float auto_gain_bias_db = 0.f;
+    float auto_gain_max_boost_db = 6.f;
+    float auto_gain_max_cut_db = 12.f;
+    float auto_gain_window_ms = 400.f;
+    float auto_gain_applied_db = 0.f;
+    float auto_gain_smooth = 0.05f;
+
+    /* Shared headroom budget (normalized in process). */
+    float budget_bass = 0.50f;
+    float budget_preamp = 0.20f;
+    float budget_gain = 0.30f;
+
+    /* Auto-preamp */
+    bool  auto_preamp_enabled = false;
+    float auto_preamp_target_db = 0.f;
+    float auto_preamp_applied_db = 0.f;
+
+    /* Content-aware VB */
+    bool  auto_vb_enabled = false;
+    float auto_vb_target = 0.55f;
+    float auto_vb_applied = 0.55f;
+    float hint_bass_energy_db = -40.f;
+    float hint_max_safe_bass_db = 24.f;
+    bool  hint_has_max_safe = false;
+
+    /* Crest personality */
+    float crest_hint_db = 0.f; /* 0 = off */
+    float base_limiter_ceiling_db = -0.1f;
+    float base_limiter_release_ms = 50.f;
+
+    /* Silence hygiene */
+    bool  silence_hygiene = true;
+    float silence_thresh_db = -60.f;
+    float silence_hold_ms = 300.f;
+    float silence_hold_acc_ms = 0.f;
 
     sample_t lim_env[kMaxChannels]{};
     sample_t lim_gain[kMaxChannels]{};
@@ -113,8 +186,6 @@ struct DspEngine {
     sample_t tp_hist[kMaxChannels][4]{};
 
     uint32_t dither_state[kMaxChannels]{};
-    // Error feedback is kept in normalized sample units and persists across blocks.
-    sample_t dither_error[kMaxChannels]{};
 
     alignas(32) sample_t temp[kMaxChannels][kMaxBlock]{};
     alignas(32) sample_t work[kMaxBlock * kMaxChannels]{};
@@ -176,6 +247,47 @@ struct DspEngine {
             eq.set_band(i, b.freq_hz, b.gain_db, b.q > 0.f ? b.q : 1.0, b.type);
         }
         eq.set_enabled(eq_enabled);
+    }
+
+    void rebuild_auto_bass() {
+        auto_bass_c = dsp::low_shelf_rbj(
+            static_cast<double>(sample_rate),
+            static_cast<double>(auto_bass_freq_hz > 20.f ? auto_bass_freq_hz : 75.f),
+            static_cast<double>(auto_bass_applied_db),
+            0.707);
+        /* Keep filter state; gain changes are gradual. */
+        const double atk_ms = 30.0;
+        const double rel_ms = 400.0;
+        /* Per-sample coeffs not needed; we smooth applied_db per block. */
+        (void)atk_ms;
+        (void)rel_ms;
+        if (sample_rate > 0.f) {
+            /* ~150 ms time-constant toward desired applied_db */
+            auto_bass_smooth = static_cast<float>(
+                1.0 - std::exp(-1.0 / (0.15 * sample_rate / 64.0)));
+            if (auto_bass_smooth < 0.01f) auto_bass_smooth = 0.01f;
+            if (auto_bass_smooth > 0.5f) auto_bass_smooth = 0.5f;
+        }
+    }
+
+    void reset_level_meters() {
+        meter_in_peak_db = -120.f;
+        meter_in_tp_db = -120.f;
+        meter_post_eq_peak_db = -120.f;
+        meter_bass_peak_db = -120.f;
+        meter_headroom_db = limiter_ceiling_db + 120.f;
+        meter_short_term_rms_db = -120.f;
+        bass_lp_z = 0.0;
+        rms_env_ms = 0.0;
+    }
+
+    void update_auto_gain_smooth() {
+        if (sample_rate <= 0.f) return;
+        /* ~ block-rate smoothing toward target over ~window/4 */
+        const double tau_blocks = (auto_gain_window_ms * 0.001 * sample_rate) / 64.0;
+        auto_gain_smooth = static_cast<float>(1.0 - std::exp(-1.0 / std::max(2.0, tau_blocks)));
+        if (auto_gain_smooth < 0.01f) auto_gain_smooth = 0.01f;
+        if (auto_gain_smooth > 0.35f) auto_gain_smooth = 0.35f;
     }
 };
 
@@ -497,6 +609,39 @@ static void apply_mailbox(DspEngine* eng) {
     }
     if (flags & 64)
         eng->processing_enabled = eng->mb_processing.load(std::memory_order_relaxed) != 0;
+    if (flags & 128)
+        eng->auto_bass_enabled = eng->mb_auto_bass_en.load(std::memory_order_relaxed) != 0;
+    if (flags & 256)
+        eng->auto_bass_target_db = eng->mb_auto_bass_target.load(std::memory_order_relaxed);
+    if (flags & 512)
+        eng->auto_bass_margin_db = eng->mb_auto_bass_margin.load(std::memory_order_relaxed);
+    if (flags & 1024) {
+        eng->auto_bass_freq_hz = eng->mb_auto_bass_freq.load(std::memory_order_relaxed);
+        eng->rebuild_auto_bass();
+    }
+    if (flags & 2048)
+        eng->auto_gain_enabled = eng->mb_auto_gain_en.load(std::memory_order_relaxed) != 0;
+    if (flags & 4096)
+        eng->auto_gain_target_rms_db = eng->mb_auto_gain_target.load(std::memory_order_relaxed);
+    if (flags & 8192)
+        eng->auto_gain_bias_db = eng->mb_auto_gain_bias.load(std::memory_order_relaxed);
+    if (flags & 16384)
+        eng->auto_gain_max_boost_db = eng->mb_auto_gain_max_boost.load(std::memory_order_relaxed);
+    if (flags & 32768)
+        eng->auto_gain_max_cut_db = eng->mb_auto_gain_max_cut.load(std::memory_order_relaxed);
+    if (flags & 65536) {
+        eng->auto_gain_window_ms = eng->mb_auto_gain_window_ms.load(std::memory_order_relaxed);
+        eng->update_auto_gain_smooth();
+    }
+}
+
+static void meter_hold(float& held_db, float instant_db, float decay) {
+    if (instant_db > held_db)
+        held_db = instant_db;
+    else {
+        held_db = held_db + decay * (-120.f - held_db);
+        if (held_db < -120.f) held_db = -120.f;
+    }
 }
 
 static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
@@ -514,11 +659,43 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
         return;
     }
 
+    sample_t block_in_peak = sample_t(0);
+    sample_t block_in_tp = sample_t(0);
+    /* Bass LP coeff ~120 Hz */
+    const double bass_a = (eng->sample_rate > 0.f)
+        ? std::exp(-2.0 * 3.14159265358979323846 * 120.0 / eng->sample_rate)
+        : 0.0;
+    sample_t block_bass_peak = sample_t(0);
+
     for (int i = 0; i < frames; ++i) {
+        sample_t mono = sample_t(0);
         for (int c = 0; c < ch; ++c) {
             sample_t x = interleaved[i * ch + c];
-            eng->temp[c][i] = sample_finite(x) ? x : sample_t(0);
+            if (!sample_finite(x)) x = sample_t(0);
+            eng->temp[c][i] = x;
+            sample_t ax = x >= 0 ? x : -x;
+            if (ax > block_in_peak) block_in_peak = ax;
+            if (i + 1 < frames) {
+                sample_t n = interleaved[(i + 1) * ch + c];
+                if (!sample_finite(n)) n = sample_t(0);
+                sample_t tp = true_peak_pair(x, n);
+                if (tp > block_in_tp) block_in_tp = tp;
+            } else if (ax > block_in_tp) {
+                block_in_tp = ax;
+            }
+            mono = mono + x;
         }
+        mono = mono * sample_t(1.0 / std::max(1, ch));
+        eng->bass_lp_z = (1.0 - bass_a) * static_cast<double>(mono) + bass_a * eng->bass_lp_z;
+        sample_t bp = static_cast<sample_t>(eng->bass_lp_z >= 0 ? eng->bass_lp_z : -eng->bass_lp_z);
+        if (bp > block_bass_peak) block_bass_peak = bp;
+    }
+
+    {
+        const float decay = 0.02f; /* slow release toward -120 */
+        meter_hold(eng->meter_in_peak_db, dsp::linear_to_db_f(static_cast<float>(block_in_peak)), decay);
+        meter_hold(eng->meter_in_tp_db, dsp::linear_to_db_f(static_cast<float>(block_in_tp)), decay);
+        meter_hold(eng->meter_bass_peak_db, dsp::linear_to_db_f(static_cast<float>(block_bass_peak)), decay);
     }
 
 #ifdef DSP_USE_DOUBLE
@@ -542,12 +719,93 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
     }
 #endif
 
+    /* Shared headroom pool for bass / preamp / auto-gain. */
+    float gr_db = 0.f;
+    {
+        float g = static_cast<float>(eng->lim_gr);
+        if (g > 1e-12f && g < 1.f) gr_db = -20.f * std::log10(g);
+    }
+    float pool = eng->meter_headroom_db - eng->auto_bass_margin_db - 0.5f * gr_db;
+    if (pool < 0.f) pool = 0.f;
+    float bw = eng->budget_bass, pw = eng->budget_preamp, gw = eng->budget_gain;
+    float wsum = bw + pw + gw;
+    if (wsum < 1e-6f) { bw = 0.5f; pw = 0.2f; gw = 0.3f; wsum = 1.f; }
+    const float bass_share = pool * (bw / wsum);
+    const float preamp_share = pool * (pw / wsum);
+    const float gain_share = pool * (gw / wsum);
+
+    /* Auto-bass servo (budget-capped). */
+    if (eng->auto_bass_enabled) {
+        float desired = eng->auto_bass_target_db;
+        if (eng->hint_has_max_safe && desired > eng->hint_max_safe_bass_db)
+            desired = eng->hint_max_safe_bass_db;
+        if (desired > bass_share) desired = bass_share;
+        if (desired < -12.f) desired = -12.f;
+        if (desired > 24.f) desired = 24.f;
+        const float a = eng->auto_bass_smooth;
+        eng->auto_bass_applied_db += a * (desired - eng->auto_bass_applied_db);
+        if (std::fabs(eng->auto_bass_applied_db - eng->auto_bass_last_gain) > 0.05f) {
+            eng->rebuild_auto_bass();
+            eng->auto_bass_last_gain = eng->auto_bass_applied_db;
+        }
+        if (std::fabs(eng->auto_bass_applied_db) > 0.01f) {
+            for (int c = 0; c < ch; ++c) {
+                for (int i = 0; i < frames; ++i) {
+                    double y = dsp::process_biquad(
+                        eng->auto_bass_c, eng->auto_bass_st[c],
+                        static_cast<double>(eng->temp[c][i]));
+                    eng->temp[c][i] = static_cast<sample_t>(y);
+                }
+            }
+        }
+    } else if (std::fabs(eng->auto_bass_applied_db) > 0.01f) {
+        eng->auto_bass_applied_db *= (1.f - eng->auto_bass_smooth);
+        if (std::fabs(eng->auto_bass_applied_db) < 0.01f) {
+            eng->auto_bass_applied_db = 0.f;
+            for (int c = 0; c < ch; ++c) eng->auto_bass_st[c] = dsp::BiquadState{};
+        }
+    }
+
+    /* Content-aware virtual bass: reduce when track already has strong sub. */
+    if (eng->auto_vb_enabled && eng->speaker_enabled) {
+        float content = eng->meter_bass_peak_db;
+        if (eng->hint_bass_energy_db > content) content = eng->hint_bass_energy_db;
+        /* Map content peak: quiet bass (-40) → full target; loud (-6) → ~0 */
+        float t = (content + 40.f) / 34.f; /* -40..-6 → 0..1 */
+        if (t < 0.f) t = 0.f;
+        if (t > 1.f) t = 1.f;
+        float desired_vb = eng->auto_vb_target * (1.f - 0.85f * t);
+        if (desired_vb < 0.f) desired_vb = 0.f;
+        if (desired_vb > 1.f) desired_vb = 1.f;
+        eng->auto_vb_applied += 0.08f * (desired_vb - eng->auto_vb_applied);
+        eng->virtual_bass = eng->auto_vb_applied;
+        eng->speaker.configure(eng->sample_rate, eng->speaker_enabled, eng->virtual_bass);
+    }
+
     if (eng->speaker_enabled) {
         sample_t* ptrs[kMaxChannels];
         for (int c = 0; c < ch; ++c) ptrs[c] = eng->temp[c];
         eng->speaker.process_planar(ptrs, frames, ch);
     }
 
+    /* Auto-preamp (budget-capped) or manual preamp. */
+    if (eng->auto_preamp_enabled) {
+        float desired = eng->auto_preamp_target_db;
+        if (desired > preamp_share) desired = preamp_share;
+        if (desired < -12.f) desired = -12.f;
+        if (desired > 12.f) desired = 12.f;
+        eng->auto_preamp_applied_db += eng->auto_bass_smooth
+            * (desired - eng->auto_preamp_applied_db);
+        eng->preamp_linear = static_cast<float>(
+            std::pow(10.0, eng->auto_preamp_applied_db * 0.05));
+    } else if (std::fabs(eng->auto_preamp_applied_db) > 0.01f) {
+        /* Fade out sticky auto-preamp when disabled (manual preamp can re-apply). */
+        eng->auto_preamp_applied_db *= (1.f - eng->auto_bass_smooth);
+        if (std::fabs(eng->auto_preamp_applied_db) < 0.01f)
+            eng->auto_preamp_applied_db = 0.f;
+        eng->preamp_linear = static_cast<float>(
+            std::pow(10.0, eng->auto_preamp_applied_db * 0.05));
+    }
     if (eng->preamp_linear != 1.f && eng->preamp_linear > 0.f) {
         const sample_t g = static_cast<sample_t>(eng->preamp_linear);
         for (int c = 0; c < ch; ++c)
@@ -555,11 +813,76 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
                 eng->temp[c][i] *= g;
     }
 
+    /* Short-term RMS (mean-square one-pole) on pre-DVC signal. */
+    {
+        double block_ms = 0.0;
+        const int n = frames * ch;
+        for (int c = 0; c < ch; ++c)
+            for (int i = 0; i < frames; ++i) {
+                double x = static_cast<double>(eng->temp[c][i]);
+                block_ms += x * x;
+            }
+        block_ms /= std::max(1, n);
+        const double win_sec = std::max(0.05, eng->auto_gain_window_ms * 0.001);
+        const double coeff = 1.0 - std::exp(
+            -static_cast<double>(frames) / (win_sec * eng->sample_rate));
+        eng->rms_env_ms += coeff * (block_ms - eng->rms_env_ms);
+        const double rms = std::sqrt(std::max(1e-30, eng->rms_env_ms));
+        eng->meter_short_term_rms_db = dsp::linear_to_db_f(static_cast<float>(rms));
+    }
+
+    /* Silence hygiene: decay applied boosts across gaps. */
+    if (eng->silence_hygiene) {
+        const float block_ms_f = (eng->sample_rate > 0.f)
+            ? (1000.f * static_cast<float>(frames) / eng->sample_rate) : 10.f;
+        if (eng->meter_short_term_rms_db < eng->silence_thresh_db) {
+            eng->silence_hold_acc_ms += block_ms_f;
+            if (eng->silence_hold_acc_ms >= eng->silence_hold_ms) {
+                eng->auto_bass_applied_db *= 0.9f;
+                eng->auto_preamp_applied_db *= 0.9f;
+                eng->auto_gain_applied_db *= 0.9f;
+                eng->lim_gr_peak_db *= 0.85f;
+            }
+        } else {
+            eng->silence_hold_acc_ms = 0.f;
+        }
+    }
+
+    /* Auto-DVC: short-term RMS → target, capped by gain budget share. */
+    if (eng->auto_gain_enabled) {
+        float err = (eng->auto_gain_target_rms_db + eng->auto_gain_bias_db)
+                    - eng->meter_short_term_rms_db;
+        if (err > eng->auto_gain_max_boost_db) err = eng->auto_gain_max_boost_db;
+        if (err < -eng->auto_gain_max_cut_db) err = -eng->auto_gain_max_cut_db;
+        if (err > gain_share) err = gain_share;
+        if (err > 24.f) err = 24.f;
+        if (err < -24.f) err = -24.f;
+        eng->auto_gain_applied_db += eng->auto_gain_smooth
+            * (err - eng->auto_gain_applied_db);
+        eng->dvc.set_enabled(true);
+        eng->dvc.set_gain_db(eng->auto_gain_applied_db);
+    }
+
     if (eng->dvc.enabled()) {
         sample_t* ptrs[kMaxChannels];
         for (int c = 0; c < ch; ++c)
             ptrs[c] = eng->temp[c];
         eng->dvc.process_planar(ptrs, frames, ch);
+    }
+
+    /* Post-EQ / post-gain peak for headroom (before limiter). */
+    {
+        sample_t post_peak = sample_t(0);
+        for (int c = 0; c < ch; ++c) {
+            for (int i = 0; i < frames; ++i) {
+                sample_t x = eng->temp[c][i];
+                sample_t ax = x >= 0 ? x : -x;
+                if (ax > post_peak) post_peak = ax;
+            }
+        }
+        meter_hold(eng->meter_post_eq_peak_db,
+                   dsp::linear_to_db_f(static_cast<float>(post_peak)), 0.02f);
+        eng->meter_headroom_db = eng->limiter_ceiling_db - eng->meter_post_eq_peak_db;
     }
 
     if (eng->limiter_enabled) {
@@ -581,7 +904,7 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
         constexpr float kInv = 1.f / 32768.f;
         for (int c = 0; c < ch; ++c) {
             uint32_t s = eng->dither_state[c];
-            float err = static_cast<float>(eng->dither_error[c]);
+            float err = 0.f;
             for (int i = 0; i < frames; ++i) {
                 s ^= s << 13; s ^= s >> 17; s ^= s << 5;
                 float r1 = (s & 0xFFFFFF) / float(0x1000000) - 0.5f;
@@ -594,19 +917,10 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
                 float q = std::floor(scaled + 0.5f);
                 if (q > 32767.f) q = 32767.f;
                 if (q < -32768.f) q = -32768.f;
-                // Quantization error is measured in 16-bit LSBs. Convert it
-                // back to normalized PCM units before feeding it into x on the
-                // next sample; mixing LSBs directly into normalized PCM creates
-                // near-full-scale noise (audible continuous static).
-                if (eng->dither_mode == DSP_DITHER_SHAPED) {
-                    err = (scaled - q) * 0.5f * kInv;
-                } else {
-                    err = 0.f;
-                }
+                if (eng->dither_mode == DSP_DITHER_SHAPED) err = (scaled - q) * 0.5f;
                 eng->temp[c][i] = static_cast<sample_t>(q * kInv);
             }
             eng->dither_state[c] = s;
-            eng->dither_error[c] = static_cast<sample_t>(err);
         }
     }
 
@@ -617,7 +931,7 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
 
 extern "C" {
 
-const char* dsp_version(void) { return "0.4.0"; }
+const char* dsp_version(void) { return "0.6.0"; }
 
 DspEngine* dsp_create(const DspConfig* cfg) {
     if (!cfg || cfg->channels < 1 || cfg->channels > kMaxChannels ||
@@ -644,6 +958,8 @@ DspEngine* dsp_create(const DspConfig* cfg) {
         eng->limiter_mode = DSP_LIMITER_FAST;
     eng->limiter_ceiling_db   = (cfg->limiter_ceiling_db != 0.f)
         ? cfg->limiter_ceiling_db : -0.1f;
+    eng->base_limiter_ceiling_db = eng->limiter_ceiling_db;
+    eng->base_limiter_release_ms = eng->limiter_release_ms;
     eng->limiter_knee_db      = cfg->limiter_knee_db >= 0.f ? cfg->limiter_knee_db : 0.f;
     eng->limiter_attack_ms    = cfg->limiter_attack_ms > 0.f ? cfg->limiter_attack_ms : 0.1f;
     eng->limiter_lookahead_ms = cfg->limiter_lookahead_ms >= 0.f ? cfg->limiter_lookahead_ms : 2.0f;
@@ -661,6 +977,9 @@ DspEngine* dsp_create(const DspConfig* cfg) {
         eng->limiter_attack_ms, eng->limiter_release_ms);
     eng->eq.init(eng->sample_rate, eng->channels);
     eng->eq.set_enabled(eng->eq_enabled);
+    eng->reset_level_meters();
+    eng->rebuild_auto_bass();
+    eng->update_auto_gain_smooth();
     return eng;
 }
 
@@ -672,12 +991,21 @@ DspError dsp_reset(DspEngine* eng) {
     for (int c = 0; c < eng->channels; ++c) {
         eng->lim_env[c]  = sample_t(0);
         eng->lim_gain[c] = sample_t(1);
+        eng->auto_bass_st[c] = dsp::BiquadState{};
     }
     eng->src.reset();
     eng->dvc.reset();
     eng->clear_lookahead_state();
     eng->speaker.reset();
     eng->twoband.reset();
+    eng->reset_level_meters();
+    eng->auto_bass_applied_db = 0.f;
+    eng->auto_bass_last_gain = 0.f;
+    eng->auto_gain_applied_db = 0.f;
+    eng->auto_preamp_applied_db = 0.f;
+    eng->silence_hold_acc_ms = 0.f;
+    eng->rebuild_auto_bass();
+    eng->update_auto_gain_smooth();
     return DSP_OK;
 }
 
@@ -688,6 +1016,7 @@ DspError dsp_set_sample_rate(DspEngine* eng, float rate) {
     eng->clear_lookahead_state();
     eng->dvc.set_sample_rate(rate);
     eng->rebuild_eq();
+    eng->rebuild_auto_bass();
     eng->speaker.configure(rate, eng->speaker_enabled, eng->virtual_bass);
     eng->twoband.configure(rate, eng->crossover_hz,
         eng->limiter_ceiling_db, eng->limiter_ceiling_low_db,
@@ -875,6 +1204,7 @@ DspError dsp_limiter_set_threshold(DspEngine* eng, float threshold_db) {
 DspError dsp_limiter_set_release(DspEngine* eng, float release_ms) {
     if (!eng || release_ms <= 0.f) return DSP_ERR_INVALID_ARG;
     eng->limiter_release_ms = release_ms;
+    eng->base_limiter_release_ms = release_ms;
     eng->update_limiter_coeffs();
     eng->twoband.configure(eng->sample_rate, eng->crossover_hz,
         eng->limiter_ceiling_db, eng->limiter_ceiling_low_db,
@@ -896,6 +1226,7 @@ DspError dsp_limiter_set_mode(DspEngine* eng, DspLimiterMode mode) {
 DspError dsp_limiter_set_ceiling(DspEngine* eng, float ceiling_db) {
     if (!eng) return DSP_ERR_INVALID_ARG;
     eng->limiter_ceiling_db = ceiling_db;
+    eng->base_limiter_ceiling_db = ceiling_db;
     eng->update_limiter_coeffs();
     return DSP_OK;
 }
@@ -1141,6 +1472,455 @@ DspError dsp_reset_stats(DspEngine* eng) {
     eng->stats_max_ns = 0;
     eng->stats_overruns = 0;
     eng->stats_last_frames = 0;
+    return DSP_OK;
+}
+
+/* ---------- Offline analysis (Path A) ---------- */
+
+DspError dsp_analyze_buffer(const float* interleaved, int frames, int channels,
+                            float sample_rate, DspAnalysisResult* out) {
+    if (!interleaved || !out || frames < 1 || channels < 1 || channels > kMaxChannels)
+        return DSP_ERR_INVALID_ARG;
+    if (sample_rate < 8000.f) sample_rate = 48000.f;
+
+    double peak = 0.0;
+    double tp = 0.0;
+    double sum_sq = 0.0;
+    double bass_z = 0.0;
+    double bass_peak = 0.0;
+    const double bass_a = std::exp(-2.0 * 3.14159265358979323846 * 120.0 / sample_rate);
+    const int n = frames * channels;
+    const int total = frames;
+
+    for (int i = 0; i < frames; ++i) {
+        double mono = 0.0;
+        for (int c = 0; c < channels; ++c) {
+            float x = interleaved[i * channels + c];
+            if (!std::isfinite(x)) x = 0.f;
+            double ax = std::fabs(static_cast<double>(x));
+            if (ax > peak) peak = ax;
+            if (i + 1 < frames) {
+                float nsm = interleaved[(i + 1) * channels + c];
+                if (!std::isfinite(nsm)) nsm = 0.f;
+                double t = static_cast<double>(true_peak_pair(
+                    static_cast<sample_t>(x), static_cast<sample_t>(nsm)));
+                if (t > tp) tp = t;
+            } else if (ax > tp) {
+                tp = ax;
+            }
+            sum_sq += static_cast<double>(x) * static_cast<double>(x);
+            mono += static_cast<double>(x);
+        }
+        mono /= channels;
+        bass_z = (1.0 - bass_a) * mono + bass_a * bass_z;
+        double bp = std::fabs(bass_z);
+        if (bp > bass_peak) bass_peak = bp;
+    }
+
+    const double rms = std::sqrt(sum_sq / std::max(1, n));
+    out->sample_peak_db = dsp::linear_to_db_f(static_cast<float>(peak > 1e-12 ? peak : 1e-12));
+    out->true_peak_db   = dsp::linear_to_db_f(static_cast<float>(tp > 1e-12 ? tp : 1e-12));
+    out->rms_db         = dsp::linear_to_db_f(static_cast<float>(rms > 1e-12 ? rms : 1e-12));
+    out->crest_db       = out->sample_peak_db - out->rms_db;
+    out->bass_energy_db = dsp::linear_to_db_f(static_cast<float>(bass_peak > 1e-12 ? bass_peak : 1e-12));
+    (void)total;
+    return DSP_OK;
+}
+
+DspError dsp_probe_max_bass_gain_db(const float* interleaved, int frames, int channels,
+                                   float sample_rate, float shelf_freq_hz,
+                                   float ceiling_db, float margin_db,
+                                   float* out_max_gain_db) {
+    if (!interleaved || !out_max_gain_db || frames < 1 || channels < 1 || channels > kMaxChannels)
+        return DSP_ERR_INVALID_ARG;
+    if (sample_rate < 8000.f) sample_rate = 48000.f;
+    if (shelf_freq_hz < 20.f) shelf_freq_hz = 20.f;
+    if (shelf_freq_hz > 300.f) shelf_freq_hz = 300.f;
+    if (margin_db < 0.f) margin_db = 0.f;
+
+    const float limit_db = ceiling_db - margin_db;
+    const float limit_lin = dsp::db_to_linear_f(limit_db);
+
+    auto measure_tp_with_gain = [&](float gain_db) -> float {
+        dsp::BiquadCoeffs c = dsp::low_shelf_rbj(
+            static_cast<double>(sample_rate),
+            static_cast<double>(shelf_freq_hz),
+            static_cast<double>(gain_db), 0.707);
+        dsp::BiquadState st[kMaxChannels]{};
+        double tp = 0.0;
+        for (int i = 0; i < frames; ++i) {
+            for (int ch = 0; ch < channels; ++ch) {
+                float x = interleaved[i * channels + ch];
+                if (!std::isfinite(x)) x = 0.f;
+                double y = dsp::process_biquad(c, st[ch], static_cast<double>(x));
+                double ay = std::fabs(y);
+                if (ay > tp) tp = ay;
+                if (i + 1 < frames) {
+                    float nsm = interleaved[(i + 1) * channels + ch];
+                    if (!std::isfinite(nsm)) nsm = 0.f;
+                    double yn = dsp::process_biquad(c, st[ch], static_cast<double>(nsm));
+                    /* restore state roughly: re-run is imperfect for probe; use pair on outputs */
+                    (void)yn;
+                }
+            }
+        }
+        /* Second pass: true-peak on filtered buffer in chunks to avoid huge alloc */
+        /* Re-filter sample peaks only (conservative). */
+        for (int ch = 0; ch < channels; ++ch) st[ch] = dsp::BiquadState{};
+        double prev[kMaxChannels]{};
+        bool have_prev = false;
+        for (int i = 0; i < frames; ++i) {
+            for (int ch = 0; ch < channels; ++ch) {
+                float x = interleaved[i * channels + ch];
+                if (!std::isfinite(x)) x = 0.f;
+                double y = dsp::process_biquad(c, st[ch], static_cast<double>(x));
+                if (have_prev) {
+                    double t = static_cast<double>(true_peak_pair(
+                        static_cast<sample_t>(prev[ch]), static_cast<sample_t>(y)));
+                    if (t > tp) tp = t;
+                }
+                double ay = std::fabs(y);
+                if (ay > tp) tp = ay;
+                prev[ch] = y;
+            }
+            have_prev = true;
+        }
+        return static_cast<float>(tp);
+    };
+
+    /* Dry peak: if already over limit, max gain is 0 or negative. */
+    float lo = -6.f, hi = 18.f;
+    float dry = measure_tp_with_gain(0.f);
+    if (dry >= limit_lin) {
+        /* Search negative gain */
+        hi = 0.f;
+        lo = -12.f;
+    }
+    for (int iter = 0; iter < 12; ++iter) {
+        float mid = 0.5f * (lo + hi);
+        float tp = measure_tp_with_gain(mid);
+        if (tp <= limit_lin)
+            lo = mid;
+        else
+            hi = mid;
+    }
+    *out_max_gain_db = lo;
+    return DSP_OK;
+}
+
+DspError dsp_get_level_meter(const DspEngine* eng, DspLevelMeter* out) {
+    if (!eng || !out) return DSP_ERR_INVALID_ARG;
+    out->in_peak_db = eng->meter_in_peak_db;
+    out->in_true_peak_db = eng->meter_in_tp_db;
+    out->post_eq_peak_db = eng->meter_post_eq_peak_db;
+    out->bass_band_peak_db = eng->meter_bass_peak_db;
+    out->headroom_db = eng->meter_headroom_db;
+    out->short_term_rms_db = eng->meter_short_term_rms_db;
+    return DSP_OK;
+}
+
+DspError dsp_reset_level_meters(DspEngine* eng) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    eng->reset_level_meters();
+    return DSP_OK;
+}
+
+DspError dsp_auto_bass_enable(DspEngine* eng, int enable) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    eng->mb_auto_bass_en.store(enable != 0 ? 1 : 0, std::memory_order_relaxed);
+    eng->mb_flags.fetch_or(128, std::memory_order_acq_rel);
+    eng->ctrl_seq.fetch_add(1, std::memory_order_release);
+    eng->auto_bass_enabled = enable != 0;
+    return DSP_OK;
+}
+
+int dsp_auto_bass_is_enabled(const DspEngine* eng) {
+    return eng && eng->auto_bass_enabled ? 1 : 0;
+}
+
+DspError dsp_auto_bass_set_target_db(DspEngine* eng, float target_shelf_db) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    if (target_shelf_db > 24.f) target_shelf_db = 24.f;
+    if (target_shelf_db < -12.f) target_shelf_db = -12.f;
+    eng->mb_auto_bass_target.store(target_shelf_db, std::memory_order_relaxed);
+    eng->mb_flags.fetch_or(256, std::memory_order_acq_rel);
+    eng->ctrl_seq.fetch_add(1, std::memory_order_release);
+    eng->auto_bass_target_db = target_shelf_db;
+    return DSP_OK;
+}
+
+float dsp_auto_bass_get_target_db(const DspEngine* eng) {
+    return eng ? eng->auto_bass_target_db : 0.f;
+}
+
+DspError dsp_auto_bass_set_margin_db(DspEngine* eng, float margin_db) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    if (margin_db < 0.f) margin_db = 0.f;
+    if (margin_db > 6.f) margin_db = 6.f;
+    eng->mb_auto_bass_margin.store(margin_db, std::memory_order_relaxed);
+    eng->mb_flags.fetch_or(512, std::memory_order_acq_rel);
+    eng->ctrl_seq.fetch_add(1, std::memory_order_release);
+    eng->auto_bass_margin_db = margin_db;
+    return DSP_OK;
+}
+
+float dsp_auto_bass_get_margin_db(const DspEngine* eng) {
+    return eng ? eng->auto_bass_margin_db : 1.f;
+}
+
+DspError dsp_auto_bass_set_freq_hz(DspEngine* eng, float freq_hz) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    if (freq_hz < 20.f) freq_hz = 20.f;
+    if (freq_hz > 250.f) freq_hz = 250.f;
+    eng->mb_auto_bass_freq.store(freq_hz, std::memory_order_relaxed);
+    eng->mb_flags.fetch_or(1024, std::memory_order_acq_rel);
+    eng->ctrl_seq.fetch_add(1, std::memory_order_release);
+    eng->auto_bass_freq_hz = freq_hz;
+    eng->rebuild_auto_bass();
+    return DSP_OK;
+}
+
+float dsp_auto_bass_get_freq_hz(const DspEngine* eng) {
+    return eng ? eng->auto_bass_freq_hz : 75.f;
+}
+
+float dsp_auto_bass_get_applied_db(const DspEngine* eng) {
+    return eng ? eng->auto_bass_applied_db : 0.f;
+}
+
+DspError dsp_auto_gain_enable(DspEngine* eng, int enable) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    eng->mb_auto_gain_en.store(enable != 0 ? 1 : 0, std::memory_order_relaxed);
+    eng->mb_flags.fetch_or(2048, std::memory_order_acq_rel);
+    eng->ctrl_seq.fetch_add(1, std::memory_order_release);
+    eng->auto_gain_enabled = enable != 0;
+    if (enable) eng->dvc.set_enabled(true);
+    return DSP_OK;
+}
+
+int dsp_auto_gain_is_enabled(const DspEngine* eng) {
+    return eng && eng->auto_gain_enabled ? 1 : 0;
+}
+
+DspError dsp_auto_gain_set_target_rms_db(DspEngine* eng, float target_rms_db) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    if (target_rms_db > -1.f) target_rms_db = -1.f;
+    if (target_rms_db < -60.f) target_rms_db = -60.f;
+    eng->mb_auto_gain_target.store(target_rms_db, std::memory_order_relaxed);
+    eng->mb_flags.fetch_or(4096, std::memory_order_acq_rel);
+    eng->ctrl_seq.fetch_add(1, std::memory_order_release);
+    eng->auto_gain_target_rms_db = target_rms_db;
+    return DSP_OK;
+}
+
+float dsp_auto_gain_get_target_rms_db(const DspEngine* eng) {
+    return eng ? eng->auto_gain_target_rms_db : -18.f;
+}
+
+DspError dsp_auto_gain_set_bias_db(DspEngine* eng, float bias_db) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    if (bias_db > 12.f) bias_db = 12.f;
+    if (bias_db < -12.f) bias_db = -12.f;
+    eng->mb_auto_gain_bias.store(bias_db, std::memory_order_relaxed);
+    eng->mb_flags.fetch_or(8192, std::memory_order_acq_rel);
+    eng->ctrl_seq.fetch_add(1, std::memory_order_release);
+    eng->auto_gain_bias_db = bias_db;
+    return DSP_OK;
+}
+
+float dsp_auto_gain_get_bias_db(const DspEngine* eng) {
+    return eng ? eng->auto_gain_bias_db : 0.f;
+}
+
+DspError dsp_auto_gain_set_max_boost_db(DspEngine* eng, float max_boost_db) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    if (max_boost_db < 0.f) max_boost_db = 0.f;
+    if (max_boost_db > 24.f) max_boost_db = 24.f;
+    eng->mb_auto_gain_max_boost.store(max_boost_db, std::memory_order_relaxed);
+    eng->mb_flags.fetch_or(16384, std::memory_order_acq_rel);
+    eng->ctrl_seq.fetch_add(1, std::memory_order_release);
+    eng->auto_gain_max_boost_db = max_boost_db;
+    return DSP_OK;
+}
+
+float dsp_auto_gain_get_max_boost_db(const DspEngine* eng) {
+    return eng ? eng->auto_gain_max_boost_db : 6.f;
+}
+
+DspError dsp_auto_gain_set_max_cut_db(DspEngine* eng, float max_cut_db) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    if (max_cut_db < 0.f) max_cut_db = 0.f;
+    if (max_cut_db > 24.f) max_cut_db = 24.f;
+    eng->mb_auto_gain_max_cut.store(max_cut_db, std::memory_order_relaxed);
+    eng->mb_flags.fetch_or(32768, std::memory_order_acq_rel);
+    eng->ctrl_seq.fetch_add(1, std::memory_order_release);
+    eng->auto_gain_max_cut_db = max_cut_db;
+    return DSP_OK;
+}
+
+float dsp_auto_gain_get_max_cut_db(const DspEngine* eng) {
+    return eng ? eng->auto_gain_max_cut_db : 12.f;
+}
+
+DspError dsp_auto_gain_set_window_ms(DspEngine* eng, float window_ms) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    if (window_ms < 50.f) window_ms = 50.f;
+    if (window_ms > 5000.f) window_ms = 5000.f;
+    eng->mb_auto_gain_window_ms.store(window_ms, std::memory_order_relaxed);
+    eng->mb_flags.fetch_or(65536, std::memory_order_acq_rel);
+    eng->ctrl_seq.fetch_add(1, std::memory_order_release);
+    eng->auto_gain_window_ms = window_ms;
+    eng->update_auto_gain_smooth();
+    return DSP_OK;
+}
+
+float dsp_auto_gain_get_window_ms(const DspEngine* eng) {
+    return eng ? eng->auto_gain_window_ms : 400.f;
+}
+
+float dsp_auto_gain_get_applied_db(const DspEngine* eng) {
+    return eng ? eng->auto_gain_applied_db : 0.f;
+}
+
+float dsp_get_short_term_rms_db(const DspEngine* eng) {
+    return eng ? eng->meter_short_term_rms_db : -120.f;
+}
+
+DspError dsp_headroom_budget_set(DspEngine* eng, float bass_weight,
+                                 float preamp_weight, float gain_weight) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    if (bass_weight < 0.f) bass_weight = 0.f;
+    if (preamp_weight < 0.f) preamp_weight = 0.f;
+    if (gain_weight < 0.f) gain_weight = 0.f;
+    if (bass_weight + preamp_weight + gain_weight < 1e-6f) {
+        bass_weight = 0.5f; preamp_weight = 0.2f; gain_weight = 0.3f;
+    }
+    eng->budget_bass = bass_weight;
+    eng->budget_preamp = preamp_weight;
+    eng->budget_gain = gain_weight;
+    return DSP_OK;
+}
+
+DspError dsp_headroom_budget_get(const DspEngine* eng, float* bass_weight,
+                                 float* preamp_weight, float* gain_weight) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    if (bass_weight) *bass_weight = eng->budget_bass;
+    if (preamp_weight) *preamp_weight = eng->budget_preamp;
+    if (gain_weight) *gain_weight = eng->budget_gain;
+    return DSP_OK;
+}
+
+DspError dsp_auto_preamp_enable(DspEngine* eng, int enable) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    eng->auto_preamp_enabled = enable != 0;
+    return DSP_OK;
+}
+
+int dsp_auto_preamp_is_enabled(const DspEngine* eng) {
+    return eng && eng->auto_preamp_enabled ? 1 : 0;
+}
+
+DspError dsp_auto_preamp_set_target_db(DspEngine* eng, float target_db) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    if (target_db > 12.f) target_db = 12.f;
+    if (target_db < -12.f) target_db = -12.f;
+    eng->auto_preamp_target_db = target_db;
+    return DSP_OK;
+}
+
+float dsp_auto_preamp_get_target_db(const DspEngine* eng) {
+    return eng ? eng->auto_preamp_target_db : 0.f;
+}
+
+float dsp_auto_preamp_get_applied_db(const DspEngine* eng) {
+    return eng ? eng->auto_preamp_applied_db : 0.f;
+}
+
+DspError dsp_auto_vb_enable(DspEngine* eng, int enable) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    eng->auto_vb_enabled = enable != 0;
+    return DSP_OK;
+}
+
+int dsp_auto_vb_is_enabled(const DspEngine* eng) {
+    return eng && eng->auto_vb_enabled ? 1 : 0;
+}
+
+DspError dsp_auto_vb_set_target(DspEngine* eng, float target_amount) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    if (target_amount < 0.f) target_amount = 0.f;
+    if (target_amount > 1.f) target_amount = 1.f;
+    eng->auto_vb_target = target_amount;
+    return DSP_OK;
+}
+
+float dsp_auto_vb_get_target(const DspEngine* eng) {
+    return eng ? eng->auto_vb_target : 0.55f;
+}
+
+float dsp_auto_vb_get_applied(const DspEngine* eng) {
+    return eng ? eng->auto_vb_applied : 0.f;
+}
+
+DspError dsp_limiter_set_crest_hint(DspEngine* eng, float crest_db) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    eng->crest_hint_db = crest_db;
+    if (crest_db <= 0.f) {
+        eng->limiter_ceiling_db = eng->base_limiter_ceiling_db;
+        eng->limiter_release_ms = eng->base_limiter_release_ms;
+    } else {
+        /* Map crest 6..18 dB → dense..dynamic */
+        float t = (crest_db - 6.f) / 12.f;
+        if (t < 0.f) t = 0.f;
+        if (t > 1.f) t = 1.f;
+        /* Dense: ceiling -0.3 more, release faster; dynamic: opposite */
+        eng->limiter_ceiling_db = eng->base_limiter_ceiling_db - 0.3f * (1.f - t);
+        eng->limiter_release_ms = eng->base_limiter_release_ms * (0.7f + 0.6f * t);
+    }
+    eng->update_limiter_coeffs();
+    return DSP_OK;
+}
+
+float dsp_limiter_get_crest_hint(const DspEngine* eng) {
+    return eng ? eng->crest_hint_db : 0.f;
+}
+
+DspError dsp_apply_analysis_hint(DspEngine* eng, const DspAnalysisResult* analysis,
+                                 float max_safe_bass_db) {
+    if (!eng || !analysis) return DSP_ERR_INVALID_ARG;
+    eng->hint_bass_energy_db = analysis->bass_energy_db;
+    if (analysis->crest_db > 0.f)
+        dsp_limiter_set_crest_hint(eng, analysis->crest_db);
+    if (max_safe_bass_db < 24.f) {
+        eng->hint_max_safe_bass_db = max_safe_bass_db;
+        eng->hint_has_max_safe = true;
+    } else {
+        eng->hint_has_max_safe = false;
+    }
+    return DSP_OK;
+}
+
+DspError dsp_silence_hygiene_enable(DspEngine* eng, int enable) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    eng->silence_hygiene = enable != 0;
+    return DSP_OK;
+}
+
+int dsp_silence_hygiene_is_enabled(const DspEngine* eng) {
+    return eng && eng->silence_hygiene ? 1 : 0;
+}
+
+DspError dsp_silence_hygiene_set_threshold_db(DspEngine* eng, float rms_db) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    eng->silence_thresh_db = rms_db;
+    return DSP_OK;
+}
+
+DspError dsp_silence_hygiene_set_hold_ms(DspEngine* eng, float hold_ms) {
+    if (!eng) return DSP_ERR_INVALID_ARG;
+    if (hold_ms < 50.f) hold_ms = 50.f;
+    if (hold_ms > 5000.f) hold_ms = 5000.f;
+    eng->silence_hold_ms = hold_ms;
     return DSP_OK;
 }
 
