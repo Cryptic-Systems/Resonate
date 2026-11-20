@@ -24,6 +24,7 @@ enum PlaybackControlRevocationReason {
 enum PlaybackControlDiagnosticType {
   granted,
   renewed,
+  released,
   revoked,
   conflict,
   writeAccepted,
@@ -88,6 +89,7 @@ class PlaybackControlArbiter {
   final PlaybackControlDiagnosticSink? _onDiagnostic;
 
   PlaybackControlLease? _activeLease;
+  int _activeLeaseReferences = 0;
   int _generation = 0;
   bool _closed = false;
   Future<void> _mutationTail = Future<void>.value();
@@ -138,13 +140,21 @@ class PlaybackControlArbiter {
           ));
           return null;
         }
+        _activeLeaseReferences++;
+        final renewedLease = PlaybackControlLease._(
+          arbiter: this,
+          owner: current.owner,
+          priority: current.priority,
+          generation: current.generation,
+          onRevoked: null,
+        );
         _emit(PlaybackControlDiagnostic(
           type: PlaybackControlDiagnosticType.renewed,
           generation: current.generation,
           owner: current.owner,
           priority: current.priority,
         ));
-        return current;
+        return renewedLease;
       }
 
       if (current != null && priority.rank <= current.priority.rank) {
@@ -177,6 +187,7 @@ class PlaybackControlArbiter {
         onRevoked: onRevoked,
       );
       _activeLease = lease;
+      _activeLeaseReferences = 1;
       _emit(PlaybackControlDiagnostic(
         type: PlaybackControlDiagnosticType.granted,
         generation: lease.generation,
@@ -206,10 +217,16 @@ class PlaybackControlArbiter {
         ));
       });
 
-  bool _owns(PlaybackControlLease lease) =>
-      !_closed &&
-      identical(_activeLease, lease) &&
-      lease.generation == _generation;
+  bool _owns(PlaybackControlLease lease) {
+    final active = _activeLease;
+    return !_closed &&
+        !lease._released &&
+        active != null &&
+        lease.generation == _generation &&
+        lease.generation == active.generation &&
+        lease.owner == active.owner &&
+        lease.priority == active.priority;
+  }
 
   bool _authorizeWrite(PlaybackControlLease lease, String operation) {
     final allowed = _owns(lease);
@@ -248,6 +265,7 @@ class PlaybackControlArbiter {
 
   Future<bool> _release(PlaybackControlLease lease) => _serialize(() async {
         if (!_owns(lease)) {
+          lease._markReleased();
           _emit(PlaybackControlDiagnostic(
             type: PlaybackControlDiagnosticType.conflict,
             generation: lease.generation,
@@ -257,8 +275,19 @@ class PlaybackControlArbiter {
           ));
           return false;
         }
+        lease._markReleased();
+        if (_activeLeaseReferences > 0) _activeLeaseReferences--;
+        _emit(PlaybackControlDiagnostic(
+          type: PlaybackControlDiagnosticType.released,
+          generation: lease.generation,
+          owner: lease.owner,
+          priority: lease.priority,
+          reason: _activeLeaseReferences > 0 ? 'shared_hold_released' : 'final_hold_released',
+        ));
+        if (_activeLeaseReferences > 0) return true;
+        final active = _activeLease!;
         await _revokeActive(
-          lease,
+          active,
           reason: PlaybackControlRevocationReason.released,
         );
         return true;
@@ -273,6 +302,8 @@ class PlaybackControlArbiter {
 
     // Invalidate first. Cleanup code can never authorize another live write.
     _activeLease = null;
+    _activeLeaseReferences = 0;
+    lease._markReleased();
     final revokedGeneration = lease.generation;
     _generation++;
     _emit(PlaybackControlDiagnostic(
@@ -340,8 +371,13 @@ class PlaybackControlLease {
   final String owner;
   final PlaybackControlPriority priority;
   final int generation;
+  bool _released = false;
 
   bool get isCurrent => _arbiter._owns(this);
+
+  void _markReleased() {
+    _released = true;
+  }
 
   /// Authorize one immediate live-output write. Call again after every await.
   bool authorizeWrite(String operation) {
