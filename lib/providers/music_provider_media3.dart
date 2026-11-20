@@ -1396,30 +1396,11 @@ extension MusicProviderMedia3 on MusicProvider {
                 (_media3ShadowState?.activeDeckId ?? 'A') == deckId);
     try {
       final analysisService = _djAnalysis ??= DjAnalysisService();
-      var profile = await analysisService.getProfile(song.id);
-      if (profile == null || !profile.dspAnalysis.isMeasured ||
-          !profile.dspAnalysis.isValid ||
-          profile.dspAnalysis.maxSafeBassDb == null) {
-        // Build a fresh PCM profile when the cache predates DSP metrics. This
-        // is deliberately asynchronous and never delays playback or preload.
-        await analysisService.analyzeSong(song, force: true);
-        if (!currentRequest()) return;
-        profile = await analysisService.getProfile(song.id);
-        // analyzeSong can join an already-running DJ analysis and return
-        // before that job persists its PCM profile. Wait briefly for that
-        // shared work instead of silently losing this deck's hint update.
-        for (var attempt = 0;
-            attempt < 20 &&
-                (profile == null ||
-                    !profile.dspAnalysis.isMeasured ||
-                    !profile.dspAnalysis.isValid ||
-                    profile.dspAnalysis.maxSafeBassDb == null);
-            attempt++) {
-          await Future<void>.delayed(const Duration(milliseconds: 250));
-          if (!currentRequest()) return;
-          profile = await analysisService.getProfile(song.id);
-        }
-      }
+      // Playback consumes an existing, fully measured profile only.
+      // It must never launch offline decoding/analysis during app startup,
+      // song selection, or preload. DJ analysis can populate this cache
+      // independently; a missing profile simply means no deck hint yet.
+      final profile = await analysisService.getProfile(song.id);
       if (!currentRequest() ||
           profile == null ||
           profile.songId != song.id ||
