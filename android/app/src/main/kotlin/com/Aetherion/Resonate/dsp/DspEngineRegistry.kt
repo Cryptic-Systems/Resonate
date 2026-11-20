@@ -52,6 +52,12 @@ object DspEngineRegistry {
         fun setLimiterConfig(handle: Long, enabled: Boolean, mode: Int, thresholdDb: Float, releaseMs: Float, attackMs: Float, lookaheadMs: Float, kneeDb: Float) {}
         fun setDither(handle: Long, enabled: Boolean, mode: Int) {}
         fun setAnalysisHint(
+        fun setAutoDynamicsConfig(
+            handle: Long, autoBassEnabled: Boolean, autoBassTargetDb: Float,
+            autoBassMarginDb: Float, autoBassFreqHz: Float, autoGainEnabled: Boolean,
+            autoGainTargetRmsDb: Float, autoGainBiasDb: Float, autoGainMaxBoostDb: Float,
+            autoGainMaxCutDb: Float, autoGainWindowMs: Float,
+        ) {}
             handle: Long, enabled: Boolean, samplePeakDb: Float, truePeakDb: Float,
             rmsDb: Float, crestDb: Float, bassEnergyDb: Float,
         ) {}
@@ -84,6 +90,16 @@ object DspEngineRegistry {
         override fun setDither(handle: Long, enabled: Boolean, mode: Int) =
             DspEngineJni.nativeSetDither(handle, enabled, mode)
         override fun setAnalysisHint(
+        override fun setAutoDynamicsConfig(
+            handle: Long, autoBassEnabled: Boolean, autoBassTargetDb: Float,
+            autoBassMarginDb: Float, autoBassFreqHz: Float, autoGainEnabled: Boolean,
+            autoGainTargetRmsDb: Float, autoGainBiasDb: Float, autoGainMaxBoostDb: Float,
+            autoGainMaxCutDb: Float, autoGainWindowMs: Float,
+        ) = DspEngineJni.nativeSetAutoDynamicsConfig(
+            handle, autoBassEnabled, autoBassTargetDb, autoBassMarginDb, autoBassFreqHz,
+            autoGainEnabled, autoGainTargetRmsDb, autoGainBiasDb, autoGainMaxBoostDb,
+            autoGainMaxCutDb, autoGainWindowMs,
+        )
             handle: Long, enabled: Boolean, samplePeakDb: Float, truePeakDb: Float,
             rmsDb: Float, crestDb: Float, bassEnergyDb: Float,
         ) = DspEngineJni.nativeSetAnalysisHint(
@@ -147,6 +163,16 @@ object DspEngineRegistry {
         val silenceHygieneEnabled: Boolean = false,
         val silenceThresholdDb: Float = -70f,
         val silenceHoldMs: Float = 500f,
+        val autoBassEnabled: Boolean = false,
+        val autoBassTargetDb: Float = 4f,
+        val autoBassMarginDb: Float = 1f,
+        val autoBassFreqHz: Float = 80f,
+        val autoGainEnabled: Boolean = false,
+        val autoGainTargetRmsDb: Float = -18f,
+        val autoGainBiasDb: Float = 0f,
+        val autoGainMaxBoostDb: Float = 6f,
+        val autoGainMaxCutDb: Float = 12f,
+        val autoGainWindowMs: Float = 400f,
     )
 
     @Volatile
@@ -390,6 +416,16 @@ object DspEngineRegistry {
             "silenceHygieneEnabled" to stickyState.silenceHygieneEnabled,
             "silenceThresholdDb" to stickyState.silenceThresholdDb,
             "silenceHoldMs" to stickyState.silenceHoldMs,
+            "autoBassEnabled" to stickyState.autoBassEnabled,
+            "autoBassTargetDb" to stickyState.autoBassTargetDb,
+            "autoBassMarginDb" to stickyState.autoBassMarginDb,
+            "autoBassFreqHz" to stickyState.autoBassFreqHz,
+            "autoGainEnabled" to stickyState.autoGainEnabled,
+            "autoGainTargetRmsDb" to stickyState.autoGainTargetRmsDb,
+            "autoGainBiasDb" to stickyState.autoGainBiasDb,
+            "autoGainMaxBoostDb" to stickyState.autoGainMaxBoostDb,
+            "autoGainMaxCutDb" to stickyState.autoGainMaxCutDb,
+            "autoGainWindowMs" to stickyState.autoGainWindowMs,
         )
         base.putAll(latencySnapshot())
         return base
@@ -585,6 +621,51 @@ object DspEngineRegistry {
                 )
             }.onFailure { Log.w(TAG, "setIntelligenceConfig failed handle=" + engine.handle, it) }
         }
+    }
+
+    /** Configure the upstream v0.5 online auto-bass and auto-DVC processors. */
+    @JvmStatic
+    @Synchronized
+    fun applyAutoDynamicsConfigAll(
+        autoBassEnabled: Boolean, autoBassTargetDb: Float, autoBassMarginDb: Float,
+        autoBassFreqHz: Float, autoGainEnabled: Boolean, autoGainTargetRmsDb: Float,
+        autoGainBiasDb: Float, autoGainMaxBoostDb: Float, autoGainMaxCutDb: Float,
+        autoGainWindowMs: Float,
+    ): Boolean {
+        val values = floatArrayOf(
+            autoBassTargetDb, autoBassMarginDb, autoBassFreqHz, autoGainTargetRmsDb,
+            autoGainBiasDb, autoGainMaxBoostDb, autoGainMaxCutDb, autoGainWindowMs,
+        )
+        if (values.any { !it.isFinite() } ||
+            autoBassTargetDb !in 0f..12f || autoBassMarginDb !in 0f..12f ||
+            autoBassFreqHz !in 40f..160f || autoGainTargetRmsDb !in -30f..-8f ||
+            autoGainBiasDb !in -6f..6f || autoGainMaxBoostDb !in 0f..12f ||
+            autoGainMaxCutDb !in 0f..24f || autoGainWindowMs !in 200f..3000f
+        ) return false
+        stickyState = stickyState.copy(
+            autoBassEnabled = autoBassEnabled,
+            autoBassTargetDb = autoBassTargetDb,
+            autoBassMarginDb = autoBassMarginDb,
+            autoBassFreqHz = autoBassFreqHz,
+            autoGainEnabled = autoGainEnabled,
+            autoGainTargetRmsDb = autoGainTargetRmsDb,
+            autoGainBiasDb = autoGainBiasDb,
+            autoGainMaxBoostDb = autoGainMaxBoostDb,
+            autoGainMaxCutDb = autoGainMaxCutDb,
+            autoGainWindowMs = autoGainWindowMs,
+        )
+        val state = stickyState
+        handles.values.forEach { engine ->
+            runCatching {
+                nativeApi.setAutoDynamicsConfig(
+                    engine.handle, state.autoBassEnabled, state.autoBassTargetDb,
+                    state.autoBassMarginDb, state.autoBassFreqHz, state.autoGainEnabled,
+                    state.autoGainTargetRmsDb, state.autoGainBiasDb, state.autoGainMaxBoostDb,
+                    state.autoGainMaxCutDb, state.autoGainWindowMs,
+                )
+            }.onFailure { Log.w(TAG, "setAutoDynamicsConfig failed handle=" + engine.handle, it) }
+        }
+        return true
     }
 
     @JvmStatic
@@ -827,6 +908,12 @@ object DspEngineRegistry {
                 state.autoPreampEnabled, state.autoPreampTargetDb,
                 state.autoVirtualBassEnabled, state.autoVirtualBassTarget,
                 state.silenceHygieneEnabled, state.silenceThresholdDb, state.silenceHoldMs,
+            )
+            nativeApi.setAutoDynamicsConfig(
+                handle, state.autoBassEnabled, state.autoBassTargetDb,
+                state.autoBassMarginDb, state.autoBassFreqHz, state.autoGainEnabled,
+                state.autoGainTargetRmsDb, state.autoGainBiasDb, state.autoGainMaxBoostDb,
+                state.autoGainMaxCutDb, state.autoGainWindowMs,
             )
             deckAnalysisHints[deckId]?.takeIf { deckTracks[deckId] == it.songId }?.let {
                 applyAnalysisHint(handle, it)
