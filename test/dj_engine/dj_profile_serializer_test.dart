@@ -42,6 +42,13 @@ void main() {
           highs: 0.6,
         ),
       ],
+      dspAnalysis: DspAnalysisMetrics(
+        samplePeakDb: -1.2,
+        truePeakDb: -0.8,
+        rmsDb: -12.4,
+        crestDb: 11.2,
+        bassEnergyDb: -18.5,
+      ),
       spectrum: DjSpectralProfile(
         bass: 0.7,
         mids: 0.6,
@@ -82,6 +89,11 @@ void main() {
     expect(decoded.sections.single.type, DjSectionType.breakdown);
     expect(decoded.energyCurve.single.bass, 0.3);
     expect(decoded.spectrum.bassDensity, 0.65);
+    expect(decoded.dspAnalysis.samplePeakDb, -1.2);
+    expect(decoded.dspAnalysis.truePeakDb, -0.8);
+    expect(decoded.dspAnalysis.rmsDb, -12.4);
+    expect(decoded.dspAnalysis.crestDb, 11.2);
+    expect(decoded.dspAnalysis.bassEnergyDb, -18.5);
     expect(decoded.transitions.bestOutroMs, 166000);
     expect(decoded.transitions.safeMixIns.single.timeMs, 12000);
     expect(decoded.transitions.safeMixOuts.single.timeMs, 166000);
@@ -96,6 +108,8 @@ void main() {
     final decoded = serializer.decode('{"songId":"legacy","durationMs":120000}');
     expect(decoded.songId, 'legacy');
     expect(decoded.silenceRegions, isEmpty);
+    expect(decoded.dspAnalysis.isMeasured, isFalse);
+    expect(decoded.dspAnalysis.samplePeakDb, -160);
   });
 
   test('drops malformed and out-of-range profile timeline data', () {
