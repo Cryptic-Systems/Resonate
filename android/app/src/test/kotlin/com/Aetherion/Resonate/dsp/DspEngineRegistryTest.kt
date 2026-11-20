@@ -88,10 +88,10 @@ class DspEngineRegistryTest {
 
         override fun setAnalysisHint(
             handle: Long, enabled: Boolean, samplePeakDb: Float, truePeakDb: Float,
-            rmsDb: Float, crestDb: Float, bassEnergyDb: Float,
+            rmsDb: Float, crestDb: Float, bassEnergyDb: Float, maxSafeBassDb: Float,
         ) {
             calls += "analysis:" + handle + ":" + enabled + ":" + samplePeakDb + ":" +
-                truePeakDb + ":" + rmsDb + ":" + crestDb + ":" + bassEnergyDb
+                truePeakDb + ":" + rmsDb + ":" + crestDb + ":" + bassEnergyDb + ":" + maxSafeBassDb
         }
 
         override fun setIntelligenceConfig(
