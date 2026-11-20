@@ -73,6 +73,18 @@ class DspEngineRegistryTest {
         override fun setDither(handle: Long, enabled: Boolean, mode: Int) {
             calls += "dither:" + handle + ":" + enabled + ":" + mode
         }
+
+        override fun setIntelligenceConfig(
+            handle: Long, bassWeight: Float, preampWeight: Float, gainWeight: Float,
+            autoPreampEnabled: Boolean, autoPreampTargetDb: Float,
+            autoVirtualBassEnabled: Boolean, autoVirtualBassTarget: Float,
+            silenceHygieneEnabled: Boolean, silenceThresholdDb: Float, silenceHoldMs: Float,
+        ) {
+            calls += "intelligence:" + handle + ":" + bassWeight + ":" + preampWeight + ":" +
+                gainWeight + ":" + autoPreampEnabled + ":" + autoPreampTargetDb + ":" +
+                autoVirtualBassEnabled + ":" + autoVirtualBassTarget + ":" +
+                silenceHygieneEnabled + ":" + silenceThresholdDb + ":" + silenceHoldMs
+        }
     }
 
     private lateinit var fake: FakeApi
@@ -135,6 +147,54 @@ class DspEngineRegistryTest {
         assertTrue(fake.calls.any { it == "limiter-config:11011:true:3:-2.0" })
         assertTrue(fake.calls.any { it == "dither:11011:true:2" })
         assertTrue(fake.calls.any { it == "parametric:11011:3:0.8:1" })
+    }
+
+    @Test
+    fun v06_intelligence_profile_is_normalized_clamped_and_inherited_by_new_decks() {
+        assertTrue(DspEngineRegistry.register(41, 41041L, "A"))
+        DspEngineRegistry.applyIntelligenceConfigAll(
+            2f, 1f, 1f,
+            true, 18f,
+            true, 1.4f,
+            true, -140f, 9000f,
+        )
+
+        assertTrue(fake.calls.any {
+            it == "intelligence:41041:0.5:0.25:0.25:true:12.0:true:1.0:true:-120.0:5000.0"
+        })
+
+        val status = DspEngineRegistry.statusMap()
+        assertEquals(0.5f, status["headroomBassWeight"])
+        assertEquals(0.25f, status["headroomPreampWeight"])
+        assertEquals(0.25f, status["headroomGainWeight"])
+        assertEquals(12f, status["autoPreampTargetDb"])
+        assertEquals(1f, status["autoVirtualBassTarget"])
+        assertEquals(-120f, status["silenceThresholdDb"])
+        assertEquals(5000f, status["silenceHoldMs"])
+
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.register(42, 42042L, "B"))
+        assertTrue(fake.calls.any {
+            it == "intelligence:42042:0.5:0.25:0.25:true:12.0:true:1.0:true:-120.0:5000.0"
+        })
+    }
+
+    @Test
+    fun v06_intelligence_profile_rejects_non_finite_or_empty_headroom_weights() {
+        DspEngineRegistry.applyIntelligenceConfigAll(
+            0f, 0f, 0f,
+            true, 4f, true, 0.8f, true, -70f, 500f,
+        )
+        val status = DspEngineRegistry.statusMap()
+        assertEquals(0.50f, status["headroomBassWeight"])
+        assertEquals(0.20f, status["headroomPreampWeight"])
+        assertEquals(0.30f, status["headroomGainWeight"])
+
+        DspEngineRegistry.applyIntelligenceConfigAll(
+            Float.NaN, 0.2f, 0.3f,
+            true, 4f, true, 0.8f, true, -70f, 500f,
+        )
+        assertEquals(0.50f, DspEngineRegistry.statusMap()["headroomBassWeight"])
     }
 
     @Test
