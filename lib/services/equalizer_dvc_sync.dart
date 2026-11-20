@@ -16,7 +16,7 @@ Future<void> _withDspControlLease({
     return;
   }
   final acquired = await arbiter.acquire(
-    owner: 'dsp_profile',
+    owner: 'dsp_profile_${priority.name}',
     priority: priority,
   );
   if (acquired == null) return;
