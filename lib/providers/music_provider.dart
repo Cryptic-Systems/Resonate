@@ -1164,6 +1164,12 @@ class MusicProvider extends ChangeNotifier {
     final repeatSelfFadeInProgress = mode != PlaybackRepeatMode.one &&
         (_repeatSelfFadeExecuting ||
             (_repeatSelfHandoffInFlight && _crossfadeInProgress));
+    debugPrint(
+      'Repeat mode decision: mode=${mode.name} '
+      'active=$transitionActive handoff=$_repeatSelfHandoffInFlight '
+      'crossfade=$_crossfadeInProgress executing=$_repeatSelfFadeExecuting '
+      'preserve=$repeatSelfFadeInProgress',
+    );
     if (transitionActive && !repeatSelfFadeInProgress) {
       _cancelAutomaticPlaybackWork();
     } else if (repeatSelfFadeInProgress) {
@@ -4418,6 +4424,11 @@ class MusicProvider extends ChangeNotifier {
 
   /// Phase 4: user transport always wins over automatic work.
   void _cancelAutomaticPlaybackWork({String reason = 'manual_transport_preemption'}) {
+    debugPrint(
+      'Automatic playback cancellation: reason=$reason '
+      'repeatSelf=$_repeatSelfHandoffInFlight '
+      'crossfade=$_crossfadeInProgress executing=$_repeatSelfFadeExecuting',
+    );
     // Invalidate all in-flight automatic A/B work before starting the user's
     // transport operation. Old futures may still unwind, but cannot commit.
     final hadRepeatSelfHandoff = _repeatSelfHandoffArmed || _repeatSelfHandoffInFlight;
