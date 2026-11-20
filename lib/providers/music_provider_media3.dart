@@ -1205,7 +1205,9 @@ extension MusicProviderMedia3 on MusicProvider {
       'all' => PlaybackRepeatMode.all,
       _ => PlaybackRepeatMode.off,
     };
-    if (!_repeatSelfHandoffInFlight && !_repeatSelfHandoffArmed &&
+    if (!_repeatSelfFadeExecuting &&
+        !_repeatSelfHandoffInFlight &&
+        !_repeatSelfHandoffArmed &&
         observedRepeatMode != _repeatMode) {
       final transitionActive = _crossfadeInProgress ||
           _automaticCrossfadeInFlight || _crossfadePreloadInFlight ||
