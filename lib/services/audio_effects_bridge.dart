@@ -275,7 +275,9 @@ class AudioEffectsBridge {
         truePeakDb < -160 || truePeakDb > 6 ||
         rmsDb < -160 || rmsDb > 0.1 ||
         crestDb < 0 || crestDb > 30 ||
-        bassEnergyDb < -160 || bassEnergyDb > 0.1) {
+        bassEnergyDb < -160 || bassEnergyDb > 0.1 ||
+        (maxSafeBassDb != null &&
+            (!maxSafeBassDb.isFinite || maxSafeBassDb < 0 || maxSafeBassDb > 18))) {
       return false;
     }
     try {
