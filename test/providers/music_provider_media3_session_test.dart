@@ -2928,6 +2928,8 @@ void main() {
         reason: 'The same-track standby fade must have started before changing repeat mode.',
       );
 
+      final repeatOneWritesBeforeToggle =
+          session.calls.where((call) => call == 'repeat:one').length;
       await provider.setRepeatMode(PlaybackRepeatMode.off);
       expect(provider.repeatMode, PlaybackRepeatMode.off);
       expect(session.repeatModeSet, PlaybackQueueRepeatMode.off);
@@ -2950,8 +2952,8 @@ void main() {
       expect(provider.queueIndex, 0);
       expect(session.repeatModeSet, PlaybackQueueRepeatMode.off);
       expect(
-        session.calls.where((call) => call == 'repeat:one'),
-        isEmpty,
+        session.calls.where((call) => call == 'repeat:one').length,
+        repeatOneWritesBeforeToggle,
         reason: 'The completed handoff must not restore the stale Repeat One policy.',
       );
 
