@@ -366,7 +366,11 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   Future<void> cancelCrossfade() async {
     calls.add('cancelCrossfade');
     crossfadeCancelled = true;
-    await cancelCrossfadeGate?.future;
+    final gate = cancelCrossfadeGate;
+    if (gate != null) {
+      calls.add('cancelCrossfade_waiting');
+      await gate.future;
+    }
   }
 
   @override
@@ -3211,9 +3215,30 @@ void main() {
 
       final playCallsBeforePause =
           session.calls.where((call) => call == 'play').length;
+      final cancelGate = Completer<void>();
+      session.cancelCrossfadeGate = cancelGate;
       final pauseGate = Completer<void>();
       session.pauseGate = pauseGate;
       final pauseFuture = provider.pause();
+      for (var attempt = 0;
+          attempt < 100 &&
+              !session.calls.contains('cancelCrossfade_waiting');
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+      expect(session.calls, contains('cancelCrossfade_waiting'));
+      expect(
+        provider.playbackControlArbiter.activeOwner,
+        isNull,
+        reason: 'The old lease must be invalidated while native cleanup is pending.',
+      );
+      expect(
+        session.calls,
+        isNot(contains('pause_waiting')),
+        reason: 'Manual transport must wait until revoked transition cleanup settles.',
+      );
+
+      cancelGate.complete();
       for (var attempt = 0;
           attempt < 100 && !session.calls.contains('pause_waiting');
           attempt++) {
@@ -3223,7 +3248,7 @@ void main() {
       expect(
         provider.playbackControlArbiter.activeOwner,
         'user_transport',
-        reason: 'Manual Pause must preempt the fade and own transport writes.',
+        reason: 'Manual Pause receives the lease only after fade teardown completes.',
       );
       pauseGate.complete();
       await pauseFuture;
