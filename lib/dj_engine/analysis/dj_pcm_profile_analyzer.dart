@@ -194,18 +194,25 @@ class DjPcmProfileAnalyzer {
       }
 
       // Four-times inter-sample peak estimate using Catmull-Rom interpolation.
+      // Measure channels independently so anti-phase stereo cannot cancel.
       // This is a practical oversampled estimate, not a certified BS.1770 meter.
       for (var i = 1; i < frameCount - 2; i++) {
-        final a = mono[i - 1], b = mono[i], c = mono[i + 1], d = mono[i + 2];
-        for (var phase = 1; phase < 4; phase++) {
-          final t = phase / 4.0;
-          final t2 = t * t, t3 = t2 * t;
-          final value = 0.5 * (
-            2 * b + (-a + c) * t +
-            (2 * a - 5 * b + 4 * c - d) * t2 +
-            (-a + 3 * b - 3 * c + d) * t3
-          );
-          if (value.abs() > truePeak) truePeak = value.abs();
+        for (var channel = 0; channel < window.channels; channel++) {
+          double at(int frame) => data.getInt16(
+                frame * frameBytes + channel * 2,
+                Endian.little,
+              ) / 32768.0;
+          final a = at(i - 1), b = at(i), c = at(i + 1), d = at(i + 2);
+          for (var phase = 1; phase < 4; phase++) {
+            final t = phase / 4.0;
+            final t2 = t * t, t3 = t2 * t;
+            final value = 0.5 * (
+              2 * b + (-a + c) * t +
+              (2 * a - 5 * b + 4 * c - d) * t2 +
+              (-a + 3 * b - 3 * c + d) * t3
+            );
+            if (value.abs() > truePeak) truePeak = value.abs();
+          }
         }
       }
       if (samplePeak > truePeak) truePeak = samplePeak;
