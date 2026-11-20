@@ -60,6 +60,12 @@ struct PendingSettings {
     std::atomic<int> silenceHygieneEnabled{0};
     std::atomic<float> silenceThresholdDb{-70.f};
     std::atomic<float> silenceHoldMs{500.f};
+    std::atomic<int> analysisHintEnabled{0};
+    std::atomic<float> analysisSamplePeakDb{-160.f};
+    std::atomic<float> analysisTruePeakDb{-160.f};
+    std::atomic<float> analysisRmsDb{-160.f};
+    std::atomic<float> analysisCrestDb{0.f};
+    std::atomic<float> analysisBassEnergyDb{-160.f};
 
     PendingSettings() {
         for (int i = 0; i < kMaxEqBands; ++i) {
@@ -115,6 +121,12 @@ struct Snapshot {
     int silenceHygieneEnabled = 0;
     float silenceThresholdDb = -70.f;
     float silenceHoldMs = 500.f;
+    int analysisHintEnabled = 0;
+    float analysisSamplePeakDb = -160.f;
+    float analysisTruePeakDb = -160.f;
+    float analysisRmsDb = -160.f;
+    float analysisCrestDb = 0.f;
+    float analysisBassEnergyDb = -160.f;
 };
 
 struct NativeHandle {
@@ -178,6 +190,12 @@ bool readSnapshot(const PendingSettings& p, Snapshot* out) {
         s.silenceHygieneEnabled = p.silenceHygieneEnabled.load(std::memory_order_relaxed);
         s.silenceThresholdDb = p.silenceThresholdDb.load(std::memory_order_relaxed);
         s.silenceHoldMs = p.silenceHoldMs.load(std::memory_order_relaxed);
+        s.analysisHintEnabled = p.analysisHintEnabled.load(std::memory_order_relaxed);
+        s.analysisSamplePeakDb = p.analysisSamplePeakDb.load(std::memory_order_relaxed);
+        s.analysisTruePeakDb = p.analysisTruePeakDb.load(std::memory_order_relaxed);
+        s.analysisRmsDb = p.analysisRmsDb.load(std::memory_order_relaxed);
+        s.analysisCrestDb = p.analysisCrestDb.load(std::memory_order_relaxed);
+        s.analysisBassEnergyDb = p.analysisBassEnergyDb.load(std::memory_order_relaxed);
         const uint32_t after = p.sequence.load(std::memory_order_acquire);
         if (before == after && (after & 1U) == 0U) {
             *out = s;
@@ -281,6 +299,26 @@ void applyPending(NativeHandle* h) {
         dsp_silence_hygiene_set_threshold_db(e, s.silenceThresholdDb);
     if (initial || s.silenceHoldMs != old.silenceHoldMs)
         dsp_silence_hygiene_set_hold_ms(e, s.silenceHoldMs);
+
+    if (initial || s.analysisHintEnabled != old.analysisHintEnabled ||
+        s.analysisSamplePeakDb != old.analysisSamplePeakDb ||
+        s.analysisTruePeakDb != old.analysisTruePeakDb ||
+        s.analysisRmsDb != old.analysisRmsDb ||
+        s.analysisCrestDb != old.analysisCrestDb ||
+        s.analysisBassEnergyDb != old.analysisBassEnergyDb) {
+        DspAnalysisResult analysis{};
+        analysis.sample_peak_db = s.analysisHintEnabled ? s.analysisSamplePeakDb : -160.f;
+        analysis.true_peak_db = s.analysisHintEnabled ? s.analysisTruePeakDb : -160.f;
+        analysis.rms_db = s.analysisHintEnabled ? s.analysisRmsDb : -160.f;
+        analysis.crest_db = s.analysisHintEnabled ? s.analysisCrestDb : 0.f;
+        analysis.bass_energy_db = s.analysisHintEnabled ? s.analysisBassEnergyDb : -160.f;
+        // 24 dB is the upstream sentinel for no max-safe-bass cap. Resonate
+        // does not yet measure that value, so never fabricate it.
+        dsp_apply_analysis_hint(e, &analysis, 24.f);
+        // Upstream only updates crest for positive hints; explicitly clear a
+        // previous track's limiter personality when a physical deck is reused.
+        dsp_limiter_set_crest_hint(e, analysis.crest_db > 0.f ? analysis.crest_db : 0.f);
+    }
 
     h->appliedSnapshot = s;
     h->hasAppliedSnapshot = true;
@@ -568,6 +606,27 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetIntelligenceConfig(
         h->pending.silenceThresholdDb.store(std::clamp(silenceThresholdDb, -120.f, -20.f), std::memory_order_relaxed);
         h->pending.silenceHoldMs.store(std::clamp(silenceHoldMs, 50.f, 5000.f), std::memory_order_relaxed);
     });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetAnalysisHint(
+        JNIEnv*, jclass, jlong value, jboolean enabled,
+        jfloat samplePeakDb, jfloat truePeakDb, jfloat rmsDb,
+        jfloat crestDb, jfloat bassEnergyDb) {
+    if (auto* h = fromHandle(value)) {
+        const bool useHint = enabled == JNI_TRUE &&
+            std::isfinite(samplePeakDb) && std::isfinite(truePeakDb) &&
+            std::isfinite(rmsDb) && std::isfinite(crestDb) &&
+            std::isfinite(bassEnergyDb);
+        h->pending.update([&] {
+            h->pending.analysisHintEnabled.store(useHint ? 1 : 0, std::memory_order_relaxed);
+            h->pending.analysisSamplePeakDb.store(useHint ? std::clamp(samplePeakDb, -160.f, 6.f) : -160.f, std::memory_order_relaxed);
+            h->pending.analysisTruePeakDb.store(useHint ? std::clamp(truePeakDb, -160.f, 6.f) : -160.f, std::memory_order_relaxed);
+            h->pending.analysisRmsDb.store(useHint ? std::clamp(rmsDb, -160.f, 0.1f) : -160.f, std::memory_order_relaxed);
+            h->pending.analysisCrestDb.store(useHint ? std::clamp(crestDb, 0.f, 30.f) : 0.f, std::memory_order_relaxed);
+            h->pending.analysisBassEnergyDb.store(useHint ? std::clamp(bassEnergyDb, -160.f, 0.1f) : -160.f, std::memory_order_relaxed);
+        });
+    }
 }
 
 extern "C" JNIEXPORT jdoubleArray JNICALL
