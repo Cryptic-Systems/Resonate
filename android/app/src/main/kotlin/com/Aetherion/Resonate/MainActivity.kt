@@ -60,6 +60,15 @@ class MainActivity : AudioServiceActivity() {
                     (call.argument<Number>("startMs") ?: 0).toLong(),
                     result,
                 )
+                "probeMaxBassGainDb" -> pcmAnalysisHandler.probeMaxBassGainDb(
+                    call.argument<ByteArray>("pcm16") ?: ByteArray(0),
+                    call.argument<Int>("channels") ?: 0,
+                    call.argument<Int>("sampleRate") ?: 0,
+                    (call.argument<Number>("shelfFreqHz") ?: 80.0).toFloat(),
+                    (call.argument<Number>("ceilingDb") ?: -0.1).toFloat(),
+                    (call.argument<Number>("marginDb") ?: 1.0).toFloat(),
+                    result,
+                )
                 "cancelPcmAnalysis" -> pcmAnalysisHandler.cancel(result)
                 else -> result.notImplemented()
             }
