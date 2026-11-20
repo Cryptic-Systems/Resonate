@@ -48,6 +48,7 @@ void main() {
         rmsDb: -12.4,
         crestDb: 11.2,
         bassEnergyDb: -18.5,
+        maxSafeBassDb: 4.5,
       ),
       spectrum: DjSpectralProfile(
         bass: 0.7,
@@ -94,6 +95,7 @@ void main() {
     expect(decoded.dspAnalysis.rmsDb, -12.4);
     expect(decoded.dspAnalysis.crestDb, 11.2);
     expect(decoded.dspAnalysis.bassEnergyDb, -18.5);
+    expect(decoded.dspAnalysis.maxSafeBassDb, 4.5);
     expect(decoded.transitions.bestOutroMs, 166000);
     expect(decoded.transitions.safeMixIns.single.timeMs, 12000);
     expect(decoded.transitions.safeMixOuts.single.timeMs, 166000);
