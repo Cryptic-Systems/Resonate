@@ -94,6 +94,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   bool deferLoadQueueState = false;
   Completer<void>? cancelCrossfadeGate;
   Completer<void>? crossfadeGate;
+  Completer<void>? pauseGate;
   Completer<void>? deckSpeedResetGate;
   Completer<void>? preloadNextGate;
   bool crossfadeCancelled = false;
@@ -189,7 +190,16 @@ class _FakePlaybackSession implements PlaybackEngineSession {
     calls.add('speed:$speed');
   }
   @override
-  Future<void> pause() async { playingValue = false; calls.add('pause'); }
+  Future<void> pause() async {
+    calls.add('pause');
+    final gate = pauseGate;
+    if (gate != null) {
+      pauseGate = null;
+      calls.add('pause_waiting');
+      await gate.future;
+    }
+    playingValue = false;
+  }
   @override
   Future<void> stop() async { playingValue = false; calls.add('stop'); }
   @override
@@ -3193,10 +3203,30 @@ void main() {
         isTrue,
         reason: 'The repeat-self fade must be running before Pause preempts it.',
       );
+      expect(
+        provider.playbackControlArbiter.activeOwner,
+        'media3_repeat_self_fade',
+        reason: 'The audible Repeat One handoff must own live output control.',
+      );
 
       final playCallsBeforePause =
           session.calls.where((call) => call == 'play').length;
-      await provider.pause();
+      final pauseGate = Completer<void>();
+      session.pauseGate = pauseGate;
+      final pauseFuture = provider.pause();
+      for (var attempt = 0;
+          attempt < 100 && !session.calls.contains('pause_waiting');
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+      expect(session.calls, contains('pause_waiting'));
+      expect(
+        provider.playbackControlArbiter.activeOwner,
+        'user_transport',
+        reason: 'Manual Pause must preempt the fade and own transport writes.',
+      );
+      pauseGate.complete();
+      await pauseFuture;
       final playCallsAfterPause =
           session.calls.where((call) => call == 'play').length;
       expect(session.calls, contains('cancelCrossfade'));
