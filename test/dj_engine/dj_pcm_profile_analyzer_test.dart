@@ -118,6 +118,58 @@ void main() {
     expect(profile.silenceRegions.single.endMs, lessThanOrEqualTo(130000));
   });
 
+  test('decoded PCM produces measured peak true-peak RMS crest and bass metrics', () {
+    const sampleRate = 48000;
+    const amplitude = 0.5;
+    final pcm = ByteData(sampleRate * 2);
+    for (var i = 0; i < sampleRate; i++) {
+      final sample = (math.sin(2 * math.pi * 60 * i / sampleRate) * amplitude * 32767).round();
+      pcm.setInt16(i * 2, sample, Endian.little);
+    }
+    final profile = const DjPcmProfileAnalyzer().analyze(
+      songId: 'dsp-levels',
+      durationMs: 1000,
+      windows: [
+        DjDecodedPcmWindow(
+          pcm: pcm.buffer.asUint8List(),
+          sampleRate: sampleRate,
+          channels: 1,
+          startMs: 0,
+          role: 'mid',
+        ),
+      ],
+    );
+    final metrics = profile.dspAnalysis;
+    expect(metrics.isMeasured, isTrue);
+    expect(metrics.isValid, isTrue);
+    expect(metrics.samplePeakDb, closeTo(-6.02, 0.15));
+    expect(metrics.truePeakDb, greaterThanOrEqualTo(metrics.samplePeakDb));
+    expect(metrics.rmsDb, closeTo(-9.03, 0.2));
+    expect(metrics.crestDb, closeTo(3.01, 0.25));
+    expect(metrics.bassEnergyDb, greaterThan(-12));
+    expect(metrics.bassEnergyDb, lessThan(-5));
+  });
+
+  test('digital silence has finite floor metrics and never creates NaN', () {
+    const sampleRate = 16000;
+    final profile = const DjPcmProfileAnalyzer().analyze(
+      songId: 'dsp-silence',
+      durationMs: 1000,
+      windows: [
+        DjDecodedPcmWindow(
+          pcm: Uint8List(sampleRate * 2),
+          sampleRate: sampleRate,
+          channels: 1,
+          startMs: 0,
+        ),
+      ],
+    );
+    expect(profile.dspAnalysis.isValid, isTrue);
+    expect(profile.dspAnalysis.samplePeakDb, -160);
+    expect(profile.dspAnalysis.rmsDb, -160);
+    expect(profile.dspAnalysis.bassEnergyDb, -160);
+  });
+
   test('decoded PCM contributes real spectral profile data', () {
     const sampleRate = 11025;
     final pcm = ByteData(sampleRate * 2);
