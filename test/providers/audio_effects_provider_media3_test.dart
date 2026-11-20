@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:resonate/models/dsp_settings.dart';
 import 'package:resonate/providers/audio_effects_provider.dart';
+import 'package:resonate/playback/playback_control_arbiter.dart';
 import 'package:resonate/services/playback_engine_session.dart';
 import 'package:resonate/services/media3_provider_state_bridge.dart';
 
@@ -235,6 +236,57 @@ void main() {
 
     provider.dispose();
     await session.close();
+  });
+
+  test('interactive DSP profile update waits for revoked transition cleanup',
+      () async {
+    final session = _FakePlaybackSession();
+    final arbiter = PlaybackControlArbiter();
+    final provider = AudioEffectsProvider(
+      playbackSession: session,
+      playbackControlArbiter: arbiter,
+    );
+    await provider.ready;
+    session.emitState(801);
+    await settleProvider(provider);
+    calls.clear();
+
+    final cleanupGate = Completer<void>();
+    var cleanupStarted = false;
+    final transition = await arbiter.acquire(
+      owner: 'dj_transition',
+      priority: PlaybackControlPriority.automatic,
+      onRevoked: (_) async {
+        cleanupStarted = true;
+        await cleanupGate.future;
+      },
+    );
+    expect(transition, isNotNull);
+
+    final update = provider.setEffectsEnabled(false);
+    for (var attempt = 0;
+        attempt < 100 && !cleanupStarted;
+        attempt++) {
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+    }
+    expect(cleanupStarted, isTrue);
+    expect(arbiter.activeOwner, isNull);
+    expect(
+      calls,
+      isEmpty,
+      reason: 'DSP writes must wait until the outgoing transition releases control.',
+    );
+
+    cleanupGate.complete();
+    await update;
+
+    expect(arbiter.activeOwner, isNull);
+    expect(calls.any((call) => call.method == 'setVirtualizer'), isTrue);
+    expect(calls.any((call) => call.method == 'setReverb'), isTrue);
+
+    provider.dispose();
+    await session.close();
+    await arbiter.close();
   });
 
   test('disposing provider cancels Media3 session observation', () async {
