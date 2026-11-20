@@ -65,7 +65,7 @@ class ParametricEqBand {
 /// the transport/crossfade envelope. Existing preference keys are read as a
 /// migration source; new writes use one JSON document.
 class DspSettings {
-  static const int schemaVersion = 6;
+  static const int schemaVersion = 7;
   static const String preferenceKey = 'resonate_dsp_settings_v1';
   static Future<void> _writeQueue = Future<void>.value();
 
@@ -108,6 +108,16 @@ class DspSettings {
   final bool silenceHygieneEnabled;
   final double silenceThresholdDb;
   final double silenceHoldMs;
+  final bool autoBassEnabled;
+  final double autoBassTargetDb;
+  final double autoBassMarginDb;
+  final double autoBassFreqHz;
+  final bool autoGainEnabled;
+  final double autoGainTargetRmsDb;
+  final double autoGainBiasDb;
+  final double autoGainMaxBoostDb;
+  final double autoGainMaxCutDb;
+  final double autoGainWindowMs;
   final bool effectsEnabled;
   final double reverbAmount;
   final double virtualizerAmount;
@@ -149,6 +159,16 @@ class DspSettings {
     this.silenceHygieneEnabled = false,
     this.silenceThresholdDb = -70,
     this.silenceHoldMs = 500,
+    this.autoBassEnabled = false,
+    this.autoBassTargetDb = 4,
+    this.autoBassMarginDb = 1,
+    this.autoBassFreqHz = 80,
+    this.autoGainEnabled = false,
+    this.autoGainTargetRmsDb = -18,
+    this.autoGainBiasDb = 0,
+    this.autoGainMaxBoostDb = 6,
+    this.autoGainMaxCutDb = 12,
+    this.autoGainWindowMs = 400,
     this.effectsEnabled = true,
     this.reverbAmount = 0,
     this.virtualizerAmount = 0,
@@ -199,6 +219,16 @@ class DspSettings {
     bool? silenceHygieneEnabled,
     double? silenceThresholdDb,
     double? silenceHoldMs,
+    bool? autoBassEnabled,
+    double? autoBassTargetDb,
+    double? autoBassMarginDb,
+    double? autoBassFreqHz,
+    bool? autoGainEnabled,
+    double? autoGainTargetRmsDb,
+    double? autoGainBiasDb,
+    double? autoGainMaxBoostDb,
+    double? autoGainMaxCutDb,
+    double? autoGainWindowMs,
     bool? effectsEnabled,
     double? reverbAmount,
     double? virtualizerAmount,
@@ -243,6 +273,16 @@ class DspSettings {
         silenceHygieneEnabled: silenceHygieneEnabled ?? this.silenceHygieneEnabled,
         silenceThresholdDb: _clamp(silenceThresholdDb ?? this.silenceThresholdDb, -120, -20),
         silenceHoldMs: _clamp(silenceHoldMs ?? this.silenceHoldMs, 50, 5000),
+        autoBassEnabled: autoBassEnabled ?? this.autoBassEnabled,
+        autoBassTargetDb: _clamp(autoBassTargetDb ?? this.autoBassTargetDb, 0, 12),
+        autoBassMarginDb: _clamp(autoBassMarginDb ?? this.autoBassMarginDb, 0, 12),
+        autoBassFreqHz: _clamp(autoBassFreqHz ?? this.autoBassFreqHz, 40, 160),
+        autoGainEnabled: autoGainEnabled ?? this.autoGainEnabled,
+        autoGainTargetRmsDb: _clamp(autoGainTargetRmsDb ?? this.autoGainTargetRmsDb, -30, -8),
+        autoGainBiasDb: _clamp(autoGainBiasDb ?? this.autoGainBiasDb, -6, 6),
+        autoGainMaxBoostDb: _clamp(autoGainMaxBoostDb ?? this.autoGainMaxBoostDb, 0, 12),
+        autoGainMaxCutDb: _clamp(autoGainMaxCutDb ?? this.autoGainMaxCutDb, 0, 24),
+        autoGainWindowMs: _clamp(autoGainWindowMs ?? this.autoGainWindowMs, 200, 3000),
         effectsEnabled: effectsEnabled ?? this.effectsEnabled,
         reverbAmount: _clamp(reverbAmount ?? this.reverbAmount, 0, 1),
         virtualizerAmount: _clamp(virtualizerAmount ?? this.virtualizerAmount, 0, 1),
@@ -286,6 +326,16 @@ class DspSettings {
         'silenceHygieneEnabled': silenceHygieneEnabled,
         'silenceThresholdDb': silenceThresholdDb,
         'silenceHoldMs': silenceHoldMs,
+        'autoBassEnabled': autoBassEnabled,
+        'autoBassTargetDb': autoBassTargetDb,
+        'autoBassMarginDb': autoBassMarginDb,
+        'autoBassFreqHz': autoBassFreqHz,
+        'autoGainEnabled': autoGainEnabled,
+        'autoGainTargetRmsDb': autoGainTargetRmsDb,
+        'autoGainBiasDb': autoGainBiasDb,
+        'autoGainMaxBoostDb': autoGainMaxBoostDb,
+        'autoGainMaxCutDb': autoGainMaxCutDb,
+        'autoGainWindowMs': autoGainWindowMs,
         'effectsEnabled': effectsEnabled,
         'reverbAmount': reverbAmount,
         'virtualizerAmount': virtualizerAmount,
@@ -293,7 +343,7 @@ class DspSettings {
 
   factory DspSettings.fromJson(Map<String, dynamic> json) {
     final version = json['version'];
-    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != schemaVersion) {
+    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != schemaVersion) {
       throw const FormatException('Unsupported Resonate DSP settings version.');
     }
     double number(String key, double fallback, double min, double max) {
@@ -385,6 +435,16 @@ class DspSettings {
       silenceHygieneEnabled: json['silenceHygieneEnabled'] is bool ? json['silenceHygieneEnabled'] as bool : false,
       silenceThresholdDb: number('silenceThresholdDb', -70, -120, -20),
       silenceHoldMs: number('silenceHoldMs', 500, 50, 5000),
+      autoBassEnabled: json['autoBassEnabled'] is bool ? json['autoBassEnabled'] as bool : false,
+      autoBassTargetDb: number('autoBassTargetDb', 4, 0, 12),
+      autoBassMarginDb: number('autoBassMarginDb', 1, 0, 12),
+      autoBassFreqHz: number('autoBassFreqHz', 80, 40, 160),
+      autoGainEnabled: json['autoGainEnabled'] is bool ? json['autoGainEnabled'] as bool : false,
+      autoGainTargetRmsDb: number('autoGainTargetRmsDb', -18, -30, -8),
+      autoGainBiasDb: number('autoGainBiasDb', 0, -6, 6),
+      autoGainMaxBoostDb: number('autoGainMaxBoostDb', 6, 0, 12),
+      autoGainMaxCutDb: number('autoGainMaxCutDb', 12, 0, 24),
+      autoGainWindowMs: number('autoGainWindowMs', 400, 200, 3000),
       effectsEnabled: json['effectsEnabled'] is bool ? json['effectsEnabled'] as bool : true,
       reverbAmount: number('reverbAmount', 0, 0, 1),
       virtualizerAmount: number('virtualizerAmount', 0, 0, 1),
