@@ -1158,9 +1158,12 @@ class MusicProvider extends ChangeNotifier {
     // let that short handoff finish and apply the new repeat policy to the
     // promoted deck; cancelling mid-ramp can expose end-of-track advancement
     // and create an audible gain discontinuity.
+    // The executing marker is authoritative once the native repeat-self
+    // ramp has been issued. Do not let a repeat-policy update preempt it.
+    // The handoff flag covers the short interval before the fade is issued.
     final repeatSelfFadeInProgress = mode != PlaybackRepeatMode.one &&
-        _repeatSelfHandoffInFlight &&
-        (_crossfadeInProgress || _repeatSelfFadeExecuting);
+        (_repeatSelfFadeExecuting ||
+            (_repeatSelfHandoffInFlight && _crossfadeInProgress));
     if (transitionActive && !repeatSelfFadeInProgress) {
       _cancelAutomaticPlaybackWork();
     } else if (repeatSelfFadeInProgress) {
