@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/dsp_settings.dart';
+import '../playback/playback_control_arbiter.dart';
 import '../services/audio_effects_bridge.dart';
 import '../services/playback_engine_session.dart';
 import '../services/media3_provider_state_bridge.dart';
@@ -11,6 +12,7 @@ class AudioEffectsProvider extends ChangeNotifier {
   /// The single source of playback session IDs for auxiliary effects.
   /// Media3 reports both active and standby deck sessions during crossfade.
   final PlaybackEngineSession? playbackSession;
+  final PlaybackControlArbiter? playbackControlArbiter;
   double reverb = 0.0;
   double bassBoost = 0.0;
   double virtualizer = 0.0;
@@ -22,7 +24,7 @@ class AudioEffectsProvider extends ChangeNotifier {
   Future<void> _nativeApplyQueue = Future<void>.value();
   late final Future<void> ready;
 
-  AudioEffectsProvider({this.playbackSession}) {
+  AudioEffectsProvider({this.playbackSession, this.playbackControlArbiter}) {
     // Media3 exposes both physical deck sessions. Subscribe to its canonical
     // state stream so auxiliary effects follow preload, overlap, and promotion.
     if (playbackSession != null) {
@@ -61,7 +63,10 @@ class AudioEffectsProvider extends ChangeNotifier {
     if (added.isNotEmpty) {
       // Serialize attach + effect application for each newly prepared deck.
       for (final id in added) {
-        unawaited(_applyNative(sessionIdOverride: id));
+        unawaited(_applyNative(
+          sessionIdOverride: id,
+          priority: PlaybackControlPriority.background,
+        ));
       }
     }
   }
@@ -115,82 +120,144 @@ class AudioEffectsProvider extends ChangeNotifier {
     return _nativeApplyQueue;
   }
 
-  Future<void> _applyNative({int? sessionIdOverride}) {
+  Future<void> _applyNative({
+    int? sessionIdOverride,
+    PlaybackControlPriority priority = PlaybackControlPriority.interactive,
+  }) {
     // AndroidEffectsBridge has a current-session selector, so each attach +
     // apply sequence must be serialized to prevent A/B calls interleaving.
     _nativeApplyQueue = _nativeApplyQueue
         .catchError((_) {})
-        .then((_) => _applyNativeNow(sessionIdOverride: sessionIdOverride));
+        .then((_) => _applyNativeNow(
+              sessionIdOverride: sessionIdOverride,
+              priority: priority,
+            ));
     return _nativeApplyQueue;
   }
 
-  Future<void> _applyNativeNow({int? sessionIdOverride}) async {
+  Future<void> _applyNativeNow({
+    int? sessionIdOverride,
+    required PlaybackControlPriority priority,
+  }) async {
     final sessionIds = sessionIdOverride != null
         ? <int>{sessionIdOverride}
         : <int>{..._media3SessionIds};
     if (sessionIds.isEmpty) return;
 
     final enabled = effectsEnabled;
-    for (final sessionId in sessionIds) {
-      try {
-        await AudioEffectsBridge.attachToSession(sessionId);
-        // BassBoost is retired from the active path. Mature DSP owns all bass
-        // processing; applying Android BassBoost here would stack another EQ.
-        await AudioEffectsBridge.setBassBoost(0.0);
-        await AudioEffectsBridge.setVirtualizer(enabled ? virtualizer : 0.0);
-        await AudioEffectsBridge.setReverb(enabled ? reverb : 0.0);
-      } catch (e) {
-        debugPrint('Native audio effects failed for session $sessionId: $e');
-      }
-    }
-
+    await _withDspProfileLease(
+      operation: 'audio_effects_profile',
+      priority: priority,
+      action: (lease) async {
+        for (final sessionId in sessionIds) {
+          try {
+            if (!_authorizeDspWrite(lease, 'attach_session:$sessionId')) return;
+            await AudioEffectsBridge.attachToSession(sessionId);
+            if (!_authorizeDspWrite(lease, 'disable_legacy_bass')) return;
+            // BassBoost is retired from the active path. Mature DSP owns all
+            // bass processing; applying it here would stack another EQ.
+            await AudioEffectsBridge.setBassBoost(0.0);
+            if (!_authorizeDspWrite(lease, 'virtualizer:$sessionId')) return;
+            await AudioEffectsBridge.setVirtualizer(
+              enabled ? virtualizer : 0.0,
+            );
+            if (!_authorizeDspWrite(lease, 'reverb:$sessionId')) return;
+            await AudioEffectsBridge.setReverb(enabled ? reverb : 0.0);
+          } catch (e) {
+            debugPrint('Native audio effects failed for session $sessionId: $e');
+          }
+        }
+      },
+    );
   }
 
-  Future<void> _disableLegacyBassBoost() async {
+  Future<void> _withDspProfileLease({
+    required String operation,
+    required PlaybackControlPriority priority,
+    required Future<void> Function(PlaybackControlLease? lease) action,
+  }) async {
+    final arbiter = playbackControlArbiter;
+    if (arbiter == null) {
+      await action(null);
+      return;
+    }
+    final lease = await arbiter.acquire(
+      owner: 'dsp_profile',
+      priority: priority,
+    );
+    if (lease == null) return;
     try {
-      await AudioEffectsBridge.setBassBoost(0.0);
-    } catch (_) {}
+      if (!lease.authorizeWrite(operation)) return;
+      await action(lease);
+    } finally {
+      await lease.release();
+    }
+  }
+
+  bool _authorizeDspWrite(PlaybackControlLease? lease, String operation) =>
+      lease == null || lease.authorizeWrite(operation);
+
+  Future<void> _disableLegacyBassBoost() async {
+    await _withDspProfileLease(
+      operation: 'disable_legacy_bass',
+      priority: PlaybackControlPriority.interactive,
+      action: (lease) async {
+        if (_authorizeDspWrite(lease, 'disable_legacy_bass')) {
+          await AudioEffectsBridge.setBassBoost(0.0);
+        }
+      },
+    );
   }
 
   Future<void> _load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final canonical = await DspSettings.load();
-      // Restore the canonical native protection profile at startup. Registry
-      // sticky state carries these values to both Media3 decks, including a
-      // sink created after this provider finishes loading.
-      await AudioEffectsBridge.setLiveDspLimiterCeiling(
-        highDb: canonical.limiterHighCeilingDb,
-        lowDb: canonical.limiterLowCeilingDb,
-      );
-      await AudioEffectsBridge.setLiveDspCrossoverHz(canonical.crossoverHz);
-      // Speaker protection and virtual-bass amount are canonical DSP state;
-      // restore both before a newly-created Media3 deck inherits sticky state.
-      await AudioEffectsBridge.setLiveDspSpeakerMode(
-        canonical.speakerProtectionEnabled,
-      );
-      await AudioEffectsBridge.setLiveDspVirtualBass(canonical.virtualBassAmount);
-      // DVC is independent from EQ preamp and must be restored even when the
-      // user has not opened Audio automation in this process. Registry state
-      // carries it to both current and subsequently-created A/B sinks.
-      await AudioEffectsBridge.setLiveDspDvc(
-        enabled: canonical.dvcEnabled,
-        db: canonical.dvcDb,
-        smoothing: canonical.dvcSmoothing,
-        smoothingMs: canonical.dvcSmoothingMs,
-      );
-      await AudioEffectsBridge.setLiveDspLimiterConfig(
-        enabled: canonical.limiterEnabled,
-        mode: canonical.limiterMode,
-        thresholdDb: canonical.limiterThresholdDb,
-        releaseMs: canonical.limiterReleaseMs,
-        attackMs: canonical.limiterAttackMs,
-        lookaheadMs: canonical.limiterLookaheadMs,
-        kneeDb: canonical.limiterKneeDb,
-      );
-      await AudioEffectsBridge.setLiveDspDither(
-        enabled: canonical.ditherEnabled,
-        mode: canonical.ditherMode,
+      // Startup restoration is background work. It must not interrupt a
+      // live DJ transition; sticky registry state will be applied to later
+      // A/B sinks once this profile write is admitted.
+      await _withDspProfileLease(
+        operation: 'restore_dsp_profile',
+        priority: PlaybackControlPriority.background,
+        action: (lease) async {
+          if (!_authorizeDspWrite(lease, 'limiter_ceiling')) return;
+          await AudioEffectsBridge.setLiveDspLimiterCeiling(
+            highDb: canonical.limiterHighCeilingDb,
+            lowDb: canonical.limiterLowCeilingDb,
+          );
+          if (!_authorizeDspWrite(lease, 'crossover')) return;
+          await AudioEffectsBridge.setLiveDspCrossoverHz(canonical.crossoverHz);
+          if (!_authorizeDspWrite(lease, 'speaker_protection')) return;
+          await AudioEffectsBridge.setLiveDspSpeakerMode(
+            canonical.speakerProtectionEnabled,
+          );
+          if (!_authorizeDspWrite(lease, 'virtual_bass')) return;
+          await AudioEffectsBridge.setLiveDspVirtualBass(
+            canonical.virtualBassAmount,
+          );
+          if (!_authorizeDspWrite(lease, 'dvc')) return;
+          await AudioEffectsBridge.setLiveDspDvc(
+            enabled: canonical.dvcEnabled,
+            db: canonical.dvcDb,
+            smoothing: canonical.dvcSmoothing,
+            smoothingMs: canonical.dvcSmoothingMs,
+          );
+          if (!_authorizeDspWrite(lease, 'limiter_config')) return;
+          await AudioEffectsBridge.setLiveDspLimiterConfig(
+            enabled: canonical.limiterEnabled,
+            mode: canonical.limiterMode,
+            thresholdDb: canonical.limiterThresholdDb,
+            releaseMs: canonical.limiterReleaseMs,
+            attackMs: canonical.limiterAttackMs,
+            lookaheadMs: canonical.limiterLookaheadMs,
+            kneeDb: canonical.limiterKneeDb,
+          );
+          if (!_authorizeDspWrite(lease, 'dither')) return;
+          await AudioEffectsBridge.setLiveDspDither(
+            enabled: canonical.ditherEnabled,
+            mode: canonical.ditherMode,
+          );
+        },
       );
       effectsEnabled = canonical.effectsEnabled;
       reverb = canonical.reverbAmount;
@@ -200,7 +267,7 @@ class AudioEffectsProvider extends ChangeNotifier {
       loudness = 0.0;
       // If playback/session creation raced the preference load, apply the
       // restored settings now to every currently known A/B session.
-      await _applyNative();
+      await _applyNative(priority: PlaybackControlPriority.background);
       notifyListeners();
     } catch (e) {
       debugPrint('Audio effects load failed: $e');
