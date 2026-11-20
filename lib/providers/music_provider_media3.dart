@@ -1404,6 +1404,19 @@ extension MusicProviderMedia3 on MusicProvider {
         await analysisService.analyzeSong(song, force: true);
         if (!currentRequest()) return;
         profile = await analysisService.getProfile(song.id);
+        // analyzeSong can join an already-running DJ analysis and return
+        // before that job persists its PCM profile. Wait briefly for that
+        // shared work instead of silently losing this deck's hint update.
+        for (var attempt = 0;
+            attempt < 20 &&
+                (profile == null ||
+                    !profile.dspAnalysis.isMeasured ||
+                    !profile.dspAnalysis.isValid);
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 250));
+          if (!currentRequest()) return;
+          profile = await analysisService.getProfile(song.id);
+        }
       }
       if (!currentRequest() ||
           profile == null ||
