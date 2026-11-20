@@ -1122,30 +1122,6 @@ class MusicProvider extends ChangeNotifier {
           lowDb: dsp.limiterLowCeilingDb,
         );
         await AudioEffectsBridge.setLiveDspCrossoverHz(dsp.crossoverHz);
-        final dspSettingsLease = await playbackControlArbiter.acquire(
-          owner: 'dsp_settings_restore',
-          priority: PlaybackControlPriority.background,
-        );
-        if (dspSettingsLease != null) {
-          try {
-            if (dspSettingsLease.authorizeWrite('dsp:intelligence_config_restore')) {
-              await AudioEffectsBridge.setLiveDspIntelligenceConfig(
-                bassWeight: dsp.headroomBassWeight,
-                preampWeight: dsp.headroomPreampWeight,
-                gainWeight: dsp.headroomGainWeight,
-                autoPreampEnabled: dsp.autoPreampEnabled,
-                autoPreampTargetDb: dsp.autoPreampTargetDb,
-                autoVirtualBassEnabled: dsp.autoVirtualBassEnabled,
-                autoVirtualBassTarget: dsp.autoVirtualBassTarget,
-                silenceHygieneEnabled: dsp.silenceHygieneEnabled,
-                silenceThresholdDb: dsp.silenceThresholdDb,
-                silenceHoldMs: dsp.silenceHoldMs,
-              );
-            }
-          } finally {
-            await dspSettingsLease.release();
-          }
-        }
       } catch (e) {
         debugPrint('Native DSP preference restore deferred: $e');
       }
