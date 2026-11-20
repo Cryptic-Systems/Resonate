@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/playback/playback_control_arbiter.dart';
-import 'package:resonate/services/audio_effects_bridge.dart';
 import 'package:resonate/services/audio_output_route.dart';
 import 'package:resonate/services/equalizer_dvc_sync.dart';
 
