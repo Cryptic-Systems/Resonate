@@ -888,25 +888,47 @@ extension MusicProviderMedia3 on MusicProvider {
       }
     } finally {
       _repeatSelfFadeExecuting = false;
+      if (generation == _automaticTransitionGeneration) {
+        // The audible handoff is over. Release transition ownership before
+        // reconciling repeat policy so a tap during the final native write is
+        // queued behind it instead of being incorrectly deferred as in-fade.
+        _crossfadeInProgress = false;
+        _automaticCrossfadeInFlight = false;
+        _repeatSelfHandoffInFlight = false;
+        _transitionArmedAt = null;
+      }
       try {
         await promotionSubscription?.cancel();
       } catch (_) {}
-      // A user may change repeat mode while the fade is in flight. Restore the
-      // provider's latest policy, never a stale captured value.
-      if (_media3ProviderSessionActive && !_disposed) {
-        try {
+
+      // Repeat-mode taps made during the fade may have queued persistence
+      // commands which intentionally skipped native writes. Drain that lane,
+      // then append one final native write using the latest provider value.
+      // Any tap arriving after this append is serialized behind it and wins.
+      if (_media3ProviderSessionActive && !_disposed &&
+          identical(_media3ProviderSession, session)) {
+        final previousRepeatCommand = _repeatModeCommandTail;
+        final reconcileRepeatCommand =
+            previousRepeatCommand.catchError((Object _) {}).then((_) async {
+          if (_disposed ||
+              !_media3ProviderSessionActive ||
+              !identical(_media3ProviderSession, session)) return;
           await session.setRepeatMode(switch (_repeatMode) {
             PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
             PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
             PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
           });
-        } catch (_) {}
-      }
-      if (generation == _automaticTransitionGeneration) {
-        _crossfadeInProgress = false;
-        _automaticCrossfadeInFlight = false;
-        _repeatSelfHandoffInFlight = false;
-        _transitionArmedAt = null;
+        });
+        _repeatModeCommandTail = reconcileRepeatCommand;
+        try {
+          await reconcileRepeatCommand;
+        } catch (error) {
+          await ResonateDiagnostics.record('media3_repeat_mode_reconcile_failed', {
+            'songId': song.id,
+            'mode': _repeatMode.name,
+            'error': error.toString(),
+          });
+        }
       }
       _drainPendingMedia3Completion();
     }
