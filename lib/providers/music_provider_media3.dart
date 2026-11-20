@@ -382,6 +382,7 @@ extension MusicProviderMedia3 on MusicProvider {
         'activeSpeed': preparation?.activeSpeed ?? 1.0,
         'standbySpeed': preparation?.standbySpeed ?? 1.0,
       });
+      _repeatSelfFadeExecuting = true;
       await session.crossfade(duration: Duration(milliseconds: durationMs));
 
       var elapsedMs = 0;
@@ -882,6 +883,7 @@ extension MusicProviderMedia3 on MusicProvider {
         _repeatSelfDjPreloadInFlight = false;
       }
     } finally {
+      _repeatSelfFadeExecuting = false;
       try {
         await promotionSubscription?.cancel();
       } catch (_) {}
