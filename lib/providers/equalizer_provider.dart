@@ -709,8 +709,8 @@ class EqualizerProvider extends ChangeNotifier {
 
   Future<void> _reloadHardwareAndApply() async {
     await _loadHardwareBands();
-    await _pushToHardware();
-    await _applyPreamp();
+    await _pushToHardware(priority: PlaybackControlPriority.background);
+    await _applyPreamp(priority: PlaybackControlPriority.background);
     notifyListeners();
   }
 
