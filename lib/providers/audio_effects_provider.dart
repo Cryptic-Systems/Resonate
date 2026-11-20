@@ -320,19 +320,24 @@ class AudioEffectsProvider extends ChangeNotifier {
             enabled: canonical.ditherEnabled,
             mode: canonical.ditherMode,
           );
-          if (!_authorizeDspWrite(lease, 'auto_dynamics')) return;
-          await AudioEffectsBridge.setLiveDspAutoDynamicsConfig(
-            autoBassEnabled: canonical.autoBassEnabled,
-            autoBassTargetDb: canonical.autoBassTargetDb,
-            autoBassMarginDb: canonical.autoBassMarginDb,
-            autoBassFreqHz: canonical.autoBassFreqHz,
-            autoGainEnabled: canonical.autoGainEnabled,
-            autoGainTargetRmsDb: canonical.autoGainTargetRmsDb,
-            autoGainBiasDb: canonical.autoGainBiasDb,
-            autoGainMaxBoostDb: canonical.autoGainMaxBoostDb,
-            autoGainMaxCutDb: canonical.autoGainMaxCutDb,
-            autoGainWindowMs: canonical.autoGainWindowMs,
-          );
+          // A fresh process starts with native auto-bass/auto-gain disabled.
+          // Avoid an unnecessary startup channel/JNI round-trip for defaults;
+          // explicit enabled settings are restored before the profile is ready.
+          if (canonical.autoBassEnabled || canonical.autoGainEnabled) {
+            if (!_authorizeDspWrite(lease, 'auto_dynamics')) return;
+            await AudioEffectsBridge.setLiveDspAutoDynamicsConfig(
+              autoBassEnabled: canonical.autoBassEnabled,
+              autoBassTargetDb: canonical.autoBassTargetDb,
+              autoBassMarginDb: canonical.autoBassMarginDb,
+              autoBassFreqHz: canonical.autoBassFreqHz,
+              autoGainEnabled: canonical.autoGainEnabled,
+              autoGainTargetRmsDb: canonical.autoGainTargetRmsDb,
+              autoGainBiasDb: canonical.autoGainBiasDb,
+              autoGainMaxBoostDb: canonical.autoGainMaxBoostDb,
+              autoGainMaxCutDb: canonical.autoGainMaxCutDb,
+              autoGainWindowMs: canonical.autoGainWindowMs,
+            );
+          }
           if (!_authorizeDspWrite(lease, 'dsp_intelligence')) return;
           await AudioEffectsBridge.setLiveDspIntelligenceConfig(
             bassWeight: canonical.headroomBassWeight,
