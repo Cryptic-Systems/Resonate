@@ -289,6 +289,7 @@ class DjAnalysisService {
     if (durationMs <= 0) return legacy;
 
     final windows = <DjDecodedPcmWindow>[];
+    double? maxSafeBassDb;
     Future<void> addWindow(int startMs, String role, double seconds) async {
       if (isCancelled?.call() ?? false) return;
       final decoded = await _estimator.extractDecodedPcmWindow(
@@ -297,6 +298,19 @@ class DjAnalysisService {
         startMs: startMs,
       );
       if (decoded == null) return;
+      final probedSafeBass = await _estimator.probeMaxBassGainDb(
+        decoded.pcm,
+        sampleRate: decoded.sampleRate,
+        channels: decoded.channels,
+        shelfFreqHz: 80,
+        ceilingDb: -0.1,
+        marginDb: 1,
+      );
+      if (probedSafeBass != null) {
+        maxSafeBassDb = maxSafeBassDb == null
+            ? probedSafeBass
+            : (maxSafeBassDb! < probedSafeBass ? maxSafeBassDb : probedSafeBass);
+      }
       windows.add(
         DjDecodedPcmWindow(
           pcm: decoded.pcm,
@@ -346,6 +360,7 @@ class DjAnalysisService {
       songId: song.id,
       durationMs: durationMs,
       windows: windows,
+      maxSafeBassDb: maxSafeBassDb,
       analysisVersion: DjAnalysis.currentVersion,
     );
     await saveProfile(profile);
