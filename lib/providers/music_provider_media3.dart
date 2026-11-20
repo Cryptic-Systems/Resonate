@@ -1398,7 +1398,8 @@ extension MusicProviderMedia3 on MusicProvider {
       final analysisService = _djAnalysis ??= DjAnalysisService();
       var profile = await analysisService.getProfile(song.id);
       if (profile == null || !profile.dspAnalysis.isMeasured ||
-          !profile.dspAnalysis.isValid) {
+          !profile.dspAnalysis.isValid ||
+          profile.dspAnalysis.maxSafeBassDb == null) {
         // Build a fresh PCM profile when the cache predates DSP metrics. This
         // is deliberately asynchronous and never delays playback or preload.
         await analysisService.analyzeSong(song, force: true);
@@ -1411,7 +1412,8 @@ extension MusicProviderMedia3 on MusicProvider {
             attempt < 20 &&
                 (profile == null ||
                     !profile.dspAnalysis.isMeasured ||
-                    !profile.dspAnalysis.isValid);
+                    !profile.dspAnalysis.isValid ||
+                    profile.dspAnalysis.maxSafeBassDb == null);
             attempt++) {
           await Future<void>.delayed(const Duration(milliseconds: 250));
           if (!currentRequest()) return;
