@@ -4512,7 +4512,6 @@ class MusicProvider extends ChangeNotifier {
     final cleanup = _automaticPlaybackCleanup
         .catchError((Object _) {})
         .then((_) async {
-      await _restoreDjTransitionSfx();
       if (media3Session != null) {
         final cleanupErrors = <String>[];
         try {
@@ -4542,6 +4541,7 @@ class MusicProvider extends ChangeNotifier {
           });
         }
       }
+      await _restoreDjTransitionSfx();
       if (cleanLegacyEngines) {
         try {
           final idle = inactivePlayer;
@@ -4576,7 +4576,8 @@ class MusicProvider extends ChangeNotifier {
     required int transitionGeneration,
     required PlaybackControlRevocation revocation,
   }) async {
-    if (revocation.reason == PlaybackControlRevocationReason.released) return;
+    if (_disposed ||
+        revocation.reason == PlaybackControlRevocationReason.released) return;
     // Manual transport paths already invalidated the transition synchronously.
     // Other higher-priority controllers still need to request the same teardown.
     if (transitionGeneration == _automaticTransitionGeneration) {
