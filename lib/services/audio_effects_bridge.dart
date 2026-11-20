@@ -202,6 +202,46 @@ class AudioEffectsBridge {
     return const <double>[];
   }
 
+  /// Apply measured PCM analysis to one physical Media3 deck. Callers must
+  /// validate current PlaybackControlArbiter ownership before this live write.
+  static Future<bool> setLiveDspDeckAnalysisHint({
+    required String deckId,
+    required String songId,
+    required double samplePeakDb,
+    required double truePeakDb,
+    required double rmsDb,
+    required double crestDb,
+    required double bassEnergyDb,
+  }) async {
+    if (!const {'A', 'B'}.contains(deckId) || songId.trim().isEmpty) return false;
+    final metrics = [
+      samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb,
+    ];
+    if (metrics.any((value) => !value.isFinite) ||
+        samplePeakDb < -160 || samplePeakDb > 6 ||
+        truePeakDb < -160 || truePeakDb > 6 ||
+        rmsDb < -160 || rmsDb > 0.1 ||
+        crestDb < 0 || crestDb > 30 ||
+        bassEnergyDb < -160 || bassEnergyDb > 0.1) {
+      return false;
+    }
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspDeckAnalysisHint', {
+        'deckId': deckId,
+        'songId': songId,
+        'samplePeakDb': samplePeakDb,
+        'truePeakDb': truePeakDb,
+        'rmsDb': rmsDb,
+        'crestDb': crestDb,
+        'bassEnergyDb': bassEnergyDb,
+      });
+      return raw is Map && raw['ok'] == true;
+    } catch (e) {
+      debugPrint('setLiveDspDeckAnalysisHint failed: $e');
+      return false;
+    }
+  }
+
   static Future<Map<String, dynamic>?> getLiveDspStatus() async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('getLiveDspStatus');
