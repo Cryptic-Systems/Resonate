@@ -61,6 +61,7 @@ import '../playback/gapless_window_state.dart';
 import '../playback/mode_playback_policy_state.dart';
 import '../playback/volume_facade.dart';
 import '../playback/player_stream_binder.dart';
+import '../playback/playback_control_arbiter.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
@@ -89,6 +90,8 @@ enum PlaybackRepeatMode { off, all, one }
 
 class MusicProvider extends ChangeNotifier {
   final AudioHandler? audioHandler;
+  final PlaybackControlArbiter playbackControlArbiter;
+  final bool _ownsPlaybackControlArbiter;
   final DatabaseHelper _database = DatabaseHelper();
   final PlaybackAuthority _authority = PlaybackAuthority.instance;
   final PlaybackIntentGate _playbackIntentGate = PlaybackIntentGate();
@@ -850,8 +853,12 @@ class MusicProvider extends ChangeNotifier {
   MusicProvider({
     this.audioHandler,
     PlaybackEngineSession? media3ProviderSession,
+    PlaybackControlArbiter? playbackControlArbiter,
     bool deferMedia3UntilSettingsReady = false,
-  }) : _media3ProviderSession = media3ProviderSession {
+  }) : playbackControlArbiter =
+           playbackControlArbiter ?? PlaybackControlArbiter(),
+       _ownsPlaybackControlArbiter = playbackControlArbiter == null,
+       _media3ProviderSession = media3ProviderSession {
     _startupSettingsBarrierInstalled = deferMedia3UntilSettingsReady;
     _startupSettingsReadyComplete = !deferMedia3UntilSettingsReady;
     // A Media3-backed provider must not construct Flutter audio players at
@@ -4688,6 +4695,9 @@ class MusicProvider extends ChangeNotifier {
     _activeAndroidAudioSessionId = null;
     final media3Session = _media3ProviderSession;
     if (media3Session != null) unawaited(media3Session.dispose());
+    if (_ownsPlaybackControlArbiter) {
+      unawaited(playbackControlArbiter.close());
+    }
     final legacyEngines = _engines;
     if (legacyEngines != null) unawaited(legacyEngines.dispose());
     super.dispose();
