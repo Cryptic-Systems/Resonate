@@ -43,6 +43,7 @@ class DjPcmProfileAnalyzer {
     required int durationMs,
     required List<DjDecodedPcmWindow> windows,
     String? fingerprint,
+    double? maxSafeBassDb,
     int analysisVersion = 1,
   }) {
     if (windows.isEmpty || durationMs <= 0) {
@@ -57,7 +58,21 @@ class DjPcmProfileAnalyzer {
     final bpmSamples = <_BpmSample>[];
     final featureSamples = <_FeatureSample>[];
     final rmsSamples = _extractRmsSamples(windows, durationMs);
-    final dspAnalysis = _measureDspAnalysis(windows);
+    final measured = _measureDspAnalysis(windows);
+    final safeBass = maxSafeBassDb != null &&
+            maxSafeBassDb.isFinite &&
+            maxSafeBassDb >= 0 &&
+            maxSafeBassDb <= 18
+        ? maxSafeBassDb
+        : null;
+    final dspAnalysis = DspAnalysisMetrics(
+      samplePeakDb: measured.samplePeakDb,
+      truePeakDb: measured.truePeakDb,
+      rmsDb: measured.rmsDb,
+      crestDb: measured.crestDb,
+      bassEnergyDb: measured.bassEnergyDb,
+      maxSafeBassDb: safeBass,
+    );
     final detectedSilence = _silenceDetector.detect(
       rmsSamples,
       durationMs: durationMs,
