@@ -8,6 +8,7 @@ enum PlaybackControlPriority {
   background(10),
   automatic(20),
   interactive(30),
+  safetyOverride(40),
   userTransport(100);
 
   const PlaybackControlPriority(this.rank);
