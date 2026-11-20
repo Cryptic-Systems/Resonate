@@ -1441,6 +1441,7 @@ extension MusicProviderMedia3 on MusicProvider {
           rmsDb: metrics.rmsDb,
           crestDb: metrics.crestDb,
           bassEnergyDb: metrics.bassEnergyDb,
+          maxSafeBassDb: metrics.maxSafeBassDb,
         );
         await ResonateDiagnostics.record('media3_dsp_analysis_hint', {
           'deckId': deckId,
