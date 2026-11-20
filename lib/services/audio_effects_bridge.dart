@@ -109,6 +109,58 @@ class AudioEffectsBridge {
     return null;
   }
 
+  /// Configure DSP-ENGINE online auto-bass and auto-DVC.
+  static Future<Map<String, dynamic>?> setLiveDspAutoDynamicsConfig({
+    bool autoBassEnabled = false,
+    double autoBassTargetDb = 4,
+    double autoBassMarginDb = 1,
+    double autoBassFreqHz = 80,
+    bool autoGainEnabled = false,
+    double autoGainTargetRmsDb = -18,
+    double autoGainBiasDb = 0,
+    double autoGainMaxBoostDb = 6,
+    double autoGainMaxCutDb = 12,
+    double autoGainWindowMs = 400,
+  }) async {
+    final values = <double>[
+      autoBassTargetDb, autoBassMarginDb, autoBassFreqHz,
+      autoGainTargetRmsDb, autoGainBiasDb, autoGainMaxBoostDb,
+      autoGainMaxCutDb, autoGainWindowMs,
+    ];
+    if (values.any((value) => !value.isFinite) ||
+        autoBassTargetDb < 0 || autoBassTargetDb > 12 ||
+        autoBassMarginDb < 0 || autoBassMarginDb > 12 ||
+        autoBassFreqHz < 40 || autoBassFreqHz > 160 ||
+        autoGainTargetRmsDb < -30 || autoGainTargetRmsDb > -8 ||
+        autoGainBiasDb < -6 || autoGainBiasDb > 6 ||
+        autoGainMaxBoostDb < 0 || autoGainMaxBoostDb > 12 ||
+        autoGainMaxCutDb < 0 || autoGainMaxCutDb > 24 ||
+        autoGainWindowMs < 200 || autoGainWindowMs > 3000) {
+      return null;
+    }
+    try {
+      final raw = await _channel.invokeMethod<dynamic>(
+        'setLiveDspAutoDynamicsConfig',
+        {
+          'autoBassEnabled': autoBassEnabled,
+          'autoBassTargetDb': autoBassTargetDb,
+          'autoBassMarginDb': autoBassMarginDb,
+          'autoBassFreqHz': autoBassFreqHz,
+          'autoGainEnabled': autoGainEnabled,
+          'autoGainTargetRmsDb': autoGainTargetRmsDb,
+          'autoGainBiasDb': autoGainBiasDb,
+          'autoGainMaxBoostDb': autoGainMaxBoostDb,
+          'autoGainMaxCutDb': autoGainMaxCutDb,
+          'autoGainWindowMs': autoGainWindowMs,
+        },
+      );
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (e) {
+      debugPrint('setLiveDspAutoDynamicsConfig failed: $e');
+    }
+    return null;
+  }
+
   static Future<Map<String, dynamic>?> setLiveDspPreampDb(double db) async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('setLiveDspPreampDb', {
