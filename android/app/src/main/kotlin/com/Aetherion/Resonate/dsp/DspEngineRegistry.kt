@@ -17,9 +17,21 @@ object DspEngineRegistry {
 
     private data class RegisteredEngine(val handle: Long, val deckId: String)
     private data class EqOverlay(val centersHz: DoubleArray, val gainsDb: DoubleArray)
+    private data class DeckAnalysisHint(
+        val songId: String,
+        val samplePeakDb: Float,
+        val truePeakDb: Float,
+        val rmsDb: Float,
+        val crestDb: Float,
+        val bassEnergyDb: Float,
+    )
 
     private val handles = ConcurrentHashMap<Int, RegisteredEngine>()
     private val temporaryEqOverlays = mutableMapOf<String, EqOverlay>()
+    // Analysis belongs to a physical deck + current media identity, never to
+    // the global sticky profile shared by both crossfade engines.
+    private val deckTracks = mutableMapOf<String, String>()
+    private val deckAnalysisHints = mutableMapOf<String, DeckAnalysisHint>()
     private var activeDeckId: String = "A"
 
     /** Small native seam so registry inheritance can be tested without loading JNI in JVM tests. */
@@ -39,6 +51,10 @@ object DspEngineRegistry {
         fun setDvc(handle: Long, enabled: Boolean, gainDb: Float, smoothing: Boolean, smoothingMs: Float) {}
         fun setLimiterConfig(handle: Long, enabled: Boolean, mode: Int, thresholdDb: Float, releaseMs: Float, attackMs: Float, lookaheadMs: Float, kneeDb: Float) {}
         fun setDither(handle: Long, enabled: Boolean, mode: Int) {}
+        fun setAnalysisHint(
+            handle: Long, enabled: Boolean, samplePeakDb: Float, truePeakDb: Float,
+            rmsDb: Float, crestDb: Float, bassEnergyDb: Float,
+        ) {}
         fun setIntelligenceConfig(
             handle: Long, bassWeight: Float, preampWeight: Float, gainWeight: Float,
             autoPreampEnabled: Boolean, autoPreampTargetDb: Float,
@@ -67,6 +83,12 @@ object DspEngineRegistry {
             DspEngineJni.nativeSetLimiterConfig(handle, enabled, mode, thresholdDb, releaseMs, attackMs, lookaheadMs, kneeDb)
         override fun setDither(handle: Long, enabled: Boolean, mode: Int) =
             DspEngineJni.nativeSetDither(handle, enabled, mode)
+        override fun setAnalysisHint(
+            handle: Long, enabled: Boolean, samplePeakDb: Float, truePeakDb: Float,
+            rmsDb: Float, crestDb: Float, bassEnergyDb: Float,
+        ) = DspEngineJni.nativeSetAnalysisHint(
+            handle, enabled, samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb,
+        )
         override fun setIntelligenceConfig(
             handle: Long, bassWeight: Float, preampWeight: Float, gainWeight: Float,
             autoPreampEnabled: Boolean, autoPreampTargetDb: Float,
@@ -154,6 +176,8 @@ object DspEngineRegistry {
         handles.clear()
         stickyState = StickyState()
         temporaryEqOverlays.clear()
+        deckTracks.clear()
+        deckAnalysisHints.clear()
         activeDeckId = "A"
         nativeApi = jniApi
     }
@@ -168,6 +192,67 @@ object DspEngineRegistry {
     @JvmStatic
     @Synchronized
     fun activeCount(): Int = handles.size
+
+    /**
+     * Bind a physical Media3 deck to its current media identity. Reusing a deck
+     * for another track invalidates its old hint before any new PCM is processed.
+     * A null/blank song id clears both identity and hint.
+     */
+    @JvmStatic
+    @Synchronized
+    fun setDeckTrack(deckId: String, songId: String?): Boolean {
+        if (deckId !in setOf("A", "B")) return false
+        val normalized = songId?.trim()?.takeIf { it.isNotEmpty() }
+        if (deckTracks[deckId] == normalized) return true
+        if (normalized == null) deckTracks.remove(deckId) else deckTracks[deckId] = normalized
+        deckAnalysisHints.remove(deckId)
+        handles.values.filter { it.deckId == deckId }.forEach { engine ->
+            runCatching { clearAnalysisHint(engine.handle) }
+                .onFailure { Log.w(TAG, "clear deck analysis hint failed deck=$deckId handle=${engine.handle}", it) }
+        }
+        return true
+    }
+
+    /** Apply measured PCM metrics only when they still belong to this deck's current song. */
+    @JvmStatic
+    @Synchronized
+    fun applyDeckAnalysisHint(
+        deckId: String, songId: String, samplePeakDb: Float, truePeakDb: Float,
+        rmsDb: Float, crestDb: Float, bassEnergyDb: Float,
+    ): Boolean {
+        if (deckId !in setOf("A", "B") || songId.isBlank() || deckTracks[deckId] != songId) return false
+        val metrics = floatArrayOf(samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb)
+        if (metrics.any { !it.isFinite() } ||
+            samplePeakDb !in -160f..6f || truePeakDb !in -160f..6f ||
+            rmsDb !in -160f..0.1f || crestDb !in 0f..30f ||
+            bassEnergyDb !in -160f..0.1f
+        ) return false
+        val hint = DeckAnalysisHint(songId, samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb)
+        val engines = handles.values.filter { it.deckId == deckId }
+        try {
+            engines.forEach { engine -> applyAnalysisHint(engine.handle, hint) }
+            deckAnalysisHints[deckId] = hint
+            return true
+        } catch (t: Throwable) {
+            Log.w(TAG, "apply deck analysis hint failed deck=$deckId song=$songId", t)
+            engines.forEach { engine -> runCatching { clearAnalysisHint(engine.handle) } }
+            deckAnalysisHints.remove(deckId)
+            return false
+        }
+    }
+
+    private fun applyAnalysisHint(handle: Long, hint: DeckAnalysisHint) {
+        nativeApi.setAnalysisHint(
+            handle, true, hint.samplePeakDb, hint.truePeakDb, hint.rmsDb,
+            hint.crestDb, hint.bassEnergyDb,
+        )
+    }
+
+    private fun clearAnalysisHint(handle: Long) {
+        // Finite digital-silence sentinels clear bass/level context. JNI applies
+        // crest=0 explicitly to restore the engine's base limiter personality.
+        nativeApi.setAnalysisHint(handle, false, -160f, -160f, -160f, 0f, -160f)
+    }
 
     /** True when this physical deck currently owns the canonical MediaSession role. */
     @JvmStatic
@@ -725,6 +810,9 @@ object DspEngineRegistry {
                 state.autoVirtualBassEnabled, state.autoVirtualBassTarget,
                 state.silenceHygieneEnabled, state.silenceThresholdDb, state.silenceHoldMs,
             )
+            deckAnalysisHints[deckId]?.takeIf { deckTracks[deckId] == it.songId }?.let {
+                applyAnalysisHint(handle, it)
+            }
         } catch (t: Throwable) {
             Log.w(TAG, "applySticky failed handle=$handle", t)
             return false
