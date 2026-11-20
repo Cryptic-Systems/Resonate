@@ -2973,10 +2973,10 @@ void main() {
     });
 
     test('repeat mode publishes immediately and rapid changes serialize latest native value', () async {
-      final session = _FakePlaybackSession()
-        ..repeatModeGate = Completer<void>();
+      final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
       await provider.prepareMedia3ProviderSession();
+      session.repeatModeGate = Completer<void>();
       var notifications = 0;
       provider.addListener(() => notifications++);
 
