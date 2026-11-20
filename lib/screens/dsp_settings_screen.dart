@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -23,6 +24,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
   Future<void> _commitTail = Future<void>.value();
   late Future<Map<String, dynamic>?> _statusFuture;
   int _localSliderChangeDepth = 0;
+  Timer? _meterPoll;
 
   static const _filterNames = <String>[
     'Peak', 'Low shelf', 'High shelf', 'Low-pass', 'High-pass',
@@ -36,11 +38,16 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
   void initState() {
     super.initState();
     _statusFuture = AudioEffectsBridge.getLiveDspStatus();
+    _meterPoll = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (!mounted || _loading) return;
+      setState(() => _statusFuture = AudioEffectsBridge.getLiveDspStatus());
+    });
     _load();
   }
 
   @override
   void dispose() {
+    _meterPoll?.cancel();
     _saving.dispose();
     super.dispose();
   }
@@ -249,6 +256,16 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
         final dvcGainDb = (status?['dvcDb'] as num?)?.toDouble();
         final virtualBass = (status?['virtualBass'] as num?)?.toDouble() ??
             _settings?.virtualBassAmount;
+        final meterSets = status?['liveMetersByDeck'];
+        final activeDeck = status?['activeDeckId']?.toString() ?? 'A';
+        final metersByDeck = meterSets is Map ? meterSets : const <Object, Object>{};
+        final activeMetersRaw = metersByDeck[activeDeck];
+        final activeMeters = activeMetersRaw is Map
+            ? activeMetersRaw
+            : const <Object, Object>{};
+        double meter(String key, [double fallback = 0]) =>
+            (activeMeters[key] as num?)?.toDouble() ?? fallback;
+        final hasMeters = activeMeters.isNotEmpty;
         return _section('Live engine', 'Per-deck Media3 DSP status and PCM diagnostics. Media3 owns output routing and sample-rate conversion; standalone backend and SRC controls are not used in this live path.', [
           _statusRow('Active DSP decks', engines.toString() + ' / 2'),
           _statusRow('PCM blocks processed', calls.toString()),
@@ -258,6 +275,28 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
           _statusRow('DVC gain', dvcGainDb == null ? '—' : dvcGainDb.toStringAsFixed(1) + ' dB'),
           _statusRow('Speaker protection', status?['speakerMode'] == true ? 'On' : 'Off'),
           _statusRow('Virtual bass', virtualBass == null ? '—' : virtualBass.toStringAsFixed(2)),
+          _statusRow('DSP engine version', status?['dspVersion']?.toString() ?? '—'),
+          if (hasMeters) ...[
+            const Divider(height: 20),
+            Text('Live signal · Deck $activeDeck',
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            _statusRow('Input peak', meter('inputPeakDb').toStringAsFixed(1) + ' dBFS'),
+            _statusRow('Input true peak', meter('inputTruePeakDb').toStringAsFixed(1) + ' dBFS'),
+            _statusRow('Post-EQ peak', meter('postEqPeakDb').toStringAsFixed(1) + ' dBFS'),
+            _statusRow('Headroom', meter('headroomDb').toStringAsFixed(1) + ' dB'),
+            _statusRow('Limiter gain reduction', meter('limiterGrDb').toStringAsFixed(1) + ' dB'),
+            _statusRow('Limiter peak hold', meter('limiterGrPeakDb').toStringAsFixed(1) + ' dB'),
+            _statusRow('Short-term RMS', meter('shortTermRmsDb', -160).toStringAsFixed(1) + ' dBFS'),
+            _statusRow('Automatic bass · applied', meter('autoBassAppliedDb').toStringAsFixed(1) + ' dB'),
+            _statusRow('Automatic loudness · applied', meter('autoGainAppliedDb').toStringAsFixed(1) + ' dB'),
+            _statusRow('Automatic preamp · applied', meter('autoPreampAppliedDb').toStringAsFixed(1) + ' dB'),
+            _statusRow('Automatic virtual bass · applied', meter('autoVirtualBassApplied').toStringAsFixed(2)),
+            _statusRow('Track analysis hint', activeMeters['analysisHintActive'] == true ? 'Active' : 'Unavailable'),
+            if (_settings != null) ...[
+              _statusRow('Wanted bass target', _settings!.autoBassTargetDb.toStringAsFixed(1) + ' dB'),
+              _statusRow('Wanted loudness target', _settings!.autoGainTargetRmsDb.toStringAsFixed(1) + ' dBFS'),
+            ],
+          ],
           if (status?['gateTripped'] == true)
             const Padding(
               padding: EdgeInsets.only(top: 8),
