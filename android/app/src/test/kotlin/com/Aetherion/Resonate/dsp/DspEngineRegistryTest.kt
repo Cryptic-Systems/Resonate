@@ -495,12 +495,12 @@ class DspEngineRegistryTest {
         assertFalse(DspEngineRegistry.applyDeckAnalysisHint(
             "A", "track-b", -2f, -1f, -16f, 10f, -12f,
         ))
-        assertTrue(fake.calls.any { it.startsWith("analysis:10101:true:-1.0:-0.5:-14.0:13.0:-8.0") })
+        assertTrue(fake.calls.any { it.startsWith("analysis:10101:true:-1.0:-0.5:-14.0:13.0:-8.0:24.0") })
         assertFalse(fake.calls.any { it.startsWith("analysis:10202:true:") })
 
         fake.calls.clear()
         assertTrue(DspEngineRegistry.setDeckTrack("A", "track-c"))
-        assertTrue(fake.calls.any { it == "analysis:10101:false:-160.0:-160.0:-160.0:0.0:-160.0" })
+        assertTrue(fake.calls.any { it == "analysis:10101:false:-160.0:-160.0:-160.0:0.0:-160.0:24.0" })
         assertFalse(fake.calls.any { it.startsWith("analysis:10202:false:") })
         assertFalse(DspEngineRegistry.applyDeckAnalysisHint(
             "A", "track-a", -1f, -0.5f, -14f, 13f, -8f,
@@ -519,7 +519,7 @@ class DspEngineRegistryTest {
         assertTrue(DspEngineRegistry.register(112, 11212L, "B"))
 
         assertFalse(fake.calls.any { it.startsWith("analysis:11111:true:") })
-        assertTrue(fake.calls.any { it.startsWith("analysis:11212:true:-3.0:-2.0:-18.0:15.0:-10.0") })
+        assertTrue(fake.calls.any { it.startsWith("analysis:11212:true:-3.0:-2.0:-18.0:15.0:-10.0:24.0") })
     }
 
     @Test
@@ -535,7 +535,7 @@ class DspEngineRegistryTest {
         assertTrue(DspEngineRegistry.register(122, 12222L, "B"))
 
         assertTrue(fake.calls.any {
-            it == "analysis:12222:true:-2.0:-1.0:-12.0:10.0:-15.0"
+            it == "analysis:12222:true:-2.0:-1.0:-12.0:10.0:-15.0:24.0"
         })
     }
 
@@ -552,10 +552,10 @@ class DspEngineRegistryTest {
         ))
 
         assertTrue(fake.calls.any {
-            it == "analysis:13131:true:-3.0:-2.0:-18.0:15.0:-10.0"
+            it == "analysis:13131:true:-3.0:-2.0:-18.0:15.0:-10.0:24.0"
         })
         assertTrue(fake.calls.any {
-            it == "analysis:13232:true:-3.0:-2.0:-18.0:15.0:-10.0"
+            it == "analysis:13232:true:-3.0:-2.0:-18.0:15.0:-10.0:24.0"
         })
     }
 
