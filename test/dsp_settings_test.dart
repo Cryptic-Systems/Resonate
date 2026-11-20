@@ -156,7 +156,7 @@ void main() {
         ],
       });
       expect(oldStudioBank.parametricEqBands.every((band) => band.q == 4.3), isTrue);
-      expect(oldStudioBank.toJson()['version'], 6);
+      expect(oldStudioBank.toJson()['version'], DspSettings.schemaVersion);
 
       final customBank = DspSettings.fromJson({
         'version': 4,
@@ -192,7 +192,52 @@ void main() {
       expect(restored.headroomBassWeight, 0.50);
       expect(restored.headroomPreampWeight, 0.20);
       expect(restored.headroomGainWeight, 0.30);
-      expect(restored.toJson()['version'], 6);
+      expect(restored.toJson()['version'], DspSettings.schemaVersion);
+    });
+
+    test('persists and clamps auto-bass and auto-loudness controls', () {
+      final settings = DspSettings().copyWith(
+        autoBassEnabled: true,
+        autoBassTargetDb: 5.5,
+        autoBassMarginDb: 1.5,
+        autoBassFreqHz: 75,
+        autoGainEnabled: true,
+        autoGainTargetRmsDb: -17,
+        autoGainBiasDb: 1.25,
+        autoGainMaxBoostDb: 5,
+        autoGainMaxCutDb: 10,
+        autoGainWindowMs: 600,
+      );
+      final restored = DspSettings.fromJson(settings.toJson());
+      expect(restored.autoBassEnabled, isTrue);
+      expect(restored.autoBassTargetDb, 5.5);
+      expect(restored.autoBassMarginDb, 1.5);
+      expect(restored.autoBassFreqHz, 75);
+      expect(restored.autoGainEnabled, isTrue);
+      expect(restored.autoGainTargetRmsDb, -17);
+      expect(restored.autoGainBiasDb, 1.25);
+      expect(restored.autoGainMaxBoostDb, 5);
+      expect(restored.autoGainMaxCutDb, 10);
+      expect(restored.autoGainWindowMs, 600);
+
+      final clamped = DspSettings().copyWith(
+        autoBassTargetDb: 30,
+        autoBassMarginDb: -1,
+        autoBassFreqHz: 300,
+        autoGainTargetRmsDb: -40,
+        autoGainBiasDb: 20,
+        autoGainMaxBoostDb: 20,
+        autoGainMaxCutDb: 30,
+        autoGainWindowMs: 5000,
+      );
+      expect(clamped.autoBassTargetDb, 12);
+      expect(clamped.autoBassMarginDb, 0);
+      expect(clamped.autoBassFreqHz, 160);
+      expect(clamped.autoGainTargetRmsDb, -30);
+      expect(clamped.autoGainBiasDb, 6);
+      expect(clamped.autoGainMaxBoostDb, 12);
+      expect(clamped.autoGainMaxCutDb, 24);
+      expect(clamped.autoGainWindowMs, 3000);
     });
 
     test('an explicitly empty parametric list stays empty', () {
