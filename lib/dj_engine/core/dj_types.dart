@@ -145,6 +145,8 @@ class DspAnalysisMetrics {
   final double rmsDb;
   final double crestDb;
   final double bassEnergyDb;
+  /// Measured DSP-ENGINE offline safe-bass cap; null means not probed.
+  final double? maxSafeBassDb;
 
   const DspAnalysisMetrics({
     this.samplePeakDb = -160,
@@ -152,6 +154,7 @@ class DspAnalysisMetrics {
     this.rmsDb = -160,
     this.crestDb = 0,
     this.bassEnergyDb = -160,
+    this.maxSafeBassDb,
   });
 
   bool get isMeasured => samplePeakDb > -160 || truePeakDb > -160 || rmsDb > -160;
@@ -162,7 +165,9 @@ class DspAnalysisMetrics {
       truePeakDb >= -160 && truePeakDb <= 6 &&
       rmsDb >= -160 && rmsDb <= 0.1 &&
       crestDb >= 0 && crestDb <= 30 &&
-      bassEnergyDb >= -160 && bassEnergyDb <= 0.1;
+      bassEnergyDb >= -160 && bassEnergyDb <= 0.1 &&
+      (maxSafeBassDb == null ||
+          (maxSafeBassDb!.isFinite && maxSafeBassDb! >= 0 && maxSafeBassDb! <= 18));
 }
 
 class DjTrackProfile {
