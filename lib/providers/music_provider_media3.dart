@@ -1424,7 +1424,8 @@ extension MusicProviderMedia3 on MusicProvider {
           profile == null ||
           profile.songId != song.id ||
           !profile.dspAnalysis.isMeasured ||
-          !profile.dspAnalysis.isValid) return;
+          !profile.dspAnalysis.isValid ||
+          profile.dspAnalysis.maxSafeBassDb == null) return;
 
       final lease = await playbackControlArbiter.acquire(
         owner: 'dsp_analysis_hint',
