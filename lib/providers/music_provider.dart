@@ -3630,7 +3630,23 @@ class MusicProvider extends ChangeNotifier {
         'lane': transportPriority ? 'transport_priority' : 'source_serialized',
       }));
       if (transportPriority) {
-        return await _playbackCoordinator.runTransport(operation);
+        return await _playbackCoordinator.runTransport(() async {
+          final lease = await playbackControlArbiter.acquire(
+            owner: 'user_transport',
+            priority: PlaybackControlPriority.userTransport,
+          );
+          if (lease == null ||
+              !lease.authorizeWrite('transport:$command')) {
+            // The established transport epoch/coordinator remains the
+            // fail-safe authority if the arbiter is closing or unavailable.
+            return await operation();
+          }
+          try {
+            return await operation();
+          } finally {
+            await lease.release();
+          }
+        });
       }
       return await _playbackCoordinator.runSourceMutation(
         operation,
