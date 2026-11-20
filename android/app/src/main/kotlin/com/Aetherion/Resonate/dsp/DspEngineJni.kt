@@ -96,6 +96,7 @@ object DspEngineJni {
         rmsDb: Float,
         crestDb: Float,
         bassEnergyDb: Float,
+        maxSafeBassDb: Float,
     )
 
     /** [processCalls, avgUs, maxUs, overruns, lastFrames, sampleRate] */
