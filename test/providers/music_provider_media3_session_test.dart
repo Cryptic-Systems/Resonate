@@ -2976,7 +2976,8 @@ void main() {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
       await provider.prepareMedia3ProviderSession();
-      session.repeatModeGate = Completer<void>();
+      final repeatGate = Completer<void>();
+      session.repeatModeGate = repeatGate;
       var notifications = 0;
       provider.addListener(() => notifications++);
 
@@ -2996,7 +2997,7 @@ void main() {
       expect(notifications, 2,
           reason: 'A second tap must immediately publish the latest requested mode.');
 
-      session.repeatModeGate!.complete();
+      repeatGate.complete();
       await Future.wait<void>(<Future<void>>[firstChange, secondChange]);
 
       expect(session.repeatModeSet, PlaybackQueueRepeatMode.one);
