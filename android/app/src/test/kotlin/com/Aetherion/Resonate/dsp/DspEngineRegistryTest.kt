@@ -74,6 +74,18 @@ class DspEngineRegistryTest {
             calls += "dither:" + handle + ":" + enabled + ":" + mode
         }
 
+        override fun setAutoDynamicsConfig(
+            handle: Long, autoBassEnabled: Boolean, autoBassTargetDb: Float,
+            autoBassMarginDb: Float, autoBassFreqHz: Float, autoGainEnabled: Boolean,
+            autoGainTargetRmsDb: Float, autoGainBiasDb: Float, autoGainMaxBoostDb: Float,
+            autoGainMaxCutDb: Float, autoGainWindowMs: Float,
+        ) {
+            calls += "auto-dynamics:" + handle + ":" + autoBassEnabled + ":" +
+                autoBassTargetDb + ":" + autoBassMarginDb + ":" + autoBassFreqHz + ":" +
+                autoGainEnabled + ":" + autoGainTargetRmsDb + ":" + autoGainBiasDb + ":" +
+                autoGainMaxBoostDb + ":" + autoGainMaxCutDb + ":" + autoGainWindowMs
+        }
+
         override fun setAnalysisHint(
             handle: Long, enabled: Boolean, samplePeakDb: Float, truePeakDb: Float,
             rmsDb: Float, crestDb: Float, bassEnergyDb: Float,
@@ -203,6 +215,32 @@ class DspEngineRegistryTest {
             true, 4f, true, 0.8f, true, -70f, 500f,
         )
         assertEquals(0.50f, DspEngineRegistry.statusMap()["headroomBassWeight"])
+    }
+
+    @Test
+    fun auto_bass_and_loudness_settings_are_sticky_validated_and_inherited() {
+        assertTrue(DspEngineRegistry.applyAutoDynamicsConfigAll(
+            true, 5f, 1.5f, 75f,
+            true, -17f, 1f, 5f, 10f, 600f,
+        ))
+        assertTrue(DspEngineRegistry.register(51, 51051L, "A"))
+        assertTrue(fake.calls.any {
+            it == "auto-dynamics:51051:true:5.0:1.5:75.0:true:-17.0:1.0:5.0:10.0:600.0"
+        })
+        val status = DspEngineRegistry.statusMap()
+        assertEquals(true, status["autoBassEnabled"])
+        assertEquals(5f, status["autoBassTargetDb"])
+        assertEquals(true, status["autoGainEnabled"])
+        assertEquals(-17f, status["autoGainTargetRmsDb"])
+
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.register(52, 52052L, "B"))
+        assertTrue(fake.calls.any { it.startsWith("auto-dynamics:52052:true:5.0:1.5:75.0:true:-17.0") })
+
+        assertFalse(DspEngineRegistry.applyAutoDynamicsConfigAll(
+            true, 20f, 1f, 75f, true, -17f, 1f, 5f, 10f, 600f,
+        ))
+        assertEquals(5f, DspEngineRegistry.statusMap()["autoBassTargetDb"])
     }
 
     @Test
