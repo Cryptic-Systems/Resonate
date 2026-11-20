@@ -5,7 +5,7 @@
  * multi-band parametric EQ, true-peak / two-band limiter, preamp, speaker-mode
  * virtual bass, dither, sample-rate conversion, and optional platform backends.
  *
- * Version 0.4.0 — Resonate integration surface
+ * Version 0.6.0 — Full intelligent stack (budget, auto-VB, auto-preamp, crest, silence)
  *
  * THREAD SAFETY
  * -------------
@@ -13,12 +13,23 @@
  * thread. Control calls may be issued from any thread: they write into a
  * lock-free mailbox that is applied at the start of the next process block.
  * Meter getters are best-effort snapshots (may tear slightly).
+ * Offline analysis APIs (dsp_analyze_buffer / dsp_probe_max_bass_gain_db) are
+ * pure and may run on any thread; they do not touch engine state.
  *
  * Pipeline (when processing enabled):
- *   DC block → EQ → speaker/VB → preamp → DVC → limiter → dither
+ *   EQ → auto-bass shelf → speaker/VB → preamp → DVC (auto-gain) → limiter → dither
  *
  * DVC gain changes use optional one-pole smoothing (default ~15 ms when DVC is
- * enabled at create).
+ * enabled at create). When auto-gain is enabled it drives DVC toward a short-term
+ * RMS target (with bias / max boost / max cut and headroom clamp).
+ *
+ * INTELLIGENT BASS + LEVEL
+ * -----------------------
+ * Path A (offline): dsp_analyze_buffer / dsp_probe_max_bass_gain_db measure a
+ * buffer's true-peak headroom and the max safe low-shelf gain under a ceiling.
+ * Path B (online):  dsp_auto_bass_* servos a dedicated low-shelf so applied
+ * boost stays under (ceiling - margin), using running level meters + GR.
+ * Auto-DVC:         dsp_auto_gain_* matches short-term RMS to a target level.
  */
 
 #ifndef DSP_ENGINE_H
@@ -136,6 +147,34 @@ typedef struct {
     int32_t channels;
 } DspStats;
 
+/**
+ * Offline / host-side buffer analysis (Path A).
+ * Peaks in dBFS relative to full-scale 1.0. crest_db = sample_peak - rms.
+ * bass_energy_db approximates energy below ~120 Hz (one-pole LP on mono).
+ */
+typedef struct {
+    float sample_peak_db;
+    float true_peak_db;
+    float rms_db;
+    float crest_db;
+    float bass_energy_db;
+} DspAnalysisResult;
+
+/**
+ * Running level meters updated every process block (Path B).
+ * headroom_db = limiter_ceiling_db - post_eq_peak_db (before limiter).
+ * Values are peak-hold with slow decay; suitable for UI and auto-bass.
+ */
+typedef struct {
+    float in_peak_db;
+    float in_true_peak_db;
+    float post_eq_peak_db;
+    float bass_band_peak_db;
+    float headroom_db;
+    /** Short-term RMS (dBFS), ~window set by auto-gain / default ~400 ms. */
+    float short_term_rms_db;
+} DspLevelMeter;
+
 DSP_API const char* dsp_version(void);
 DSP_API DspEngine* dsp_create(const DspConfig* cfg);
 DSP_API void       dsp_destroy(DspEngine* eng);
@@ -244,6 +283,131 @@ DSP_API int           dsp_dither_is_enabled(const DspEngine* eng);
 
 DSP_API DspError dsp_get_stats(DspEngine* eng, DspStats* out);
 DSP_API DspError dsp_reset_stats(DspEngine* eng);
+
+/* ---------- Intelligent analysis + auto-bass (v0.5) ---------- */
+
+/**
+ * Analyze an interleaved float buffer without engine state.
+ * channels in [1, 8]. sample_rate used for bass-energy filter only.
+ */
+DSP_API DspError dsp_analyze_buffer(const float* interleaved, int frames, int channels,
+                                    float sample_rate, DspAnalysisResult* out);
+
+/**
+ * Binary-search the maximum low-shelf gain (dB) that keeps true-peak under
+ * (ceiling_db - margin_db). shelf_freq_hz typical 60–100. Pure / offline.
+ */
+DSP_API DspError dsp_probe_max_bass_gain_db(const float* interleaved, int frames, int channels,
+                                           float sample_rate, float shelf_freq_hz,
+                                           float ceiling_db, float margin_db,
+                                           float* out_max_gain_db);
+
+DSP_API DspError dsp_get_level_meter(const DspEngine* eng, DspLevelMeter* out);
+DSP_API DspError dsp_reset_level_meters(DspEngine* eng);
+
+/**
+ * Online auto-bass: dedicated low-shelf after user EQ.
+ * applied_db tracks min(target_db, headroom_db - margin_db), smoothed.
+ * Does not disable the limiter — it remains the hard ceiling.
+ */
+DSP_API DspError dsp_auto_bass_enable(DspEngine* eng, int enable);
+DSP_API int      dsp_auto_bass_is_enabled(const DspEngine* eng);
+DSP_API DspError dsp_auto_bass_set_target_db(DspEngine* eng, float target_shelf_db);
+DSP_API float    dsp_auto_bass_get_target_db(const DspEngine* eng);
+DSP_API DspError dsp_auto_bass_set_margin_db(DspEngine* eng, float margin_db);
+DSP_API float    dsp_auto_bass_get_margin_db(const DspEngine* eng);
+DSP_API DspError dsp_auto_bass_set_freq_hz(DspEngine* eng, float freq_hz);
+DSP_API float    dsp_auto_bass_get_freq_hz(const DspEngine* eng);
+DSP_API float    dsp_auto_bass_get_applied_db(const DspEngine* eng);
+
+/**
+ * Online auto-DVC / auto-gain (item 5): drives DVC so short-term RMS approaches
+ * target_rms_db + bias_db. Boost is further limited by headroom − margin so the
+ * limiter is not forced into constant GR. When enabled, auto-gain owns DVC gain
+ * (manual dsp_dvc_set_gain_db is treated as bias if you also set bias, or is
+ * overwritten each block — prefer bias API while auto-gain is on).
+ *
+ * target_rms_db: typical −20 … −14 dBFS short-term
+ * max_boost_db / max_cut_db: clamp on the correction
+ * window_ms: RMS integration time (200–3000; default 400)
+ */
+DSP_API DspError dsp_auto_gain_enable(DspEngine* eng, int enable);
+DSP_API int      dsp_auto_gain_is_enabled(const DspEngine* eng);
+DSP_API DspError dsp_auto_gain_set_target_rms_db(DspEngine* eng, float target_rms_db);
+DSP_API float    dsp_auto_gain_get_target_rms_db(const DspEngine* eng);
+DSP_API DspError dsp_auto_gain_set_bias_db(DspEngine* eng, float bias_db);
+DSP_API float    dsp_auto_gain_get_bias_db(const DspEngine* eng);
+DSP_API DspError dsp_auto_gain_set_max_boost_db(DspEngine* eng, float max_boost_db);
+DSP_API float    dsp_auto_gain_get_max_boost_db(const DspEngine* eng);
+DSP_API DspError dsp_auto_gain_set_max_cut_db(DspEngine* eng, float max_cut_db);
+DSP_API float    dsp_auto_gain_get_max_cut_db(const DspEngine* eng);
+DSP_API DspError dsp_auto_gain_set_window_ms(DspEngine* eng, float window_ms);
+DSP_API float    dsp_auto_gain_get_window_ms(const DspEngine* eng);
+DSP_API float    dsp_auto_gain_get_applied_db(const DspEngine* eng);
+DSP_API float    dsp_get_short_term_rms_db(const DspEngine* eng);
+
+/* ---------- Extended intelligence (v0.6) ---------- */
+
+/**
+ * Shared headroom budget weights (normalized internally).
+ * bass / preamp / gain share the available headroom so they do not all
+ * spend the full margin independently. Defaults: 0.50 / 0.20 / 0.30.
+ */
+DSP_API DspError dsp_headroom_budget_set(DspEngine* eng,
+                                         float bass_weight,
+                                         float preamp_weight,
+                                         float gain_weight);
+DSP_API DspError dsp_headroom_budget_get(const DspEngine* eng,
+                                         float* bass_weight,
+                                         float* preamp_weight,
+                                         float* gain_weight);
+
+/**
+ * Clip-aware auto-preamp: servos preamp dB toward target, capped by its
+ * share of headroom. Independent of user preamp when disabled.
+ */
+DSP_API DspError dsp_auto_preamp_enable(DspEngine* eng, int enable);
+DSP_API int      dsp_auto_preamp_is_enabled(const DspEngine* eng);
+DSP_API DspError dsp_auto_preamp_set_target_db(DspEngine* eng, float target_db);
+DSP_API float    dsp_auto_preamp_get_target_db(const DspEngine* eng);
+DSP_API float    dsp_auto_preamp_get_applied_db(const DspEngine* eng);
+
+/**
+ * Content-aware virtual bass: scales speaker VB amount from bass-band energy.
+ * When track already has strong sub energy, applied VB is reduced.
+ * target_amount in [0,1] is the maximum when content is bass-light.
+ */
+DSP_API DspError dsp_auto_vb_enable(DspEngine* eng, int enable);
+DSP_API int      dsp_auto_vb_is_enabled(const DspEngine* eng);
+DSP_API DspError dsp_auto_vb_set_target(DspEngine* eng, float target_amount);
+DSP_API float    dsp_auto_vb_get_target(const DspEngine* eng);
+DSP_API float    dsp_auto_vb_get_applied(const DspEngine* eng);
+
+/**
+ * Crest-based limiter personality from offline analysis (or live estimate).
+ * High crest (dynamic) → slightly higher ceiling / slower release.
+ * Low crest (dense) → tighter ceiling / faster release.
+ * Pass crest_db from DspAnalysisResult.crest_db; 0 disables override.
+ */
+DSP_API DspError dsp_limiter_set_crest_hint(DspEngine* eng, float crest_db);
+DSP_API float    dsp_limiter_get_crest_hint(const DspEngine* eng);
+
+/**
+ * Feed offline analysis into the live engine (bass energy, crest, optional
+ * max safe bass). Safe to call from UI thread; applied next process block.
+ */
+DSP_API DspError dsp_apply_analysis_hint(DspEngine* eng, const DspAnalysisResult* analysis,
+                                         float max_safe_bass_db);
+
+/**
+ * Silence hygiene: when short-term RMS stays below threshold for hold_ms,
+ * decay auto-applied gains and ease limiter GR peak-hold. Reduces “stuck”
+ * meters and gain across gaps / track changes.
+ */
+DSP_API DspError dsp_silence_hygiene_enable(DspEngine* eng, int enable);
+DSP_API int      dsp_silence_hygiene_is_enabled(const DspEngine* eng);
+DSP_API DspError dsp_silence_hygiene_set_threshold_db(DspEngine* eng, float rms_db);
+DSP_API DspError dsp_silence_hygiene_set_hold_ms(DspEngine* eng, float hold_ms);
 
 DSP_API int dsp_set_realtime_priority(DspEngine* eng, int priority);
 
