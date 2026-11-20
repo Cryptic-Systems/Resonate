@@ -934,6 +934,7 @@ extension MusicProviderMedia3 on MusicProvider {
         final reconcileRepeatCommand =
             previousRepeatCommand.catchError((Object _) {}).then((_) async {
           if (_disposed ||
+              !controlLease.isCurrent ||
               !_media3ProviderSessionActive ||
               !identical(_media3ProviderSession, session)) return;
           await session.setRepeatMode(switch (_repeatMode) {
