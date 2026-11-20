@@ -28,6 +28,7 @@ import 'navigation/shell_nav.dart';
 import 'widgets/ask_resonate/ask_resonate_controller.dart';
 import 'screens/home_screen.dart';
 import 'services/media3_provider_session.dart';
+import 'playback/playback_control_arbiter.dart';
 import 'services/playback_diagnostics_observer.dart';
 import 'services/resonate_diagnostics.dart';
 
@@ -258,6 +259,22 @@ class ResonateApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        Provider<PlaybackControlArbiter>(
+          create: (_) => PlaybackControlArbiter(
+            onDiagnostic: (event) {
+              unawaited(ResonateDiagnostics.record('playback_control_arbiter', {
+                'type': event.type.name,
+                'generation': event.generation,
+                'owner': event.owner,
+                'priority': event.priority?.name,
+                'operation': event.operation,
+                'otherOwner': event.otherOwner,
+                'reason': event.reason,
+              }));
+            },
+          ),
+          dispose: (_, arbiter) => unawaited(arbiter.close()),
+        ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => ShellNav()),
         ChangeNotifierProvider(create: (_) => AskResonateController()),
@@ -265,6 +282,7 @@ class ResonateApp extends StatelessWidget {
           create: (_) {
             final provider = MusicProvider(
               media3ProviderSession: Media3ProviderSession(),
+              playbackControlArbiter: context.read<PlaybackControlArbiter>(),
               deferMedia3UntilSettingsReady: true,
             );
             // Media3 starts after persisted DSP and playback settings are restored.
