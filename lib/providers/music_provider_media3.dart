@@ -70,6 +70,13 @@ extension MusicProviderMedia3 on MusicProvider {
       if (!stillOwnsPreload()) return;
       _media3DjTransitionPreparation = preparation;
       _preloadedNextSongId = next.id;
+      final activeDeckId = _media3ShadowState?.activeDeckId ?? 'A';
+      final standbyDeckId = activeDeckId == 'A' ? 'B' : 'A';
+      unawaited(_applyMedia3DspAnalysisHint(
+        song: next,
+        deckId: standbyDeckId,
+        standby: true,
+      ));
       await ResonateDiagnostics.record('media3_crossfade_preloaded', {
         'outgoingSongId': outgoing.id,
         'incomingSongId': next.id,
@@ -1251,6 +1258,19 @@ extension MusicProviderMedia3 on MusicProvider {
       }
     }
     final songChanged = currentSong != null && oldSongId != currentSong!.id;
+    final activeDeckId = state.activeDeckId == 'B' ? 'B' : 'A';
+    final activeSongId = currentSong?.id;
+    if (activeSongId != null &&
+        (_dspHintedActiveSongId != activeSongId ||
+            _dspHintedActiveDeckId != activeDeckId)) {
+      _dspHintedActiveSongId = activeSongId;
+      _dspHintedActiveDeckId = activeDeckId;
+      unawaited(_applyMedia3DspAnalysisHint(
+        song: currentSong!,
+        deckId: activeDeckId,
+        standby: false,
+      ));
+    }
     if (songChanged) {
       currentDuration = state.duration ?? currentSong!.duration;
       _lastCompletionSongId = null;
@@ -1348,6 +1368,84 @@ extension MusicProviderMedia3 on MusicProvider {
         !state.isBuffering &&
         !state.isCompleted) {
       _recoverMedia3ProviderPlayback();
+    }
+  }
+
+  /// Resolve measured PCM metrics off the playback thread, then apply them
+  /// only to the physical deck that still owns this exact song occurrence.
+  /// Background hint writes never preempt an active DJ/crossfade/user controller.
+  Future<void> _applyMedia3DspAnalysisHint({
+    required Song song,
+    required String deckId,
+    required bool standby,
+  }) async {
+    if (!_media3ProviderSessionActive ||
+        _disposed ||
+        !const {'A', 'B'}.contains(deckId) ||
+        song.id.trim().isEmpty) return;
+    final generation = (_dspAnalysisHintGenerations[deckId] ?? 0) + 1;
+    _dspAnalysisHintGenerations[deckId] = generation;
+    bool currentRequest() =>
+        !_disposed &&
+        _media3ProviderSessionActive &&
+        _dspAnalysisHintGenerations[deckId] == generation &&
+        (standby
+            ? _preloadedNextSongId == song.id &&
+                (_media3ShadowState?.activeDeckId ?? 'A') != deckId
+            : currentSong?.id == song.id &&
+                (_media3ShadowState?.activeDeckId ?? 'A') == deckId);
+    try {
+      final analysisService = _djAnalysis ??= DjAnalysisService();
+      var profile = await analysisService.getProfile(song.id);
+      if (profile == null || !profile.dspAnalysis.isMeasured ||
+          !profile.dspAnalysis.isValid) {
+        // Build a fresh PCM profile when the cache predates DSP metrics. This
+        // is deliberately asynchronous and never delays playback or preload.
+        await analysisService.analyzeSong(song, force: true);
+        if (!currentRequest()) return;
+        profile = await analysisService.getProfile(song.id);
+      }
+      if (!currentRequest() ||
+          profile == null ||
+          profile.songId != song.id ||
+          !profile.dspAnalysis.isMeasured ||
+          !profile.dspAnalysis.isValid) return;
+
+      final lease = await playbackControlArbiter.acquire(
+        owner: 'dsp_analysis_hint_$deckId',
+        priority: PlaybackControlPriority.background,
+      );
+      if (lease == null) return;
+      try {
+        if (!currentRequest() ||
+            !lease.authorizeWrite('dsp:analysis_hint:$deckId:$song.id')) return;
+        final metrics = profile.dspAnalysis;
+        final applied = await AudioEffectsBridge.setLiveDspDeckAnalysisHint(
+          deckId: deckId,
+          songId: song.id,
+          samplePeakDb: metrics.samplePeakDb,
+          truePeakDb: metrics.truePeakDb,
+          rmsDb: metrics.rmsDb,
+          crestDb: metrics.crestDb,
+          bassEnergyDb: metrics.bassEnergyDb,
+        );
+        await ResonateDiagnostics.record('media3_dsp_analysis_hint', {
+          'deckId': deckId,
+          'songId': song.id,
+          'applied': applied && lease.isCurrent && currentRequest(),
+          'standby': standby,
+          'analysisVersion': profile.analysisVersion,
+        });
+      } finally {
+        await lease.release();
+      }
+    } catch (error) {
+      await ResonateDiagnostics.record('media3_dsp_analysis_hint_failed', {
+        'deckId': deckId,
+        'songId': song.id,
+        'standby': standby,
+        'error': error.toString(),
+      });
     }
   }
 
