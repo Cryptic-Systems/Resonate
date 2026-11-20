@@ -135,6 +135,19 @@ internal class LiveDspChannelHandler {
                 )
                 result.success(DspEngineRegistry.statusMap())
             }
+            "setLiveDspDeckAnalysisHint" -> {
+                val deckId = call.argument<String>("deckId") ?: ""
+                val songId = call.argument<String>("songId") ?: ""
+                val samplePeak = (call.argument<Number>("samplePeakDb") ?: Double.NaN).toFloat()
+                val truePeak = (call.argument<Number>("truePeakDb") ?: Double.NaN).toFloat()
+                val rms = (call.argument<Number>("rmsDb") ?: Double.NaN).toFloat()
+                val crest = (call.argument<Number>("crestDb") ?: Double.NaN).toFloat()
+                val bass = (call.argument<Number>("bassEnergyDb") ?: Double.NaN).toFloat()
+                val ok = DspEngineRegistry.applyDeckAnalysisHint(
+                    deckId, songId, samplePeak, truePeak, rms, crest, bass,
+                )
+                result.success(mapOf("ok" to ok, "deckId" to deckId, "songId" to songId))
+            }
             "getLiveDspStatus" -> result.success(DspEngineRegistry.statusMap())
             else -> result.notImplemented()
         }
