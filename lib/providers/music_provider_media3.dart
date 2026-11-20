@@ -382,7 +382,6 @@ extension MusicProviderMedia3 on MusicProvider {
         'activeSpeed': preparation?.activeSpeed ?? 1.0,
         'standbySpeed': preparation?.standbySpeed ?? 1.0,
       });
-      _repeatSelfFadeExecuting = true;
       await session.crossfade(duration: Duration(milliseconds: durationMs));
 
       var elapsedMs = 0;
@@ -805,6 +804,7 @@ extension MusicProviderMedia3 on MusicProvider {
         'durationMs': durationMs,
         'remainingMs': remainingMs,
       });
+      _repeatSelfFadeExecuting = true;
       await session.crossfade(duration: Duration(milliseconds: durationMs));
       final promotedState = await promoted.future.timeout(
         Duration(milliseconds: durationMs + 6500),
