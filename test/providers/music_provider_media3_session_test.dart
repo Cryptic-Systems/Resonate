@@ -2903,6 +2903,9 @@ void main() {
       final song = _song('repeat-one-finish-before-disable');
       await provider.prepareMedia3ProviderSession();
       expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
+      // Ignore transport cleanup from initial playSong setup. The assertion
+      // below must observe only calls made after the audible self fade starts.
+      session.calls.clear();
       await provider.setRepeatMode(PlaybackRepeatMode.one);
       await provider.setCrossfadeDuration(500);
 
