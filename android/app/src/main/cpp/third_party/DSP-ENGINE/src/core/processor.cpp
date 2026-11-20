@@ -912,7 +912,7 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
                 float r2 = (s & 0xFFFFFF) / float(0x1000000) - 0.5f;
                 float noise = r1 + r2;
                 float x = static_cast<float>(eng->temp[c][i]);
-                if (eng->dither_mode == DSP_DITHER_SHAPED) x += err;
+                if (eng->dither_mode == DSP_DITHER_SHAPED) x += err * kInv;
                 float scaled = x * kScale + noise;
                 float q = std::floor(scaled + 0.5f);
                 if (q > 32767.f) q = 32767.f;
