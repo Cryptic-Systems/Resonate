@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/dsp_settings.dart';
+import '../playback/playback_control_arbiter.dart';
 import '../models/resonate_sound_profile.dart';
 import '../services/eq_lean_store.dart';
 import '../services/resonate_dsp_pipeline.dart';
@@ -293,7 +294,15 @@ class EqualizerProvider extends ChangeNotifier {
     } catch (_) {}
     // Persisted master state must be applied to the registry even when no sink
     // exists yet; the registry carries it forward to future A/B engines.
-    await ResonateNativeDspBridge.setEnabled(true);
+    await _withDspProfileLease(
+      operation: 'enable_dsp_profile',
+      priority: PlaybackControlPriority.interactive,
+      action: (lease) async {
+        if (_authorizeDspWrite(lease, 'enable_dsp_profile')) {
+          await ResonateNativeDspBridge.setEnabled(true);
+        }
+      },
+    );
     final sid = _music?.activeAudioSessionId;
     if (sid != null && sid > 0) unawaited(attachNativeSession(sid));
     notifyListeners();
@@ -843,8 +852,11 @@ class EqualizerProvider extends ChangeNotifier {
       }
       // Restore the full active native profile immediately. These registry
       // calls update sticky state even if playback has not created a sink yet.
-      await _applyPreamp();
-      await _pushLiveDspCurve(settings: canonical);
+      await _applyPreamp(priority: PlaybackControlPriority.background);
+      await _pushLiveDspCurve(
+        settings: canonical,
+        priority: PlaybackControlPriority.background,
+      );
       final sessionId = _music?.activeAudioSessionId;
       if (sessionId != null && sessionId > 0) {
         unawaited(attachNativeSession(sessionId));
@@ -869,9 +881,9 @@ class EqualizerProvider extends ChangeNotifier {
           _applyStudioGains(match.first.gains);
         }
       }
-      await _pushToHardware();
-      await _applyPreamp();
-      await _pushLiveDspCurve();
+      await _pushToHardware(priority: PlaybackControlPriority.background);
+      await _applyPreamp(priority: PlaybackControlPriority.background);
+      await _pushLiveDspCurve(priority: PlaybackControlPriority.background);
       debugPrint('EQ re-applied after hardware bind preset=$preset preamp=$preamp');
       try {
         final prefs = await SharedPreferences.getInstance();
@@ -957,20 +969,55 @@ class EqualizerProvider extends ChangeNotifier {
     parametricEqBands = _effectiveParametricBands().toList(growable: true);
   }
 
-  Future<void> _pushToHardware() async {
+  Future<void> _pushToHardware({
+    PlaybackControlPriority priority = PlaybackControlPriority.interactive,
+  }) async {
+    await _withDspProfileLease(
+      operation: 'equalizer_profile',
+      priority: priority,
+      action: (lease) async {
+        if (!_authorizeDspWrite(lease, 'parametric_eq')) return;
+        try {
+          final filters = _effectiveParametricBands();
+          await AudioEffectsBridge.setLiveDspParametricEqBands(
+            frequenciesHz: filters.map((band) => band.frequencyHz).toList(),
+            gainsDb: filters.map((band) => band.gainDb).toList(),
+            qs: filters.map((band) => band.q).toList(),
+            types: filters.map((band) => band.type).toList(),
+            enabled: true,
+          );
+        } catch (e) {
+          debugPrint('live DSP EQ push failed: $e');
+        }
+      },
+    );
+  }
+
+  Future<void> _withDspProfileLease({
+    required String operation,
+    required PlaybackControlPriority priority,
+    required Future<void> Function(PlaybackControlLease? lease) action,
+  }) async {
+    final arbiter = _music?.playbackControlArbiter;
+    if (arbiter == null) {
+      await action(null);
+      return;
+    }
+    final lease = await arbiter.acquire(
+      owner: 'dsp_profile',
+      priority: priority,
+    );
+    if (lease == null) return;
     try {
-      final filters = _effectiveParametricBands();
-      await AudioEffectsBridge.setLiveDspParametricEqBands(
-        frequenciesHz: filters.map((band) => band.frequencyHz).toList(),
-        gainsDb: filters.map((band) => band.gainDb).toList(),
-        qs: filters.map((band) => band.q).toList(),
-        types: filters.map((band) => band.type).toList(),
-        enabled: true,
-      );
-    } catch (e) {
-      debugPrint('live DSP EQ push failed: $e');
+      if (!lease.authorizeWrite(operation)) return;
+      await action(lease);
+    } finally {
+      await lease.release();
     }
   }
+
+  bool _authorizeDspWrite(PlaybackControlLease? lease, String operation) =>
+      lease == null || lease.authorizeWrite(operation);
 
   Future<void> setParametricEqBands(
     List<ParametricEqBand> filters, {
@@ -1019,7 +1066,7 @@ class EqualizerProvider extends ChangeNotifier {
     try {
       final ok = await ResonateNativeDspBridge.attachSession(sessionId);
       if (ok) {
-        await _pushToHardware();
+        await _pushToHardware(priority: PlaybackControlPriority.background);
         notifyListeners();
       }
     } catch (e, st) {
@@ -1030,7 +1077,9 @@ class EqualizerProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _applyPreamp() async {
+  Future<void> _applyPreamp({
+    PlaybackControlPriority priority = PlaybackControlPriority.interactive,
+  }) async {
     // Mature DSP owns EQ preamp/DVC. Do not mirror it into player volume or
     // Android LoudnessEnhancer, otherwise the same gain is applied twice.
     final peakBandBoost = studioBands.isEmpty
@@ -1039,21 +1088,26 @@ class EqualizerProvider extends ChangeNotifier {
     final requestedPreamp = autoEqHeadroom
         ? math.min(preamp, preamp - math.max(0.0, peakBandBoost))
         : preamp;
-    // Conservative estimate based on the largest positive studio-band gain;
-    // bounded by the DSP's supported -6 dB preamp floor.
     final effective = requestedPreamp.clamp(-6.0, 6.0).toDouble();
-    try {
-      await AudioEffectsBridge.setLiveDspPreampDb(effective);
-    } catch (e) {
-      debugPrint('live DSP preamp push failed: $e');
-    }
-    // Keep legacy Android LoudnessEnhancer explicitly disabled for this path.
-    if (_loudnessEnhancer != null) {
-      try {
-        await _loudnessEnhancer!.setTargetGain(0);
-        await _loudnessEnhancer!.setEnabled(false);
-      } catch (_) {}
-    }
+    await _withDspProfileLease(
+      operation: 'equalizer_preamp',
+      priority: priority,
+      action: (lease) async {
+        if (!_authorizeDspWrite(lease, 'preamp')) return;
+        try {
+          await AudioEffectsBridge.setLiveDspPreampDb(effective);
+        } catch (e) {
+          debugPrint('live DSP preamp push failed: $e');
+        }
+        if (!_authorizeDspWrite(lease, 'disable_legacy_loudness')) return;
+        if (_loudnessEnhancer != null) {
+          try {
+            await _loudnessEnhancer!.setTargetGain(0);
+            await _loudnessEnhancer!.setEnabled(false);
+          } catch (_) {}
+        }
+      },
+    );
   }
 
   void _syncParametricGainsFromStudio() {
@@ -1076,57 +1130,70 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
 
-  Future<void> _pushLiveDspCurve({DspSettings? settings}) async {
-    try {
-      final canonical = settings ?? await DspSettings.load();
-      final filters = _effectiveParametricBands();
+  Future<void> _pushLiveDspCurve({
+    DspSettings? settings,
+    PlaybackControlPriority priority = PlaybackControlPriority.background,
+  }) async {
+    await _withDspProfileLease(
+      operation: 'dsp_profile_curve',
+      priority: priority,
+      action: (lease) async {
+        try {
+          final canonical = settings ?? await DspSettings.load();
+          final filters = _effectiveParametricBands();
+          if (!_authorizeDspWrite(lease, 'enable_dsp')) return;
+          await ResonateNativeDspBridge.setEnabled(true);
+          if (!_authorizeDspWrite(lease, 'parametric_eq')) return;
+          await AudioEffectsBridge.setLiveDspParametricEqBands(
+            frequenciesHz: filters.map((band) => band.frequencyHz).toList(),
+            gainsDb: filters.map((band) => band.gainDb).toList(),
+            qs: filters.map((band) => band.q).toList(),
+            types: filters.map((band) => band.type).toList(),
+            enabled: true,
+          );
+          if (!_authorizeDspWrite(lease, 'dvc')) return;
+          await AudioEffectsBridge.setLiveDspDvc(
+            enabled: canonical.dvcEnabled,
+            db: canonical.dvcDb,
+            smoothing: canonical.dvcSmoothing,
+            smoothingMs: canonical.dvcSmoothingMs,
+          );
+          if (!_authorizeDspWrite(lease, 'limiter_config')) return;
+          await AudioEffectsBridge.setLiveDspLimiterConfig(
+            enabled: canonical.limiterEnabled,
+            mode: canonical.limiterMode,
+            thresholdDb: canonical.limiterThresholdDb,
+            releaseMs: canonical.limiterReleaseMs,
+            attackMs: canonical.limiterAttackMs,
+            lookaheadMs: canonical.limiterLookaheadMs,
+            kneeDb: canonical.limiterKneeDb,
+          );
+          if (!_authorizeDspWrite(lease, 'limiter_ceiling')) return;
+          await AudioEffectsBridge.setLiveDspLimiterCeiling(
+            highDb: canonical.limiterHighCeilingDb,
+            lowDb: canonical.limiterLowCeilingDb,
+          );
+          if (!_authorizeDspWrite(lease, 'crossover')) return;
+          await AudioEffectsBridge.setLiveDspCrossoverHz(canonical.crossoverHz);
+          if (!_authorizeDspWrite(lease, 'dither')) return;
+          await AudioEffectsBridge.setLiveDspDither(
+            enabled: canonical.ditherEnabled,
+            mode: canonical.ditherMode,
+          );
 
-      // Master bypass, EQ enable, preamp, and DVC are independent stages.
-      // Apply the canonical master state even before the first sink registers.
-      await ResonateNativeDspBridge.setEnabled(true);
-      await AudioEffectsBridge.setLiveDspParametricEqBands(
-        frequenciesHz: filters.map((band) => band.frequencyHz).toList(),
-        gainsDb: filters.map((band) => band.gainDb).toList(),
-        qs: filters.map((band) => band.q).toList(),
-        types: filters.map((band) => band.type).toList(),
-        enabled: true,
-      );
-      await AudioEffectsBridge.setLiveDspDvc(
-        enabled: canonical.dvcEnabled,
-        db: canonical.dvcDb,
-        smoothing: canonical.dvcSmoothing,
-        smoothingMs: canonical.dvcSmoothingMs,
-      );
-      await AudioEffectsBridge.setLiveDspLimiterConfig(
-        enabled: canonical.limiterEnabled,
-        mode: canonical.limiterMode,
-        thresholdDb: canonical.limiterThresholdDb,
-        releaseMs: canonical.limiterReleaseMs,
-        attackMs: canonical.limiterAttackMs,
-        lookaheadMs: canonical.limiterLookaheadMs,
-        kneeDb: canonical.limiterKneeDb,
-      );
-      await AudioEffectsBridge.setLiveDspLimiterCeiling(
-        highDb: canonical.limiterHighCeilingDb,
-        lowDb: canonical.limiterLowCeilingDb,
-      );
-      await AudioEffectsBridge.setLiveDspCrossoverHz(canonical.crossoverHz);
-      await AudioEffectsBridge.setLiveDspDither(
-        enabled: canonical.ditherEnabled,
-        mode: canonical.ditherMode,
-      );
-
-      // _applyPreamp() owns the effective gain, including automatic headroom.
-      // Do not write raw [preamp] here afterwards: that would undo headroom.
-      final route = AudioOutputRouteService.instance;
-      syncSpeakerPolicy(
-        needsSpeakerProtection: route.needsSpeakerProtection,
-        virtualBassAmount: route.suggestedVirtualBass,
-        route: route.route,
-      );
-    } catch (e) {
-      debugPrint('pushLiveDspCurve failed: $e');
-    }
+          // _applyPreamp() owns the effective gain, including automatic headroom.
+          final route = AudioOutputRouteService.instance;
+          if (!_authorizeDspWrite(lease, 'speaker_policy')) return;
+          syncSpeakerPolicy(
+            needsSpeakerProtection: route.needsSpeakerProtection,
+            virtualBassAmount: route.suggestedVirtualBass,
+            route: route.route,
+          );
+        } catch (e) {
+          debugPrint('pushLiveDspCurve failed: $e');
+        }
+      },
+    );
   }
 
   Future<void> setStudioBandGain(int index, double gainDb) async {
@@ -1483,7 +1550,10 @@ class EqualizerProvider extends ChangeNotifier {
     }
     await _pushToHardware();
     await _applyPreamp();
-    await _pushLiveDspCurve(settings: snapshot);
+    await _pushLiveDspCurve(
+      settings: snapshot,
+      priority: PlaybackControlPriority.interactive,
+    );
     notifyListeners();
   }
 
