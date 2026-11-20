@@ -7,17 +7,12 @@ import android.provider.DocumentsContract
 import com.Aetherion.Resonate.media.PermissionHelper
 import com.Aetherion.Resonate.media.Media3PlaybackBridge
 import com.Aetherion.Resonate.media.AudioCommunicationGuard
-import com.ryanheise.audioservice.AudioServiceActivity
+import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import kotlin.math.roundToInt
 
-class MainActivity : AudioServiceActivity() {
-    // Compile-time keep: audio_service looks up the FGS small icon by string.
-    // Referencing R.drawable here forces AAPT2 to emit a real resource id.
-    @Suppress("unused")
-    private val mediaNotificationIconId = R.drawable.ic_stat_resonate
-
+class MainActivity : FlutterActivity() {
     private val channelName = "com.aetherion.resonate/media_store"
     private val folderRequestCode = 6168
     private val diagnosticFileRequestCode = 6170
