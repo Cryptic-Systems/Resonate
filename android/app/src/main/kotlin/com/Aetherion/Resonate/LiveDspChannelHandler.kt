@@ -116,6 +116,25 @@ internal class LiveDspChannelHandler {
                 DspEngineRegistry.applyVirtualBassAll(amount)
                 result.success(mapOf("ok" to true, "amount" to amount))
             }
+            "setLiveDspIntelligenceConfig" -> {
+                val bassWeight = (call.argument<Number>("bassWeight") ?: 0.50).toFloat()
+                val preampWeight = (call.argument<Number>("preampWeight") ?: 0.20).toFloat()
+                val gainWeight = (call.argument<Number>("gainWeight") ?: 0.30).toFloat()
+                val autoPreamp = call.argument<Boolean>("autoPreampEnabled") ?: false
+                val autoPreampTarget = (call.argument<Number>("autoPreampTargetDb") ?: 0.0).toFloat()
+                val autoVirtualBass = call.argument<Boolean>("autoVirtualBassEnabled") ?: false
+                val autoVirtualBassTarget = (call.argument<Number>("autoVirtualBassTarget") ?: 0.55).toFloat()
+                val silenceHygiene = call.argument<Boolean>("silenceHygieneEnabled") ?: false
+                val silenceThreshold = (call.argument<Number>("silenceThresholdDb") ?: -70.0).toFloat()
+                val silenceHold = (call.argument<Number>("silenceHoldMs") ?: 500.0).toFloat()
+                DspEngineRegistry.applyIntelligenceConfigAll(
+                    bassWeight, preampWeight, gainWeight,
+                    autoPreamp, autoPreampTarget,
+                    autoVirtualBass, autoVirtualBassTarget,
+                    silenceHygiene, silenceThreshold, silenceHold,
+                )
+                result.success(DspEngineRegistry.statusMap())
+            }
             "getLiveDspStatus" -> result.success(DspEngineRegistry.statusMap())
             else -> result.notImplemented()
         }
