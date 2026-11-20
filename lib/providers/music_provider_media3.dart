@@ -734,6 +734,11 @@ extension MusicProviderMedia3 on MusicProvider {
       return;
     }
 
+    // Claim the repeat-self handoff before the temporary native repeat-off
+    // command. Media3 emits that policy change through stateStream; without
+    // this early ownership marker, the observer mistakes our internal
+    // repeat-off window for an external user change and cancels the fade.
+    _repeatSelfHandoffInFlight = true;
     final generation = ++_automaticTransitionGeneration;
     final transportEpoch = _userTransportEpoch;
     final outgoingDeckId = _media3ShadowState?.activeDeckId ?? 'A';
