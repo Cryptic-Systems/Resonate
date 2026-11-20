@@ -264,6 +264,7 @@ class AudioEffectsBridge {
     required double rmsDb,
     required double crestDb,
     required double bassEnergyDb,
+    double? maxSafeBassDb,
   }) async {
     if (!const {'A', 'B'}.contains(deckId) || songId.trim().isEmpty) return false;
     final metrics = [
@@ -286,6 +287,7 @@ class AudioEffectsBridge {
         'rmsDb': rmsDb,
         'crestDb': crestDb,
         'bassEnergyDb': bassEnergyDb,
+        'maxSafeBassDb': maxSafeBassDb ?? 24.0,
       });
       return raw is Map && raw['ok'] == true;
     } catch (e) {
