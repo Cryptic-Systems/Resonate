@@ -225,6 +225,10 @@ class MusicProvider extends ChangeNotifier {
   bool get _modePreciseResume => _modePlaybackPolicy.preciseResume;
 
   PlaybackRepeatMode _repeatMode = PlaybackRepeatMode.off;
+  // Repeat changes are optimistic for responsive controls, but native writes
+  // are serialized so an older in-flight command cannot overwrite a newer tap.
+  int _repeatModeCommandGeneration = 0;
+  Future<void> _repeatModeCommandTail = Future<void>.value();
   final CrossfadeRuntime _crossfadeRuntime = CrossfadeRuntime();
   /// Compatibility aliases — in-flight crossfade state lives in [_crossfadeRuntime].
   bool get _crossfadeInProgress => _crossfadeRuntime.inProgress;
@@ -1158,9 +1162,6 @@ class MusicProvider extends ChangeNotifier {
     // let that short handoff finish and apply the new repeat policy to the
     // promoted deck; cancelling mid-ramp can expose end-of-track advancement
     // and create an audible gain discontinuity.
-    // The executing marker is authoritative once the native repeat-self
-    // ramp has been issued. Do not let a repeat-policy update preempt it.
-    // The handoff flag covers the short interval before the fade is issued.
     final repeatSelfFadeInProgress = mode != PlaybackRepeatMode.one &&
         (_repeatSelfFadeExecuting ||
             (_repeatSelfHandoffInFlight && _crossfadeInProgress));
@@ -1179,18 +1180,36 @@ class MusicProvider extends ChangeNotifier {
     _repeatSelfDjPlanning = false;
     _repeatSelfDjPreloadInFlight = false;
     _repeatSelfDjPreparation = null;
+
+    // Commit the requested state before any platform/persistence await. The
+    // control therefore renders the new mode on the first tap, and rapid taps
+    // cycle from the latest user intent rather than a stale acknowledged mode.
     _repeatMode = mode;
-    if (_media3ProviderSession != null) {
-      final session = (await _ensureMedia3ProviderSessionActive())!;
-      await session.setRepeatMode(switch (mode) {
-        PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
-        PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
-        PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
-      });
-    }
-    await _persistPlaybackModes();
-    unawaited(_synchronizeModePlaybackBoundary());
+    final generation = ++_repeatModeCommandGeneration;
     notifyListeners();
+
+    // Keep native writes ordered. If a newer tap arrives while an older
+    // command is awaiting Media3 startup, the older command is skipped; if it
+    // is already in flight, the newer command runs after it and wins.
+    final previousCommand = _repeatModeCommandTail;
+    final command = previousCommand.catchError((Object _) {}).then((_) async {
+      if (_disposed || generation != _repeatModeCommandGeneration) return;
+      if (_media3ProviderSession != null) {
+        final session = await _ensureMedia3ProviderSessionActive();
+        if (_disposed || generation != _repeatModeCommandGeneration) return;
+        await session!.setRepeatMode(switch (mode) {
+          PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
+          PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
+          PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
+        });
+      }
+      if (_disposed || generation != _repeatModeCommandGeneration) return;
+      await _persistPlaybackModes();
+      if (_disposed || generation != _repeatModeCommandGeneration) return;
+      unawaited(_synchronizeModePlaybackBoundary());
+    });
+    _repeatModeCommandTail = command;
+    await command;
   }
 
   Future<void> _persistPlaybackModes() async {
@@ -1349,11 +1368,8 @@ class MusicProvider extends ChangeNotifier {
         _media3ProviderSession != null) return;
     if (_media3ProviderSessionActive) {
       final session = _media3ProviderSession!;
-      await session.setRepeatMode(switch (_repeatMode) {
-        PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
-        PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
-        PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
-      });
+      // Repeat mode has its own generation-ordered command queue. Do not
+      // issue a second snapshot write here: it could race a newer user tap.
       await session.setShuffleMode(effectiveShuffleEnabled);
       return;
     }
