@@ -50,6 +50,16 @@ struct PendingSettings {
     std::atomic<float> crossover{120.f};
     std::atomic<int> ditherEnabled{0};
     std::atomic<int> ditherMode{DSP_DITHER_TPDF};
+    std::atomic<float> headroomBassWeight{0.50f};
+    std::atomic<float> headroomPreampWeight{0.20f};
+    std::atomic<float> headroomGainWeight{0.30f};
+    std::atomic<int> autoPreampEnabled{0};
+    std::atomic<float> autoPreampTargetDb{0.f};
+    std::atomic<int> autoVirtualBassEnabled{0};
+    std::atomic<float> autoVirtualBassTarget{0.55f};
+    std::atomic<int> silenceHygieneEnabled{0};
+    std::atomic<float> silenceThresholdDb{-70.f};
+    std::atomic<float> silenceHoldMs{500.f};
 
     PendingSettings() {
         for (int i = 0; i < kMaxEqBands; ++i) {
@@ -95,6 +105,16 @@ struct Snapshot {
     float crossover = 120.f;
     int ditherEnabled = 0;
     int ditherMode = DSP_DITHER_TPDF;
+    float headroomBassWeight = 0.50f;
+    float headroomPreampWeight = 0.20f;
+    float headroomGainWeight = 0.30f;
+    int autoPreampEnabled = 0;
+    float autoPreampTargetDb = 0.f;
+    int autoVirtualBassEnabled = 0;
+    float autoVirtualBassTarget = 0.55f;
+    int silenceHygieneEnabled = 0;
+    float silenceThresholdDb = -70.f;
+    float silenceHoldMs = 500.f;
 };
 
 struct NativeHandle {
@@ -148,6 +168,16 @@ bool readSnapshot(const PendingSettings& p, Snapshot* out) {
         s.crossover = p.crossover.load(std::memory_order_relaxed);
         s.ditherEnabled = p.ditherEnabled.load(std::memory_order_relaxed);
         s.ditherMode = p.ditherMode.load(std::memory_order_relaxed);
+        s.headroomBassWeight = p.headroomBassWeight.load(std::memory_order_relaxed);
+        s.headroomPreampWeight = p.headroomPreampWeight.load(std::memory_order_relaxed);
+        s.headroomGainWeight = p.headroomGainWeight.load(std::memory_order_relaxed);
+        s.autoPreampEnabled = p.autoPreampEnabled.load(std::memory_order_relaxed);
+        s.autoPreampTargetDb = p.autoPreampTargetDb.load(std::memory_order_relaxed);
+        s.autoVirtualBassEnabled = p.autoVirtualBassEnabled.load(std::memory_order_relaxed);
+        s.autoVirtualBassTarget = p.autoVirtualBassTarget.load(std::memory_order_relaxed);
+        s.silenceHygieneEnabled = p.silenceHygieneEnabled.load(std::memory_order_relaxed);
+        s.silenceThresholdDb = p.silenceThresholdDb.load(std::memory_order_relaxed);
+        s.silenceHoldMs = p.silenceHoldMs.load(std::memory_order_relaxed);
         const uint32_t after = p.sequence.load(std::memory_order_acquire);
         if (before == after && (after & 1U) == 0U) {
             *out = s;
@@ -231,6 +261,26 @@ void applyPending(NativeHandle* h) {
         dsp_dither_enable(e, s.ditherEnabled);
     if (initial || s.ditherMode != old.ditherMode)
         dsp_dither_set_mode(e, static_cast<DspDitherMode>(s.ditherMode));
+
+    if (initial || s.headroomBassWeight != old.headroomBassWeight ||
+        s.headroomPreampWeight != old.headroomPreampWeight ||
+        s.headroomGainWeight != old.headroomGainWeight)
+        dsp_headroom_budget_set(e, s.headroomBassWeight,
+            s.headroomPreampWeight, s.headroomGainWeight);
+    if (initial || s.autoPreampEnabled != old.autoPreampEnabled)
+        dsp_auto_preamp_enable(e, s.autoPreampEnabled);
+    if (initial || s.autoPreampTargetDb != old.autoPreampTargetDb)
+        dsp_auto_preamp_set_target_db(e, s.autoPreampTargetDb);
+    if (initial || s.autoVirtualBassEnabled != old.autoVirtualBassEnabled)
+        dsp_auto_vb_enable(e, s.autoVirtualBassEnabled);
+    if (initial || s.autoVirtualBassTarget != old.autoVirtualBassTarget)
+        dsp_auto_vb_set_target(e, s.autoVirtualBassTarget);
+    if (initial || s.silenceHygieneEnabled != old.silenceHygieneEnabled)
+        dsp_silence_hygiene_enable(e, s.silenceHygieneEnabled);
+    if (initial || s.silenceThresholdDb != old.silenceThresholdDb)
+        dsp_silence_hygiene_set_threshold_db(e, s.silenceThresholdDb);
+    if (initial || s.silenceHoldMs != old.silenceHoldMs)
+        dsp_silence_hygiene_set_hold_ms(e, s.silenceHoldMs);
 
     h->appliedSnapshot = s;
     h->hasAppliedSnapshot = true;
@@ -495,6 +545,28 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetDither(
     if (auto* h = fromHandle(value)) h->pending.update([&] {
         h->pending.ditherEnabled.store(enabled == JNI_TRUE, std::memory_order_relaxed);
         h->pending.ditherMode.store(std::clamp(mode, 0, 2), std::memory_order_relaxed);
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetIntelligenceConfig(
+        JNIEnv*, jclass, jlong value,
+        jfloat bassWeight, jfloat preampWeight, jfloat gainWeight,
+        jboolean autoPreampEnabled, jfloat autoPreampTargetDb,
+        jboolean autoVirtualBassEnabled, jfloat autoVirtualBassTarget,
+        jboolean silenceHygieneEnabled, jfloat silenceThresholdDb,
+        jfloat silenceHoldMs) {
+    if (auto* h = fromHandle(value)) h->pending.update([&] {
+        h->pending.headroomBassWeight.store(std::clamp(bassWeight, 0.f, 1.f), std::memory_order_relaxed);
+        h->pending.headroomPreampWeight.store(std::clamp(preampWeight, 0.f, 1.f), std::memory_order_relaxed);
+        h->pending.headroomGainWeight.store(std::clamp(gainWeight, 0.f, 1.f), std::memory_order_relaxed);
+        h->pending.autoPreampEnabled.store(autoPreampEnabled == JNI_TRUE, std::memory_order_relaxed);
+        h->pending.autoPreampTargetDb.store(std::clamp(autoPreampTargetDb, -12.f, 12.f), std::memory_order_relaxed);
+        h->pending.autoVirtualBassEnabled.store(autoVirtualBassEnabled == JNI_TRUE, std::memory_order_relaxed);
+        h->pending.autoVirtualBassTarget.store(std::clamp(autoVirtualBassTarget, 0.f, 1.f), std::memory_order_relaxed);
+        h->pending.silenceHygieneEnabled.store(silenceHygieneEnabled == JNI_TRUE, std::memory_order_relaxed);
+        h->pending.silenceThresholdDb.store(std::clamp(silenceThresholdDb, -120.f, -20.f), std::memory_order_relaxed);
+        h->pending.silenceHoldMs.store(std::clamp(silenceHoldMs, 50.f, 5000.f), std::memory_order_relaxed);
     });
 }
 
