@@ -37,6 +37,16 @@ void main() {
         crossoverHz: 160,
         speakerProtectionEnabled: true,
         virtualBassAmount: 0.4,
+        headroomBassWeight: 0.4,
+        headroomPreampWeight: 0.35,
+        headroomGainWeight: 0.25,
+        autoPreampEnabled: true,
+        autoPreampTargetDb: -2.5,
+        autoVirtualBassEnabled: true,
+        autoVirtualBassTarget: 0.72,
+        silenceHygieneEnabled: true,
+        silenceThresholdDb: -82,
+        silenceHoldMs: 850,
         effectsEnabled: false,
         reverbAmount: 0.3,
         virtualizerAmount: 0.7,
@@ -69,6 +79,16 @@ void main() {
       expect(restored.speakerProtectionEnabled, isTrue);
       expect(restored.eqBandGainsDb, [3, -2, 1]);
       expect(restored.virtualBassAmount, 0.4);
+      expect(restored.headroomBassWeight, 0.4);
+      expect(restored.headroomPreampWeight, 0.35);
+      expect(restored.headroomGainWeight, 0.25);
+      expect(restored.autoPreampEnabled, isTrue);
+      expect(restored.autoPreampTargetDb, -2.5);
+      expect(restored.autoVirtualBassEnabled, isTrue);
+      expect(restored.autoVirtualBassTarget, 0.72);
+      expect(restored.silenceHygieneEnabled, isTrue);
+      expect(restored.silenceThresholdDb, -82);
+      expect(restored.silenceHoldMs, 850);
       expect(restored.effectsEnabled, isFalse);
       expect(restored.reverbAmount, 0.3);
       expect(restored.virtualizerAmount, 0.7);
@@ -136,7 +156,7 @@ void main() {
         ],
       });
       expect(oldStudioBank.parametricEqBands.every((band) => band.q == 4.3), isTrue);
-      expect(oldStudioBank.toJson()['version'], 5);
+      expect(oldStudioBank.toJson()['version'], 6);
 
       final customBank = DspSettings.fromJson({
         'version': 4,
@@ -152,6 +172,27 @@ void main() {
       });
       expect(customBank.parametricEqBands[17].q, 1.0);
       expect(customBank.parametricEqBands[16].q, 2.5);
+    });
+
+    test('schema v5 migrates intelligence controls to safe independent defaults', () {
+      final restored = DspSettings.fromJson({
+        'version': 5,
+        'preampDb': -3,
+        'autoEqHeadroom': true,
+      });
+      expect(restored.preampDb, -3);
+      expect(restored.autoEqHeadroom, isTrue);
+      expect(restored.autoPreampEnabled, isFalse);
+      expect(restored.autoPreampTargetDb, 0);
+      expect(restored.autoVirtualBassEnabled, isFalse);
+      expect(restored.autoVirtualBassTarget, 0.55);
+      expect(restored.silenceHygieneEnabled, isFalse);
+      expect(restored.silenceThresholdDb, -70);
+      expect(restored.silenceHoldMs, 500);
+      expect(restored.headroomBassWeight, 0.50);
+      expect(restored.headroomPreampWeight, 0.20);
+      expect(restored.headroomGainWeight, 0.30);
+      expect(restored.toJson()['version'], 6);
     });
 
     test('an explicitly empty parametric list stays empty', () {
