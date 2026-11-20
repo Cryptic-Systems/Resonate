@@ -278,7 +278,7 @@ class EqualizerProvider extends ChangeNotifier {
       virtualBassAmount: route.suggestedVirtualBass,
       route: route.route,
       arbiter: _music?.playbackControlArbiter,
-      priority: PlaybackControlPriority.background,
+      priority: PlaybackControlPriority.safetyOverride,
     ));
   }
 
