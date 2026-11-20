@@ -277,6 +277,9 @@ class MusicProvider extends ChangeNotifier {
       _crossfadeRuntime.repeatSelfHandoffArmed = value;
   bool get _repeatSelfHandoffInFlight =>
       _crossfadeRuntime.repeatSelfHandoffInFlight;
+  // Separate phase marker: native state reconciliation may transiently clear
+  // the generic crossfade flag while the repeat-self ramp is already audible.
+  bool _repeatSelfFadeExecuting = false;
   set _repeatSelfHandoffInFlight(bool value) =>
       _crossfadeRuntime.repeatSelfHandoffInFlight = value;
   int get _repeatSelfGeneration => _crossfadeRuntime.repeatSelfGeneration;
@@ -1157,7 +1160,7 @@ class MusicProvider extends ChangeNotifier {
     // and create an audible gain discontinuity.
     final repeatSelfFadeInProgress = mode != PlaybackRepeatMode.one &&
         _repeatSelfHandoffInFlight &&
-        _crossfadeInProgress;
+        (_crossfadeInProgress || _repeatSelfFadeExecuting);
     if (transitionActive && !repeatSelfFadeInProgress) {
       _cancelAutomaticPlaybackWork();
     } else if (repeatSelfFadeInProgress) {
@@ -4440,6 +4443,7 @@ class MusicProvider extends ChangeNotifier {
     }
     _repeatSelfHandoffArmed = false;
     _repeatSelfHandoffInFlight = false;
+    _repeatSelfFadeExecuting = false;
     _repeatSelfTargetSongId = null;
     _repeatSelfDjPlanGeneration++;
     _repeatSelfDjPlanSongId = null;
