@@ -96,7 +96,7 @@ Future<void> syncSpeakerPolicy({
   AudioOutputRoute? route,
   PlaybackControlArbiter? arbiter,
   PlaybackControlLease? lease,
-  PlaybackControlPriority priority = PlaybackControlPriority.background,
+  PlaybackControlPriority priority = PlaybackControlPriority.safetyOverride,
 }) async {
   final resolvedRoute = route ?? AudioOutputRouteService.instance.route;
   final amount = (virtualBassAmount ??
