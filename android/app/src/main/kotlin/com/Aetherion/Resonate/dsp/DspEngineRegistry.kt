@@ -53,14 +53,14 @@ object DspEngineRegistry {
         fun setLimiterConfig(handle: Long, enabled: Boolean, mode: Int, thresholdDb: Float, releaseMs: Float, attackMs: Float, lookaheadMs: Float, kneeDb: Float) {}
         fun setDither(handle: Long, enabled: Boolean, mode: Int) {}
         fun setAnalysisHint(
+            handle: Long, enabled: Boolean, samplePeakDb: Float, truePeakDb: Float,
+            rmsDb: Float, crestDb: Float, bassEnergyDb: Float,
+        ) {}
         fun setAutoDynamicsConfig(
             handle: Long, autoBassEnabled: Boolean, autoBassTargetDb: Float,
             autoBassMarginDb: Float, autoBassFreqHz: Float, autoGainEnabled: Boolean,
             autoGainTargetRmsDb: Float, autoGainBiasDb: Float, autoGainMaxBoostDb: Float,
             autoGainMaxCutDb: Float, autoGainWindowMs: Float,
-        ) {}
-            handle: Long, enabled: Boolean, samplePeakDb: Float, truePeakDb: Float,
-            rmsDb: Float, crestDb: Float, bassEnergyDb: Float,
         ) {}
         fun setIntelligenceConfig(
             handle: Long, bassWeight: Float, preampWeight: Float, gainWeight: Float,
@@ -92,6 +92,11 @@ object DspEngineRegistry {
         override fun setDither(handle: Long, enabled: Boolean, mode: Int) =
             DspEngineJni.nativeSetDither(handle, enabled, mode)
         override fun setAnalysisHint(
+            handle: Long, enabled: Boolean, samplePeakDb: Float, truePeakDb: Float,
+            rmsDb: Float, crestDb: Float, bassEnergyDb: Float,
+        ) = DspEngineJni.nativeSetAnalysisHint(
+            handle, enabled, samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb,
+        )
         override fun setAutoDynamicsConfig(
             handle: Long, autoBassEnabled: Boolean, autoBassTargetDb: Float,
             autoBassMarginDb: Float, autoBassFreqHz: Float, autoGainEnabled: Boolean,
@@ -101,11 +106,6 @@ object DspEngineRegistry {
             handle, autoBassEnabled, autoBassTargetDb, autoBassMarginDb, autoBassFreqHz,
             autoGainEnabled, autoGainTargetRmsDb, autoGainBiasDb, autoGainMaxBoostDb,
             autoGainMaxCutDb, autoGainWindowMs,
-        )
-            handle: Long, enabled: Boolean, samplePeakDb: Float, truePeakDb: Float,
-            rmsDb: Float, crestDb: Float, bassEnergyDb: Float,
-        ) = DspEngineJni.nativeSetAnalysisHint(
-            handle, enabled, samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb,
         )
         override fun setIntelligenceConfig(
             handle: Long, bassWeight: Float, preampWeight: Float, gainWeight: Float,
