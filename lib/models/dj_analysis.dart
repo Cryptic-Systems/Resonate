@@ -8,9 +8,9 @@
 /// estimator improves, without discarding older rows or blocking playback.
 class DjAnalysis {
   /// Bump when the analyzer pipeline changes in a meaningful way.
-  /// v8 adds measured sample/true peak, RMS, crest and bass-energy metrics
-  /// from decoded PCM windows for deck-local DSP intelligence.
-  static const int currentVersion = 8;
+  /// v8 adds measured PCM level metrics; v9 adds DSP-ENGINE's measured
+  /// per-track maximum-safe-bass probe to the persisted DSP profile.
+  static const int currentVersion = 9;
 
   final String songId;
   final double? bpm;
