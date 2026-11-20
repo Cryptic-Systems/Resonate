@@ -315,6 +315,42 @@ class DjBpmEstimator {
     }
   }
 
+  /// Runs DSP-ENGINE's actual offline max-safe-bass probe on decoded PCM16.
+  /// Null means the probe was unavailable or rejected; callers must not invent a cap.
+  Future<double?> probeMaxBassGainDb(
+    Uint8List pcm16, {
+    required int sampleRate,
+    required int channels,
+    double shelfFreqHz = 80,
+    double ceilingDb = -0.1,
+    double marginDb = 1,
+  }) async {
+    if (pcm16.length > 3 * 1024 * 1024 ||
+        sampleRate < 8000 || sampleRate > 192000 ||
+        channels < 1 || channels > 8 ||
+        !shelfFreqHz.isFinite || shelfFreqHz < 40 || shelfFreqHz > 160 ||
+        !ceilingDb.isFinite || ceilingDb < -12 || ceilingDb > 0 ||
+        !marginDb.isFinite || marginDb < 0 || marginDb > 12) {
+      return null;
+    }
+    try {
+      final value = await _channel.invokeMethod<dynamic>('probeMaxBassGainDb', {
+        'pcm16': pcm16,
+        'sampleRate': sampleRate,
+        'channels': channels,
+        'shelfFreqHz': shelfFreqHz,
+        'ceilingDb': ceilingDb,
+        'marginDb': marginDb,
+      });
+      final gain = (value as num?)?.toDouble();
+      if (gain == null || !gain.isFinite || gain < 0 || gain > 18) return null;
+      return gain;
+    } catch (error) {
+      debugPrint('DjBpmEstimator.probeMaxBassGainDb: $error');
+      return null;
+    }
+  }
+
   Future<DjBpmEstimate?> _estimateFromNativePcm(String uri, {double maxSeconds = 15.0, int startMs = 0, String windowRole = 'start'}) async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('extractPcmWindow', {
