@@ -3470,6 +3470,7 @@ void main() {
           rmsDb: -12,
           crestDb: 10,
           bassEnergyDb: -15,
+          maxSafeBassDb: 4.5,
         ),
       );
       final session = _FakePlaybackSession();
@@ -3508,6 +3509,7 @@ void main() {
         expect(arguments['rmsDb'], -12.0);
         expect(arguments['crestDb'], 10.0);
         expect(arguments['bassEnergyDb'], -15.0);
+        expect(arguments['maxSafeBassDb'], 4.5);
       } finally {
         provider.dispose();
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
