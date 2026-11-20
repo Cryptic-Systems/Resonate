@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/dj_engine/core/dj_types.dart';
+import 'package:resonate/models/dj_analysis.dart';
 import 'package:resonate/models/queue_intent.dart';
 import 'package:resonate/models/queue_plan.dart';
 import 'package:resonate/models/song.dart';
@@ -27,7 +28,8 @@ DjTrackProfile _profile(String id, {required double bpm,
       DjEnergyPoint(timeMs: 90000, value: energy),
       DjEnergyPoint(timeMs: 175000, value: energy),
     ] : const [],
-    analysisConfidence: confidence, analysisVersion: 7,
+    analysisConfidence: confidence,
+    analysisVersion: DjAnalysis.currentVersion,
   );
 
 void main() {
@@ -67,7 +69,6 @@ void main() {
       expect(plan.reason, contains('not replaced with ordinary shuffle'));
     });
 
-
     test('coverage requires every analysis signal demanded by the intent', () {
       final plan = planner.planWithProfiles([_song('bpm-only')],
         intent: QueueIntent.calmerMix,
@@ -89,7 +90,6 @@ void main() {
       expect(plan.songs, isEmpty);
       expect(plan.status, QueuePlanStatus.noEligibleTracks);
     });
-
 
     test('keeps scanning when analyzed tracks fail but scope remains unanalyzed', () {
       final plan = planner.planWithProfiles(
@@ -177,6 +177,5 @@ void main() {
         expect(intent.requireEnergy, isTrue, reason: mode.name);
       }
     });
-
   });
 }
