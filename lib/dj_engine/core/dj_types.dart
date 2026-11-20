@@ -137,6 +137,34 @@ class DjSilenceRegion {
 }
 
 /// Richer replacement/future companion to the current DjAnalysis model.
+/// Measured from decoded PCM16, never inferred from DJ energy scores.
+/// All level values are dBFS; true peak may exceed 0 dBFS due to inter-sample peaks.
+class DspAnalysisMetrics {
+  final double samplePeakDb;
+  final double truePeakDb;
+  final double rmsDb;
+  final double crestDb;
+  final double bassEnergyDb;
+
+  const DspAnalysisMetrics({
+    this.samplePeakDb = -160,
+    this.truePeakDb = -160,
+    this.rmsDb = -160,
+    this.crestDb = 0,
+    this.bassEnergyDb = -160,
+  });
+
+  bool get isMeasured => samplePeakDb > -160 || truePeakDb > -160 || rmsDb > -160;
+  bool get isValid => [
+    samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb,
+  ].every((v) => v.isFinite) &&
+      samplePeakDb >= -160 && samplePeakDb <= 6 &&
+      truePeakDb >= -160 && truePeakDb <= 6 &&
+      rmsDb >= -160 && rmsDb <= 0.1 &&
+      crestDb >= 0 && crestDb <= 30 &&
+      bassEnergyDb >= -160 && bassEnergyDb <= 0.1;
+}
+
 class DjTrackProfile {
   final String songId;
   final int? durationMs;
@@ -149,6 +177,7 @@ class DjTrackProfile {
   final List<DjSection> sections;
   final List<DjEnergyPoint> energyCurve;
   final DjSpectralProfile spectrum;
+  final DspAnalysisMetrics dspAnalysis;
   final DjTransitionMarkers transitions;
   final List<DjSilenceRegion> silenceRegions;
   final double analysisConfidence;
@@ -166,6 +195,7 @@ class DjTrackProfile {
     this.sections = const [],
     this.energyCurve = const [],
     this.spectrum = const DjSpectralProfile(),
+    this.dspAnalysis = const DspAnalysisMetrics(),
     this.transitions = const DjTransitionMarkers(),
     this.silenceRegions = const [],
     this.analysisConfidence = 0,
