@@ -135,6 +135,24 @@ internal class LiveDspChannelHandler {
                 )
                 result.success(DspEngineRegistry.statusMap())
             }
+            "setLiveDspAutoDynamicsConfig" -> {
+                val autoBassEnabled = call.argument<Boolean>("autoBassEnabled") ?: false
+                val autoBassTargetDb = (call.argument<Number>("autoBassTargetDb") ?: 4.0).toFloat()
+                val autoBassMarginDb = (call.argument<Number>("autoBassMarginDb") ?: 1.0).toFloat()
+                val autoBassFreqHz = (call.argument<Number>("autoBassFreqHz") ?: 80.0).toFloat()
+                val autoGainEnabled = call.argument<Boolean>("autoGainEnabled") ?: false
+                val autoGainTargetRmsDb = (call.argument<Number>("autoGainTargetRmsDb") ?: -18.0).toFloat()
+                val autoGainBiasDb = (call.argument<Number>("autoGainBiasDb") ?: 0.0).toFloat()
+                val autoGainMaxBoostDb = (call.argument<Number>("autoGainMaxBoostDb") ?: 6.0).toFloat()
+                val autoGainMaxCutDb = (call.argument<Number>("autoGainMaxCutDb") ?: 12.0).toFloat()
+                val autoGainWindowMs = (call.argument<Number>("autoGainWindowMs") ?: 400.0).toFloat()
+                val ok = DspEngineRegistry.applyAutoDynamicsConfigAll(
+                    autoBassEnabled, autoBassTargetDb, autoBassMarginDb, autoBassFreqHz,
+                    autoGainEnabled, autoGainTargetRmsDb, autoGainBiasDb,
+                    autoGainMaxBoostDb, autoGainMaxCutDb, autoGainWindowMs,
+                )
+                result.success(mapOf("ok" to ok) + DspEngineRegistry.statusMap())
+            }
             "setLiveDspDeckAnalysisHint" -> {
                 val deckId = call.argument<String>("deckId") ?: ""
                 val songId = call.argument<String>("songId") ?: ""
