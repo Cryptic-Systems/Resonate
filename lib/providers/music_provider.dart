@@ -1193,10 +1193,10 @@ class MusicProvider extends ChangeNotifier {
     final previousCommand = _repeatModeCommandTail;
     final command = previousCommand.catchError((Object _) {}).then((_) async {
       if (_disposed || generation != _repeatModeCommandGeneration) return;
-      // During an audible repeat-self fade, native repeat is temporarily
-      // disabled on the outgoing deck. Do not write a new mode onto that deck;
-      // the handoff finalizer applies the latest provider mode to the promoted
-      // deck. The preference is still persisted immediately below.
+      // Keep repeat-policy writes off the active deck while a same-track
+      // handoff is audible. The handoff finalizer drains this command lane and
+      // reapplies the latest provider mode to the promoted deck. Persist the
+      // requested preference now so the UI and saved setting remain immediate.
       if (_media3ProviderSession != null && !repeatSelfFadeInProgress) {
         final session = await _ensureMedia3ProviderSessionActive();
         if (_disposed || generation != _repeatModeCommandGeneration) return;
