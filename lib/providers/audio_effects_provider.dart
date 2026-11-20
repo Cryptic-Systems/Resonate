@@ -200,7 +200,7 @@ class AudioEffectsProvider extends ChangeNotifier {
   Future<void> _disableLegacyBassBoost() async {
     await _withDspProfileLease(
       operation: 'disable_legacy_bass',
-      priority: PlaybackControlPriority.interactive,
+      priority: PlaybackControlPriority.background,
       action: (lease) async {
         if (_authorizeDspWrite(lease, 'disable_legacy_bass')) {
           await AudioEffectsBridge.setBassBoost(0.0);
