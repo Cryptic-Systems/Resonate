@@ -208,6 +208,7 @@ class MusicProvider extends ChangeNotifier {
   StreamSubscription<int?>? _sessionASub;
   StreamSubscription<int?>? _sessionBSub;
   bool _disposed = false;
+  Future<void> _automaticPlaybackCleanup = Future<void>.value();
   bool _legacyEnginesRetired = false;
   final QueueStore _queueStore = QueueStore();
   /// Compatibility aliases — queue state lives in [_queueStore].
@@ -4496,30 +4497,38 @@ class MusicProvider extends ChangeNotifier {
     _repeatSelfDjPlanning = false;
     _repeatSelfDjPreloadInFlight = false;
     _repeatSelfDjPreparation = null;
-    unawaited(_restoreDjTransitionSfx());
-    if (_media3ProviderSessionActive && _media3ProviderSession != null) {
-      final session = _media3ProviderSession!;
-      unawaited(() async {
+    final media3Session = _media3ProviderSessionActive
+        ? _media3ProviderSession
+        : null;
+    final cleanLegacyEngines = !_media3ProviderSessionActive;
+    if (media3Session != null) {
+      _preloadedNextSongId = null;
+      _media3DjTransitionPreparation = null;
+    }
+
+    // Serialize teardown and expose its Future to the control arbiter. A
+    // replacement owner is not granted until the outgoing controller has
+    // finished cancelling native crossfade, overlays, deck rates and FX.
+    final cleanup = _automaticPlaybackCleanup
+        .catchError((Object _) {})
+        .then((_) async {
+      await _restoreDjTransitionSfx();
+      if (media3Session != null) {
         final cleanupErrors = <String>[];
-        // Keep each cleanup independent: a native cancel or EQ-clear failure
-        // must never prevent the deck-rate reset from running.
         try {
-          await session.cancelCrossfade();
+          await media3Session.cancelCrossfade();
         } catch (error) {
           cleanupErrors.add('cancel_crossfade: $error');
         }
         if (!stillOwnsCancellation()) return;
-        // Bass ducking is a temporary standby-deck overlay. Clear it on
-        // every user transport cancellation so it cannot leak into a later
-        // preload or become audible after the standby deck is promoted.
         try {
-          await session.clearDeckEqOverlay(deck: 'standby');
+          await media3Session.clearDeckEqOverlay(deck: 'standby');
         } catch (error) {
           cleanupErrors.add('clear_standby_eq: $error');
         }
         if (!stillOwnsCancellation()) return;
         try {
-          await session.setDeckPlaybackSpeeds(
+          await media3Session.setDeckPlaybackSpeeds(
             activeSpeed: 1.0,
             standbySpeed: 1.0,
           );
@@ -4532,37 +4541,51 @@ class MusicProvider extends ChangeNotifier {
             'errors': cleanupErrors,
           });
         }
-      }());
-      _preloadedNextSongId = null;
-      _media3DjTransitionPreparation = null;
-    }
-    if (!_media3ProviderSessionActive) {
-      unawaited(() async {
+      }
+      if (cleanLegacyEngines) {
         try {
           final idle = inactivePlayer;
           final active = audioPlayer;
-        try {
-          await idle.pause();
-        } catch (_) {}
-        // The idle engine can become active while this.pause() is awaiting. Never
-        // let this stale cleanup mute an engine claimed by a newer transition.
-        if (!stillOwnsCancellation()) return;
-        try {
-          await idle.setVolume(0.0);
-        } catch (_) {}
-        if (!stillOwnsCancellation()) return;
-        try {
-          await _clearDjStretchSpeeds(outgoing: active, incoming: idle);
-        } catch (_) {}
-        if (!stillOwnsCancellation()) return;
-        // Always re-clamp active master after cancel (sleep fade + duck aware).
-        if (stillOwnsCancellation() && identical(active, audioPlayer)) {
           try {
-            await active.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
+            await idle.pause();
           } catch (_) {}
-        }
+          if (!stillOwnsCancellation()) return;
+          try {
+            await idle.setVolume(0.0);
+          } catch (_) {}
+          if (!stillOwnsCancellation()) return;
+          try {
+            await _clearDjStretchSpeeds(outgoing: active, incoming: idle);
+          } catch (_) {}
+          if (!stillOwnsCancellation()) return;
+          if (identical(active, audioPlayer)) {
+            try {
+              await active.setVolume(
+                _effectiveCrossfadeMaster.clamp(0.0, 1.0),
+              );
+            } catch (_) {}
+          }
         } catch (_) {}
-      }());
+      }
+    });
+    _automaticPlaybackCleanup = cleanup;
+    unawaited(cleanup);
+  }
+
+  Future<void> _onPlaybackControlLeaseRevoked({
+    required int transitionGeneration,
+    required PlaybackControlRevocation revocation,
+  }) async {
+    if (revocation.reason == PlaybackControlRevocationReason.released) return;
+    // Manual transport paths already invalidated the transition synchronously.
+    // Other higher-priority controllers still need to request the same teardown.
+    if (transitionGeneration == _automaticTransitionGeneration) {
+      _cancelAutomaticPlaybackWork(reason: 'playback_control_preemption');
+    }
+    try {
+      await _automaticPlaybackCleanup;
+    } catch (_) {
+      // Cleanup failures are recorded by the individual teardown operations.
     }
   }
 
