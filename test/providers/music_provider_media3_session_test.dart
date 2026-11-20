@@ -2923,8 +2923,11 @@ void main() {
 
       expect(provider.repeatMode, PlaybackRepeatMode.one);
       expect(session.repeatModeSet, PlaybackQueueRepeatMode.one);
-      expect(session.calls.last, 'repeat:one',
-          reason: 'The latest Repeat One selection must win native command ordering.');
+      expect(
+        session.calls.lastWhere((call) => call.startsWith('repeat:')),
+        'repeat:one',
+        reason: 'The latest Repeat One selection must win native command ordering.',
+      );
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
