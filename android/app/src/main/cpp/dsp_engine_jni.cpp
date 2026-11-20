@@ -60,6 +60,16 @@ struct PendingSettings {
     std::atomic<int> silenceHygieneEnabled{0};
     std::atomic<float> silenceThresholdDb{-70.f};
     std::atomic<float> silenceHoldMs{500.f};
+    std::atomic<int> autoBassEnabled{0};
+    std::atomic<float> autoBassTargetDb{4.f};
+    std::atomic<float> autoBassMarginDb{1.f};
+    std::atomic<float> autoBassFreqHz{80.f};
+    std::atomic<int> autoGainEnabled{0};
+    std::atomic<float> autoGainTargetRmsDb{-18.f};
+    std::atomic<float> autoGainBiasDb{0.f};
+    std::atomic<float> autoGainMaxBoostDb{6.f};
+    std::atomic<float> autoGainMaxCutDb{12.f};
+    std::atomic<float> autoGainWindowMs{400.f};
     std::atomic<int> analysisHintEnabled{0};
     std::atomic<float> analysisSamplePeakDb{-160.f};
     std::atomic<float> analysisTruePeakDb{-160.f};
@@ -121,6 +131,16 @@ struct Snapshot {
     int silenceHygieneEnabled = 0;
     float silenceThresholdDb = -70.f;
     float silenceHoldMs = 500.f;
+    int autoBassEnabled = 0;
+    float autoBassTargetDb = 4.f;
+    float autoBassMarginDb = 1.f;
+    float autoBassFreqHz = 80.f;
+    int autoGainEnabled = 0;
+    float autoGainTargetRmsDb = -18.f;
+    float autoGainBiasDb = 0.f;
+    float autoGainMaxBoostDb = 6.f;
+    float autoGainMaxCutDb = 12.f;
+    float autoGainWindowMs = 400.f;
     int analysisHintEnabled = 0;
     float analysisSamplePeakDb = -160.f;
     float analysisTruePeakDb = -160.f;
@@ -190,6 +210,16 @@ bool readSnapshot(const PendingSettings& p, Snapshot* out) {
         s.silenceHygieneEnabled = p.silenceHygieneEnabled.load(std::memory_order_relaxed);
         s.silenceThresholdDb = p.silenceThresholdDb.load(std::memory_order_relaxed);
         s.silenceHoldMs = p.silenceHoldMs.load(std::memory_order_relaxed);
+        s.autoBassEnabled = p.autoBassEnabled.load(std::memory_order_relaxed);
+        s.autoBassTargetDb = p.autoBassTargetDb.load(std::memory_order_relaxed);
+        s.autoBassMarginDb = p.autoBassMarginDb.load(std::memory_order_relaxed);
+        s.autoBassFreqHz = p.autoBassFreqHz.load(std::memory_order_relaxed);
+        s.autoGainEnabled = p.autoGainEnabled.load(std::memory_order_relaxed);
+        s.autoGainTargetRmsDb = p.autoGainTargetRmsDb.load(std::memory_order_relaxed);
+        s.autoGainBiasDb = p.autoGainBiasDb.load(std::memory_order_relaxed);
+        s.autoGainMaxBoostDb = p.autoGainMaxBoostDb.load(std::memory_order_relaxed);
+        s.autoGainMaxCutDb = p.autoGainMaxCutDb.load(std::memory_order_relaxed);
+        s.autoGainWindowMs = p.autoGainWindowMs.load(std::memory_order_relaxed);
         s.analysisHintEnabled = p.analysisHintEnabled.load(std::memory_order_relaxed);
         s.analysisSamplePeakDb = p.analysisSamplePeakDb.load(std::memory_order_relaxed);
         s.analysisTruePeakDb = p.analysisTruePeakDb.load(std::memory_order_relaxed);
@@ -299,6 +329,26 @@ void applyPending(NativeHandle* h) {
         dsp_silence_hygiene_set_threshold_db(e, s.silenceThresholdDb);
     if (initial || s.silenceHoldMs != old.silenceHoldMs)
         dsp_silence_hygiene_set_hold_ms(e, s.silenceHoldMs);
+    if (initial || s.autoBassEnabled != old.autoBassEnabled)
+        dsp_auto_bass_enable(e, s.autoBassEnabled);
+    if (initial || s.autoBassTargetDb != old.autoBassTargetDb)
+        dsp_auto_bass_set_target_db(e, s.autoBassTargetDb);
+    if (initial || s.autoBassMarginDb != old.autoBassMarginDb)
+        dsp_auto_bass_set_margin_db(e, s.autoBassMarginDb);
+    if (initial || s.autoBassFreqHz != old.autoBassFreqHz)
+        dsp_auto_bass_set_freq_hz(e, s.autoBassFreqHz);
+    if (initial || s.autoGainEnabled != old.autoGainEnabled)
+        dsp_auto_gain_enable(e, s.autoGainEnabled);
+    if (initial || s.autoGainTargetRmsDb != old.autoGainTargetRmsDb)
+        dsp_auto_gain_set_target_rms_db(e, s.autoGainTargetRmsDb);
+    if (initial || s.autoGainBiasDb != old.autoGainBiasDb)
+        dsp_auto_gain_set_bias_db(e, s.autoGainBiasDb);
+    if (initial || s.autoGainMaxBoostDb != old.autoGainMaxBoostDb)
+        dsp_auto_gain_set_max_boost_db(e, s.autoGainMaxBoostDb);
+    if (initial || s.autoGainMaxCutDb != old.autoGainMaxCutDb)
+        dsp_auto_gain_set_max_cut_db(e, s.autoGainMaxCutDb);
+    if (initial || s.autoGainWindowMs != old.autoGainWindowMs)
+        dsp_auto_gain_set_window_ms(e, s.autoGainWindowMs);
 
     if (initial || s.analysisHintEnabled != old.analysisHintEnabled ||
         s.analysisSamplePeakDb != old.analysisSamplePeakDb ||
@@ -606,6 +656,34 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetIntelligenceConfig(
         h->pending.silenceThresholdDb.store(std::clamp(silenceThresholdDb, -120.f, -20.f), std::memory_order_relaxed);
         h->pending.silenceHoldMs.store(std::clamp(silenceHoldMs, 50.f, 5000.f), std::memory_order_relaxed);
     });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetAutoDynamicsConfig(
+        JNIEnv*, jclass, jlong value,
+        jboolean autoBassEnabled, jfloat autoBassTargetDb,
+        jfloat autoBassMarginDb, jfloat autoBassFreqHz,
+        jboolean autoGainEnabled, jfloat autoGainTargetRmsDb,
+        jfloat autoGainBiasDb, jfloat autoGainMaxBoostDb,
+        jfloat autoGainMaxCutDb, jfloat autoGainWindowMs) {
+    if (auto* h = fromHandle(value)) {
+        const float values[] = {autoBassTargetDb, autoBassMarginDb, autoBassFreqHz,
+            autoGainTargetRmsDb, autoGainBiasDb, autoGainMaxBoostDb,
+            autoGainMaxCutDb, autoGainWindowMs};
+        for (float v : values) if (!std::isfinite(v)) return;
+        h->pending.update([&] {
+            h->pending.autoBassEnabled.store(autoBassEnabled == JNI_TRUE, std::memory_order_relaxed);
+            h->pending.autoBassTargetDb.store(std::clamp(autoBassTargetDb, 0.f, 12.f), std::memory_order_relaxed);
+            h->pending.autoBassMarginDb.store(std::clamp(autoBassMarginDb, 0.f, 12.f), std::memory_order_relaxed);
+            h->pending.autoBassFreqHz.store(std::clamp(autoBassFreqHz, 40.f, 160.f), std::memory_order_relaxed);
+            h->pending.autoGainEnabled.store(autoGainEnabled == JNI_TRUE, std::memory_order_relaxed);
+            h->pending.autoGainTargetRmsDb.store(std::clamp(autoGainTargetRmsDb, -30.f, -8.f), std::memory_order_relaxed);
+            h->pending.autoGainBiasDb.store(std::clamp(autoGainBiasDb, -6.f, 6.f), std::memory_order_relaxed);
+            h->pending.autoGainMaxBoostDb.store(std::clamp(autoGainMaxBoostDb, 0.f, 12.f), std::memory_order_relaxed);
+            h->pending.autoGainMaxCutDb.store(std::clamp(autoGainMaxCutDb, 0.f, 24.f), std::memory_order_relaxed);
+            h->pending.autoGainWindowMs.store(std::clamp(autoGainWindowMs, 200.f, 3000.f), std::memory_order_relaxed);
+        });
+    }
 }
 
 extern "C" JNIEXPORT void JNICALL
