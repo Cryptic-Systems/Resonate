@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:resonate/models/song.dart';
+import 'package:resonate/models/dj_analysis.dart';
 import 'package:resonate/dj_engine/core/dj_types.dart';
 import 'package:resonate/playback/queue_store.dart';
 import 'package:resonate/providers/music_provider.dart';
@@ -14,6 +15,7 @@ import 'package:resonate/services/audio_service_handler.dart';
 import 'package:resonate/services/playback_backend.dart';
 import 'package:resonate/services/playback_engine_session.dart';
 import 'package:resonate/services/media3_provider_state_bridge.dart';
+import 'package:resonate/services/dj_analysis_service.dart';
 
 Song _song(String id) => Song(
       id: id,
@@ -24,6 +26,16 @@ Song _song(String id) => Song(
       duration: const Duration(minutes: 3),
       dateAdded: DateTime.utc(2026, 1, 1),
     );
+
+class _FakeDspAnalysisService extends DjAnalysisService {
+  _FakeDspAnalysisService(this.profile);
+
+  final DjTrackProfile profile;
+
+  @override
+  Future<DjTrackProfile?> getProfile(String songId) async =>
+      profile.songId == songId ? profile : null;
+}
 
 
 Media3ProviderState _state({
@@ -3433,6 +3445,77 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       await session.audioSessions.close();
       await failing.audioSessions.close();
+    });
+
+    test('applies measured PCM DSP profile to the matching active Media3 deck', () async {
+      const effectsChannel =
+          MethodChannel('com.aetherion.resonate/audio_effects');
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(effectsChannel, (call) async {
+        calls.add(call);
+        if (call.method == 'setLiveDspDeckAnalysisHint') {
+          return <String, Object>{'ok': true};
+        }
+        return null;
+      });
+
+      final song = _song('dsp-hint-active-track');
+      final profile = DjTrackProfile(
+        songId: song.id,
+        analysisVersion: DjAnalysis.currentVersion,
+        dspAnalysis: const DspAnalysisMetrics(
+          samplePeakDb: -2,
+          truePeakDb: -1.5,
+          rmsDb: -12,
+          crestDb: 10,
+          bassEnergyDb: -15,
+        ),
+      );
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      provider.configureDjMode(
+        beatAlignActive: false,
+        analysis: _FakeDspAnalysisService(profile),
+      );
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
+        session.states.add(_state(
+          song: song,
+          queueIndex: 0,
+          playing: true,
+          playWhenReady: true,
+          activeDeckId: 'A',
+        ));
+
+        for (var attempt = 0;
+            attempt < 60 &&
+                !calls.any((call) => call.method == 'setLiveDspDeckAnalysisHint');
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+
+        final hint = calls.singleWhere(
+          (call) => call.method == 'setLiveDspDeckAnalysisHint',
+        );
+        final arguments = Map<String, Object>.from(hint.arguments as Map);
+        expect(arguments['deckId'], 'A');
+        expect(arguments['songId'], song.id);
+        expect(arguments['samplePeakDb'], -2.0);
+        expect(arguments['truePeakDb'], -1.5);
+        expect(arguments['rmsDb'], -12.0);
+        expect(arguments['crestDb'], 10.0);
+        expect(arguments['bassEnergyDb'], -15.0);
+      } finally {
+        provider.dispose();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(effectsChannel, null);
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
     });
 
     test('approved Media3 DJ transition lookup consumes the exact adjacent pair once', () {
