@@ -2842,7 +2842,8 @@ void main() {
       expect(session.preloadedSong?.id, song.id);
       expect(session.preloadedIndex, 0);
       expect(session.preloadedStartPosition, Duration.zero);
-      expect(session.calls, contains('repeat:off'));
+      expect(session.calls, isNot(contains('repeat:off')),
+          reason: 'Repeat One must remain active while the standby deck is promoted.');
       expect(session.crossfadeDuration, const Duration(milliseconds: 1600));
       expect(session.calls, contains('repeat:one'));
       expect(session.repeatModeSet, PlaybackQueueRepeatMode.one);
@@ -2941,7 +2942,8 @@ void main() {
           session.calls.where((call) => call == 'repeat:one').length;
       await provider.setRepeatMode(PlaybackRepeatMode.off);
       expect(provider.repeatMode, PlaybackRepeatMode.off);
-      expect(session.repeatModeSet, PlaybackQueueRepeatMode.off);
+      expect(session.repeatModeSet, PlaybackQueueRepeatMode.one,
+          reason: 'Repeat One must remain active until the prepared deck is promoted.');
       expect(
         session.calls,
         isNot(contains('cancelCrossfade')),
