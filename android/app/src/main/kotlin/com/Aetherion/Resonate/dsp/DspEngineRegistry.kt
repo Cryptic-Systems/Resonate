@@ -39,6 +39,12 @@ object DspEngineRegistry {
         fun setDvc(handle: Long, enabled: Boolean, gainDb: Float, smoothing: Boolean, smoothingMs: Float) {}
         fun setLimiterConfig(handle: Long, enabled: Boolean, mode: Int, thresholdDb: Float, releaseMs: Float, attackMs: Float, lookaheadMs: Float, kneeDb: Float) {}
         fun setDither(handle: Long, enabled: Boolean, mode: Int) {}
+        fun setIntelligenceConfig(
+            handle: Long, bassWeight: Float, preampWeight: Float, gainWeight: Float,
+            autoPreampEnabled: Boolean, autoPreampTargetDb: Float,
+            autoVirtualBassEnabled: Boolean, autoVirtualBassTarget: Float,
+            silenceHygieneEnabled: Boolean, silenceThresholdDb: Float, silenceHoldMs: Float,
+        ) {}
     }
 
     private val jniApi = object : NativeDspApi {
@@ -61,6 +67,17 @@ object DspEngineRegistry {
             DspEngineJni.nativeSetLimiterConfig(handle, enabled, mode, thresholdDb, releaseMs, attackMs, lookaheadMs, kneeDb)
         override fun setDither(handle: Long, enabled: Boolean, mode: Int) =
             DspEngineJni.nativeSetDither(handle, enabled, mode)
+        override fun setIntelligenceConfig(
+            handle: Long, bassWeight: Float, preampWeight: Float, gainWeight: Float,
+            autoPreampEnabled: Boolean, autoPreampTargetDb: Float,
+            autoVirtualBassEnabled: Boolean, autoVirtualBassTarget: Float,
+            silenceHygieneEnabled: Boolean, silenceThresholdDb: Float, silenceHoldMs: Float,
+        ) = DspEngineJni.nativeSetIntelligenceConfig(
+            handle, bassWeight, preampWeight, gainWeight,
+            autoPreampEnabled, autoPreampTargetDb,
+            autoVirtualBassEnabled, autoVirtualBassTarget,
+            silenceHygieneEnabled, silenceThresholdDb, silenceHoldMs,
+        )
     }
 
     @Volatile
@@ -98,6 +115,16 @@ object DspEngineRegistry {
         val limiterKneeDb: Float = 0f,
         val ditherEnabled: Boolean = false,
         val ditherMode: Int = 1,
+        val headroomBassWeight: Float = 0.50f,
+        val headroomPreampWeight: Float = 0.20f,
+        val headroomGainWeight: Float = 0.30f,
+        val autoPreampEnabled: Boolean = false,
+        val autoPreampTargetDb: Float = 0f,
+        val autoVirtualBassEnabled: Boolean = false,
+        val autoVirtualBassTarget: Float = 0.55f,
+        val silenceHygieneEnabled: Boolean = false,
+        val silenceThresholdDb: Float = -70f,
+        val silenceHoldMs: Float = 500f,
     )
 
     @Volatile
@@ -250,6 +277,16 @@ object DspEngineRegistry {
             "limiterKneeDb" to stickyState.limiterKneeDb,
             "ditherEnabled" to stickyState.ditherEnabled,
             "ditherMode" to stickyState.ditherMode,
+            "headroomBassWeight" to stickyState.headroomBassWeight,
+            "headroomPreampWeight" to stickyState.headroomPreampWeight,
+            "headroomGainWeight" to stickyState.headroomGainWeight,
+            "autoPreampEnabled" to stickyState.autoPreampEnabled,
+            "autoPreampTargetDb" to stickyState.autoPreampTargetDb,
+            "autoVirtualBassEnabled" to stickyState.autoVirtualBassEnabled,
+            "autoVirtualBassTarget" to stickyState.autoVirtualBassTarget,
+            "silenceHygieneEnabled" to stickyState.silenceHygieneEnabled,
+            "silenceThresholdDb" to stickyState.silenceThresholdDb,
+            "silenceHoldMs" to stickyState.silenceHoldMs,
         )
         base.putAll(latencySnapshot())
         return base
@@ -404,6 +441,46 @@ object DspEngineRegistry {
         handles.values.forEach { engine ->
             runCatching { nativeApi.setDither(engine.handle, state.ditherEnabled, state.ditherMode) }
                 .onFailure { Log.w(TAG, "setDither failed handle=${engine.handle}", it) }
+        }
+    }
+
+    @JvmStatic
+    @Synchronized
+    fun applyIntelligenceConfigAll(
+        bassWeight: Float, preampWeight: Float, gainWeight: Float,
+        autoPreampEnabled: Boolean, autoPreampTargetDb: Float,
+        autoVirtualBassEnabled: Boolean, autoVirtualBassTarget: Float,
+        silenceHygieneEnabled: Boolean, silenceThresholdDb: Float, silenceHoldMs: Float,
+    ) {
+        val weights = floatArrayOf(bassWeight, preampWeight, gainWeight)
+        if (weights.any { !it.isFinite() || it < 0f } || weights.sum() <= 0f ||
+            !autoPreampTargetDb.isFinite() || !autoVirtualBassTarget.isFinite() ||
+            !silenceThresholdDb.isFinite() || !silenceHoldMs.isFinite()
+        ) return
+        val total = weights.sum()
+        stickyState = stickyState.copy(
+            headroomBassWeight = weights[0] / total,
+            headroomPreampWeight = weights[1] / total,
+            headroomGainWeight = weights[2] / total,
+            autoPreampEnabled = autoPreampEnabled,
+            autoPreampTargetDb = autoPreampTargetDb.coerceIn(-12f, 12f),
+            autoVirtualBassEnabled = autoVirtualBassEnabled,
+            autoVirtualBassTarget = autoVirtualBassTarget.coerceIn(0f, 1f),
+            silenceHygieneEnabled = silenceHygieneEnabled,
+            silenceThresholdDb = silenceThresholdDb.coerceIn(-120f, -20f),
+            silenceHoldMs = silenceHoldMs.coerceIn(50f, 5000f),
+        )
+        val state = stickyState
+        handles.values.forEach { engine ->
+            runCatching {
+                nativeApi.setIntelligenceConfig(
+                    engine.handle,
+                    state.headroomBassWeight, state.headroomPreampWeight, state.headroomGainWeight,
+                    state.autoPreampEnabled, state.autoPreampTargetDb,
+                    state.autoVirtualBassEnabled, state.autoVirtualBassTarget,
+                    state.silenceHygieneEnabled, state.silenceThresholdDb, state.silenceHoldMs,
+                )
+            }.onFailure { Log.w(TAG, "setIntelligenceConfig failed handle=" + engine.handle, it) }
         }
     }
 
@@ -641,6 +718,13 @@ object DspEngineRegistry {
             nativeApi.setCrossoverHz(handle, state.crossoverHz)
             nativeApi.setLimiterConfig(handle, state.limiterEnabled, state.limiterMode, state.limiterThresholdDb, state.limiterReleaseMs, state.limiterAttackMs, state.limiterLookaheadMs, state.limiterKneeDb)
             nativeApi.setDither(handle, state.ditherEnabled, state.ditherMode)
+            nativeApi.setIntelligenceConfig(
+                handle,
+                state.headroomBassWeight, state.headroomPreampWeight, state.headroomGainWeight,
+                state.autoPreampEnabled, state.autoPreampTargetDb,
+                state.autoVirtualBassEnabled, state.autoVirtualBassTarget,
+                state.silenceHygieneEnabled, state.silenceThresholdDb, state.silenceHoldMs,
+            )
         } catch (t: Throwable) {
             Log.w(TAG, "applySticky failed handle=$handle", t)
             return false
