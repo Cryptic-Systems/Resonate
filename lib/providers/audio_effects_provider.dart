@@ -182,7 +182,7 @@ class AudioEffectsProvider extends ChangeNotifier {
       return;
     }
     final lease = await arbiter.acquire(
-      owner: 'dsp_profile',
+      owner: 'dsp_profile_${priority.name}',
       priority: priority,
     );
     if (lease == null) return;
