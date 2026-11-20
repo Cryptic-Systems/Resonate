@@ -37,6 +37,7 @@ object DspEngineRegistry {
     /** Small native seam so registry inheritance can be tested without loading JNI in JVM tests. */
     internal interface NativeDspApi {
         fun setEnabled(handle: Long, enabled: Boolean)
+        fun getMeters(handle: Long): FloatArray? = null
         fun setProcessingEnabled(handle: Long, enabled: Boolean)
         fun setVolume(handle: Long, linearGain: Double)
         fun setEqBands(handle: Long, centersHz: DoubleArray?, gainsDb: DoubleArray, enabled: Boolean)
@@ -71,6 +72,7 @@ object DspEngineRegistry {
 
     private val jniApi = object : NativeDspApi {
         override fun setEnabled(handle: Long, enabled: Boolean) = DspEngineJni.nativeSetEnabled(handle, enabled)
+        override fun getMeters(handle: Long): FloatArray? = DspEngineJni.nativeGetMeters(handle)
         override fun setProcessingEnabled(handle: Long, enabled: Boolean) = DspEngineJni.nativeSetProcessingEnabled(handle, enabled)
         override fun setVolume(handle: Long, linearGain: Double) = DspEngineJni.nativeSetVolume(handle, linearGain)
         override fun setEqBands(handle: Long, centersHz: DoubleArray?, gainsDb: DoubleArray, enabled: Boolean) =
@@ -427,6 +429,32 @@ object DspEngineRegistry {
             "autoGainMaxCutDb" to stickyState.autoGainMaxCutDb,
             "autoGainWindowMs" to stickyState.autoGainWindowMs,
         )
+        val metersByDeck = handles.values
+            .groupBy { it.deckId }
+            .mapNotNull { (deckId, engines) ->
+                val snapshot = engines.firstNotNullOfOrNull { engine ->
+                    runCatching { nativeApi.getMeters(engine.handle) }.getOrNull()
+                }?.takeIf { it.size >= 12 } ?: return@mapNotNull null
+                deckId to mapOf(
+                    "inputPeakDb" to snapshot[0],
+                    "inputTruePeakDb" to snapshot[1],
+                    "postEqPeakDb" to snapshot[2],
+                    "bassBandPeakDb" to snapshot[3],
+                    "headroomDb" to snapshot[4],
+                    "shortTermRmsDb" to snapshot[5],
+                    "limiterGrDb" to snapshot[6],
+                    "limiterGrPeakDb" to snapshot[7],
+                    "autoBassAppliedDb" to snapshot[8],
+                    "autoGainAppliedDb" to snapshot[9],
+                    "autoPreampAppliedDb" to snapshot[10],
+                    "autoVirtualBassApplied" to snapshot[11],
+                    "analysisHintActive" to deckAnalysisHints.containsKey(deckId),
+                    "songId" to (deckTracks[deckId] ?: ""),
+                )
+            }.toMap()
+        base["liveMetersByDeck"] = metersByDeck
+        base["activeDeckId"] = activeDeckId
+        base["dspVersion"] = "0.6.0"
         base.putAll(latencySnapshot())
         return base
     }
