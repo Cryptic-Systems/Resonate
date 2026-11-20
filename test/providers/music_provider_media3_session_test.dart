@@ -2896,6 +2896,71 @@ void main() {
       await session.states.close();
     });
 
+    test('turning Repeat One off during a running self fade completes the handoff', () async {
+      final session = _FakePlaybackSession()
+        ..crossfadeGate = Completer<void>();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final song = _song('repeat-one-finish-before-disable');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
+      await provider.setRepeatMode(PlaybackRepeatMode.one);
+      await provider.setCrossfadeDuration(500);
+
+      session.positionValue = const Duration(seconds: 178);
+      session.states.add(_state(
+        song: song,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+        activeDeckId: 'A',
+        repeatMode: 'one',
+      ));
+      for (var attempt = 0;
+          attempt < 120 &&
+              !session.calls.any((call) => call.startsWith('crossfade:'));
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(
+        session.calls.any((call) => call.startsWith('crossfade:')),
+        isTrue,
+        reason: 'The same-track standby fade must have started before changing repeat mode.',
+      );
+
+      await provider.setRepeatMode(PlaybackRepeatMode.off);
+      expect(provider.repeatMode, PlaybackRepeatMode.off);
+      expect(session.repeatModeSet, PlaybackQueueRepeatMode.off);
+      expect(
+        session.calls,
+        isNot(contains('cancelCrossfade')),
+        reason: 'Changing repeat policy must not tear down an audible self fade.',
+      );
+
+      session.crossfadeGate!.complete();
+      for (var attempt = 0;
+          attempt < 120 && session.activeDeckIdValue != 'B';
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      expect(session.activeDeckIdValue, 'B');
+      expect(provider.currentSong?.id, song.id);
+      expect(provider.queueIndex, 0);
+      expect(session.repeatModeSet, PlaybackQueueRepeatMode.off);
+      expect(
+        session.calls.where((call) => call == 'repeat:one'),
+        isEmpty,
+        reason: 'The completed handoff must not restore the stale Repeat One policy.',
+      );
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('turning Repeat One off invalidates a blocked same-track DJ preload', () async {
       final session = _FakePlaybackSession()
         ..preloadNextGate = Completer<void>();

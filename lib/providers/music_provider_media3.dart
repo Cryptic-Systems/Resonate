@@ -749,7 +749,8 @@ extension MusicProviderMedia3 on MusicProvider {
         !_userTransportPending &&
         _userWantsPlaying &&
         effectiveCrossfadeEnabled &&
-        _repeatMode == PlaybackRepeatMode.one;
+        (_repeatMode == PlaybackRepeatMode.one ||
+            (_repeatSelfHandoffInFlight && _crossfadeInProgress));
 
     StreamSubscription<Media3ProviderState>? promotionSubscription;
     try {
@@ -811,7 +812,13 @@ extension MusicProviderMedia3 on MusicProvider {
         activeSpeed: 1.0,
         standbySpeed: 1.0,
       );
-      await session.setRepeatMode(PlaybackQueueRepeatMode.one);
+      // A Repeat One toggle during an already-running self fade takes
+      // effect on the newly promoted deck; do not force the old mode back.
+      await session.setRepeatMode(switch (_repeatMode) {
+        PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
+        PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
+        PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
+      });
       _preloadedNextSongId = null;
       _media3DjTransitionPreparation = null;
       _repeatSelfDjPreparation = null;
@@ -839,7 +846,11 @@ extension MusicProviderMedia3 on MusicProvider {
             activeSpeed: 1.0,
             standbySpeed: 1.0,
           );
-          await session.setRepeatMode(PlaybackQueueRepeatMode.one);
+          await session.setRepeatMode(switch (_repeatMode) {
+            PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
+            PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
+            PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
+          });
           await ResonateDiagnostics.record('media3_repeat_self_crossfade_fallback', {
             'songId': song.id,
             'queueIndex': queueIndex,

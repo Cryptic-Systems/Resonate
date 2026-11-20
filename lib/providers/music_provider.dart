@@ -1150,10 +1150,23 @@ class MusicProvider extends ChangeNotifier {
         _repeatSelfDjPreloadInFlight ||
         _repeatSelfDjPreparation != null ||
         _preloadedNextSongId != null;
-    // Repeat mode changes the meaning of an in-flight transition. In
-    // particular, turning Repeat One off must invalidate its self-loop before
-    // that stale operation can commit or fall back to replaying the old track.
-    if (transitionActive) _cancelAutomaticPlaybackWork();
+    // A preload has not committed to a handoff, so a Repeat One change
+    // still invalidates it. Once the same-track fade is actually running,
+    // let that short handoff finish and apply the new repeat policy to the
+    // promoted deck; cancelling mid-ramp can expose end-of-track advancement
+    // and create an audible gain discontinuity.
+    final repeatSelfFadeInProgress = mode != PlaybackRepeatMode.one &&
+        _repeatSelfHandoffInFlight &&
+        _crossfadeInProgress;
+    if (transitionActive && !repeatSelfFadeInProgress) {
+      _cancelAutomaticPlaybackWork();
+    } else if (repeatSelfFadeInProgress) {
+      unawaited(ResonateDiagnostics.record('repeat_mode_change_deferred', {
+        'reason': 'repeat_self_fade_already_started',
+        'mode': mode.name,
+        'songId': currentSong?.id,
+      }));
+    }
     _repeatSelfDjPlanGeneration++;
     _repeatSelfDjPlanSongId = null;
     _repeatSelfDjPlanAttempted = false;
