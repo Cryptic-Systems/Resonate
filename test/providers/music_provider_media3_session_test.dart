@@ -77,6 +77,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   bool? focusHandling;
   Completer<void>? focusEnableGate;
   Completer<void>? startGate;
+  Completer<void>? repeatModeGate;
   Map<String, double?>? gainFactors;
   Song? preloadedSong;
   int? preloadedIndex;
@@ -207,8 +208,13 @@ class _FakePlaybackSession implements PlaybackEngineSession {
 
   @override
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) async {
-    repeatModeSet = mode;
     calls.add('repeat:${mode.nativeValue}');
+    final gate = repeatModeGate;
+    if (gate != null) {
+      repeatModeGate = null;
+      await gate.future;
+    }
+    repeatModeSet = mode;
   }
 
   @override
@@ -2958,6 +2964,51 @@ void main() {
         session.calls.where((call) => call == 'repeat:one').length,
         repeatOneWritesBeforeToggle,
         reason: 'The completed handoff must not restore the stale Repeat One policy.',
+      );
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('repeat mode publishes immediately and rapid changes serialize latest native value', () async {
+      final session = _FakePlaybackSession()
+        ..repeatModeGate = Completer<void>();
+      final provider = MusicProvider(media3ProviderSession: session);
+      await provider.prepareMedia3ProviderSession();
+      var notifications = 0;
+      provider.addListener(() => notifications++);
+
+      final firstChange = provider.setRepeatMode(PlaybackRepeatMode.all);
+      expect(provider.repeatMode, PlaybackRepeatMode.all);
+      expect(notifications, 1,
+          reason: 'The repeat control must reflect the first tap without waiting for Media3.');
+      for (var attempt = 0;
+          attempt < 50 && !session.calls.contains('repeat:all');
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+      expect(session.calls, contains('repeat:all'));
+
+      final secondChange = provider.setRepeatMode(PlaybackRepeatMode.one);
+      expect(provider.repeatMode, PlaybackRepeatMode.one);
+      expect(notifications, 2,
+          reason: 'A second tap must immediately publish the latest requested mode.');
+
+      session.repeatModeGate!.complete();
+      await Future.wait<void>(<Future<void>>[firstChange, secondChange]);
+
+      expect(session.repeatModeSet, PlaybackQueueRepeatMode.one);
+      expect(
+        session.calls.where((call) => call == 'repeat:all').length,
+        1,
+      );
+      expect(
+        session.calls.lastWhere((call) =>
+            call == 'repeat:all' || call == 'repeat:one'),
+        'repeat:one',
+        reason: 'The last user selection must be the final native repeat command.',
       );
 
       provider.dispose();
