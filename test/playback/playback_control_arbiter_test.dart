@@ -117,8 +117,15 @@ void main() {
         onRevoked: (_) => fail('renewal must not replace cleanup callback'),
       );
 
-      expect(identical(first, second), isTrue);
+      expect(identical(first, second), isFalse);
       expect(second!.generation, generation);
+      expect(first.isCurrent, isTrue);
+      expect(second.isCurrent, isTrue);
+      expect(await first.release(), isTrue);
+      expect(first.isCurrent, isFalse);
+      expect(second.isCurrent, isTrue);
+      expect(revoked, 0,
+          reason: 'One controller hold must not revoke another active hold.');
       expect(await second.renew(), isTrue);
       expect(
         events.where((e) => e.type == PlaybackControlDiagnosticType.renewed),
