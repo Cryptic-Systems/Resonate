@@ -75,6 +75,40 @@ class AudioEffectsBridge {
     }
   }
 
+  /// Configure DSP-ENGINE v0.6 shared headroom and adaptive processors.
+  /// Analysis hints are intentionally separate because they belong to a track/deck.
+  static Future<Map<String, dynamic>?> setLiveDspIntelligenceConfig({
+    double bassWeight = 0.50,
+    double preampWeight = 0.20,
+    double gainWeight = 0.30,
+    bool autoPreampEnabled = false,
+    double autoPreampTargetDb = 0,
+    bool autoVirtualBassEnabled = false,
+    double autoVirtualBassTarget = 0.55,
+    bool silenceHygieneEnabled = false,
+    double silenceThresholdDb = -70,
+    double silenceHoldMs = 500,
+  }) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspIntelligenceConfig', {
+        'bassWeight': bassWeight,
+        'preampWeight': preampWeight,
+        'gainWeight': gainWeight,
+        'autoPreampEnabled': autoPreampEnabled,
+        'autoPreampTargetDb': autoPreampTargetDb,
+        'autoVirtualBassEnabled': autoVirtualBassEnabled,
+        'autoVirtualBassTarget': autoVirtualBassTarget,
+        'silenceHygieneEnabled': silenceHygieneEnabled,
+        'silenceThresholdDb': silenceThresholdDb,
+        'silenceHoldMs': silenceHoldMs,
+      });
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (e) {
+      debugPrint('setLiveDspIntelligenceConfig failed: $e');
+    }
+    return null;
+  }
+
   static Future<Map<String, dynamic>?> setLiveDspPreampDb(double db) async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('setLiveDspPreampDb', {
