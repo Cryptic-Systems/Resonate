@@ -485,6 +485,43 @@ class DspEngineRegistryTest {
     }
 
     @Test
+    fun repeat_one_same_track_deck_inherits_existing_measured_hint() {
+        assertTrue(DspEngineRegistry.setDeckTrack("A", "repeat-song"))
+        assertTrue(DspEngineRegistry.register(121, 12121L, "A"))
+        assertTrue(DspEngineRegistry.applyDeckAnalysisHint(
+            "A", "repeat-song", -2f, -1f, -12f, 10f, -15f,
+        ))
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.setDeckTrack("B", "repeat-song"))
+        assertTrue(DspEngineRegistry.register(122, 12222L, "B"))
+
+        assertTrue(fake.calls.any {
+            it == "analysis:12222:true:-2.0:-1.0:-12.0:10.0:-15.0"
+        })
+    }
+
+    @Test
+    fun repeat_one_same_track_hint_update_reaches_already_assigned_standby_deck() {
+        assertTrue(DspEngineRegistry.setDeckTrack("A", "repeat-song"))
+        assertTrue(DspEngineRegistry.setDeckTrack("B", "repeat-song"))
+        assertTrue(DspEngineRegistry.register(131, 13131L, "A"))
+        assertTrue(DspEngineRegistry.register(132, 13232L, "B"))
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.applyDeckAnalysisHint(
+            "A", "repeat-song", -3f, -2f, -18f, 15f, -10f,
+        ))
+
+        assertTrue(fake.calls.any {
+            it == "analysis:13131:true:-3.0:-2.0:-18.0:15.0:-10.0"
+        })
+        assertTrue(fake.calls.any {
+            it == "analysis:13232:true:-3.0:-2.0:-18.0:15.0:-10.0"
+        })
+    }
+
+    @Test
     fun legacy_just_audio_reflection_hook_keeps_its_no_argument_entrypoint() {
         val hook = Class.forName("com.aetherion.resonate.dsp.DspEngineSinkHook")
         val method = hook.getMethod("createProcessors")
