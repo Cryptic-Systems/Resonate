@@ -707,6 +707,40 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetAnalysisHint(
     }
 }
 
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeProbeMaxBassGainDb(
+        JNIEnv* env, jclass, jbyteArray pcm16, jint channels, jfloat sampleRate,
+        jfloat shelfFreqHz, jfloat ceilingDb, jfloat marginDb) {
+    if (!pcm16 || channels < 1 || channels > 8 ||
+        !std::isfinite(sampleRate) || sampleRate < 8000.f ||
+        !std::isfinite(shelfFreqHz) || shelfFreqHz < 40.f || shelfFreqHz > 160.f ||
+        !std::isfinite(ceilingDb) || ceilingDb < -12.f || ceilingDb > 0.f ||
+        !std::isfinite(marginDb) || marginDb < 0.f || marginDb > 12.f) {
+        return -1.f;
+    }
+    const jsize byteCount = env->GetArrayLength(pcm16);
+    const jsize frameBytes = channels * 2;
+    if (byteCount < frameBytes * 4 || byteCount > 3 * 1024 * 1024 ||
+        byteCount % frameBytes != 0) return -1.f;
+    jbyte* bytes = env->GetByteArrayElements(pcm16, nullptr);
+    if (!bytes) return -1.f;
+    const int frames = byteCount / frameBytes;
+    std::vector<float> samples(static_cast<size_t>(frames) * channels);
+    for (jsize i = 0; i < byteCount / 2; ++i) {
+        const uint16_t lo = static_cast<uint8_t>(bytes[i * 2]);
+        const uint16_t hi = static_cast<uint8_t>(bytes[i * 2 + 1]);
+        const int16_t sample = static_cast<int16_t>(lo | (hi << 8));
+        samples[static_cast<size_t>(i)] = static_cast<float>(sample) / 32768.f;
+    }
+    env->ReleaseByteArrayElements(pcm16, bytes, JNI_ABORT);
+    float maximum = 0.f;
+    const DspError error = dsp_probe_max_bass_gain_db(
+        samples.data(), frames, channels, sampleRate, shelfFreqHz,
+        ceilingDb, marginDb, &maximum);
+    if (error != DSP_OK || !std::isfinite(maximum)) return -1.f;
+    return std::clamp(maximum, 0.f, 18.f);
+}
+
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_aetherion_resonate_dsp_DspEngineJni_nativeGetMeters(
         JNIEnv* env, jclass, jlong value) {
