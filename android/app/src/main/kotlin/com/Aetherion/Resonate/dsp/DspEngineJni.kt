@@ -61,6 +61,19 @@ object DspEngineJni {
         kneeDb: Float
     )
     external fun nativeSetDither(handle: Long, enabled: Boolean, mode: Int)
+    external fun nativeSetIntelligenceConfig(
+        handle: Long,
+        bassWeight: Float,
+        preampWeight: Float,
+        gainWeight: Float,
+        autoPreampEnabled: Boolean,
+        autoPreampTargetDb: Float,
+        autoVirtualBassEnabled: Boolean,
+        autoVirtualBassTarget: Float,
+        silenceHygieneEnabled: Boolean,
+        silenceThresholdDb: Float,
+        silenceHoldMs: Float,
+    )
 
     /** [processCalls, avgUs, maxUs, overruns, lastFrames, sampleRate] */
     external fun nativeGetStats(handle: Long): DoubleArray?
