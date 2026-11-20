@@ -65,7 +65,7 @@ class ParametricEqBand {
 /// the transport/crossfade envelope. Existing preference keys are read as a
 /// migration source; new writes use one JSON document.
 class DspSettings {
-  static const int schemaVersion = 5;
+  static const int schemaVersion = 6;
   static const String preferenceKey = 'resonate_dsp_settings_v1';
   static Future<void> _writeQueue = Future<void>.value();
 
@@ -98,6 +98,16 @@ class DspSettings {
   final double crossoverHz;
   final bool speakerProtectionEnabled;
   final double virtualBassAmount;
+  final double headroomBassWeight;
+  final double headroomPreampWeight;
+  final double headroomGainWeight;
+  final bool autoPreampEnabled;
+  final double autoPreampTargetDb;
+  final bool autoVirtualBassEnabled;
+  final double autoVirtualBassTarget;
+  final bool silenceHygieneEnabled;
+  final double silenceThresholdDb;
+  final double silenceHoldMs;
   final bool effectsEnabled;
   final double reverbAmount;
   final double virtualizerAmount;
@@ -129,6 +139,16 @@ class DspSettings {
     this.crossoverHz = 120,
     this.speakerProtectionEnabled = false,
     this.virtualBassAmount = 0,
+    this.headroomBassWeight = 0.50,
+    this.headroomPreampWeight = 0.20,
+    this.headroomGainWeight = 0.30,
+    this.autoPreampEnabled = false,
+    this.autoPreampTargetDb = 0,
+    this.autoVirtualBassEnabled = false,
+    this.autoVirtualBassTarget = 0.55,
+    this.silenceHygieneEnabled = false,
+    this.silenceThresholdDb = -70,
+    this.silenceHoldMs = 500,
     this.effectsEnabled = true,
     this.reverbAmount = 0,
     this.virtualizerAmount = 0,
@@ -169,6 +189,16 @@ class DspSettings {
     double? crossoverHz,
     bool? speakerProtectionEnabled,
     double? virtualBassAmount,
+    double? headroomBassWeight,
+    double? headroomPreampWeight,
+    double? headroomGainWeight,
+    bool? autoPreampEnabled,
+    double? autoPreampTargetDb,
+    bool? autoVirtualBassEnabled,
+    double? autoVirtualBassTarget,
+    bool? silenceHygieneEnabled,
+    double? silenceThresholdDb,
+    double? silenceHoldMs,
     bool? effectsEnabled,
     double? reverbAmount,
     double? virtualizerAmount,
@@ -203,6 +233,16 @@ class DspSettings {
         crossoverHz: _clamp(crossoverHz ?? this.crossoverHz, 80, 200),
         speakerProtectionEnabled: speakerProtectionEnabled ?? this.speakerProtectionEnabled,
         virtualBassAmount: _clamp(virtualBassAmount ?? this.virtualBassAmount, 0, 1),
+        headroomBassWeight: _clamp(headroomBassWeight ?? this.headroomBassWeight, 0, 1),
+        headroomPreampWeight: _clamp(headroomPreampWeight ?? this.headroomPreampWeight, 0, 1),
+        headroomGainWeight: _clamp(headroomGainWeight ?? this.headroomGainWeight, 0, 1),
+        autoPreampEnabled: autoPreampEnabled ?? this.autoPreampEnabled,
+        autoPreampTargetDb: _clamp(autoPreampTargetDb ?? this.autoPreampTargetDb, -12, 12),
+        autoVirtualBassEnabled: autoVirtualBassEnabled ?? this.autoVirtualBassEnabled,
+        autoVirtualBassTarget: _clamp(autoVirtualBassTarget ?? this.autoVirtualBassTarget, 0, 1),
+        silenceHygieneEnabled: silenceHygieneEnabled ?? this.silenceHygieneEnabled,
+        silenceThresholdDb: _clamp(silenceThresholdDb ?? this.silenceThresholdDb, -120, -20),
+        silenceHoldMs: _clamp(silenceHoldMs ?? this.silenceHoldMs, 50, 5000),
         effectsEnabled: effectsEnabled ?? this.effectsEnabled,
         reverbAmount: _clamp(reverbAmount ?? this.reverbAmount, 0, 1),
         virtualizerAmount: _clamp(virtualizerAmount ?? this.virtualizerAmount, 0, 1),
@@ -236,6 +276,16 @@ class DspSettings {
         'crossoverHz': crossoverHz,
         'speakerProtectionEnabled': speakerProtectionEnabled,
         'virtualBassAmount': virtualBassAmount,
+        'headroomBassWeight': headroomBassWeight,
+        'headroomPreampWeight': headroomPreampWeight,
+        'headroomGainWeight': headroomGainWeight,
+        'autoPreampEnabled': autoPreampEnabled,
+        'autoPreampTargetDb': autoPreampTargetDb,
+        'autoVirtualBassEnabled': autoVirtualBassEnabled,
+        'autoVirtualBassTarget': autoVirtualBassTarget,
+        'silenceHygieneEnabled': silenceHygieneEnabled,
+        'silenceThresholdDb': silenceThresholdDb,
+        'silenceHoldMs': silenceHoldMs,
         'effectsEnabled': effectsEnabled,
         'reverbAmount': reverbAmount,
         'virtualizerAmount': virtualizerAmount,
@@ -243,7 +293,7 @@ class DspSettings {
 
   factory DspSettings.fromJson(Map<String, dynamic> json) {
     final version = json['version'];
-    if (version != 1 && version != 2 && version != 3 && version != 4 && version != schemaVersion) {
+    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != schemaVersion) {
       throw const FormatException('Unsupported Resonate DSP settings version.');
     }
     double number(String key, double fallback, double min, double max) {
@@ -325,6 +375,16 @@ class DspSettings {
       crossoverHz: number('crossoverHz', 120, 80, 200),
       speakerProtectionEnabled: json['speakerProtectionEnabled'] is bool ? json['speakerProtectionEnabled'] as bool : false,
       virtualBassAmount: number('virtualBassAmount', 0, 0, 1),
+      headroomBassWeight: number('headroomBassWeight', 0.50, 0, 1),
+      headroomPreampWeight: number('headroomPreampWeight', 0.20, 0, 1),
+      headroomGainWeight: number('headroomGainWeight', 0.30, 0, 1),
+      autoPreampEnabled: json['autoPreampEnabled'] is bool ? json['autoPreampEnabled'] as bool : false,
+      autoPreampTargetDb: number('autoPreampTargetDb', 0, -12, 12),
+      autoVirtualBassEnabled: json['autoVirtualBassEnabled'] is bool ? json['autoVirtualBassEnabled'] as bool : false,
+      autoVirtualBassTarget: number('autoVirtualBassTarget', 0.55, 0, 1),
+      silenceHygieneEnabled: json['silenceHygieneEnabled'] is bool ? json['silenceHygieneEnabled'] as bool : false,
+      silenceThresholdDb: number('silenceThresholdDb', -70, -120, -20),
+      silenceHoldMs: number('silenceHoldMs', 500, 50, 5000),
       effectsEnabled: json['effectsEnabled'] is bool ? json['effectsEnabled'] as bool : true,
       reverbAmount: number('reverbAmount', 0, 0, 1),
       virtualizerAmount: number('virtualizerAmount', 0, 0, 1),
