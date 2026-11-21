@@ -70,12 +70,18 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
       _manualDeckPrepared = false;
       _manualCueDirty = false;
     });
+    final provider = context.read<MusicProvider>();
     try {
-      await context.read<MusicProvider>().prepareManualDjDeck(
+      await provider.prepareManualDjDeck(
         incomingQueueIndex: incomingQueueIndex,
         incomingStartPosition: Duration(milliseconds: _manualCueMs.round()),
       );
-      if (!mounted) return;
+      if (!mounted) {
+        // The route may have been dismissed while native standby preparation
+        // was in flight. Retire any lease acquired after dispose() ran.
+        await provider.cancelPreparedManualDjDeck();
+        return;
+      }
       setState(() => _manualDeckPrepared = true);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Deck B is prepared and ready.')),
