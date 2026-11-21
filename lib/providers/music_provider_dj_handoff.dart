@@ -105,6 +105,7 @@ extension MusicProviderDjHandoff on MusicProvider {
     required int incomingQueueIndex,
     Duration incomingStartPosition = Duration.zero,
   }) async {
+    await cancelPreparedManualDjDeck();
     final session = _media3ProviderSession;
     if (session == null || !_media3ProviderSessionActive) {
       throw StateError('Media3 playback must be active before preparing Deck B.');
@@ -131,10 +132,7 @@ extension MusicProviderDjHandoff on MusicProvider {
         outgoingIndex >= committedQueue.length ||
         !_sameManualDjEntry(committedQueue[outgoingIndex], outgoingSong) ||
         incomingQueueIndex >= committedQueue.length ||
-        !_sameManualDjEntry(
-          committedQueue[incomingQueueIndex],
-          incomingSong,
-        )) {
+        !_sameManualDjEntry(committedQueue[incomingQueueIndex], incomingSong)) {
       throw StateError(
         'The DJ queue changed; refresh the workspace before preparing Deck B.',
       );
@@ -149,11 +147,22 @@ extension MusicProviderDjHandoff on MusicProvider {
       );
     }
 
+    final prepared = ManualDjPreparedDeck(
+      outgoingSong: outgoingSong,
+      incomingSong: incomingSong,
+      outgoingQueueIndex: outgoingIndex,
+      incomingQueueIndex: incomingQueueIndex,
+      cuePosition: incomingStartPosition,
+    );
     final lease = await playbackControlArbiter.acquire(
-      owner: 'dj_manual_prepare',
+      owner: 'dj_manual_transition',
       priority: PlaybackControlPriority.interactive,
       onRevoked: (revocation) async {
         if (revocation.reason == PlaybackControlRevocationReason.released) return;
+        _manualDjPreparedDeck = null;
+        _manualDjPreparedLease = null;
+        // User transport or a safety override owns output now. Retire the
+        // prepared standby deck before the higher-priority owner proceeds.
         try { await session.cancelCrossfade(); } catch (_) {}
         try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
         try {
@@ -162,19 +171,13 @@ extension MusicProviderDjHandoff on MusicProvider {
             standbySpeed: 1.0,
           );
         } catch (_) {}
+        notifyListeners();
       },
     );
     if (lease == null) {
       throw StateError('DJ playback authority is busy; Deck B was not changed.');
     }
 
-    final prepared = ManualDjPreparedDeck(
-      outgoingSong: outgoingSong,
-      incomingSong: incomingSong,
-      outgoingQueueIndex: outgoingIndex,
-      incomingQueueIndex: incomingQueueIndex,
-      cuePosition: incomingStartPosition,
-    );
     try {
       if (!lease.authorizeWrite('dj_manual_preload')) {
         throw StateError('Manual DJ lease expired before deck preparation.');
@@ -191,7 +194,11 @@ extension MusicProviderDjHandoff on MusicProvider {
       if (session.crossfadeStatus != 'ready') {
         throw StateError('Media3 standby deck did not reach its ready state.');
       }
+      // Keep the interactive lease while the operator reviews Deck B. This
+      // prevents automatic DJ work from replacing the standby occurrence.
+      // User transport remains able to preempt this lease.
       _manualDjPreparedDeck = prepared;
+      _manualDjPreparedLease = lease;
       await ResonateDiagnostics.recordDj(
         stage: 'manual_deck_prepare',
         outcome: 'ready',
@@ -201,11 +208,14 @@ extension MusicProviderDjHandoff on MusicProvider {
           'outgoingSongId': outgoingSong.id,
           'incomingQueueIndex': incomingQueueIndex,
           'cuePositionMs': incomingStartPosition.inMilliseconds,
+          'leaseHeldForReview': true,
         },
       );
       _publishServiceState();
       notifyListeners();
     } catch (error) {
+      _manualDjPreparedDeck = null;
+      _manualDjPreparedLease = null;
       if (lease.isCurrent) {
         try { await session.cancelCrossfade(); } catch (_) {}
         try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
@@ -216,7 +226,7 @@ extension MusicProviderDjHandoff on MusicProvider {
           );
         } catch (_) {}
       }
-      _manualDjPreparedDeck = null;
+      await lease.release();
       await ResonateDiagnostics.recordDj(
         stage: 'manual_deck_prepare',
         outcome: 'failed',
@@ -225,9 +235,29 @@ extension MusicProviderDjHandoff on MusicProvider {
         extra: {'incomingQueueIndex': incomingQueueIndex},
       );
       rethrow;
-    } finally {
-      await lease.release();
     }
+  }
+
+  /// Releases a prepared standby deck and its retained interactive lease.
+  /// Safe after revocation, promotion, or repeated cancellation.
+  Future<void> cancelPreparedManualDjDeck() async {
+    final lease = _manualDjPreparedLease;
+    final session = _media3ProviderSession;
+    _manualDjPreparedDeck = null;
+    _manualDjPreparedLease = null;
+    if (lease == null) return;
+    if (lease.isCurrent && session != null) {
+      try { await session.cancelCrossfade(); } catch (_) {}
+      try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
+      try {
+        await session.setDeckPlaybackSpeeds(
+          activeSpeed: 1.0,
+          standbySpeed: 1.0,
+        );
+      } catch (_) {}
+    }
+    await lease.release();
+    notifyListeners();
   }
 
   Future<void> cuePreparedManualDjDeck(Duration position) async {
@@ -236,11 +266,14 @@ extension MusicProviderDjHandoff on MusicProvider {
     }
     final session = _media3ProviderSession;
     final prepared = _manualDjPreparedDeck;
+    final lease = _manualDjPreparedLease;
     if (session == null ||
         session is! PlaybackStandbyCueBackend ||
         prepared == null ||
+        lease == null ||
+        !lease.isCurrent ||
         !_manualDjPreparedDeckIsCurrent(session, prepared)) {
-      _manualDjPreparedDeck = null;
+      await cancelPreparedManualDjDeck();
       throw StateError('Prepare Deck B again before changing its cue point.');
     }
     if (prepared.incomingSong.duration > Duration.zero &&
@@ -251,47 +284,32 @@ extension MusicProviderDjHandoff on MusicProvider {
         'Cue position must be inside the incoming track.',
       );
     }
-    final lease = await playbackControlArbiter.acquire(
-      owner: 'dj_manual_cue',
-      priority: PlaybackControlPriority.interactive,
-      onRevoked: (revocation) async {
-        if (revocation.reason == PlaybackControlRevocationReason.released) return;
-        try { await session.cancelCrossfade(); } catch (_) {}
+    if (!lease.authorizeWrite('dj_manual_standby_cue') ||
+        session.crossfadeStatus != 'ready') {
+      await cancelPreparedManualDjDeck();
+      throw StateError('Prepared Deck B is no longer available for cueing.');
+    }
+    await (session as PlaybackStandbyCueBackend).seekStandby(
+      position: position,
+      expectedMediaId: prepared.incomingSong.id,
+      expectedQueueIndex: prepared.incomingQueueIndex,
+    );
+    if (!lease.isCurrent ||
+        !_manualDjPreparedDeckIsCurrent(session, prepared)) {
+      throw StateError('Deck B cue operation was superseded.');
+    }
+    _manualDjPreparedDeck = prepared.withCue(position);
+    await ResonateDiagnostics.recordDj(
+      stage: 'manual_deck_cue',
+      outcome: 'applied',
+      reason: 'operator_requested',
+      songId: prepared.incomingSong.id,
+      extra: {
+        'incomingQueueIndex': prepared.incomingQueueIndex,
+        'cuePositionMs': position.inMilliseconds,
       },
     );
-    if (lease == null) {
-      throw StateError('DJ playback authority is busy; cue position was not changed.');
-    }
-    try {
-      if (!lease.authorizeWrite('dj_manual_standby_cue') ||
-          !_manualDjPreparedDeckIsCurrent(session, prepared) ||
-          session.crossfadeStatus != 'ready') {
-        throw StateError('Prepared Deck B is no longer available for cueing.');
-      }
-      await (session as PlaybackStandbyCueBackend).seekStandby(
-        position: position,
-        expectedMediaId: prepared.incomingSong.id,
-        expectedQueueIndex: prepared.incomingQueueIndex,
-      );
-      if (!lease.isCurrent ||
-          !_manualDjPreparedDeckIsCurrent(session, prepared)) {
-        throw StateError('Deck B cue operation was superseded.');
-      }
-      _manualDjPreparedDeck = prepared.withCue(position);
-      await ResonateDiagnostics.recordDj(
-        stage: 'manual_deck_cue',
-        outcome: 'applied',
-        reason: 'operator_requested',
-        songId: prepared.incomingSong.id,
-        extra: {
-          'incomingQueueIndex': prepared.incomingQueueIndex,
-          'cuePositionMs': position.inMilliseconds,
-        },
-      );
-      notifyListeners();
-    } finally {
-      await lease.release();
-    }
+    notifyListeners();
   }
 
   Future<void> crossfadePreparedManualDjDeck({
@@ -303,31 +321,16 @@ extension MusicProviderDjHandoff on MusicProvider {
     }
     final session = _media3ProviderSession;
     final prepared = _manualDjPreparedDeck;
+    final lease = _manualDjPreparedLease;
     if (session == null ||
         prepared == null ||
+        lease == null ||
+        !lease.isCurrent ||
         !_manualDjPreparedDeckIsCurrent(session, prepared) ||
         !session.isPlaying ||
         session.crossfadeStatus != 'ready') {
-      _manualDjPreparedDeck = null;
+      await cancelPreparedManualDjDeck();
       throw StateError('Prepare Deck B again before starting the crossfade.');
-    }
-    final lease = await playbackControlArbiter.acquire(
-      owner: 'dj_manual_transition',
-      priority: PlaybackControlPriority.interactive,
-      onRevoked: (revocation) async {
-        if (revocation.reason == PlaybackControlRevocationReason.released) return;
-        try { await session.cancelCrossfade(); } catch (_) {}
-        try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
-        try {
-          await session.setDeckPlaybackSpeeds(
-            activeSpeed: 1.0,
-            standbySpeed: 1.0,
-          );
-        } catch (_) {}
-      },
-    );
-    if (lease == null) {
-      throw StateError('DJ playback authority is busy; no crossfade was started.');
     }
     try {
       if (!lease.authorizeWrite('dj_manual_crossfade') ||
@@ -369,6 +372,7 @@ extension MusicProviderDjHandoff on MusicProvider {
         throw StateError('Manual DJ transition was preempted during deck normalization.');
       }
       _manualDjPreparedDeck = null;
+      _manualDjPreparedLease = null;
       _preloadedNextSongId = null;
       _media3DjTransitionPreparation = null;
       _crossfadeInProgress = false;
@@ -407,6 +411,7 @@ extension MusicProviderDjHandoff on MusicProvider {
         }
       }
       _manualDjPreparedDeck = null;
+      _manualDjPreparedLease = null;
       await ResonateDiagnostics.recordDj(
         stage: 'manual_transition',
         outcome: 'failed',
