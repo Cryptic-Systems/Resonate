@@ -68,6 +68,26 @@ void main() {
       expect(state.lastUnderrunElapsedRealtimeMs, 987654);
     });
 
+    test('parses native standby invalidation reason and incoming identity', () {
+      final state = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'mediaId': 'outgoing-track',
+        'incomingMediaId': 'incoming-track',
+        'lastPreloadInvalidationReason': 'queue_sync_prepared_occurrence_changed',
+        'lastPreloadInvalidationElapsedRealtimeMs': 987650,
+        'preloadInvalidationCount': 4,
+        'crossfadeStatus': 'fading',
+        'crossfadeProgress': 0.35,
+      });
+
+      expect(state.incomingMediaId, 'incoming-track');
+      expect(state.lastPreloadInvalidationReason,
+          'queue_sync_prepared_occurrence_changed');
+      expect(state.lastPreloadInvalidationElapsedRealtimeMs, 987650);
+      expect(state.preloadInvalidationCount, 4);
+      expect(state.crossfadeStatus, 'fading');
+      expect(state.crossfadeProgress, 0.35);
+    });
+
     test('parses native MediaItem transition identity and reason', () {
       final state = Media3PlaybackState.fromMap(<Object?, Object?>{
         'mediaId': 'track-b',
