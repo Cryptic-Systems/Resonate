@@ -25,6 +25,8 @@ class DjWorkspaceScreen extends StatefulWidget {
 class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
   bool _buildingMix = false;
   bool _manualTransitionBusy = false;
+  bool _manualDeckPrepared = false;
+  bool _manualCueDirty = false;
   int? _selectedDeckBIndex;
   double _manualFadeMs = 5000;
   double _manualCueMs = 0;
@@ -40,21 +42,72 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
     );
   }
 
-  Future<void> _performManualTransition(int incomingQueueIndex) async {
+  Future<void> _prepareManualDeck(int incomingQueueIndex) async {
     if (_manualTransitionBusy) return;
-    setState(() => _manualTransitionBusy = true);
+    setState(() {
+      _manualTransitionBusy = true;
+      _manualDeckPrepared = false;
+      _manualCueDirty = false;
+    });
     try {
-      await context.read<MusicProvider>().performManualDjTransition(
+      await context.read<MusicProvider>().prepareManualDjDeck(
         incomingQueueIndex: incomingQueueIndex,
-        duration: Duration(milliseconds: _manualFadeMs.round()),
         incomingStartPosition: Duration(milliseconds: _manualCueMs.round()),
       );
       if (!mounted) return;
+      setState(() => _manualDeckPrepared = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Deck B is prepared and ready.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _manualDeckPrepared = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Deck B could not be prepared: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _manualTransitionBusy = false);
+    }
+  }
+
+  Future<void> _applyManualCue() async {
+    if (_manualTransitionBusy || !_manualDeckPrepared) return;
+    setState(() => _manualTransitionBusy = true);
+    try {
+      await context.read<MusicProvider>().cuePreparedManualDjDeck(
+        Duration(milliseconds: _manualCueMs.round()),
+      );
+      if (!mounted) return;
+      setState(() => _manualCueDirty = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Deck B cue point updated.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _manualDeckPrepared = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Deck B cue update failed: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _manualTransitionBusy = false);
+    }
+  }
+
+  Future<void> _crossfadePreparedDeck() async {
+    if (_manualTransitionBusy || !_manualDeckPrepared || _manualCueDirty) return;
+    setState(() => _manualTransitionBusy = true);
+    try {
+      await context.read<MusicProvider>().crossfadePreparedManualDjDeck(
+        duration: Duration(milliseconds: _manualFadeMs.round()),
+      );
+      if (!mounted) return;
+      setState(() => _manualDeckPrepared = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Manual DJ transition completed.')),
       );
     } catch (error) {
       if (!mounted) return;
+      setState(() => _manualDeckPrepared = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Manual DJ transition was not completed: $error')),
       );
@@ -305,6 +358,8 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                               : (value) => setState(() {
                                   _selectedDeckBIndex = value;
                                   _manualCueMs = 0;
+                                  _manualDeckPrepared = false;
+                                  _manualCueDirty = false;
                                 }),
                         ),
                       const SizedBox(height: 12),
@@ -324,7 +379,10 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                         max: cueMaxMs > 0 ? cueMaxMs.toDouble() : 1,
                         onChanged: _manualTransitionBusy || cueMaxMs == 0
                             ? null
-                            : (value) => setState(() => _manualCueMs = value),
+                            : (value) => setState(() {
+                                _manualCueMs = value;
+                                if (_manualDeckPrepared) _manualCueDirty = true;
+                              }),
                       ),
                       const SizedBox(height: 14),
                       Row(children: [
@@ -344,17 +402,61 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                             ? null
                             : (value) => setState(() => _manualFadeMs = value),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
                       SizedBox(
                         width: double.infinity,
-                        child: FilledButton.icon(
+                        child: OutlinedButton.icon(
                           onPressed: selectedIndex == null ||
                                   !music.isPlaying ||
                                   _manualTransitionBusy ||
                                   music.transitionInProgress
                               ? null
-                              : () => _performManualTransition(selectedIndex),
+                              : () => _prepareManualDeck(selectedIndex),
                           icon: _manualTransitionBusy
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.queue_music_rounded),
+                          label: Text(
+                            _manualTransitionBusy
+                                ? 'Preparing Deck B…'
+                                : _manualDeckPrepared
+                                    ? 'Re-prepare Deck B'
+                                    : 'Prepare Deck B',
+                          ),
+                        ),
+                      ),
+                      if (_manualDeckPrepared) ...[
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _manualTransitionBusy || !_manualCueDirty
+                                ? null
+                                : _applyManualCue,
+                            icon: const Icon(Icons.my_location_rounded),
+                            label: Text(
+                              _manualCueDirty
+                                  ? 'Apply updated cue point'
+                                  : 'Cue point applied',
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: !_manualDeckPrepared ||
+                                  _manualCueDirty ||
+                                  !music.isPlaying ||
+                                  _manualTransitionBusy ||
+                                  music.transitionInProgress
+                              ? null
+                              : _crossfadePreparedDeck,
+                          icon: _manualTransitionBusy && _manualDeckPrepared
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
@@ -362,15 +464,15 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                                 )
                               : const Icon(Icons.swap_horiz_rounded),
                           label: Text(
-                            _manualTransitionBusy
+                            _manualTransitionBusy && _manualDeckPrepared
                                 ? 'Transition in progress…'
-                                : 'Crossfade to Deck B',
+                                : 'Crossfade prepared Deck B',
                           ),
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Deck B is prepared on Media3 standby. The manual transition takes the interactive playback lease, preempts automatic DJ execution, and waits for native deck promotion before releasing control.',
+                        'Prepare loads the incoming occurrence on muted Media3 standby. You can adjust and apply its cue before starting the crossfade. Each live operation takes the interactive playback lease; native Media3 remains responsible for the gain envelope and deck promotion.',
                         style: theme.textTheme.bodySmall,
                       ),
                     ],
