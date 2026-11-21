@@ -68,6 +68,23 @@ void main() {
       expect(state.lastUnderrunElapsedRealtimeMs, 987654);
     });
 
+    test('parses native MediaItem transition identity and reason', () {
+      final state = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'mediaId': 'track-b',
+        'lastMediaTransitionDeckId': 'B',
+        'lastMediaTransitionMediaId': 'track-b',
+        'lastMediaTransitionReason': 0,
+        'lastMediaTransitionElapsedRealtimeMs': 987700,
+        'repeatMode': 'off',
+        'crossfadeStatus': 'completed',
+      });
+
+      expect(state.lastMediaTransitionDeckId, 'B');
+      expect(state.lastMediaTransitionMediaId, 'track-b');
+      expect(state.lastMediaTransitionReason, 0);
+      expect(state.lastMediaTransitionElapsedRealtimeMs, 987700);
+    });
+
     test('parses buffering, completion, and buffered position independently', () {
       final buffering = Media3PlaybackState.fromMap(<Object?, Object?>{
         'playbackState': 2,
