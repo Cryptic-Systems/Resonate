@@ -107,7 +107,7 @@ class ResonateDiagnostics {
           final legacy = _decodeList(prefs.getString(_eventsKey));
           if (legacy.isNotEmpty) {
             await file.writeAsString(
-              '${legacy.map(jsonEncode).join('\\n')}\\n',
+              '${legacy.map(jsonEncode).join('\n')}\n',
               mode: FileMode.append,
               flush: true,
             );
@@ -117,16 +117,16 @@ class ResonateDiagnostics {
         }
         if (await file.exists()) {
           final lines = await file.readAsLines();
-        final events = <Map<String, dynamic>>[];
-        for (final line in lines) {
-          if (line.trim().isEmpty) continue;
-          try {
-            final decoded = jsonDecode(line);
-            if (decoded is Map) events.add(Map<String, dynamic>.from(decoded));
-          } catch (_) {
-            // Ignore one malformed record; later JSONL records remain usable.
+          final events = <Map<String, dynamic>>[];
+          for (final line in lines) {
+            if (line.trim().isEmpty) continue;
+            try {
+              final decoded = jsonDecode(line);
+              if (decoded is Map) events.add(Map<String, dynamic>.from(decoded));
+            } catch (_) {
+              // Ignore one malformed record; later JSONL records remain usable.
+            }
           }
-        }
           _eventLogCount = events.length;
           return events;
         }
