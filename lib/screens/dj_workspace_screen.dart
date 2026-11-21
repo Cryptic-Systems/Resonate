@@ -839,7 +839,12 @@ class _DeckVisualTile extends StatelessWidget {
         Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white60)),
         const SizedBox(height: 8),
-        Text(spectrum == null ? 'SIGNAL MAP · VISUAL GUIDE' : 'LIVE OUTPUT · 32-BAND SPECTRUM',
+        Text(
+          spectrum == null
+              ? 'SIGNAL MAP · VISUAL GUIDE'
+              : spectrum.any((value) => value.isFinite && value > 0.002)
+                  ? 'LIVE OUTPUT · 32-BAND SPECTRUM'
+                  : 'LIVE SPECTRUM · LEVELS AT FLOOR',
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
             color: Colors.white38, fontSize: 8, letterSpacing: 0.8)),
         const SizedBox(height: 3),
@@ -902,7 +907,11 @@ class _DeckWaveformState extends State<_DeckWaveform> with SingleTickerProviderS
     final progress = widget.progress.clamp(0.0, 1.0).toDouble();
     return Semantics(
       image: true,
-      label: '${widget.spectrum == null ? 'Illustrative signal guide, not measured audio waveform data.' : 'Live 32-band audio output spectrum.'} '
+      label: '${widget.spectrum == null
+          ? 'Illustrative signal guide, not measured audio waveform data.'
+          : widget.spectrum!.any((value) => value.isFinite && value > 0.002)
+              ? 'Live 32-band audio output spectrum.'
+              : 'Live 32-band audio output spectrum; current levels are at the floor.'} '
           'Playback position ${(progress * 100).round()} percent.',
       child: RepaintBoundary(
         child: AnimatedBuilder(
