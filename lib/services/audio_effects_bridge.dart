@@ -266,7 +266,36 @@ class AudioEffectsBridge {
     required double bassEnergyDb,
     double? maxSafeBassDb,
   }) async {
-    if (!const {'A', 'B'}.contains(deckId) || songId.trim().isEmpty) return false;
+    final result = await setLiveDspDeckAnalysisHintDetailed(
+      deckId: deckId,
+      songId: songId,
+      samplePeakDb: samplePeakDb,
+      truePeakDb: truePeakDb,
+      rmsDb: rmsDb,
+      crestDb: crestDb,
+      bassEnergyDb: bassEnergyDb,
+      maxSafeBassDb: maxSafeBassDb,
+    );
+    return result['ok'] == true;
+  }
+
+  /// Detailed result preserves the native registry's rejection reason.
+  static Future<Map<String, dynamic>> setLiveDspDeckAnalysisHintDetailed({
+    required String deckId,
+    required String songId,
+    required double samplePeakDb,
+    required double truePeakDb,
+    required double rmsDb,
+    required double crestDb,
+    required double bassEnergyDb,
+    double? maxSafeBassDb,
+  }) async {
+    if (!const {'A', 'B'}.contains(deckId)) {
+      return <String, dynamic>{'ok': false, 'reason': 'invalid_deck'};
+    }
+    if (songId.trim().isEmpty) {
+      return <String, dynamic>{'ok': false, 'reason': 'blank_song_id'};
+    }
     final metrics = [
       samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb,
     ];
@@ -278,7 +307,7 @@ class AudioEffectsBridge {
         bassEnergyDb < -160 || bassEnergyDb > 0.1 ||
         (maxSafeBassDb != null &&
             (!maxSafeBassDb.isFinite || maxSafeBassDb < 0 || maxSafeBassDb > 18))) {
-      return false;
+      return <String, dynamic>{'ok': false, 'reason': 'invalid_metrics'};
     }
     try {
       final raw = await _channel.invokeMethod<dynamic>('setLiveDspDeckAnalysisHint', {
@@ -291,10 +320,15 @@ class AudioEffectsBridge {
         'bassEnergyDb': bassEnergyDb,
         'maxSafeBassDb': maxSafeBassDb ?? 24.0,
       });
-      return raw is Map && raw['ok'] == true;
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+      return <String, dynamic>{'ok': false, 'reason': 'invalid_native_response'};
     } catch (e) {
       debugPrint('setLiveDspDeckAnalysisHint failed: $e');
-      return false;
+      return <String, dynamic>{
+        'ok': false,
+        'reason': 'platform_exception',
+        'error': e.toString(),
+      };
     }
   }
 
