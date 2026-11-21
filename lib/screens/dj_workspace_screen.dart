@@ -27,6 +27,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
   bool _manualTransitionBusy = false;
   int? _selectedDeckBIndex;
   double _manualFadeMs = 5000;
+  double _manualCueMs = 0;
 
   String _clock(Duration value) {
     final seconds = value.inSeconds.clamp(0, 1 << 30);
@@ -46,6 +47,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
       await context.read<MusicProvider>().performManualDjTransition(
         incomingQueueIndex: incomingQueueIndex,
         duration: Duration(milliseconds: _manualFadeMs.round()),
+        incomingStartPosition: Duration(milliseconds: _manualCueMs.round()),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -236,6 +238,14 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                 )
                     ? _selectedDeckBIndex
                     : (targets.isEmpty ? null : targets.first.key);
+                final selectedSong = selectedIndex == null
+                    ? null
+                    : music.queue[selectedIndex];
+                final cueMaxMs = selectedSong == null ||
+                        selectedSong.duration <= Duration.zero
+                    ? 0
+                    : (selectedSong.duration.inMilliseconds - 1).clamp(0, 1 << 31);
+                final cueValueMs = _manualCueMs.clamp(0.0, cueMaxMs.toDouble());
                 return ResonateGlassCard(
                   margin: EdgeInsets.zero,
                   padding: const EdgeInsets.all(14),
@@ -292,8 +302,30 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                           )).toList(growable: false),
                           onChanged: _manualTransitionBusy
                               ? null
-                              : (value) => setState(() => _selectedDeckBIndex = value),
+                              : (value) => setState(() {
+                                  _selectedDeckBIndex = value;
+                                  _manualCueMs = 0;
+                                }),
                         ),
+                      const SizedBox(height: 12),
+                      Row(children: [
+                        Text('Deck B cue-in', style: theme.textTheme.labelMedium),
+                        const Spacer(),
+                        Text(
+                          cueMaxMs == 0
+                              ? 'Start of track'
+                              : '${(cueValueMs / 1000).toStringAsFixed(2)} s',
+                          style: theme.textTheme.labelMedium,
+                        ),
+                      ]),
+                      Slider(
+                        value: cueValueMs,
+                        min: 0,
+                        max: cueMaxMs > 0 ? cueMaxMs.toDouble() : 1,
+                        onChanged: _manualTransitionBusy || cueMaxMs == 0
+                            ? null
+                            : (value) => setState(() => _manualCueMs = value),
+                      ),
                       const SizedBox(height: 14),
                       Row(children: [
                         Text('Crossfade duration', style: theme.textTheme.labelMedium),
