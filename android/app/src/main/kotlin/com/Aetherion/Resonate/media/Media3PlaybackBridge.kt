@@ -729,6 +729,7 @@ class Media3PlaybackBridge(
         "crossfadeProgress" to (crossfade["progress"] ?: 0f),
         "activeDeckVolume" to (crossfade["activeVolume"] ?: player.volume),
         "standbyDeckVolume" to (crossfade["incomingVolume"] ?: 0f),
+        "audioDiagnostics" to Media3PlaybackService.instance?.audioDiagnosticsState(),
         "hasError" to (player.playerError != null),
         "error" to player.playerError?.message,
         )
