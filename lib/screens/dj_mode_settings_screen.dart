@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/dj_mode_provider.dart';
 import '../dj_engine/core/dj_policy.dart';
 import 'dj_transition_studio_screen.dart';
+import 'dj_workspace_screen.dart';
 
 /// Settings surface for optional DJ Mode (Intelligence-style master switch).
 class DjModeSettingsScreen extends StatelessWidget {
@@ -57,6 +58,20 @@ class DjModeSettingsScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
+              ResonateGlassCard(
+                margin: EdgeInsets.zero,
+                padding: EdgeInsets.zero,
+                child: ListTile(
+                  leading: Icon(Icons.graphic_eq_rounded, color: scheme.primary),
+                  title: const Text('Open DJ Workspace', style: TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: const Text('Live session overview, transition preparation and DJ set planning.'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const DjWorkspaceScreen()),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
               ResonateGlassCard(
                 margin: EdgeInsets.zero,
                 padding: EdgeInsets.zero,
