@@ -232,6 +232,10 @@ class MusicProvider extends ChangeNotifier {
   // Repeat changes are optimistic for responsive controls, but native writes
   // are serialized so an older in-flight command cannot overwrite a newer tap.
   int _repeatModeCommandGeneration = 0;
+  // While a local repeat write is queued/in flight, state-stream snapshots may
+  // still carry the previous native value. They must not overwrite the latest
+  // user intent before its serialized command has reached Media3.
+  int _repeatModeCommandPendingGeneration = 0;
   Future<void> _repeatModeCommandTail = Future<void>.value();
   final CrossfadeRuntime _crossfadeRuntime = CrossfadeRuntime();
   /// Compatibility aliases — in-flight crossfade state lives in [_crossfadeRuntime].
@@ -1160,6 +1164,7 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> setRepeatMode(PlaybackRepeatMode mode) async {
     if (_repeatMode == mode) return;
+    final previousMode = _repeatMode;
     final transitionActive = _crossfadeInProgress ||
         _automaticCrossfadeInFlight ||
         _repeatSelfHandoffInFlight ||
@@ -1196,6 +1201,19 @@ class MusicProvider extends ChangeNotifier {
     // cycle from the latest user intent rather than a stale acknowledged mode.
     _repeatMode = mode;
     final generation = ++_repeatModeCommandGeneration;
+    _repeatModeCommandPendingGeneration = generation;
+    unawaited(ResonateDiagnostics.record('repeat_mode_command_requested', {
+      'previousMode': previousMode.name,
+      'requestedMode': mode.name,
+      'generation': generation,
+      'songId': currentSong?.id,
+      'queueIndex': _queueIndex,
+      'positionMs': currentPosition.inMilliseconds,
+      'crossfadeInProgress': _crossfadeInProgress,
+      'automaticCrossfadeInFlight': _automaticCrossfadeInFlight,
+      'repeatSelfFadeExecuting': _repeatSelfFadeExecuting,
+      'activeDeckId': _media3ShadowState?.activeDeckId,
+    }));
     notifyListeners();
 
     // Keep native writes ordered. If a newer tap arrives while an older
@@ -1203,24 +1221,38 @@ class MusicProvider extends ChangeNotifier {
     // is already in flight, the newer command runs after it and wins.
     final previousCommand = _repeatModeCommandTail;
     final command = previousCommand.catchError((Object _) {}).then((_) async {
-      if (_disposed || generation != _repeatModeCommandGeneration) return;
-      // Keep repeat-policy writes off the active deck while a same-track
-      // handoff is audible. The handoff finalizer drains this command lane and
-      // reapplies the latest provider mode to the promoted deck. Persist the
-      // requested preference now so the UI and saved setting remain immediate.
-      if (_media3ProviderSession != null && !repeatSelfFadeInProgress) {
-        final session = await _ensureMedia3ProviderSessionActive();
+      try {
         if (_disposed || generation != _repeatModeCommandGeneration) return;
-        await session!.setRepeatMode(switch (mode) {
-          PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
-          PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
-          PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
-        });
+        // Keep repeat-policy writes off the active deck while a same-track
+        // handoff is audible. The handoff finalizer drains this command lane and
+        // reapplies the latest provider mode to the promoted deck. Persist the
+        // requested preference now so the UI and saved setting remain immediate.
+        if (_media3ProviderSession != null && !repeatSelfFadeInProgress) {
+          final session = await _ensureMedia3ProviderSessionActive();
+          if (_disposed || generation != _repeatModeCommandGeneration) return;
+          await session!.setRepeatMode(switch (mode) {
+            PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
+            PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
+            PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
+          });
+        }
+        if (_disposed || generation != _repeatModeCommandGeneration) return;
+        await _persistPlaybackModes();
+        if (_disposed || generation != _repeatModeCommandGeneration) return;
+        unawaited(_synchronizeModePlaybackBoundary());
+        unawaited(ResonateDiagnostics.record('repeat_mode_command_completed', {
+          'mode': mode.name,
+          'generation': generation,
+          'songId': currentSong?.id,
+          'positionMs': currentPosition.inMilliseconds,
+          'activeDeckId': _media3ShadowState?.activeDeckId,
+          'nativeWriteDeferredForSelfFade': repeatSelfFadeInProgress,
+        }));
+      } finally {
+        if (_repeatModeCommandPendingGeneration == generation) {
+          _repeatModeCommandPendingGeneration = 0;
+        }
       }
-      if (_disposed || generation != _repeatModeCommandGeneration) return;
-      await _persistPlaybackModes();
-      if (_disposed || generation != _repeatModeCommandGeneration) return;
-      unawaited(_synchronizeModePlaybackBoundary());
     });
     _repeatModeCommandTail = command;
     await command;
