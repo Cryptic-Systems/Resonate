@@ -3631,6 +3631,11 @@ void main() {
         expect(session.crossfadeStatus, 'ready');
         final playCallsAfterPrepare =
             session.calls.where((call) => call == 'play').length;
+        // Preparing a manual deck may first cancel a stale/previous preload.
+        // Only cancellations added by the rejected automatic acquisition
+        // would indicate that automatic DJ displaced this prepared deck.
+        final cancelCallsAfterPrepare =
+            session.calls.where((call) => call == 'cancelCrossfade').length;
 
         final automaticLease = await arbiter.acquire(
           owner: 'dj_automatic_test',
@@ -3642,7 +3647,11 @@ void main() {
           reason: 'Automatic DJ must not replace a manually prepared standby deck.',
         );
         expect(provider.hasPreparedManualDjDeck, isTrue);
-        expect(session.calls, isNot(contains('cancelCrossfade')));
+        expect(
+          session.calls.where((call) => call == 'cancelCrossfade').length,
+          cancelCallsAfterPrepare,
+          reason: 'A denied automatic lease must not cancel the manually prepared standby deck.',
+        );
 
         final userLease = await arbiter.acquire(
           owner: 'user_transport_test',
