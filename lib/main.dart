@@ -263,6 +263,18 @@ Future<void> main() async {
     return false; // Keep the platform's normal uncaught-error handling.
   };
 
+  // Preserve normal console output while adding a sanitized local copy to the
+  // flight recorder. This captures plugin/native warnings routed via debugPrint.
+  final originalDebugPrint = debugPrint;
+  debugPrint = (message, {wrapWidth}) {
+    originalDebugPrint(message, wrapWidth: wrapWidth);
+    if (message != null && message.trim().isNotEmpty) {
+      unawaited(ResonateDiagnostics.record('debug_log', {
+        'message': message,
+      }));
+    }
+  };
+
   await ResonateDiagnostics.record('app_started', {
     'buildMode': kDebugMode ? 'debug' : kProfileMode ? 'profile' : 'release',
     'platform': defaultTargetPlatform.name,
@@ -502,6 +514,11 @@ class _LifecycleHomeState extends State<_LifecycleHome>
     _wasLibraryScanning = library.isScanning;
     _lastLibrarySongCount = count;
     if (!scanFinished && !libraryChanged) return;
+    unawaited(ResonateDiagnostics.record('library_scan_state', {
+      'songCount': count,
+      'scanFinished': scanFinished,
+      'isScanning': library.isScanning,
+    }));
     try {
       context.read<DjModeProvider>().onAnalysisOpportunity('library_changed');
     } catch (_) {}
@@ -516,6 +533,11 @@ class _LifecycleHomeState extends State<_LifecycleHome>
     final signature = _bluetoothSignature(bluetooth);
     if (signature == _lastBluetoothSignature) return;
     _lastBluetoothSignature = signature;
+    unawaited(ResonateDiagnostics.record('audio_route_state_changed', {
+      'bluetoothConnected': bluetooth.bluetoothConnected,
+      'deviceNamePresent': (bluetooth.connectedDeviceName ?? '').isNotEmpty,
+      'audioContext': bluetooth.audioContext.name,
+    }));
     try {
       context.read<DjModeProvider>().onAnalysisOpportunity('audio_route_changed');
     } catch (_) {}
