@@ -341,10 +341,12 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackStandbyCue
   Future<void> seekStandby({
     required Duration position,
     required String expectedMediaId,
+    required int expectedQueueIndex,
   }) =>
       _runtime.seekStandby(
         position: position,
         expectedMediaId: expectedMediaId,
+        expectedQueueIndex: expectedQueueIndex,
       );
 
   @override
