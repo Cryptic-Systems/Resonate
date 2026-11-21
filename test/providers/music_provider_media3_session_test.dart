@@ -3734,6 +3734,76 @@ void main() {
       }
     });
 
+    test('manual DJ queue removal invalidates a preload that is still in flight', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-inflight-remove-outgoing');
+      final incoming = _song('manual-inflight-remove-incoming');
+      final tail = _song('manual-inflight-remove-tail');
+      final preloadGate = Completer<void>();
+      session.preloadNextGate = preloadGate;
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(
+          await provider.playSong(
+            outgoing,
+            queue: <Song>[outgoing, incoming, tail],
+          ),
+          isTrue,
+        );
+
+        final preparation = provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        for (var attempt = 0;
+            attempt < 50 &&
+                !session.calls.any((call) => call.startsWith('preloadNext:'));
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+        expect(
+          session.calls.any((call) => call.startsWith('preloadNext:')),
+          isTrue,
+          reason: 'The manual standby preload must be in flight before editing the queue.',
+        );
+        expect(arbiter.activeOwner, 'dj_manual_transition');
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+
+        expect(await provider.removeFromQueue(1), isTrue);
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(
+          arbiter.activeOwner,
+          'dj_manual_transition',
+          reason: 'The in-flight operation retains authority until it can clean up safely.',
+        );
+        expect(session.calls, contains('cancelCrossfade'));
+
+        preloadGate.complete();
+        await expectLater(preparation, throwsStateError);
+
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(arbiter.activeOwner, isNull);
+        expect(session.calls, contains('clearDeckEqOverlay:standby'));
+        expect(session.crossfadeCancelled, isTrue);
+        expect(provider.currentSong?.id, outgoing.id);
+        expect(
+          provider.queue.map((song) => song.id).toList(),
+          <String>[outgoing.id, tail.id],
+        );
+      } finally {
+        if (!preloadGate.isCompleted) preloadGate.complete();
+        await provider.cancelPreparedManualDjDeck();
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+        await arbiter.close();
+      }
+    });
+
     test('manual DJ preparation is retired when its incoming queue occurrence is removed', () async {
       final session = _FakePlaybackSession();
       final arbiter = PlaybackControlArbiter();
