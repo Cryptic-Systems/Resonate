@@ -79,6 +79,10 @@ class Media3PlaybackService : MediaSessionService() {
     @Volatile private var lastUnderrunBufferSizeMs: Long = 0L
     @Volatile private var lastUnderrunElapsedSinceFeedMs: Long = 0L
     @Volatile private var lastUnderrunElapsedRealtimeMs: Long = 0L
+    @Volatile private var lastMediaTransitionDeckId: String? = null
+    @Volatile private var lastMediaTransitionMediaId: String? = null
+    @Volatile private var lastMediaTransitionReason: Int = -1
+    @Volatile private var lastMediaTransitionElapsedRealtimeMs: Long = 0L
 
     fun audioDiagnosticsState(): Map<String, Any?> = synchronized(audioDiagnosticsLock) {
         mapOf(
@@ -519,6 +523,10 @@ class Media3PlaybackService : MediaSessionService() {
                     deck === standbyPlayer -> standbyDeckId()
                     else -> null
                 }
+                lastMediaTransitionDeckId = physicalDeckId ?: deckId
+                lastMediaTransitionMediaId = mediaItem?.mediaId
+                lastMediaTransitionReason = reason
+                lastMediaTransitionElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime()
                 if (physicalDeckId != null) {
                     DspEngineRegistry.setDeckTrack(physicalDeckId, mediaItem?.mediaId)
                 }
@@ -1037,6 +1045,10 @@ class Media3PlaybackService : MediaSessionService() {
         "incomingPositionMs" to (standbyPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L),
         "activeVolume" to activePlayer.volume,
         "incomingVolume" to (standbyPlayer?.volume ?: 0f),
+        "lastMediaTransitionDeckId" to lastMediaTransitionDeckId,
+        "lastMediaTransitionMediaId" to lastMediaTransitionMediaId,
+        "lastMediaTransitionReason" to lastMediaTransitionReason,
+        "lastMediaTransitionElapsedRealtimeMs" to lastMediaTransitionElapsedRealtimeMs,
     )
 
     private var isDestroyed = false
