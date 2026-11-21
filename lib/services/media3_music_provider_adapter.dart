@@ -312,9 +312,11 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
   Future<void> seekStandby({
     required Duration position,
     required String expectedMediaId,
+    required int expectedQueueIndex,
   }) => _client.seekStandby(
         position: position,
         expectedMediaId: expectedMediaId,
+        expectedQueueIndex: expectedQueueIndex,
       );
 
   @override
