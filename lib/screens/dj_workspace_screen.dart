@@ -797,6 +797,7 @@ class _DeckVisualTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final liveSpectrum = spectrum;
     final title = song?.title ?? (isActive ? 'No active track' : 'Choose incoming track');
     final artist = song?.artist ?? (isActive ? 'Start playback to activate' : 'Deck is empty');
     return AnimatedContainer(
@@ -840,9 +841,9 @@ class _DeckVisualTile extends StatelessWidget {
           style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white60)),
         const SizedBox(height: 8),
         Text(
-          spectrum == null
+          liveSpectrum == null
               ? 'SIGNAL MAP · VISUAL GUIDE'
-              : spectrum.any((value) => value.isFinite && value > 0.002)
+              : liveSpectrum.any((value) => value.isFinite && value > 0.002)
                   ? 'LIVE OUTPUT · 32-BAND SPECTRUM'
                   : 'LIVE SPECTRUM · LEVELS AT FLOOR',
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -850,7 +851,7 @@ class _DeckVisualTile extends StatelessWidget {
         const SizedBox(height: 3),
         SizedBox(height: 58, width: double.infinity, child: _DeckWaveform(
           seed: song?.id ?? deckLabel, progress: progress, color: accent,
-          spectrum: spectrum, animate: isPlaying && isActive && spectrum == null)),
+          spectrum: liveSpectrum, animate: isPlaying && isActive && liveSpectrum == null)),
         const SizedBox(height: 3),
         Row(children: [
           Text(_clock(position),
@@ -905,11 +906,15 @@ class _DeckWaveformState extends State<_DeckWaveform> with SingleTickerProviderS
   @override
   Widget build(BuildContext context) {
     final progress = widget.progress.clamp(0.0, 1.0).toDouble();
+    final liveSpectrum = widget.spectrum;
+    final hasLiveActivity = liveSpectrum?.any(
+          (value) => value.isFinite && value > 0.002) ??
+        false;
     return Semantics(
       image: true,
-      label: '${widget.spectrum == null
+      label: '${liveSpectrum == null
           ? 'Illustrative signal guide, not measured audio waveform data.'
-          : widget.spectrum!.any((value) => value.isFinite && value > 0.002)
+          : hasLiveActivity
               ? 'Live 32-band audio output spectrum.'
               : 'Live 32-band audio output spectrum; current levels are at the floor.'} '
           'Playback position ${(progress * 100).round()} percent.',
