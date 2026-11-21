@@ -3734,6 +3734,106 @@ void main() {
       }
     });
 
+    test('manual DJ preparation is retired when its incoming queue occurrence is removed', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-remove-outgoing');
+      final incoming = _song('manual-remove-incoming');
+      final tail = _song('manual-remove-tail');
+
+      try {
+        expect(
+          await provider.playSong(
+            outgoing,
+            queue: <Song>[outgoing, incoming, tail],
+          ),
+          isTrue,
+        );
+        await provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        expect(provider.hasPreparedManualDjDeck, isTrue);
+        expect(arbiter.activeOwner, 'dj_manual_transition');
+
+        expect(await provider.removeFromQueue(1), isTrue);
+        for (var attempt = 0;
+            attempt < 50 && provider.hasPreparedManualDjDeck;
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(arbiter.activeOwner, isNull);
+        expect(session.calls, contains('cancelCrossfade'));
+        expect(session.calls, contains('clearDeckEqOverlay:standby'));
+        expect(provider.currentSong?.id, outgoing.id);
+        expect(
+          provider.queue.map((song) => song.id).toList(),
+          <String>[outgoing.id, tail.id],
+        );
+      } finally {
+        await provider.cancelPreparedManualDjDeck();
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+        await arbiter.close();
+      }
+    });
+
+    test('manual DJ preparation is retired when its incoming queue occurrence is reordered', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-reorder-outgoing');
+      final incoming = _song('manual-reorder-incoming');
+      final tail = _song('manual-reorder-tail');
+
+      try {
+        expect(
+          await provider.playSong(
+            outgoing,
+            queue: <Song>[outgoing, incoming, tail],
+          ),
+          isTrue,
+        );
+        await provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        expect(provider.hasPreparedManualDjDeck, isTrue);
+        expect(arbiter.activeOwner, 'dj_manual_transition');
+
+        // Move the prepared occurrence behind the tail. Its queue index and
+        // ordering no longer match the reviewed standby identity.
+        expect(await provider.reorderQueue(1, 3), isTrue);
+        for (var attempt = 0;
+            attempt < 50 && provider.hasPreparedManualDjDeck;
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(arbiter.activeOwner, isNull);
+        expect(session.calls, contains('cancelCrossfade'));
+        expect(session.calls, contains('clearDeckEqOverlay:standby'));
+        expect(provider.currentSong?.id, outgoing.id);
+        expect(
+          provider.queue.map((song) => song.id).toList(),
+          <String>[outgoing.id, tail.id, incoming.id],
+        );
+      } finally {
+        await provider.cancelPreparedManualDjDeck();
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+        await arbiter.close();
+      }
+    });
+
     test('manual standby lease blocks automatic replacement and cleans up on user preemption', () async {
       final session = _FakePlaybackSession();
       final arbiter = PlaybackControlArbiter();
