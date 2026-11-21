@@ -323,6 +323,9 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
               const SizedBox(height: 8),
               Builder(builder: (context) {
                 final manualDeckPrepared = music.hasPreparedManualDjDeck;
+                final deckState = music.media3ShadowState;
+                final activeDeckId = deckState?.activeDeckId ?? "A";
+                final standbyDeckId = activeDeckId == "A" ? "B" : "A";
                 final targets = music.queue.asMap().entries
                     .where((entry) => entry.key != music.queueIndex)
                     .toList(growable: false);
@@ -339,6 +342,15 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                     ? 0
                     : (selectedSong.duration.inMilliseconds - 1).clamp(0, 1 << 31);
                 final cueValueMs = _manualCueMs.clamp(0.0, cueMaxMs.toDouble());
+                final incomingIdentityMatches = selectedSong != null &&
+                    deckState?.incomingMediaId == selectedSong.id;
+                final standbyStateLabel = deckState?.incomingReady == true
+                    ? "Ready"
+                    : deckState?.incomingMediaId != null
+                        ? "Loaded · preparing"
+                        : deckState?.crossfadeStatus == "preparing"
+                            ? "Preparing"
+                            : "Empty";
                 return ResonateGlassCard(
                   margin: EdgeInsets.zero,
                   padding: const EdgeInsets.all(14),
@@ -348,7 +360,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                       Row(children: [
                         const Icon(Icons.speaker_group_rounded),
                         const SizedBox(width: 8),
-                        Text('DECK A', style: theme.textTheme.labelLarge),
+                        Text('LIVE OUTPUT · DECK $activeDeckId', style: theme.textTheme.labelLarge),
                         const Spacer(),
                         const _StatusPill(label: 'Live output', active: true),
                       ]),
@@ -369,8 +381,31 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                       Row(children: [
                         const Icon(Icons.queue_music_rounded),
                         const SizedBox(width: 8),
-                        Text('DECK B · STANDBY', style: theme.textTheme.labelLarge),
+                        Text('STANDBY · DECK $standbyDeckId', style: theme.textTheme.labelLarge),
                       ]),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Standby: $standbyStateLabel · Gain ${((deckState?.standbyDeckVolume ?? 0.0) * 100).round()}%',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      Text(
+                        'Live gain: ${((deckState?.activeDeckVolume ?? 1.0) * 100).round()}%',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      if (deckState?.incomingMediaId != null) ...[
+                        Text(
+                          incomingIdentityMatches
+                              ? 'Loaded: ${selectedSong!.title} · ${selectedSong.artist}'
+                              : 'Loaded media ID differs from the selected track.',
+                          style: theme.textTheme.bodySmall,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          'Standby position: ${(deckState?.incomingPosition.inMilliseconds ?? 0) ~/ 1000}s',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       if (targets.isEmpty)
                         Text(
