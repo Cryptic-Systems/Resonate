@@ -42,6 +42,7 @@ class Media3PlaybackState {
     this.lastMediaTransitionDeckId,
     this.lastMediaTransitionMediaId,
     this.lastMediaTransitionReason = -1,
+    this.lastMediaTransitionReasonName = 'unknown',
     this.lastMediaTransitionElapsedRealtimeMs = 0,
     required this.hasError,
     required this.error,
@@ -85,6 +86,7 @@ class Media3PlaybackState {
   final String? lastMediaTransitionDeckId;
   final String? lastMediaTransitionMediaId;
   final int lastMediaTransitionReason;
+  final String lastMediaTransitionReasonName;
   final int lastMediaTransitionElapsedRealtimeMs;
   final bool hasError;
   final String? error;
@@ -161,6 +163,7 @@ class Media3PlaybackState {
       lastMediaTransitionDeckId: stringValue(map['lastMediaTransitionDeckId']),
       lastMediaTransitionMediaId: stringValue(map['lastMediaTransitionMediaId']),
       lastMediaTransitionReason: integerValue(map['lastMediaTransitionReason'], -1),
+      lastMediaTransitionReasonName: stringValue(map['lastMediaTransitionReasonName']) ?? 'unknown',
       lastMediaTransitionElapsedRealtimeMs: integerValue(map['lastMediaTransitionElapsedRealtimeMs']),
       hasError: boolValue(map['hasError']),
       error: stringValue(map['error']),
@@ -203,6 +206,7 @@ class Media3PlaybackClient {
           'deckId': state.lastMediaTransitionDeckId,
           'mediaId': state.lastMediaTransitionMediaId,
           'reasonCode': state.lastMediaTransitionReason,
+          'reason': state.lastMediaTransitionReasonName,
           'nativeElapsedRealtimeMs': state.lastMediaTransitionElapsedRealtimeMs,
           'positionMs': state.position.inMilliseconds,
           'activeDeckId': state.activeDeckId,
