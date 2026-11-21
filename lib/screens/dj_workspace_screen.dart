@@ -367,8 +367,14 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                 final deckState = music.media3ShadowState;
                 final activeDeckId = deckState?.activeDeckId ?? "A";
                 final standbyDeckId = activeDeckId == "A" ? "B" : "A";
+                // Keep the selector aligned with Media3's exact queue
+                // eligibility rule. The native adapter filters empty paths;
+                // exposing those rows here would let the operator select an
+                // occurrence that can never become a standby deck.
                 final targets = music.queue.asMap().entries
-                    .where((entry) => entry.key != music.queueIndex)
+                    .where((entry) =>
+                        entry.key != music.queueIndex &&
+                        entry.value.filePath.trim().isNotEmpty)
                     .toList(growable: false);
                 final selectedIndex = targets.any(
                   (entry) => entry.key == _selectedDeckBIndex,
@@ -508,7 +514,9 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                       const SizedBox(height: 8),
                       if (targets.isEmpty)
                         Text(
-                          'Add another track to the active queue to prepare Deck B.',
+                          music.queue.length <= 1
+                              ? 'Add another playable track to the active queue to prepare Deck B.'
+                              : 'No other playable queue entries are available for Deck B.',
                           style: theme.textTheme.bodySmall,
                         )
                       else
