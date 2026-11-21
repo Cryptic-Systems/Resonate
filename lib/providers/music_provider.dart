@@ -1180,13 +1180,33 @@ class MusicProvider extends ChangeNotifier {
     // and create an audible gain discontinuity.
     final repeatSelfFadeInProgress = _repeatSelfFadeExecuting ||
         (_repeatSelfHandoffInFlight && _crossfadeInProgress);
-    if (transitionActive && !repeatSelfFadeInProgress) {
-      _cancelAutomaticPlaybackWork();
+    // Media3 can promote the incoming deck just before its state stream reaches
+    // Flutter. During that narrow window the provider still owns transition
+    // flags and the preload identity, but cancelling native crossfade cleanup
+    // would tear down an already-committed handoff. Let its finalizer complete.
+    final media3CrossfadeAlreadyPromoted = _media3ProviderSessionActive &&
+        _preloadedNextSongId != null &&
+        (_media3ProviderSession?.currentSong?.id == _preloadedNextSongId ||
+            _media3ProviderSession?.crossfadeStatus == 'completed');
+    if (transitionActive &&
+        !repeatSelfFadeInProgress &&
+        !media3CrossfadeAlreadyPromoted) {
+      _cancelAutomaticPlaybackWork(reason: 'repeat_mode_changed_during_transition');
     } else if (repeatSelfFadeInProgress) {
       unawaited(ResonateDiagnostics.record('repeat_mode_change_deferred', {
         'reason': 'repeat_self_fade_already_started',
         'mode': mode.name,
         'songId': currentSong?.id,
+      }));
+    } else if (media3CrossfadeAlreadyPromoted) {
+      unawaited(ResonateDiagnostics.record('repeat_mode_change_after_media3_promotion', {
+        'mode': mode.name,
+        'songId': currentSong?.id,
+        'promotedSongId': _media3ProviderSession?.currentSong?.id,
+        'preloadedSongId': _preloadedNextSongId,
+        'activeDeckId': _media3ShadowState?.activeDeckId,
+        'crossfadeStatus': _media3ProviderSession?.crossfadeStatus,
+        'positionMs': _media3ProviderSession?.position.inMilliseconds,
       }));
     }
     _repeatSelfDjPlanGeneration++;
@@ -4498,6 +4518,27 @@ class MusicProvider extends ChangeNotifier {
   void _cancelAutomaticPlaybackWork({String reason = 'manual_transport_preemption'}) {
     // Invalidate all in-flight automatic A/B work before starting the user's
     // transport operation. Old futures may still unwind, but cannot commit.
+    unawaited(ResonateDiagnostics.record('automatic_playback_cancel_requested', {
+      'reason': reason,
+      'songId': currentSong?.id,
+      'queueIndex': _queueIndex,
+      'queueLength': _queue.length,
+      'positionMs': currentPosition.inMilliseconds,
+      'repeatMode': _repeatMode.name,
+      'crossfadeInProgress': _crossfadeInProgress,
+      'automaticCrossfadeInFlight': _automaticCrossfadeInFlight,
+      'crossfadePreloadInFlight': _crossfadePreloadInFlight,
+      'preloadedNextSongId': _preloadedNextSongId,
+      'repeatSelfHandoffArmed': _repeatSelfHandoffArmed,
+      'repeatSelfHandoffInFlight': _repeatSelfHandoffInFlight,
+      'activeDeckId': _media3ShadowState?.activeDeckId,
+      'media3CrossfadeStatus': _media3ProviderSession?.crossfadeStatus,
+      'media3SongId': _media3ProviderSession?.currentSong?.id,
+      'media3PositionMs': _media3ProviderSession?.position.inMilliseconds,
+      'media3RepeatMode': _media3ShadowState?.repeatMode,
+      'userTransportEpoch': _userTransportEpoch,
+      'automaticTransitionGeneration': _automaticTransitionGeneration,
+    }));
     final hadRepeatSelfHandoff = _repeatSelfHandoffArmed || _repeatSelfHandoffInFlight;
     _repeatSelfGeneration++;
     _userTransportEpoch++;
