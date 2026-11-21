@@ -364,7 +364,10 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                         activeDeckId: activeDeckId,
                         activeProgress: progress,
                         activePosition: music.currentPosition,
-                        standbyPosition: deckState?.incomingPosition ?? Duration.zero,
+                        activeDuration: duration,
+                        standbyPosition: incomingIdentityMatches
+                            ? (deckState?.incomingPosition ?? Duration.zero)
+                            : Duration.zero,
                         standbyReady: deckState?.incomingReady == true && incomingIdentityMatches,
                         isPlaying: music.isPlaying,
                         transitionActive: music.transitionInProgress,
@@ -642,7 +645,8 @@ class _DeckPerformancePanel extends StatelessWidget {
   const _DeckPerformancePanel({
     required this.activeSong, required this.standbySong,
     required this.activeDeckId, required this.activeProgress,
-    required this.activePosition, required this.standbyPosition, required this.standbyReady,
+    required this.activePosition, required this.activeDuration,
+    required this.standbyPosition, required this.standbyReady,
     required this.isPlaying, required this.transitionActive,
   });
 
@@ -651,6 +655,7 @@ class _DeckPerformancePanel extends StatelessWidget {
   final String activeDeckId;
   final double activeProgress;
   final Duration activePosition;
+  final Duration activeDuration;
   final Duration standbyPosition;
   final bool standbyReady;
   final bool isPlaying;
@@ -690,7 +695,7 @@ class _DeckPerformancePanel extends StatelessWidget {
           Expanded(child: _DeckVisualTile(
             deckLabel: 'DECK ' + activeDeckId, role: 'ON AIR',
             song: activeSong, accent: activeColor, progress: activeProgress,
-            duration: activeSong?.duration ?? Duration.zero,
+            duration: activeDuration,
             position: activePosition,
             isActive: true, isReady: activeSong != null, isPlaying: isPlaying,
           )),
