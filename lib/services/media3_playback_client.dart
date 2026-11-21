@@ -36,6 +36,7 @@ class Media3PlaybackState {
     this.audioUnderrunCountA = 0,
     this.audioUnderrunCountB = 0,
     this.lastUnderrunDeck,
+    this.lastUnderrunBufferSizeFrames = 0,
     this.lastUnderrunBufferSizeMs = 0,
     this.lastUnderrunElapsedSinceFeedMs = 0,
     this.lastUnderrunElapsedRealtimeMs = 0,
@@ -84,6 +85,7 @@ class Media3PlaybackState {
   final int audioUnderrunCountA;
   final int audioUnderrunCountB;
   final String? lastUnderrunDeck;
+  final int lastUnderrunBufferSizeFrames;
   final int lastUnderrunBufferSizeMs;
   final int lastUnderrunElapsedSinceFeedMs;
   final int lastUnderrunElapsedRealtimeMs;
@@ -165,6 +167,7 @@ class Media3PlaybackState {
       audioUnderrunCountA: integerValue(audioDiagnostics['underrunCountA']),
       audioUnderrunCountB: integerValue(audioDiagnostics['underrunCountB']),
       lastUnderrunDeck: stringValue(audioDiagnostics['lastUnderrunDeck']),
+      lastUnderrunBufferSizeFrames: integerValue(audioDiagnostics['lastUnderrunBufferSizeFrames']),
       lastUnderrunBufferSizeMs: integerValue(audioDiagnostics['lastUnderrunBufferSizeMs']),
       lastUnderrunElapsedSinceFeedMs: integerValue(audioDiagnostics['lastUnderrunElapsedSinceFeedMs']),
       lastUnderrunElapsedRealtimeMs: integerValue(audioDiagnostics['lastUnderrunElapsedRealtimeMs']),
@@ -262,6 +265,7 @@ class Media3PlaybackClient {
           'totalCountA': state.audioUnderrunCountA,
           'totalCountB': state.audioUnderrunCountB,
           'lastDeck': state.lastUnderrunDeck,
+          'bufferSizeFrames': state.lastUnderrunBufferSizeFrames,
           'bufferSizeMs': state.lastUnderrunBufferSizeMs,
           'elapsedSinceLastFeedMs': state.lastUnderrunElapsedSinceFeedMs,
           'nativeElapsedRealtimeMs': state.lastUnderrunElapsedRealtimeMs,
