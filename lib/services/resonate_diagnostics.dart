@@ -102,8 +102,21 @@ class ResonateDiagnostics {
   ) async {
     try {
       final file = await _eventLogFile();
-      if (file != null && await file.exists()) {
-        final lines = await file.readAsLines();
+      if (file != null) {
+        if (prefs.getBool(_eventsMigratedKey) != true) {
+          final legacy = _decodeList(prefs.getString(_eventsKey));
+          if (legacy.isNotEmpty) {
+            await file.writeAsString(
+              '${legacy.map(jsonEncode).join('\\n')}\\n',
+              mode: FileMode.append,
+              flush: true,
+            );
+          }
+          await prefs.remove(_eventsKey);
+          await prefs.setBool(_eventsMigratedKey, true);
+        }
+        if (await file.exists()) {
+          final lines = await file.readAsLines();
         final events = <Map<String, dynamic>>[];
         for (final line in lines) {
           if (line.trim().isEmpty) continue;
@@ -114,8 +127,11 @@ class ResonateDiagnostics {
             // Ignore one malformed record; later JSONL records remain usable.
           }
         }
-        _eventLogCount = events.length;
-        return events;
+          _eventLogCount = events.length;
+          return events;
+        }
+        _eventLogCount = 0;
+        return <Map<String, dynamic>>[];
       }
     } catch (_) {}
     return _decodeList(prefs.getString(_eventsKey));
