@@ -124,6 +124,7 @@ class MusicProvider extends ChangeNotifier {
   ManualDjPreparedDeck? _manualDjPreparingDeck;
   PlaybackControlLease? _manualDjPreparingLease;
   Completer<void>? _manualDjPreparationDone;
+  Completer<void>? _manualDjPreparationSettled;
   bool _manualDjPreparationInvalidated = false;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
   bool get media3ProviderSessionActive => _media3ProviderSessionActive;
