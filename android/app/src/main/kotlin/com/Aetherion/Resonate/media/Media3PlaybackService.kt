@@ -536,8 +536,15 @@ class Media3PlaybackService : MediaSessionService() {
                 // incoming deck on those transitions so an old crossfade can
                 // never promote stale queue content over the user's selection.
                 if (deck === activePlayer) {
-                    clearPreload()
-                    stopTransitionPreview()
+                    val preserveIncomingForFade = Media3PreloadInvalidationPolicy
+                        .preserveIncomingOnAutomaticTransition(
+                            crossfadeStatus = crossfadeStatus,
+                            isAutomaticTransition = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO,
+                        )
+                    if (!preserveIncomingForFade) {
+                        clearPreload()
+                        stopTransitionPreview()
+                    }
                 }
             }
 
