@@ -3680,6 +3680,64 @@ void main() {
       }
     });
 
+    test('provider disposal retires manual standby and releases external arbiter lease', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-dispose-outgoing');
+      final incoming = _song('manual-dispose-incoming');
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(
+          await provider.playSong(outgoing, queue: <Song>[outgoing, incoming]),
+          isTrue,
+        );
+        await provider.prepareManualDjDeck(incomingQueueIndex: 1);
+
+        expect(provider.hasPreparedManualDjDeck, isTrue);
+        expect(arbiter.activeOwner, 'dj_manual_transition');
+
+        provider.dispose();
+
+        expect(
+          provider.hasPreparedManualDjDeck,
+          isFalse,
+          reason: 'Disposal must synchronously invalidate the UI-facing prepared state.',
+        );
+        for (var attempt = 0; attempt < 50; attempt++) {
+          if (arbiter.activeOwner == null && session.disposed) break;
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+
+        expect(session.calls, contains('cancelCrossfade'));
+        expect(session.calls, contains('clearDeckEqOverlay:standby'));
+        expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+        expect(arbiter.activeOwner, isNull);
+        expect(session.disposed, isTrue);
+        expect(
+          arbiter.isClosed,
+          isFalse,
+          reason: 'An injected arbiter remains owned by its caller after provider disposal.',
+        );
+
+        final replacementLease = await arbiter.acquire(
+          owner: 'post_disposal_controller',
+          priority: PlaybackControlPriority.automatic,
+        );
+        expect(replacementLease, isNotNull);
+        await replacementLease!.release();
+      } finally {
+        provider.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
   });
 }
 
