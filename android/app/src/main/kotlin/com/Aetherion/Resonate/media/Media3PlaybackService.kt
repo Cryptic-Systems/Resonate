@@ -15,6 +15,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.aetherion.resonate.dsp.DspEngineSinkHook
 import com.aetherion.resonate.dsp.DspEngineRegistry
@@ -69,6 +70,26 @@ class Media3PlaybackService : MediaSessionService() {
     // All Media3 output gain changes pass through one policy. Future leveling,
     // preamp, sleep fade and focus-duck factors belong in this composition point.
     private val gainPolicy = Media3GainPolicy()
+
+    // Native audio underrun telemetry is counter-only: no PCM/audio content is
+    // captured. Counts are cumulative for the lifetime of this service.
+    private val audioDiagnosticsLock = Any()
+    private val audioUnderrunCounts = mutableMapOf("A" to 0, "B" to 0)
+    @Volatile private var lastUnderrunDeck: String? = null
+    @Volatile private var lastUnderrunBufferSizeMs: Long = 0L
+    @Volatile private var lastUnderrunElapsedSinceFeedMs: Long = 0L
+    @Volatile private var lastUnderrunElapsedRealtimeMs: Long = 0L
+
+    fun audioDiagnosticsState(): Map<String, Any?> = synchronized(audioDiagnosticsLock) {
+        mapOf(
+            "underrunCountA" to (audioUnderrunCounts["A"] ?: 0),
+            "underrunCountB" to (audioUnderrunCounts["B"] ?: 0),
+            "lastUnderrunDeck" to lastUnderrunDeck,
+            "lastUnderrunBufferSizeMs" to lastUnderrunBufferSizeMs,
+            "lastUnderrunElapsedSinceFeedMs" to lastUnderrunElapsedSinceFeedMs,
+            "lastUnderrunElapsedRealtimeMs" to lastUnderrunElapsedRealtimeMs,
+        )
+    }
 
     private fun applyDeckVolumes() {
         if (::activePlayer.isInitialized) activePlayer.volume = gainPolicy.activeVolume()
@@ -421,6 +442,22 @@ class Media3PlaybackService : MediaSessionService() {
         },
     ).build().apply {
         val deck = this
+        addAnalyticsListener(object : AnalyticsListener {
+            override fun onAudioUnderrun(
+                eventTime: AnalyticsListener.EventTime,
+                bufferSize: Int,
+                bufferSizeMs: Long,
+                elapsedSinceLastFeedMs: Long,
+            ) {
+                synchronized(audioDiagnosticsLock) {
+                    audioUnderrunCounts[deckId] = (audioUnderrunCounts[deckId] ?: 0) + 1
+                    lastUnderrunDeck = deckId
+                    lastUnderrunBufferSizeMs = bufferSizeMs
+                    lastUnderrunElapsedSinceFeedMs = elapsedSinceLastFeedMs
+                    lastUnderrunElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime()
+                }
+            }
+        })
         setAudioAttributes(
             audioAttributes(),
             AudioOutputPolicy.handlesAudioFocus(
