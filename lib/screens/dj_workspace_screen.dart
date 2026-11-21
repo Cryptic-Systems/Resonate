@@ -349,10 +349,12 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                 final cueValueMs = _manualCueMs.clamp(0.0, cueMaxMs.toDouble());
                 final incomingIdentityMatches = selectedSong != null &&
                     deckState?.incomingMediaId == selectedSong.id;
-                final standbyStateLabel = deckState?.incomingReady == true
-                    ? "Ready"
+                final standbyStateLabel = incomingIdentityMatches
+                    ? deckState?.incomingReady == true
+                        ? "Ready"
+                        : "Loaded · preparing"
                     : deckState?.incomingMediaId != null
-                        ? "Loaded · preparing"
+                        ? "Different track loaded"
                         : deckState?.crossfadeStatus == "preparing"
                             ? "Preparing"
                             : "Empty";
