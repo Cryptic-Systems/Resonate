@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;
@@ -17,11 +16,10 @@ import '../ui/resonate_glass.dart';
 import 'dj_suggestion_mix_screen.dart';
 import 'dj_transition_studio_screen.dart';
 
-/// Dedicated entry point for DJ preparation and live-session awareness.
+/// Watch-only control-room view for DJ intelligence and Media3 deck state.
 ///
-/// This surface never owns a player. Manual deck transitions are delegated
-/// to MusicProvider and must hold the shared playback-control arbiter while
-/// Media3 prepares and promotes the incoming deck.
+/// This surface never owns a player and never issues transport or manual deck
+/// preparation commands. Hands-on deck operation belongs in DJ Console.
 class DjWorkspaceScreen extends StatefulWidget {
   const DjWorkspaceScreen({super.key});
 
