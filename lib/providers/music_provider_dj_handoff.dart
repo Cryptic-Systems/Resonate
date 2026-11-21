@@ -87,16 +87,30 @@ extension MusicProviderDjHandoff on MusicProvider {
     ManualDjPreparedDeck prepared,
   ) {
     final currentSong = session.currentSong;
-    final queue = session.queue;
+    final nativeQueue = session.queue;
+    // The native queue and Flutter's operator-facing queue must still refer
+    // to the same occurrences. A native preload can remain ready after the
+    // UI queue has been replaced; accepting it would cue/crossfade stale media.
     return _media3ProviderSessionActive &&
         !_disposed &&
         currentSong != null &&
         _sameManualDjEntry(currentSong, prepared.outgoingSong) &&
         session.queueIndex == prepared.outgoingQueueIndex &&
-        prepared.incomingQueueIndex >= 0 &&
-        prepared.incomingQueueIndex < queue.length &&
+        prepared.outgoingQueueIndex >= 0 &&
+        prepared.outgoingQueueIndex < _queue.length &&
         _sameManualDjEntry(
-          queue[prepared.incomingQueueIndex],
+          _queue[prepared.outgoingQueueIndex],
+          prepared.outgoingSong,
+        ) &&
+        prepared.incomingQueueIndex >= 0 &&
+        prepared.incomingQueueIndex < _queue.length &&
+        _sameManualDjEntry(
+          _queue[prepared.incomingQueueIndex],
+          prepared.incomingSong,
+        ) &&
+        prepared.incomingQueueIndex < nativeQueue.length &&
+        _sameManualDjEntry(
+          nativeQueue[prepared.incomingQueueIndex],
           prepared.incomingSong,
         );
   }
