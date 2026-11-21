@@ -120,6 +120,7 @@ class MusicProvider extends ChangeNotifier {
   bool _media3ProviderSessionPrepared = false;
   bool _media3ProviderSessionActive = false;
   ManualDjPreparedDeck? _manualDjPreparedDeck;
+  PlaybackControlLease? _manualDjPreparedLease;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
   bool get media3ProviderSessionActive => _media3ProviderSessionActive;
   @visibleForTesting
