@@ -473,6 +473,39 @@ void main() {
       );
     });
 
+    test('forwards guarded standby cue identity and position', () async {
+      MethodCall? captured;
+      channel.setMockMethodCallHandler((call) async {
+        captured = call;
+        return true;
+      });
+
+      await client.seekStandby(
+        position: const Duration(milliseconds: 12345),
+        expectedMediaId: 'incoming-occurrence-7',
+      );
+
+      expect(captured?.method, 'seekStandby');
+      final arguments = Map<Object?, Object?>.from(captured!.arguments as Map);
+      expect(arguments['positionMs'], 12345);
+      expect(arguments['expectedMediaId'], 'incoming-occurrence-7');
+
+      await expectLater(
+        client.seekStandby(
+          position: const Duration(milliseconds: -1),
+          expectedMediaId: 'incoming-occurrence-7',
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.seekStandby(
+          position: Duration.zero,
+          expectedMediaId: ' ',
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('rejects a volume command when native gain policy declines it', () async {
       channel.setMockMethodCallHandler((call) async => false);
 
