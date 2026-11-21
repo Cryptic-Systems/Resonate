@@ -23,6 +23,36 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
         result.success(true)
     }
 
+    fun probeMaxBassGainDb(
+        pcm16: ByteArray,
+        channels: Int,
+        sampleRate: Int,
+        shelfFreqHz: Float,
+        ceilingDb: Float,
+        marginDb: Float,
+        result: MethodChannel.Result,
+    ) {
+        val requestGeneration = cancellationGeneration
+        pcmExecutor.execute {
+            val value: Double? = try {
+                if (pcm16.size > 3 * 1024 * 1024 || channels !in 1..8 ||
+                    sampleRate !in 8000..192000 || requestGeneration != cancellationGeneration) {
+                    null
+                } else {
+                    val gain = com.aetherion.resonate.dsp.DspEngineJni.nativeProbeMaxBassGainDb(
+                        pcm16, channels, sampleRate.toFloat(), shelfFreqHz, ceilingDb, marginDb,
+                    )
+                    if (gain.isFinite() && gain >= 0f) gain.toDouble() else null
+                }
+            } catch (_: Throwable) {
+                null
+            }
+            activity.runOnUiThread {
+                result.success(if (requestGeneration == cancellationGeneration) value else null)
+            }
+        }
+    }
+
         /** Read first N bytes of a content:// or file path (ID3 head scan). */
         fun readMediaHead(uriString: String, maxBytes: Int, result: MethodChannel.Result) {
             if (uriString.isBlank()) { result.success(null); return }

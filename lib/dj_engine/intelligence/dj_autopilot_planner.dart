@@ -20,6 +20,7 @@ class DjAutopilotPlanner {
     int preferredDurationMs = 8000,
     int maxDurationMs = 16000,
     DjPolicy policy = DjPolicy.balanced,
+    DjTransitionKind? preferredKind,
   }) async {
     final candidates = brain.generate(
       outgoing: outgoing,
@@ -29,6 +30,13 @@ class DjAutopilotPlanner {
       maxDurationMs: maxDurationMs,
       policy: policy,
     );
+    if (preferredKind != null) {
+      final preferred = candidates.where((candidate) =>
+        candidate.kind == preferredKind && policy.acceptsCandidate(candidate)).toList();
+      if (preferred.isNotEmpty) {
+        return preferred.reduce((a, b) => a.score >= b.score ? a : b);
+      }
+    }
     if (candidates.isEmpty) {
       return brain.choose(
         outgoing: outgoing,

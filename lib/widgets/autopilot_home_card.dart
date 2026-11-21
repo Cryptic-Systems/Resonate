@@ -27,8 +27,10 @@ class AutopilotHomeCard extends StatelessWidget {
     final next = intelligence.anticipatedNext;
     final textTheme = Theme.of(context).textTheme;
 
-    Song? pendingSong;
-    if (autopilot.hasPendingTakeover && autopilot.pendingSongId != null) {
+    Song? pendingSong = autopilot.pendingSong;
+    if (pendingSong == null &&
+        autopilot.hasPendingTakeover &&
+        autopilot.pendingSongId != null) {
       for (final s in music.queue) {
         if (s.id == autopilot.pendingSongId) {
           pendingSong = s;
@@ -36,7 +38,7 @@ class AutopilotHomeCard extends StatelessWidget {
         }
       }
       if (pendingSong == null) {
-        for (final r in intelligence.recommendations) {
+        for (final r in intelligence.candidatePool) {
           if (r.song.id == autopilot.pendingSongId) {
             pendingSong = r.song;
             break;
@@ -136,6 +138,17 @@ class AutopilotHomeCard extends StatelessWidget {
               ),
             ),
           ),
+          if (intelligence.isEnabled)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 6, 18, 0),
+              child: Text(
+                autopilot.readinessMessage,
+                style: textTheme.bodySmall?.copyWith(
+                  height: 1.35,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
             child: Wrap(

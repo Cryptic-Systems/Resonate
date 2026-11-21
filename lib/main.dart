@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
-import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -28,7 +28,8 @@ import 'providers/theme_provider.dart';
 import 'navigation/shell_nav.dart';
 import 'widgets/ask_resonate/ask_resonate_controller.dart';
 import 'screens/home_screen.dart';
-import 'services/audio_service_handler.dart';
+import 'services/media3_provider_session.dart';
+import 'playback/playback_control_arbiter.dart';
 import 'services/playback_diagnostics_observer.dart';
 import 'services/resonate_diagnostics.dart';
 
@@ -242,48 +243,88 @@ ThemeData _theme(Brightness brightness, {bool pureBlack = false}) {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Capture framework and uncaught asynchronous failures in the local flight
+  // recorder, while preserving Flutter's normal error presentation.
+  FlutterError.onError = (details) {
+    unawaited(ResonateDiagnostics.recordCrash(
+      details.exception,
+      details.stack ?? StackTrace.current,
+      source: 'flutter_framework',
+    ));
+    FlutterError.presentError(details);
+  };
+  ui.PlatformDispatcher.instance.onError = (error, stack) {
+    unawaited(ResonateDiagnostics.recordCrash(
+      error,
+      stack,
+      source: 'platform_dispatcher',
+    ));
+    return false; // Keep the platform's normal uncaught-error handling.
+  };
+
+  // Preserve normal console output while adding a sanitized local copy to the
+  // flight recorder. This captures plugin/native warnings routed via debugPrint.
+  final originalDebugPrint = debugPrint;
+  debugPrint = (message, {wrapWidth}) {
+    originalDebugPrint(message, wrapWidth: wrapWidth);
+    if (message != null && message.trim().isNotEmpty) {
+      unawaited(ResonateDiagnostics.record('debug_log', {
+        'message': message,
+      }));
+    }
+  };
+
+  await ResonateDiagnostics.record('app_started', {
+    'buildMode': kDebugMode ? 'debug' : kProfileMode ? 'profile' : 'release',
+    'platform': defaultTargetPlatform.name,
+    'locale': ui.PlatformDispatcher.instance.locale.toLanguageTag(),
+    'viewCount': ui.PlatformDispatcher.instance.views.length,
+  });
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
 
-  final audioHandler = await AudioService.init(
-    builder: () => AudioServiceHandler(),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.aetherion.resonate.audio',
-      androidNotificationChannelName: 'Resonate • Now Playing',
-      androidNotificationChannelDescription:
-          'Resonate • your music, sound, and playback controls',
-      // Brand the system media card with Resonate violet while retaining the
-      // track's album artwork as the large media image.
-      notificationColor: const Color(0xFF6B4EFF),
-      androidNotificationOngoing: false,
-      androidStopForegroundOnPause: false,
-      fastForwardInterval: Duration(seconds: 10),
-      rewindInterval: Duration(seconds: 10),
-      androidNotificationIcon: 'drawable/ic_stat_resonate',
-    ),
-  );
-
-  await ResonateDiagnostics.record('app_started', {});
-
-  runApp(ResonateApp(audioHandler: audioHandler));
+  runApp(const ResonateApp());
 }
 
 class ResonateApp extends StatelessWidget {
-  final AudioHandler audioHandler;
-
-  const ResonateApp({super.key, required this.audioHandler});
+  const ResonateApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        Provider<PlaybackControlArbiter>(
+          create: (_) => PlaybackControlArbiter(
+            onDiagnostic: (event) {
+              unawaited(ResonateDiagnostics.record('playback_control_arbiter', {
+                'type': event.type.name,
+                'generation': event.generation,
+                'owner': event.owner,
+                'priority': event.priority?.name,
+                'operation': event.operation,
+                'otherOwner': event.otherOwner,
+                'reason': event.reason,
+              }));
+            },
+          ),
+          dispose: (_, arbiter) => unawaited(arbiter.close()),
+        ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => ShellNav()),
         ChangeNotifierProvider(create: (_) => AskResonateController()),
         ChangeNotifierProvider(
-          create: (_) => MusicProvider(audioHandler: audioHandler),
+          create: (context) {
+            final provider = MusicProvider(
+              media3ProviderSession: Media3ProviderSession(),
+              playbackControlArbiter: context.read<PlaybackControlArbiter>(),
+              deferMedia3UntilSettingsReady: true,
+            );
+            // Media3 starts after persisted DSP and playback settings are restored.
+            return provider;
+          },
         ),
         ChangeNotifierProvider(
           create: (context) =>
@@ -335,21 +376,26 @@ class ResonateApp extends StatelessWidget {
           ),
         ),
         ChangeNotifierProvider(
+          lazy: false,
           create: (context) => EqualizerProvider(
-            equalizer: context.read<MusicProvider>().equalizer,
-            loudnessEnhancer: context.read<MusicProvider>().loudnessEnhancer,
             music: context.read<MusicProvider>(),
             bluetooth: context.read<BluetoothProvider>(),
           ),
         ),
         ChangeNotifierProvider(
-          create: (context) => AudioEffectsProvider(
-            player: context.read<MusicProvider>().audioPlayer,
-            sessionPlayers: context.read<MusicProvider>().audioSessionPlayers,
-            loudnessEnhancer: context.read<MusicProvider>().loudnessEnhancer,
-          ),
+          lazy: false,
+          create: (context) {
+            final music = context.read<MusicProvider>();
+            return AudioEffectsProvider(
+              // DSP/session-bound effects follow the same canonical Media3
+              // session as transport and state after the provider handoff.
+              playbackSession: music.media3PlaybackSession,
+              playbackControlArbiter: music.playbackControlArbiter,
+            );
+          },
         ),
         ChangeNotifierProvider(
+          lazy: false,
           create: (context) =>
               CrossfadeProvider(music: context.read<MusicProvider>()),
         ),
@@ -358,10 +404,12 @@ class ResonateApp extends StatelessWidget {
               DjModeProvider(music: context.read<MusicProvider>()),
         ),
         ChangeNotifierProvider(
+          lazy: false,
           create: (context) =>
               PlaybackFeaturesProvider(music: context.read<MusicProvider>()),
         ),
         ChangeNotifierProvider(
+          lazy: false,
           create: (context) {
             final music = context.read<MusicProvider>();
             return AudioVisualizationProvider()
@@ -414,6 +462,20 @@ class _LifecycleHomeState extends State<_LifecycleHome>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Install the barrier before any screen can issue a transport command.
+    final startupSettingsReady = Future.wait<void>([
+      context.read<EqualizerProvider>().ready,
+      context.read<AudioEffectsProvider>().ready,
+      context.read<PlaybackFeaturesProvider>().ready,
+    ]);
+    context.read<MusicProvider>().setStartupSettingsReady(startupSettingsReady);
+    unawaited(startupSettingsReady.then((_) async {
+      if (!mounted) return;
+      await context.read<MusicProvider>().prepareMedia3ProviderSession();
+    }).catchError((Object error, StackTrace stack) {
+      debugPrint('Media3 startup after settings restore failed: $error');
+      debugPrint('$stack');
+    }));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _startForegroundAnalysisOpportunities();
@@ -452,6 +514,11 @@ class _LifecycleHomeState extends State<_LifecycleHome>
     _wasLibraryScanning = library.isScanning;
     _lastLibrarySongCount = count;
     if (!scanFinished && !libraryChanged) return;
+    unawaited(ResonateDiagnostics.record('library_scan_state', {
+      'songCount': count,
+      'scanFinished': scanFinished,
+      'isScanning': library.isScanning,
+    }));
     try {
       context.read<DjModeProvider>().onAnalysisOpportunity('library_changed');
     } catch (_) {}
@@ -466,6 +533,11 @@ class _LifecycleHomeState extends State<_LifecycleHome>
     final signature = _bluetoothSignature(bluetooth);
     if (signature == _lastBluetoothSignature) return;
     _lastBluetoothSignature = signature;
+    unawaited(ResonateDiagnostics.record('audio_route_state_changed', {
+      'bluetoothConnected': bluetooth.bluetoothConnected,
+      'deviceNamePresent': (bluetooth.connectedDeviceName ?? '').isNotEmpty,
+      'audioContext': bluetooth.audioContext.name,
+    }));
     try {
       context.read<DjModeProvider>().onAnalysisOpportunity('audio_route_changed');
     } catch (_) {}
@@ -501,7 +573,20 @@ class _LifecycleHomeState extends State<_LifecycleHome>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final music = context.read<MusicProvider>();
+    unawaited(ResonateDiagnostics.record('app_lifecycle', {
+      'state': state.name,
+      'songId': music.currentSong?.id,
+      'positionMs': music.currentPosition.inMilliseconds,
+      'isPlaying': music.isPlaying,
+      'queueIndex': music.queueIndex,
+      'queueLength': music.queue.length,
+      'repeatMode': music.repeatMode.name,
+      'crossfadeEnabled': music.crossfadeEnabled,
+      'transitionInProgress': music.transitionInProgress,
+    }));
     if (state == AppLifecycleState.resumed) {
+      unawaited(context.read<MusicProvider>().onAppForegrounded());
       _startForegroundAnalysisOpportunities();
       try {
         context.read<DjModeProvider>().onAnalysisOpportunity('app_resumed');
@@ -517,6 +602,15 @@ class _LifecycleHomeState extends State<_LifecycleHome>
         context.read<MusicProvider>().onAppBackgrounded();
       } catch (_) {}
     }
+  }
+
+  @override
+  void didHaveMemoryPressure() {
+    unawaited(ResonateDiagnostics.record('app_memory_pressure', {
+      'songId': context.read<MusicProvider>().currentSong?.id,
+      'isPlaying': context.read<MusicProvider>().isPlaying,
+      'lifecycleState': WidgetsBinding.instance.lifecycleState?.name,
+    }));
   }
 
   @override

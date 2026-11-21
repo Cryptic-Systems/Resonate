@@ -1,12 +1,15 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/audio_effects_provider.dart';
 import '../providers/equalizer_provider.dart';
+import '../models/resonate_sound_profile.dart';
 import '../providers/music_provider.dart';
 import '../services/audio_effects_bridge.dart';
+import 'dsp_settings_screen.dart';
 
 /// Glass Equalizer — packed, creative, readable for everyone.
 class EqualizerScreen extends StatefulWidget {
@@ -38,6 +41,10 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
         'Resonate Focus' => 'Keep voices and detail clear at a calm level.',
         'Resonate Speaker' => 'A modest balance for small speaker playback.',
         'Resonate Vocal Presence' => 'Put vocals closer without over-brightening.',
+        'Resonate Subforge' => 'Sub-bass extension, kick impact and a defined upper-mid edge.',
+        'Resonate Midrange Atlas' => 'More body, vocal fundamentals and clear presence across the mids.',
+        'Resonate Titan Pulse' => 'A powerful low end with forward, energetic mids.',
+        'Resonate Velvet Drive' => 'Warm low-mid weight and smooth instrument body.',
         _ => 'A Resonate-crafted listening profile.',
       };
 
@@ -52,6 +59,10 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
         'Resonate Focus' => Icons.center_focus_strong_rounded,
         'Resonate Speaker' => Icons.speaker_rounded,
         'Resonate Vocal Presence' => Icons.mic_rounded,
+        'Resonate Subforge' => Icons.waves_rounded,
+        'Resonate Midrange Atlas' => Icons.graphic_eq_rounded,
+        'Resonate Titan Pulse' => Icons.bolt_rounded,
+        'Resonate Velvet Drive' => Icons.album_rounded,
         _ => Icons.graphic_eq_rounded,
       };
 
@@ -66,6 +77,10 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
         'Resonate Focus' => const Color(0xFF70B8A5),
         'Resonate Speaker' => const Color(0xFFB38AFF),
         'Resonate Vocal Presence' => const Color(0xFFFF78A8),
+        'Resonate Subforge' => const Color(0xFF4B91E8),
+        'Resonate Midrange Atlas' => const Color(0xFF42B9A5),
+        'Resonate Titan Pulse' => const Color(0xFFFF765F),
+        'Resonate Velvet Drive' => const Color(0xFFB88A64),
         _ => _cBlue,
       };
 
@@ -129,9 +144,47 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
         title: const Text('Equalizer'),
         actions: [
           IconButton(
+            tooltip: 'DSP engine settings',
+            icon: const Icon(Icons.tune_rounded),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const DspSettingsScreen()),
+            ),
+          ),
+          IconButton(
             tooltip: 'How to use',
             icon: const Icon(Icons.help_outline_rounded),
             onPressed: () => _showHelp(context),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Sound profile backup',
+            icon: const Icon(Icons.import_export_rounded),
+            onSelected: (action) {
+              if (action == 'export') {
+                _exportSoundProfiles(context);
+              } else if (action == 'import') {
+                _importSoundProfiles(context);
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'export',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.copy_rounded),
+                  title: Text('Copy profile backup JSON'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'import',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.content_paste_rounded),
+                  title: Text('Import profile backup JSON'),
+                ),
+              ),
+            ],
           ),
           IconButton(
             tooltip: 'Save custom profile',
@@ -218,7 +271,71 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                     ),
                     const SizedBox(height: 14),
 
-                    // —— Curve ——
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(2, 2, 2, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Resonate sound',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Original profiles for a sound or a listening environment.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 12),
+                          _buildProfileGrid(
+                            context,
+                            eq,
+                            eq.builtInSoundProfiles
+                                .where((profile) => profile.category != 'Resonate Advanced')
+                                .toList(),
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            'Advanced sound profiles',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Full 31-band parametric shaping with tighter filter focus, automatic headroom and peak control.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 12),
+                          _buildProfileGrid(
+                            context,
+                            eq,
+                            eq.advancedSoundProfiles,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Theme(
+                        data: Theme.of(context).copyWith(
+                          dividerColor: Colors.transparent,
+                        ),
+                        child: ExpansionTile(
+                          tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+                          childrenPadding: EdgeInsets.zero,
+                          title: const Text(
+                            'Fine tune',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: const Text(
+                            'Frequency response, preamp and the full 31-band studio EQ',
+                          ),
+                          children: [
                     _GlassCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -261,7 +378,6 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                     ),
                     const SizedBox(height: 14),
 
-                    // —— Preamp ——
                     _GlassCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -309,113 +425,6 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                     ),
                     const SizedBox(height: 14),
 
-                    // —— Resonate sound identities ——
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(2, 2, 2, 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Resonate sound',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w800),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Original profiles for a sound or a listening environment.',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            height: 326,
-                            child: GridView.builder(
-                              scrollDirection: Axis.horizontal,
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                mainAxisExtent: 174,
-                                mainAxisSpacing: 10,
-                                crossAxisSpacing: 10,
-                              ),
-                              itemCount: EqualizerProvider.resonatePresets.length,
-                              itemBuilder: (context, index) {
-                                final profile = EqualizerProvider.resonatePresets[index];
-                                final accent = _profileColor(profile.name);
-                                final selected = eq.preset == profile.name;
-                                return Material(
-                                  color: Colors.transparent,
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(20),
-                                    onTap: eq.isEnabled
-                                        ? () => eq.applyPreset(profile.name)
-                                        : null,
-                                    child: Ink(
-                                      padding: const EdgeInsets.all(13),
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(20),
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
-                                          colors: [
-                                            accent.withValues(alpha: selected ? 0.34 : 0.20),
-                                            Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
-                                          ],
-                                        ),
-                                        border: Border.all(
-                                          color: selected ? accent : accent.withValues(alpha: 0.38),
-                                          width: selected ? 1.8 : 1,
-                                        ),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Container(
-                                                width: 34,
-                                                height: 34,
-                                                decoration: BoxDecoration(
-                                                  color: accent.withValues(alpha: 0.20),
-                                                  borderRadius: BorderRadius.circular(11),
-                                                ),
-                                                child: Icon(_profileIcon(profile.name), color: accent, size: 20),
-                                              ),
-                                              const Spacer(),
-                                              if (selected)
-                                                Icon(Icons.check_circle_rounded, color: accent, size: 20),
-                                            ],
-                                          ),
-                                          const Spacer(),
-                                          Text(
-                                            profile.name.replaceFirst('Resonate ', ''),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            _profileDescription(profile.name),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context).textTheme.bodySmall,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-
-
-                    // —— Studio bands ——
                     _GlassCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -473,6 +482,12 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                     const SizedBox(height: 14),
 
 
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
                     // —— Custom profiles —— 
                     _GlassCard(
                       child: Column(
@@ -483,20 +498,20 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                                 ?.copyWith(fontWeight: FontWeight.w700)),
                           const SizedBox(height: 4),
                           Text(
-                            'Save the Studio bands you shape with the bookmark button. Your profiles stay available here.',
+                            'Saved profiles preserve your complete DSP configuration, not just the EQ curve.',
                             style: Theme.of(context).textTheme.bodySmall),
-                          if (eq.customPresets.isNotEmpty) ...[
+                          if (eq.customSoundProfiles.isNotEmpty) ...[
                             const SizedBox(height: 12),
                             Wrap(
                               spacing: 8,
                               runSpacing: 8,
                               children: [
-                                for (final profile in eq.customPresets)
+                                for (final profile in eq.customSoundProfiles)
                                   FilterChip(
                                     label: Text(profile.name),
                                     selected: eq.preset == profile.name,
                                     onSelected: eq.isEnabled
-                                        ? (_) => eq.applyPreset(profile.name)
+                                        ? (_) => _applySoundProfile(context, profile)
                                         : null,
                                     onDeleted: () => eq.deleteCustomPreset(profile.name),
                                     deleteIcon: const Icon(Icons.close, size: 16),
@@ -506,7 +521,7 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                           ] else ...[
                             const SizedBox(height: 10),
                             const Text(
-                              'No custom profiles yet. Shape the bands, then tap the bookmark icon to save one.'),
+                              'No custom profiles yet. Tune your sound and tap the bookmark icon to save a complete profile.'),
                           ],
                         ],
                       ),
@@ -602,6 +617,73 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
     );
   }
 
+  Future<void> _exportSoundProfiles(BuildContext context) async {
+    final eq = context.read<EqualizerProvider>();
+    try {
+      final json = eq.exportSoundProfilesJson();
+      await Clipboard.setData(ClipboardData(text: json));
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Copied ${eq.customSoundProfiles.length} complete profile(s) as JSON')),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))),
+      );
+    }
+  }
+
+  Future<void> _importSoundProfiles(BuildContext context) async {
+    final controller = TextEditingController();
+    final source = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Import sound profiles'),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: TextField(
+              controller: controller,
+              autofocus: true,
+              minLines: 8,
+              maxLines: 14,
+              keyboardType: TextInputType.multiline,
+              decoration: const InputDecoration(
+                hintText: 'Paste a Resonate sound profile JSON backup',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (source == null || source.trim().isEmpty || !context.mounted) return;
+    try {
+      final count = await context.read<EqualizerProvider>().importSoundProfilesJson(source);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Imported $count complete sound profile(s)')),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not import profiles: $error')),
+      );
+    }
+  }
+
   void _showHelp(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
@@ -670,6 +752,116 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
     );
   }
 
+  Widget _buildProfileGrid(
+    BuildContext context,
+    EqualizerProvider eq,
+    List<ResonateSoundProfile> profiles,
+  ) {
+    return SizedBox(
+      height: 326,
+      child: GridView.builder(
+        scrollDirection: Axis.horizontal,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisExtent: 174,
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+        ),
+        itemCount: profiles.length,
+        itemBuilder: (context, index) {
+          final profile = profiles[index];
+          final accent = _profileColor(profile.name);
+          final selected = eq.preset == profile.name;
+          return Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: eq.isEnabled
+                  ? () => _applySoundProfile(context, profile)
+                  : null,
+              child: Ink(
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      accent.withValues(alpha: selected ? 0.34 : 0.20),
+                      Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
+                    ],
+                  ),
+                  border: Border.all(
+                    color: selected ? accent : accent.withValues(alpha: 0.38),
+                    width: selected ? 1.8 : 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.20),
+                            borderRadius: BorderRadius.circular(11),
+                          ),
+                          child: Icon(_profileIcon(profile.name), color: accent, size: 20),
+                        ),
+                        const Spacer(),
+                        if (selected)
+                          Icon(Icons.check_circle_rounded, color: accent, size: 20),
+                      ],
+                    ),
+                    const Spacer(),
+                    Text(
+                      profile.name.replaceFirst('Resonate ', ''),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _profileDescription(profile.name),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _applySoundProfile(
+    BuildContext context,
+    ResonateSoundProfile profile,
+  ) async {
+    try {
+      // Update session-bound effects first, then publish the complete sticky
+      // DSP snapshot so both current and future A/B decks inherit it.
+      await context.read<AudioEffectsProvider>().applySoundProfileSettings(profile.settings);
+      await context.read<EqualizerProvider>().applySoundProfile(profile);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Applied sound: ${profile.name}')),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not apply sound profile: $error')),
+      );
+    }
+  }
+
   Future<void> _saveCustom(BuildContext context) async {
     final controller = TextEditingController();
     final name = await showDialog<String>(
@@ -696,8 +888,11 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
       ),
     );
     if (name == null || name.trim().isEmpty || !context.mounted) return;
-    final savedName =
-        await context.read<EqualizerProvider>().saveCustomPreset(name);
+    final eq = context.read<EqualizerProvider>();
+    final savedName = await eq.saveCustomPreset(name);
+    if (savedName != null) {
+      await eq.saveCustomSoundProfile(savedName);
+    }
     if (!context.mounted || savedName == null) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Saved “$savedName”')),

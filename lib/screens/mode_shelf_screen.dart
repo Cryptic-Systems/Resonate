@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -13,6 +11,8 @@ import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
 import '../providers/playlist_provider.dart';
 import '../services/mode_shelf_builder.dart';
+import '../services/mode_aware_queue_planner.dart';
+import '../models/queue_plan.dart';
 import '../services/playback_authority.dart';
 import '../ui/resonate_glass.dart';
 import '../widgets/mode_artwork_banner.dart';
@@ -147,11 +147,13 @@ class ModeShelfScreen extends StatelessWidget {
                               ),
                               const SizedBox(width: 8),
                               OutlinedButton.icon(
-                                onPressed: () => _playShelf(
-                                  context,
-                                  shelf.tracks,
-                                  shuffle: true,
-                                ),
+                                onPressed: modes.policy.shuffleAllowed
+                                    ? () => _playShelf(
+                                          context,
+                                          shelf.tracks,
+                                          shuffle: true,
+                                        )
+                                    : null,
                                 icon: const Icon(Icons.shuffle_rounded),
                                 label: const Text('Shuffle'),
                               ),
@@ -229,12 +231,12 @@ class ModeShelfScreen extends StatelessWidget {
           icon: const Icon(Icons.play_arrow_rounded),
           onPressed: () {
             final idx = queue.indexWhere((x) => x.id == song.id);
-            _playShelf(context, queue, startIndex: idx < 0 ? 0 : idx);
+            _playShelf(context, queue, startIndex: idx < 0 ? 0 : idx, requireSelectedTrack: true);
           },
         ),
         onTap: () {
           final idx = queue.indexWhere((x) => x.id == song.id);
-          _playShelf(context, queue, startIndex: idx < 0 ? 0 : idx);
+          _playShelf(context, queue, startIndex: idx < 0 ? 0 : idx, requireSelectedTrack: true);
         },
       ),
     );
@@ -268,28 +270,72 @@ class ModeShelfScreen extends StatelessWidget {
     }
   }
 
-  static void _playShelf(
+  static Future<void> _playShelf(
     BuildContext context,
     List<Song> tracks, {
     int startIndex = 0,
     bool shuffle = false,
-  }) {
+    bool requireSelectedTrack = false,
+  }) async {
     if (tracks.isEmpty) return;
+    final modes = context.read<ModeProvider>();
+    if (shuffle && !modes.policy.shuffleAllowed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Shuffle is disabled in ${modes.mode.label} to preserve spoken-content order.',
+          ),
+        ),
+      );
+      return;
+    }
+    final requested = tracks[startIndex.clamp(0, tracks.length - 1)];
+    final result = await ModeAwareQueuePlanner().arrange(
+      modes: modes,
+      tracks: tracks,
+      requiredSongId: requireSelectedTrack ? requested.id : null,
+    );
+    if (!context.mounted) return;
+    if (!result.isUsable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message ?? 'Could not build this mode queue.')),
+      );
+      return;
+    }
+    if (result.usedDjPlanner &&
+        result.plan != null &&
+        result.plan!.status != QueuePlanStatus.ready) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message!)),
+      );
+    }
     final music = context.read<MusicProvider>();
-    var queue = List<Song>.from(tracks);
-    var index = startIndex.clamp(0, queue.length - 1);
-    if (shuffle && queue.length > 1) {
+    final queue = List<Song>.from(result.songs);
+    var index = requireSelectedTrack
+        ? queue.indexWhere((song) => song.id == requested.id)
+        : 0;
+    if (index < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('The selected track is not eligible for this mode queue.')),
+      );
+      return;
+    }
+    // DJ's planned order is retained for tempo-constrained modes. Ordinary
+    // modes keep the existing user-requested shuffle behavior.
+    if (shuffle && !result.usedDjPlanner && queue.length > 1) {
       final first = queue[index];
       queue.shuffle();
-      index = queue.indexWhere((s) => s.id == first.id);
+      index = queue.indexWhere((song) => song.id == first.id);
       if (index < 0) index = 0;
     }
     PlaybackAuthority.instance.markExternalUserCommand(
-      'mode_shelf',
-      shuffle ? 'shuffle_play' : 'play',
+      'mode_shelf', shuffle ? 'shuffle_play' : 'play',
     );
-    unawaited(
-      music.playSong(queue[index], queue: queue, startIndex: index),
+    await music.playSong(
+      queue[index],
+      queue: queue,
+      startIndex: index,
+      preserveQueueOrder: result.usedDjPlanner,
     );
   }
 }

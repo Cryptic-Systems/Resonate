@@ -6,17 +6,13 @@ import android.media.AudioManager
 import android.provider.DocumentsContract
 import com.Aetherion.Resonate.media.PermissionHelper
 import com.Aetherion.Resonate.media.Media3PlaybackBridge
-import com.ryanheise.audioservice.AudioServiceActivity
+import com.Aetherion.Resonate.media.AudioCommunicationGuard
+import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import kotlin.math.roundToInt
 
-class MainActivity : AudioServiceActivity() {
-    // Compile-time keep: audio_service looks up the FGS small icon by string.
-    // Referencing R.drawable here forces AAPT2 to emit a real resource id.
-    @Suppress("unused")
-    private val mediaNotificationIconId = R.drawable.ic_stat_resonate
-
+class MainActivity : FlutterActivity() {
     private val channelName = "com.aetherion.resonate/media_store"
     private val folderRequestCode = 6168
     private val diagnosticFileRequestCode = 6170
@@ -37,6 +33,10 @@ class MainActivity : AudioServiceActivity() {
                 "requestAudioPermission" -> permissionHelper.requestAudioPermission(result)
                 "requestVisualizationPermission" -> permissionHelper.requestVisualizationPermission(result)
                 "requestNotificationPermission" -> permissionHelper.requestNotificationPermission(result)
+                "isCommunicationActive" -> {
+                    val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+                    result.success(AudioCommunicationGuard.isActive(audioManager.mode))
+                }
                 "getSystemVolume" -> getSystemVolume(result)
                 "setSystemVolume" -> setSystemVolume(call.argument<Double>("value") ?: 1.0, result)
                 "pickFolder" -> pickFolder(result)
@@ -53,6 +53,15 @@ class MainActivity : AudioServiceActivity() {
                     call.argument<String>("uri") ?: "",
                     (call.argument<Number>("maxSeconds") ?: 12.0).toDouble(),
                     (call.argument<Number>("startMs") ?: 0).toLong(),
+                    result,
+                )
+                "probeMaxBassGainDb" -> pcmAnalysisHandler.probeMaxBassGainDb(
+                    call.argument<ByteArray>("pcm16") ?: ByteArray(0),
+                    call.argument<Int>("channels") ?: 0,
+                    call.argument<Int>("sampleRate") ?: 0,
+                    (call.argument<Number>("shelfFreqHz") ?: 80.0).toFloat(),
+                    (call.argument<Number>("ceilingDb") ?: -0.1).toFloat(),
+                    (call.argument<Number>("marginDb") ?: 1.0).toFloat(),
                     result,
                 )
                 "cancelPcmAnalysis" -> pcmAnalysisHandler.cancel(result)

@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/audio_effects_bridge.dart';
 
 /// Shared settings and a single low-rate feed for the orb and main visualizer.
-class AudioVisualizationProvider extends ChangeNotifier {
+class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool enabled = true;
   String visualizationType = 'bars';
   double sensitivity = 0.65;
@@ -26,11 +26,31 @@ class AudioVisualizationProvider extends ChangeNotifier {
   bool _permissionChecked = false;
   bool _capturePermissionGranted = false;
   bool _disposed = false;
+  bool _preferencesLoaded = false;
   Listenable? _playbackListenable;
   VoidCallback? _playbackListener;
   bool Function()? _isPlaybackActive;
 
-  AudioVisualizationProvider() { _load(); }
+  AudioVisualizationProvider() {
+    WidgetsBinding.instance.addObserver(this);
+    _load();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_disposed || state != AppLifecycleState.resumed) return;
+    _refreshCaptureAfterResume();
+  }
+
+  Future<void> _refreshCaptureAfterResume() async {
+    if (!_preferencesLoaded || !enabled || !_playbackActive) return;
+    if (_capturePermissionGranted) {
+      await AudioEffectsBridge.refreshVisualizers();
+      if (!_disposed) _syncCapture();
+    } else if (!_permissionChecked && !_permissionRequestInFlight) {
+      _syncCapture();
+    }
+  }
 
   /// Bind capture lifetime to the actual playback owner. Without this binding,
   /// the native spectrum poller never starts and both visual consumers stay flat.
@@ -55,7 +75,12 @@ class AudioVisualizationProvider extends ChangeNotifier {
 
   void _syncPlaybackState() {
     if (_disposed) return;
-    setPlaybackActive(_isPlaybackActive?.call() ?? false);
+    try {
+      setPlaybackActive(_isPlaybackActive?.call() ?? false);
+    } catch (_) {
+      // A transient playback-provider error must not break visualization.
+      setPlaybackActive(false);
+    }
   }
 
   void setEnabled(bool value) {
@@ -93,7 +118,7 @@ class AudioVisualizationProvider extends ChangeNotifier {
   void _syncCapture() {
     _captureTimer?.cancel();
     _captureTimer = null;
-    if (_disposed || !enabled || !_playbackActive) return;
+    if (_disposed || !_preferencesLoaded || !enabled || !_playbackActive) return;
     if (!_permissionChecked) {
       if (!_permissionRequestInFlight) _requestCapturePermission();
       return;
@@ -116,6 +141,9 @@ class AudioVisualizationProvider extends ChangeNotifier {
         await AudioEffectsBridge.refreshVisualizers();
         _syncCapture();
       }
+    } catch (_) {
+      _permissionChecked = false;
+      _capturePermissionGranted = false;
     } finally {
       _permissionRequestInFlight = false;
     }
@@ -148,6 +176,11 @@ class AudioVisualizationProvider extends ChangeNotifier {
       // Avoid rebuilding both consumers for imperceptible numerical noise.
       if (changed) {
         frequencies = updated;
+        notifyListeners();
+      }
+    } catch (_) {
+      if (!_disposed && _playbackActive && frequencies.any((v) => v != 0.0)) {
+        frequencies = List<double>.filled(32, 0.0);
         notifyListeners();
       }
     } finally {
@@ -186,9 +219,13 @@ class AudioVisualizationProvider extends ChangeNotifier {
       orbAudioReactive = prefs.getBool('audio_viz_orb_reactive') ?? true;
       smoothAnimation = prefs.getBool('audio_viz_smooth') ?? true;
       frameRate = (prefs.getDouble('audio_viz_fps') ?? 24).clamp(12, 30).toDouble();
+      _preferencesLoaded = true;
       _syncCapture();
       if (!_disposed) notifyListeners();
-    } catch (_) {}
+    } catch (_) {
+      _preferencesLoaded = true;
+      _syncCapture();
+    }
   }
 
   Future<void> _save() async {
@@ -211,6 +248,7 @@ class AudioVisualizationProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    WidgetsBinding.instance.removeObserver(this);
     if (_playbackListenable != null && _playbackListener != null) {
       _playbackListenable!.removeListener(_playbackListener!);
     }

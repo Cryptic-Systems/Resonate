@@ -72,6 +72,60 @@ void main() {
       expect(EqualizerProvider.normalizePresetGains(studio), studio);
     });
 
+    test('advanced Resonate profiles cover the full parametric bank safely', () {
+      final profiles = EqualizerProvider.advancedSoundProfileCatalog;
+      expect(profiles, hasLength(4));
+      expect(profiles.map((profile) => profile.name).toSet(), hasLength(4));
+      expect(
+        profiles.map((profile) => profile.name),
+        containsAll([
+          'Resonate Subforge',
+          'Resonate Midrange Atlas',
+          'Resonate Titan Pulse',
+          'Resonate Velvet Drive',
+        ]),
+      );
+      for (final profile in profiles) {
+        final settings = profile.settings;
+        expect(settings.parametricEqBands, hasLength(31), reason: profile.name);
+        expect(settings.eqBandGainsDb, hasLength(31), reason: profile.name);
+        expect(settings.autoEqHeadroom, isTrue, reason: profile.name);
+        expect(settings.preampDb, lessThan(0), reason: profile.name);
+        expect(settings.limiterEnabled, isTrue, reason: profile.name);
+        expect(
+          settings.parametricEqBands.every((band) =>
+              band.frequencyHz >= 20 &&
+              band.frequencyHz <= 20000 &&
+              band.gainDb >= -12 &&
+              band.gainDb <= 12 &&
+              band.q >= 0.1 &&
+              band.q <= 18 &&
+              band.type >= 0 &&
+              band.type <= 4),
+          isTrue,
+          reason: profile.name,
+        );
+      }
+      final atlas = profiles.firstWhere(
+        (profile) => profile.name == 'Resonate Midrange Atlas',
+      );
+      final atlasMids = atlas.settings.parametricEqBands
+          .where((band) => band.frequencyHz >= 315 && band.frequencyHz <= 3150)
+          .toList();
+      expect(atlasMids.every((band) => band.gainDb > 0), isTrue);
+    });
+
+    test('legacy ten-band curves interpolate on a logarithmic frequency axis', () {
+      final curve = [
+        0.0, 0.0, 0.0, 0.0, 10.0,
+        10.0, 10.0, 10.0, 10.0, 10.0,
+      ];
+      final expanded = EqualizerProvider.normalizePresetGains(curve);
+      final at315 = expanded[EqualizerProvider.studioFrequencies.indexOf(315)];
+      // 315 Hz is one third of the way from 250 Hz to 500 Hz in log space.
+      expect(at315, closeTo(3.4, 0.15));
+    });
+
     test('rejects malformed or unsafe preset curves', () {
       expect(
         () => EqualizerProvider.normalizePresetGains([1, 2, 3]),
@@ -96,6 +150,10 @@ void main() {
         'resonate signature',
       );
       expect(collide, 'resonate signature (Custom)');
+      expect(
+        EqualizerProvider.uniqueCustomPresetName('Resonate Subforge'),
+        'Resonate Subforge (Custom)',
+      );
 
       final second = EqualizerProvider.uniqueCustomPresetName(
         'resonate signature',

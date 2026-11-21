@@ -35,15 +35,78 @@ object DspEngineJni {
     external fun nativeSetPreamp(handle: Long, linearGain: Double)
     external fun nativeSetLimiterCeiling(handle: Long, highDb: Float, lowDb: Float)
     external fun nativeSetCrossoverHz(handle: Long, freqHz: Float)
+    external fun nativeSetParametricEqBands(
+        handle: Long,
+        frequenciesHz: FloatArray,
+        gainsDb: FloatArray,
+        qs: FloatArray,
+        types: IntArray,
+        enabled: Boolean
+    )
+    external fun nativeSetDvc(
+        handle: Long,
+        enabled: Boolean,
+        gainDb: Float,
+        smoothing: Boolean,
+        smoothingMs: Float
+    )
+    external fun nativeSetLimiterConfig(
+        handle: Long,
+        enabled: Boolean,
+        mode: Int,
+        thresholdDb: Float,
+        releaseMs: Float,
+        attackMs: Float,
+        lookaheadMs: Float,
+        kneeDb: Float
+    )
+    external fun nativeSetDither(handle: Long, enabled: Boolean, mode: Int)
+    external fun nativeSetIntelligenceConfig(
+        handle: Long,
+        bassWeight: Float,
+        preampWeight: Float,
+        gainWeight: Float,
+        autoPreampEnabled: Boolean,
+        autoPreampTargetDb: Float,
+        autoVirtualBassEnabled: Boolean,
+        autoVirtualBassTarget: Float,
+        silenceHygieneEnabled: Boolean,
+        silenceThresholdDb: Float,
+        silenceHoldMs: Float,
+    )
+
+    external fun nativeSetAutoDynamicsConfig(
+        handle: Long,
+        autoBassEnabled: Boolean,
+        autoBassTargetDb: Float,
+        autoBassMarginDb: Float,
+        autoBassFreqHz: Float,
+        autoGainEnabled: Boolean,
+        autoGainTargetRmsDb: Float,
+        autoGainBiasDb: Float,
+        autoGainMaxBoostDb: Float,
+        autoGainMaxCutDb: Float,
+        autoGainWindowMs: Float,
+    )
+    external fun nativeSetAnalysisHint(
+        handle: Long,
+        enabled: Boolean,
+        samplePeakDb: Float,
+        truePeakDb: Float,
+        rmsDb: Float,
+        crestDb: Float,
+        bassEnergyDb: Float,
+        maxSafeBassDb: Float,
+    )
 
     /** [processCalls, avgUs, maxUs, overruns, lastFrames, sampleRate] */
+    external fun nativeGetMeters(handle: Long): FloatArray?
     external fun nativeGetStats(handle: Long): DoubleArray?
+    external fun nativeProbeMaxBassGainDb(
+        pcm16: ByteArray, channels: Int, sampleRate: Float,
+        shelfFreqHz: Float, ceilingDb: Float, marginDb: Float,
+    ): Float
 
     external fun nativeResetStats(handle: Long)
 
-    /**
-     * Offline bass stress harness.
-     * Returns [ok, casesRun, casesPassed, maxPeak, peakFailures, nanFailures, speakerOk]
-     */
-    external fun nativeRunBassStress(): DoubleArray?
 }

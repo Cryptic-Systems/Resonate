@@ -16,7 +16,7 @@ class DjTransitionBrain {
     // for the active policy floor. Playback continues through the safe path.
     final floor = policy.analysisFloor;
     if (outgoing.analysisConfidence < floor && incoming.analysisConfidence < floor) {
-      return _fallback(incoming, preferredDurationMs);
+      return _fallback(incoming, preferredDurationMs, outgoing: outgoing, outgoingPositionMs: outgoingPositionMs);
     }
 
     final candidates = generate(
@@ -27,11 +27,11 @@ class DjTransitionBrain {
       maxDurationMs: maxDurationMs,
       policy: policy,
     );
-    if (candidates.isEmpty) return _fallback(incoming, preferredDurationMs);
+    if (candidates.isEmpty) return _fallback(incoming, preferredDurationMs, outgoing: outgoing, outgoingPositionMs: outgoingPositionMs);
     final sorted = [...candidates]..sort((a, b) => b.score.compareTo(a.score));
     final best = sorted.first;
     if (!policy.acceptsCandidate(best)) {
-      return _fallback(incoming, preferredDurationMs);
+      return _fallback(incoming, preferredDurationMs, outgoing: outgoing, outgoingPositionMs: outgoingPositionMs);
     }
     return best;
   }
@@ -45,12 +45,36 @@ class DjTransitionBrain {
     int maxDurationMs = 16000,
   }) {
     final result = <DjTransitionCandidate>[];
-    final outRemaining = (outgoing.durationMs ?? 0) - outgoingPositionMs;
     final outgoingAnchor = _bestOutgoingAnchor(outgoing, outgoingPositionMs);
-    final baseDuration = preferredDurationMs.clamp(2000, maxDurationMs).toInt();
+    // Keep the public API safe when callers provide a ceiling below the
+    // minimum executable blend duration.
+    final effectiveMaxDurationMs = maxDurationMs < 2000 ? 2000 : maxDurationMs;
+    final baseDuration = preferredDurationMs.clamp(2000, effectiveMaxDurationMs).toInt();
 
     void add(DjTransitionKind kind, int inMs, int duration, Map<String, double> scores) {
-      final risk = _risks(outgoing, incoming, outgoingPositionMs, inMs);
+      // A blend must fit entirely inside the remaining playable material on
+      // both decks. Unknown durations remain unconstrained rather than guessed.
+      if (outgoingAnchor < 0 || inMs < 0) return;
+      final outgoingAvailable = outgoing.durationMs == null
+          ? null
+          : outgoing.durationMs! - outgoingAnchor;
+      final incomingAvailable = incoming.durationMs == null
+          ? null
+          : incoming.durationMs! - inMs;
+      if ((outgoingAvailable != null && outgoingAvailable < 2000) ||
+          (incomingAvailable != null && incomingAvailable < 2000)) {
+        return;
+      }
+      var durationLimit = effectiveMaxDurationMs;
+      if (outgoingAvailable != null && outgoingAvailable < durationLimit) {
+        durationLimit = outgoingAvailable;
+      }
+      if (incomingAvailable != null && incomingAvailable < durationLimit) {
+        durationLimit = incomingAvailable;
+      }
+      if (durationLimit < 2000) return;
+      final boundedDuration = duration.clamp(2000, durationLimit).toInt();
+      final risk = _risks(outgoing, incoming, outgoingAnchor, inMs);
       final confidence = _confidence(outgoing, incoming, scores);
       final score = (_weightedScore(scores, policy: policy)
               - _riskPenalty(risk) * policy.riskPenaltyScale
@@ -59,9 +83,9 @@ class DjTransitionBrain {
           .toDouble();
       result.add(DjTransitionCandidate(
         kind: kind,
-        outgoingStartMs: outgoingPositionMs,
+        outgoingStartMs: outgoingAnchor,
         incomingStartMs: inMs,
-        durationMs: duration.clamp(2000, maxDurationMs).toInt(),
+        durationMs: boundedDuration,
         score: score,
         confidence: confidence,
         scores: scores,
@@ -71,7 +95,7 @@ class DjTransitionBrain {
 
     final intro = _bestIncomingAnchor(incoming);
     final out = outgoing.transitions.bestOutroMs;
-    if (out != null && outRemaining > 2500) {
+    if (out != null && (outgoing.durationMs == null || outgoing.durationMs! - outgoingAnchor > 2500)) {
       add(
         DjTransitionKind.outroIntro,
         intro,
@@ -89,13 +113,20 @@ class DjTransitionBrain {
         _scorePair(outgoing, incoming, outgoingAnchor, aligned, 0.80, 0.78, policy: policy),
       );
 
-      final phrase = _nextPhrase(incoming, aligned);
-      add(
-        DjTransitionKind.phraseBlend,
-        phrase,
-        (baseDuration * 1.15).round().clamp(3000, maxDurationMs).toInt(),
-        _scorePair(outgoing, incoming, outgoingAnchor, phrase, 0.92, 0.88, policy: policy),
-      );
+      // Phrase boundaries are a stronger claim than beat alignment. Only
+      // propose them when both grids carry independent phrase/bar evidence
+      // and agree on meter; otherwise retain the safer beat-level candidate.
+      if (_phraseGridTrusted(outgoing.beatGrid) &&
+          _phraseGridTrusted(incoming.beatGrid) &&
+          outgoing.beatGrid.beatsPerPhrase == incoming.beatGrid.beatsPerPhrase) {
+        final phrase = _nextPhrase(incoming, aligned);
+        add(
+          DjTransitionKind.phraseBlend,
+          phrase,
+          (baseDuration * 1.15).round().clamp(2000, effectiveMaxDurationMs).toInt(),
+          _scorePair(outgoing, incoming, outgoingAnchor, phrase, 0.92, 0.88, policy: policy),
+        );
+      }
     }
 
     final breakdown = _findSection(incoming, DjSectionType.breakdown);
@@ -104,7 +135,7 @@ class DjTransitionBrain {
       add(
         DjTransitionKind.breakdownDrop,
         breakdown.startMs,
-        (drop.startMs - breakdown.startMs).clamp(3000, maxDurationMs).toInt(),
+        (drop.startMs - breakdown.startMs).clamp(2000, effectiveMaxDurationMs).toInt(),
         _scorePair(outgoing, incoming, outgoingAnchor, breakdown.startMs, 0.88, 0.95, policy: policy),
       );
     }
@@ -126,6 +157,12 @@ class DjTransitionBrain {
     return result;
   }
 
+  bool _phraseGridTrusted(DjBeatGrid grid) {
+    if (!grid.usable || grid.phraseConfidence < 0.60) return false;
+    if (grid.downbeatMs.isNotEmpty) return grid.downbeatConfidence >= 0.55;
+    return grid.barConfidence >= 0.60;
+  }
+
   Map<String, double> _scorePair(
     DjTrackProfile a, DjTrackProfile b, int outPos, int inPos,
     double phraseWeight, double structureWeight, {
@@ -137,6 +174,7 @@ class DjTransitionBrain {
     final spectrum = _spectrumScore(a, b);
     final phrase = _phraseScore(a, b, inPos);
     final structure = _structureScore(a, b, outPos, inPos);
+    final silence = _outgoingSilenceScore(a, outPos);
     return {
       'tempo': tempo,
       'harmonic': harmonic,
@@ -144,6 +182,7 @@ class DjTransitionBrain {
       'spectrum': spectrum,
       'phrase': (phrase * phraseWeight).clamp(0.0, 1.0).toDouble(),
       'structure': (structure * structureWeight).clamp(0.0, 1.0).toDouble(),
+      'silence': silence,
       'confidence': _analysisConfidence(a, b),
     };
   }
@@ -152,11 +191,12 @@ class DjTransitionBrain {
     final phraseBoost = policy.phraseWeightBoost;
     return (s['tempo'] ?? 0.5) * 0.22 +
         (s['harmonic'] ?? 0.5) * 0.18 +
-        (s['energy'] ?? 0.5) * 0.16 +
-        (s['spectrum'] ?? 0.5) * 0.10 +
+        (s['energy'] ?? 0.5) * 0.14 +
+        (s['spectrum'] ?? 0.5) * 0.09 +
         (s['phrase'] ?? 0.5) * (0.14 + phraseBoost) +
-        (s['structure'] ?? 0.5) * 0.12 +
-        (s['confidence'] ?? 0.5) * 0.08;
+        (s['structure'] ?? 0.5) * 0.10 +
+        (s['silence'] ?? 0.5) * 0.06 +
+        (s['confidence'] ?? 0.5) * 0.07;
   }
 
 
@@ -259,6 +299,50 @@ class DjTransitionBrain {
     return candidates.first;
   }
 
+  /// Rewards a transition anchor that is close to confidently measured,
+  /// near-end PCM silence. Quiet musical sections are not treated as silence:
+  /// evidence must be deep, sustained, late in the track, and close to anchor.
+  /// Missing or weak evidence remains neutral.
+  double _outgoingSilenceScore(DjTrackProfile profile, int anchorMs) {
+    final duration = profile.durationMs;
+    if (duration == null || duration <= 0 || profile.silenceRegions.isEmpty) {
+      return 0.5;
+    }
+    var best = 0.5;
+    for (final region in profile.silenceRegions) {
+      if (!_isTrustedLateSilence(profile, region)) continue;
+      final distance = _silenceDistance(anchorMs, region.startMs, region.endMs);
+      if (distance > 12000) continue;
+      final proximity = (1.0 - distance / 12000.0).clamp(0.0, 1.0);
+      final score = 0.5 + 0.5 * proximity * region.confidence;
+      if (score > best) best = score;
+    }
+    return best;
+  }
+
+  bool _hasTrustedSilenceNear(DjTrackProfile profile, int anchorMs) {
+    return profile.silenceRegions.any((region) =>
+        _isTrustedLateSilence(profile, region) &&
+        _silenceDistance(anchorMs, region.startMs, region.endMs) <= 12000);
+  }
+
+  bool _isTrustedLateSilence(DjTrackProfile profile, DjSilenceRegion region) {
+    final duration = profile.durationMs;
+    return duration != null &&
+        duration > 0 &&
+        region.confidence >= 0.78 &&
+        region.durationMs >= 2000 &&
+        region.minimumDbfs <= -48.0 &&
+        region.startMs >= duration * 0.75 &&
+        region.endMs >= duration * 0.90;
+  }
+
+  int _silenceDistance(int anchorMs, int startMs, int endMs) {
+    if (anchorMs < startMs) return startMs - anchorMs;
+    if (anchorMs > endMs) return anchorMs - endMs;
+    return 0;
+  }
+
   double _structureScore(DjTrackProfile a, DjTrackProfile b, int outPos, int inPos) {
     final ao = a.sectionAt(outPos)?.type ?? DjSectionType.unknown;
     final bi = b.sectionAt(inPos)?.type ?? DjSectionType.unknown;
@@ -286,6 +370,10 @@ class DjTransitionBrain {
       risks.add(DjRiskType.structureCollision);
     }
     if (!a.beatGrid.usable || !b.beatGrid.usable) risks.add(DjRiskType.lowConfidence);
+    final silenceScore = _outgoingSilenceScore(a, outPos);
+    if (silenceScore > 0.5 && !_hasTrustedSilenceNear(a, outPos)) {
+      risks.add(DjRiskType.silenceEvidenceMismatch);
+    }
     return risks;
   }
 
@@ -299,6 +387,7 @@ class DjTransitionBrain {
         DjRiskType.structureCollision => 0.15,
         DjRiskType.tempoInstability => 0.10,
         DjRiskType.lowConfidence => 0.04,
+        DjRiskType.silenceEvidenceMismatch => 0.10,
       };
     }
     return penalty.clamp(0.0, 0.55).toDouble();
@@ -343,12 +432,35 @@ class DjTransitionBrain {
     return null;
   }
 
-  DjTransitionCandidate _fallback(DjTrackProfile b, int duration) {
+  DjTransitionCandidate _fallback(
+    DjTrackProfile b,
+    int duration, {
+    required DjTrackProfile outgoing,
+    required int outgoingPositionMs,
+  }) {
+    final incomingStart = b.transitions.bestIntroMs ?? 0;
+    var boundedDuration = duration.clamp(2000, 16000).toInt();
+    final outgoingAvailable = outgoing.durationMs == null
+        ? null
+        : outgoing.durationMs! - outgoingPositionMs;
+    final incomingAvailable = b.durationMs == null
+        ? null
+        : b.durationMs! - incomingStart;
+    if (outgoingPositionMs < 0 || incomingStart < 0) {
+      boundedDuration = 0;
+    }
+    if (outgoingAvailable != null && outgoingAvailable < boundedDuration) {
+      boundedDuration = outgoingAvailable;
+    }
+    if (incomingAvailable != null && incomingAvailable < boundedDuration) {
+      boundedDuration = incomingAvailable;
+    }
+    if (boundedDuration < 2000) boundedDuration = 0;
     return DjTransitionCandidate(
       kind: DjTransitionKind.safeCrossfade,
-      outgoingStartMs: 0,
-      incomingStartMs: b.transitions.bestIntroMs ?? 0,
-      durationMs: duration.clamp(2000, 16000).toInt(),
+      outgoingStartMs: outgoingPositionMs,
+      incomingStartMs: incomingStart,
+      durationMs: boundedDuration,
       score: 0.5,
       confidence: 0.5,
     );

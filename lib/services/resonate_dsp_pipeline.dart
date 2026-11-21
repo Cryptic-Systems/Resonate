@@ -2,8 +2,9 @@ import 'package:flutter/services.dart';
 import 'dart:math' as math;
 
 /// ---------------------------------------------------------------------------
-/// Resonate original software EQ model (not Superpowered / not another app).
+/// Resonate EQ response/compatibility model (not the live PCM processor).
 /// Peaking sections use public RBJ-style filter math; band plan + Q are ours.
+/// Live playback uses the native DSP-ENGINE AudioProcessor in Media3 sinks.
 /// ---------------------------------------------------------------------------
 
 class ResonateBiquad {
@@ -116,7 +117,7 @@ class ResonateDspEngine {
   static const String engineId = 'Resonate DSP Engine';
 }
 
-/// Studio curve → hardware EQ targets (native PCM processor comes later).
+/// Studio curve → compatibility hardware-EQ targets for capability inspection.
 class ResonateDspPipeline {
   ResonateDspPipeline({ResonateDspEngine? engine})
       : engine = engine ?? ResonateDspEngine();
@@ -134,7 +135,7 @@ class ResonateDspPipeline {
   String get id => ResonateDspEngine.engineId;
 }
 
-/// Bridge to Android DynamicsProcessing (Resonate multi-band native stage).
+/// Status bridge for Resonate's native Media3 DSP sink processors.
 class ResonateNativeDspBridge {
   static const MethodChannel _channel =
       MethodChannel('com.aetherion.resonate/audio_effects');

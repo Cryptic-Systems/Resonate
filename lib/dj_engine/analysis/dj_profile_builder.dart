@@ -14,10 +14,15 @@ class DjProfileBuilder {
 
   DjTrackProfile fromAnalysis(DjAnalysis a) {
     final duration = a.durationMs;
-    final intro = a.introHintMs;
-    final outroStart = duration != null && a.outroHintMs != null
-        ? (duration - a.outroHintMs!).clamp(0, duration)
-        : null;
+    // Both hints are absolute positions from the start of the track.
+    // Clamp malformed persisted hints instead of converting the outro as a
+    // distance measured backwards from the end.
+    final intro = a.introHintMs == null
+        ? null
+        : a.introHintMs!.clamp(0, duration ?? (1 << 30)).toInt();
+    final outroStart = a.outroHintMs == null
+        ? null
+        : a.outroHintMs!.clamp(0, duration ?? (1 << 30)).toInt();
     final energy = (a.energy ?? 0.5).clamp(0.0, 1.0).toDouble();
     final loudness = (a.loudness ?? energy).clamp(0.0, 1.0).toDouble();
 
@@ -54,7 +59,7 @@ class DjProfileBuilder {
       keyMode: a.hasUsableKey ? a.keyMode : null,
       keyConfidence: a.hasUsableKey ? 0.70 : 0,
       sections: sections,
-      energyCurve: _energyCurve(a, energy, loudness),
+      energyCurve: _energyCurve(a, energy, loudness, introMs: intro, outroMs: outroStart),
       spectrum: DjSpectralProfile(
         bassDensity: (energy * 0.65 + 0.18).clamp(0.0, 1.0).toDouble(),
         bass: (energy * 0.75).clamp(0.0, 1.0).toDouble(),
@@ -73,15 +78,19 @@ class DjProfileBuilder {
     );
   }
 
-  List<DjEnergyPoint> _energyCurve(DjAnalysis a, double energy, double loudness) {
+  List<DjEnergyPoint> _energyCurve(
+    DjAnalysis a,
+    double energy,
+    double loudness, {
+    required int? introMs,
+    required int? outroMs,
+  }) {
     final duration = a.durationMs;
     if (duration == null || duration <= 0) {
       return [DjEnergyPoint(timeMs: 0, value: energy, loudness: loudness)];
     }
-    final introEnd = (a.introHintMs ?? (duration * 0.08).round()).clamp(0, duration).toInt();
-    final outroStart = a.outroHintMs == null
-        ? (duration * 0.90).round()
-        : (duration - a.outroHintMs!).clamp(0, duration).toInt();
+    final introEnd = (introMs ?? (duration * 0.08).round()).clamp(0, duration).toInt();
+    final outroStart = (outroMs ?? (duration * 0.90).round()).clamp(0, duration).toInt();
     return [
       DjEnergyPoint(timeMs: 0, value: (energy * 0.80).clamp(0.0, 1.0).toDouble(), loudness: loudness),
       DjEnergyPoint(timeMs: introEnd, value: energy, loudness: loudness),

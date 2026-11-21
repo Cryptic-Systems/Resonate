@@ -189,11 +189,14 @@ class DjAnalysisService {
     _inFlight.add(song.id);
     try {
       final size = await _fileSize(song.filePath);
-      final legacyEstimate = await _estimator.estimateFile(
-        song.filePath,
-        durationMs: song.duration.inMilliseconds,
-        isCancelled: cancelled,
-      );
+      var estimate = await _estimateWithV2Profile(song, null, isCancelled: cancelled);
+      if (estimate == null && !cancelled()) {
+        estimate = await _estimator.estimateFile(
+          song.filePath,
+          durationMs: song.duration.inMilliseconds,
+          isCancelled: cancelled,
+        );
+      }
       if (cancelled()) {
         return DjAnalysis(
           songId: song.id,
@@ -201,11 +204,6 @@ class DjAnalysisService {
           analysisVersion: DjAnalysis.currentVersion,
         );
       }
-      final estimate = await _estimateWithV2Profile(
-        song,
-        legacyEstimate,
-        isCancelled: cancelled,
-      );
       if (cancelled()) {
         return DjAnalysis(
           songId: song.id,
@@ -263,6 +261,25 @@ class DjAnalysisService {
     }
   }
 
+  @visibleForTesting
+  static List<int> analysisWindowStartPositions(
+    int durationMs, {
+    double sampleSeconds = 8.0,
+  }) {
+    if (durationMs <= 0) return const <int>[];
+    final windowMs = (sampleSeconds * 1000).round().clamp(4000, 25000).toInt();
+    final positions = <int>{0};
+    if (durationMs > windowMs * 2) {
+      positions
+        ..add((durationMs * 0.33).round().clamp(0, durationMs - windowMs).toInt())
+        ..add((durationMs * 0.66).round().clamp(0, durationMs - windowMs).toInt());
+    }
+    if (durationMs > windowMs) {
+      positions.add((durationMs - windowMs).clamp(0, durationMs - 1).toInt());
+    }
+    return positions.toList()..sort();
+  }
+
   Future<DjBpmEstimate?> _estimateWithV2Profile(
     Song song,
     DjBpmEstimate? legacy, {
@@ -272,6 +289,7 @@ class DjAnalysisService {
     if (durationMs <= 0) return legacy;
 
     final windows = <DjDecodedPcmWindow>[];
+    double? maxSafeBassDb;
     Future<void> addWindow(int startMs, String role, double seconds) async {
       if (isCancelled?.call() ?? false) return;
       final decoded = await _estimator.extractDecodedPcmWindow(
@@ -280,6 +298,19 @@ class DjAnalysisService {
         startMs: startMs,
       );
       if (decoded == null) return;
+      final probedSafeBass = await _estimator.probeMaxBassGainDb(
+        decoded.pcm,
+        sampleRate: decoded.sampleRate,
+        channels: decoded.channels,
+        shelfFreqHz: 80,
+        ceilingDb: -0.1,
+        marginDb: 1,
+      );
+      if (probedSafeBass != null) {
+        maxSafeBassDb = maxSafeBassDb == null
+            ? probedSafeBass
+            : (maxSafeBassDb! < probedSafeBass ? maxSafeBassDb : probedSafeBass);
+      }
       windows.add(
         DjDecodedPcmWindow(
           pcm: decoded.pcm,
@@ -291,19 +322,11 @@ class DjAnalysisService {
       );
     }
 
-    // Sample the full track rather than trusting only start/middle/end.
-    // Windows are intentionally short to keep idle analysis affordable.
-    final sampleSeconds = durationMs >= 180000 ? 12.0 : 15.0;
+    // Four short, distributed windows retain intro/middle/outro structure.
+    // This replaces six V2 windows plus two legacy PCM decodes per song.
+    const sampleSeconds = 8.0;
     final windowMs = (sampleSeconds * 1000).round();
-    final positions = <int>{0};
-    if (durationMs > windowMs) {
-      for (final fraction in const <double>[0.20, 0.40, 0.60, 0.80]) {
-        positions.add((durationMs * fraction).round());
-      }
-      positions.add((durationMs - windowMs).clamp(0, durationMs - 1000));
-    }
-
-    final ordered = positions.toList()..sort();
+    final ordered = analysisWindowStartPositions(durationMs, sampleSeconds: sampleSeconds);
     for (final startMs in ordered) {
       if (isCancelled?.call() ?? false) return null;
       final role = startMs == 0
@@ -313,12 +336,31 @@ class DjAnalysisService {
       if (isCancelled?.call() ?? false) return null;
     }
 
-    if (windows.isEmpty) return legacy;
+    if (windows.isEmpty) {
+      if (legacy == null || legacy.outroHintMs == null) return legacy;
+      return DjBpmEstimate(
+        bpm: legacy.bpm,
+        confidence: legacy.confidence,
+        beatOffsetMs: legacy.beatOffsetMs,
+        source: legacy.source,
+        keyRoot: legacy.keyRoot,
+        keyMode: legacy.keyMode,
+        keyConfidence: legacy.keyConfidence,
+        energy: legacy.energy,
+        loudness: legacy.loudness,
+        introHintMs: legacy.introHintMs,
+        outroHintMs: (durationMs - legacy.outroHintMs!)
+            .clamp(0, durationMs)
+            .toInt(),
+        sectionHint: legacy.sectionHint,
+      );
+    }
 
     final profile = _profileAnalyzer.analyze(
       songId: song.id,
       durationMs: durationMs,
       windows: windows,
+      maxSafeBassDb: maxSafeBassDb,
       analysisVersion: DjAnalysis.currentVersion,
     );
     await saveProfile(profile);
@@ -357,7 +399,12 @@ class DjAnalysisService {
               profile.energyCurve.length
           : legacy?.loudness,
       introHintMs: profile.transitions.bestIntroMs ?? legacy?.introHintMs,
-      outroHintMs: profile.transitions.bestOutroMs ?? legacy?.outroHintMs,
+      outroHintMs: profile.transitions.bestOutroMs ??
+          (legacy?.outroHintMs == null
+              ? null
+              : (durationMs - legacy!.outroHintMs!)
+                  .clamp(0, durationMs)
+                  .toInt()),
       sectionHint: profile.sections.isNotEmpty
           ? (profile.sections
                 .toList()

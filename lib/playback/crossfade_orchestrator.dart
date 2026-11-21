@@ -38,6 +38,24 @@ class CrossfadeOrchestrator {
     );
   }
 
+  /// Prepares the standby deck early enough to reach analyzed DJ mix points.
+  static bool shouldPreloadForApprovedCue({
+    required int positionMs,
+    required int cueMs,
+    int preloadLeadMs = 10000,
+  }) {
+    if (positionMs < 0 || cueMs < 0 || preloadLeadMs < 0) return false;
+    final preloadAtMs = math.max(0, cueMs - preloadLeadMs);
+    return positionMs >= preloadAtMs && positionMs < cueMs;
+  }
+
+  /// Starts the approved transition at its reviewed outgoing cue position.
+  static bool shouldStartAtApprovedCue({
+    required int positionMs,
+    required int cueMs,
+  }) =>
+      positionMs >= 0 && cueMs >= 0 && positionMs >= cueMs;
+
   static CrossfadeTiming timing({
     required int configuredDurationMs,
     required bool djActive,
@@ -49,9 +67,15 @@ class CrossfadeOrchestrator {
         .clamp(1500, 3000)
         .toInt();
 
+    final preloadWindowMs = djActive
+        ? math.max(35000, configuredDurationMs + 10000)
+            .clamp(10000, 45000)
+            .toInt()
+        : (configuredDurationMs + 10000).clamp(10000, 28000).toInt();
+
     return CrossfadeTiming(
       effectiveFadeMs: effectiveFadeMs,
-      preloadWindowMs: (configuredDurationMs + 10000).clamp(10000, 28000).toInt(),
+      preloadWindowMs: preloadWindowMs,
       fadeArmWindowMs: configuredDurationMs + 2000,
       triggerWindowMs: (effectiveFadeMs + startMarginMs).clamp(2000, 16000).toInt(),
     );

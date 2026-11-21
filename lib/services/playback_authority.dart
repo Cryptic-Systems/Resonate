@@ -40,7 +40,14 @@ class PlaybackAuthority extends ChangeNotifier {
   String get lastCommand => _lastCommand;
   PlaybackEvent? get lastEvent => _lastEvent;
 
-  String engineLabel(MusicProvider music) => _engineLabelFor(music.audioPlayer);
+  String engineLabel(MusicProvider music) {
+    // The injected Media3 session is the selected runtime from construction;
+    // do not touch the deprecated player getter while startup is still binding.
+    if (music.media3PlaybackSession != null) {
+      return music.media3ProviderSessionActive ? 'Media3' : 'Media3 (starting)';
+    }
+    return 'Engine ${music.activeEngineLabel}';
+  }
 
   Future<void> userPause(MusicProvider music) => music.pause();
   Future<void> userStop(MusicProvider music) => music.stop();
@@ -101,14 +108,5 @@ class PlaybackAuthority extends ChangeNotifier {
     unawaited(ResonateDiagnostics.recordPlaybackCommand(source: source, command: command, generation: _userGeneration));
   }
 
-  static final Map<int, String> _engineIds = <int, String>{};
 
-  String _engineLabelFor(Object player) {
-    final id = identityHashCode(player);
-    final known = _engineIds[id];
-    if (known != null) return known;
-    final label = _engineIds.isEmpty ? 'A' : (_engineIds.values.contains('A') ? 'B' : 'A');
-    _engineIds[id] = label;
-    return label;
-  }
 }

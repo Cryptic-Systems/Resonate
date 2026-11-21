@@ -97,7 +97,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
         builder: (_) => const AlertDialog(
           title: Text('What is collected?'),
           content: Text(
-              'Resonate records technical events needed to diagnose playback, Intelligence, and DJ Mode problems: timestamps, playback commands, song/queue state, player state, engine transitions, DJ handoff outcomes, errors, stack traces, app/build mode and OS information. Feedback text is included when you choose to save it. Music files, microphone audio, contacts, credentials and arbitrary files are not collected. Reports are never uploaded automatically.'),
+              'Resonate records detailed local development telemetry: playback commands and state, queue changes, repeat and crossfade transitions, Media3/player state, DSP and controller arbitration, DJ/Intelligence decisions, app lifecycle, memory-pressure signals, Flutter/platform exceptions, stack traces, build mode and OS information. Diagnostic text is sanitized to redact common credentials and email addresses; full storage paths are reduced to filenames. Music/audio files, microphone recordings, contacts, passwords, access tokens, private keys and arbitrary file contents are not collected. Reports remain on this device until you explicitly export them; nothing is uploaded automatically.'),
         ),
       );
 
@@ -112,6 +112,16 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     final djApplied = (summary['djApplied'] as num?)?.toInt() ?? 0;
     final djHint = summary['djHealthHint']?.toString() ?? '';
     final intelStages = (summary['intelligenceStages'] as Map?)?.length ?? 0;
+    final eventTypes = (summary['eventTypes'] as Map?) ?? const {};
+    final audioUnderruns = eventTypes['media3_audio_underrun'] ?? 0;
+    final gainDiscontinuities =
+        eventTypes['media3_crossfade_gain_discontinuity'] ?? 0;
+    final repeatEvents = (eventTypes['repeat_mode_command_requested'] ?? 0) +
+        (eventTypes['repeat_mode_command_completed'] ?? 0);
+    final dspHintEvents = eventTypes['media3_dsp_analysis_hint'] ?? 0;
+    final dspHintSkippedEvents =
+        eventTypes['media3_dsp_analysis_hint_skipped'] ?? 0;
+    final droppedEvents = (_report['droppedEventCount'] as num?)?.toInt() ?? 0;
 
     return ResonateGlassScaffold(
       title: const Text('Privacy & Diagnostics'),
@@ -139,7 +149,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                         ]),
                         const SizedBox(height: 12),
                         const Text(
-                            'Diagnostics stay on this device. Save report lets you choose where the JSON is stored. Report a problem opens your installed email app directly. Nothing is uploaded automatically.'),
+                            'Expanded development telemetry stays on this device. Save report lets you choose where the JSON is stored. Common secrets and email addresses are redacted. Audio files are never recorded or included. Nothing is uploaded automatically.'),
                       ],
                     ),
                   ),
@@ -153,7 +163,30 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                 ListTile(
                   leading: const Icon(Icons.timeline_rounded),
                   title: const Text('Diagnostic events'),
-                  subtitle: Text('$events recent events stored locally'),
+                  subtitle: Text('$events recent events stored locally · $droppedEvents older events rotated out'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.graphic_eq_rounded),
+                  title: const Text('Native audio underruns'),
+                  subtitle: Text('$audioUnderruns underrun event batches captured from Media3'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.multiline_chart_rounded),
+                  title: const Text('Crossfade gain discontinuities'),
+                  subtitle: Text('$gainDiscontinuities large gain-step events detected during fades'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.repeat_rounded),
+                  title: const Text('Repeat-mode activity'),
+                  subtitle: Text('$repeatEvents repeat-mode request/completion events'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.tune_rounded),
+                  title: const Text('DSP analysis hints'),
+                  subtitle: Text(
+                    '$dspHintEvents applied/attempted · '
+                    '$dspHintSkippedEvents skipped with reason',
+                  ),
                 ),
                 ListTile(
                   leading: const Icon(Icons.psychology_outlined),
@@ -192,7 +225,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   leading: const Icon(Icons.visibility_outlined),
                   title: const Text('What is collected?'),
                   subtitle: const Text(
-                      'Playback, Intelligence, and DJ Mode diagnostics. No audio files or microphone data.'),
+                      'Expanded playback, Media3, DSP, DJ, app lifecycle and error telemetry. No audio files or microphone data.'),
                   onTap: _showWhatCollected,
                 ),
                 ListTile(

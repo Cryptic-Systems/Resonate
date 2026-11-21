@@ -31,6 +31,7 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   String? _observedSongId;
   bool _lastPlaying = false;
   List<IntelligenceRecommendation> _recommendations = const [];
+  List<IntelligenceRecommendation> _candidatePool = const [];
   Map<String, double> _feedback = <String, double>{};
   final Set<String> _avoidedArtists = <String>{};
 
@@ -44,10 +45,20 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _refreshDebounce;
   bool _refreshInFlight = false;
   bool _refreshQueued = false;
+  bool _refreshAwaitingCaller = false;
+  Completer<void>? _refreshCompletion;
+  int _recommendationRevision = 0;
+  bool _disposed = false;
+
+  void _invalidateRecommendationSnapshot() {
+    _recommendationRevision++;
+    if (_refreshInFlight && _enabled) _refreshQueued = true;
+  }
   /// When true, skip scheduled ranking while app is backgrounded / screen off.
   bool _quietWhenBackground = true;
   bool _appInBackground = false;
 
+  static const int _candidatePoolLimit = 80;
   static const int _minimumLearningEvents = 40;
   static const int _minimumDistinctSongs = 12;
   static const double _graduationConfidence = .78;
@@ -67,12 +78,15 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool get quietWhenBackground => _quietWhenBackground;
 
   void attachModes(ModeProvider modes) {
+    _modes?.removeListener(_onModeChanged);
     _modes = modes;
     modes.addListener(_onModeChanged);
+    _invalidateRecommendationSnapshot();
     _scheduleRefreshRecommendations();
   }
 
   void _onModeChanged() {
+    _invalidateRecommendationSnapshot();
     if (_enabled) _scheduleRefreshRecommendations();
   }
 
@@ -110,6 +124,9 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool get isAutopilotGraduated => _autopilotGraduated;
   String get autonomyLabel => const ['Suggestions only', 'Assist me', 'Autopilot'][_autonomy.clamp(0, 2)];
   List<IntelligenceRecommendation> get recommendations => List.unmodifiable(_recommendations);
+  /// Larger local ranking pool reserved for mode-aware planners; the UI keeps
+  /// using [recommendations] so candidate expansion does not flood the feed.
+  List<IntelligenceRecommendation> get candidatePool => List.unmodifiable(_candidatePool);
   IntelligenceRecommendation? get anticipatedNext => _recommendations.isEmpty ? null : _recommendations.first;
   String get sessionMode => _sessionMode;
   String get sessionSummary => _sessionSummary;
@@ -149,10 +166,16 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> setEnabled(bool enabled) async {
+    if (_enabled != enabled) _invalidateRecommendationSnapshot();
     _enabled = enabled;
+    if (!enabled) {
+      _refreshDebounce?.cancel();
+      _refreshQueued = false;
+    }
     try { await (await SharedPreferences.getInstance()).setBool('intelligence_enabled', enabled); } catch (e) { debugPrint('Intelligence enabled save failed: $e'); }
     if (!enabled) {
       _recommendations = const [];
+      _candidatePool = const [];
       _sessionMode = 'Manual playback';
       _sessionSummary = 'Intelligence is off, so this session stays fully manual.';
       _sessionCompletion = 0.0;
@@ -177,16 +200,15 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  Future<void> _evaluateAutopilotGraduation() async {
-    if (!_enabled || _autopilotGraduated || _autonomy == 2) return;
+  Future<void> _evaluateAutopilotGraduation({bool Function()? shouldContinue}) async {
+    bool current() => _enabled && (shouldContinue?.call() ?? true);
+    if (!current() || _autopilotGraduated || _autonomy == 2) return;
     try {
       final events = await IntelligenceEvidenceCache.instance.recentEvents(limit: 200);
+      if (!current()) return;
       if (events.length < _minimumLearningEvents) return;
       if (events.map((e) => e.songId).toSet().length < _minimumDistinctSongs) return;
       if (_recommendations.where((r) => r.confidence >= _graduationConfidence).length < 2) return;
-      _autonomy = 2;
-      _autopilotGraduated = true;
-
       // Phase 5: graduation only raises autonomy. Consent stays user-granted.
       // Without consent, Autopilot may show a takeover prompt but must not
       // call play / next / crossfade / enqueue APIs.
@@ -196,10 +218,15 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
         'consentRequired': true,
       });
 
+      if (!current()) return;
       final prefs = await SharedPreferences.getInstance();
+      if (!current()) return;
       await prefs.setInt('intelligence_autonomy', 2);
       await prefs.setBool('intelligence_autopilot_graduated', true);
-      notifyListeners();
+      if (!current()) return;
+      _autonomy = 2;
+      _autopilotGraduated = true;
+      if (!_disposed) notifyListeners();
     } catch (e) { debugPrint('Intelligence graduation check failed: $e'); }
   }
 
@@ -252,6 +279,7 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   void _onVisibilityChanged() {
     IntelligenceEvidenceCache.instance.invalidate();
+    _invalidateRecommendationSnapshot();
     if (_enabled) _scheduleRefreshRecommendations();
   }
 
@@ -262,6 +290,7 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
     final resumed = playing && !_lastPlaying;
     _observedSongId = id;
     _lastPlaying = playing;
+    if (changedSong) _invalidateRecommendationSnapshot();
     if (!_enabled) return;
     if (changedSong || resumed) _scheduleRefreshRecommendations();
   }
@@ -290,8 +319,9 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
     return session;
   }
 
-  Future<void> _updateSessionContext(List<ListeningEvent> events, Map<String, Song> byId) async {
+  Future<void> _updateSessionContext(List<ListeningEvent> events, Map<String, Song> byId, {bool Function()? shouldContinue}) async {
     final sessionEnabled = await IntelligenceSettingsStore.sessionIntelligence();
+    if (!(shouldContinue?.call() ?? true)) return;
     if (!sessionEnabled) {
       _sessionMode = 'Session intelligence off';
       _sessionSummary = 'Using long-term listening signals without session steering.';
@@ -325,30 +355,57 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _updateSessionArtistAndMode(List<ListeningEvent> events, Map<String, Song> byId) async => _updateSessionContext(events, byId);
 
   Future<void> refreshRecommendations({int limit = 8, bool notify = true}) async {
-    if (!_enabled) { _recommendations = const []; if (notify) notifyListeners(); return; }
+    if (!_enabled) { _recommendations = const []; _candidatePool = const []; if (notify && !_disposed) notifyListeners(); return; }
     if (_refreshInFlight) {
+      // A caller that needs recommendations for a playback decision must not
+      // continue with the previous snapshot while a newer refresh is pending.
+      // Wait for the active pass, then own a fresh pass for the latest context.
       _refreshQueued = true;
+      _refreshAwaitingCaller = true;
+      final activeRefresh = _refreshCompletion?.future;
+      if (activeRefresh != null) await activeRefresh;
+      if (_enabled && !_disposed) {
+        return refreshRecommendations(limit: limit, notify: notify);
+      }
       return;
     }
     _refreshInFlight = true;
+    _refreshCompletion = Completer<void>();
+    final revision = _recommendationRevision;
+    final sourceSongId = music.currentSong?.id;
+    final sourceMode = _modes?.mode;
+    bool refreshIsCurrent() => !_disposed && _enabled &&
+        revision == _recommendationRevision &&
+        sourceSongId == music.currentSong?.id && sourceMode == _modes?.mode;
     try {
       final allSongs = await _database.getAllSongs();
+      if (!refreshIsCurrent()) return;
       final visibility = LibraryVisibilityStore.instance;
       await visibility.load();
+      if (!refreshIsCurrent()) return;
       final songs = visibility.filter(allSongs, (song) => song.id);
       final current = music.currentSong;
       final events = await IntelligenceEvidenceCache.instance.recentEvents(limit: 200);
+      if (!refreshIsCurrent()) return;
       final transitions = <String, int>{};
       if (current != null) {
-        for (final row in await _database.getTransitionCounts(current.id)) {
+        final transitionRows = await _database.getTransitionCounts(current.id);
+        if (!refreshIsCurrent()) return;
+        for (final row in transitionRows) {
           final id = row['next_song_id']?.toString();
           if (id != null) transitions[id] = (row['transition_count'] as num?)?.toInt() ?? 0;
         }
       }
       final plays = <String, int>{}; final completes = <String, int>{}; final skips = <String, int>{}; final artistAffinity = <String, double>{}; final songHourAffinity = <String, double>{}; final recentSongIds = <String>{}; final byId = {for (final s in allSongs) s.id: s}; final now = DateTime.now(); final currentHourBucket = now.hour ~/ 3;
       final sessionEnabled = await IntelligenceSettingsStore.sessionIntelligence();
-      final exploration = (await IntelligenceSettingsStore.exploration()) / 100.0; final familiarity = 1.0 - exploration; final explanationsEnabled = await IntelligenceSettingsStore.explanations();
+      if (!refreshIsCurrent()) return;
+      final exploration = (await IntelligenceSettingsStore.exploration()) / 100.0;
+      if (!refreshIsCurrent()) return;
+      final familiarity = 1.0 - exploration;
+      final explanationsEnabled = await IntelligenceSettingsStore.explanations();
+      if (!refreshIsCurrent()) return;
       final seekEvidence = await IntelligenceSeekMemory().summarizeAll();
+      if (!refreshIsCurrent()) return;
       final sessionEvents = sessionEnabled ? _extractCurrentSession(events) : const <ListeningEvent>[]; final sessionSongIds = sessionEvents.map((e) => e.songId).toSet(); final sessionArtistCounts = <String, int>{}; var recentRank = 0;
       for (final event in events) {
         plays[event.songId] = (plays[event.songId] ?? 0) + 1;
@@ -362,7 +419,8 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
         recentRank++;
       }
       for (final event in sessionEvents) { final artist = _artistKey(byId[event.songId]?.artist); if (artist.isNotEmpty) sessionArtistCounts[artist] = (sessionArtistCounts[artist] ?? 0) + 1; }
-      await _updateSessionContext(events, byId);
+      await _updateSessionContext(events, byId, shouldContinue: refreshIsCurrent);
+      if (!refreshIsCurrent()) return;
 
       final modeFilteredSongs = _modes == null
           ? songs
@@ -430,26 +488,43 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
         }
         ranked.add(IntelligenceRecommendation(song: song, score: score, confidence: confidence, reason: reason, decision: _autonomy == 2 ? 'autopilot' : _autonomy == 1 ? 'assist' : 'suggest', sessionReason: sessionReason));
       }
-      ranked.sort((a, b) => b.score.compareTo(a.score)); _recommendations = ranked.take(limit).toList(growable: false);
+      ranked.sort((a, b) => b.score.compareTo(a.score));
+      if (!refreshIsCurrent()) return;
+      final nextCandidatePool = ranked.take(_candidatePoolLimit).toList(growable: false);
+      final nextRecommendations = ranked.take(limit).toList(growable: false);
       await ResonateDiagnostics.record('intelligence_recommendations_generated', {
         'stage': 'recommendations_generated',
         'mode': autonomyLabel,
         'sessionMode': _sessionMode,
-        'count': _recommendations.length,
-        'topSongId': _recommendations.isEmpty ? null : _recommendations.first.song.id,
-        'topConfidence': _recommendations.isEmpty ? 0 : _recommendations.first.confidence,
+        'count': nextRecommendations.length,
+        'topSongId': nextRecommendations.isEmpty ? null : nextRecommendations.first.song.id,
+        'topConfidence': nextRecommendations.isEmpty ? 0 : nextRecommendations.first.confidence,
         'exploration': exploration,
       });
-      await _evaluateAutopilotGraduation(); if (notify) notifyListeners();
+      if (!refreshIsCurrent()) return;
+      _candidatePool = nextCandidatePool;
+      _recommendations = nextRecommendations;
+      await _evaluateAutopilotGraduation(shouldContinue: refreshIsCurrent);
+      if (refreshIsCurrent() && notify && !_disposed) notifyListeners();
     } catch (e, stack) {
       debugPrint('Intelligence refresh failed: $e');
       debugPrint('$stack');
     } finally {
       _refreshInFlight = false;
-      if (_refreshQueued && _enabled) {
+      final completion = _refreshCompletion;
+      _refreshCompletion = null;
+      if (_refreshAwaitingCaller) {
+        // The waiting caller immediately starts the next pass; don't also
+        // schedule a debounced duplicate of the same refresh.
+        _refreshAwaitingCaller = false;
+        _refreshQueued = false;
+      } else if (_refreshQueued && _enabled && !_disposed) {
         _refreshQueued = false;
         _scheduleRefreshRecommendations(limit: limit);
+      } else {
+        _refreshQueued = false;
       }
+      if (completion != null && !completion.isCompleted) completion.complete();
     }
   }
 
@@ -462,6 +537,9 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _disposed = true;
+    _recommendationRevision++;
+    _refreshQueued = false;
     _refreshDebounce?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     LibraryVisibilityStore.instance.removeListener(_onVisibilityChanged);

@@ -4,6 +4,11 @@ part of 'music_provider.dart';
 /// share its private playback state while staying out of the core provider file.
 extension CrossfadeOrchestration on MusicProvider {
 Future<void> _preloadNextForCrossfade() async {
+    if (_media3ProviderSession != null) {
+      if (!_media3ProviderSessionActive) return;
+      await _preloadNextForMedia3Crossfade();
+      return;
+    }
     if (!effectiveCrossfadeEnabled || _crossfadePreloadInFlight || !canCrossfadeNext) return;
     final next = _crossfadeTargetSong;
     if (next == null || _preloadedNextSongId == next.id) return;
@@ -131,6 +136,11 @@ Future<void> _preloadNextForCrossfade() async {
   }
 
 Future<void> _runAutomaticCrossfade() async {
+    if (_media3ProviderSession != null) {
+      if (!_media3ProviderSessionActive) return;
+      await _runMedia3AutomaticCrossfade();
+      return;
+    }
     // Do not even register automatic ownership if a user transport is queued.
     if (_transportInFlight || _loadingSource || _userTransportPending) {
       _automaticCrossfadeInFlight = false;

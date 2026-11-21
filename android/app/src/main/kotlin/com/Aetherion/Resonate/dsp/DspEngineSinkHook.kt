@@ -2,14 +2,16 @@ package com.aetherion.resonate.dsp
 
 import androidx.media3.common.audio.AudioProcessor
 import android.util.Log
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArraySet
 
 /**
- * Reflection entry for just_audio patch → DefaultAudioSink processors.
+ * Factory for native DSP AudioProcessors installed in Media3 DefaultAudioSink.
  *
- * Called once per ExoPlayer / just_audio engine. Resonate dual playback
- * therefore gets **two** independent [DspEngineAudioProcessor] instances
- * (engine A and engine B) when both players are created — which is what
- * we want for flawless crossfade (no shared native handle across threads).
+ * Media3 calls [createProcessors] once per deck, so dual playback receives
+ * independent DSP processors and native handles for decks A and B. The
+ * no-argument overload remains as compatibility for the legacy just_audio
+ * injection hook while that backend is being retired.
  *
  * Crash history (2026-09-28): old JNI called dsp_create(double, int) but the
  * real ABI is dsp_create(const DspConfig*). That treated the sample-rate bits
@@ -24,24 +26,31 @@ object DspEngineSinkHook {
      * Requires libdsp_engine.so in the APK and ABI-matched JNI.
      */
     private const val ENABLE_NATIVE_LIVE_DSP = true
+    private val processorsByDeck = ConcurrentHashMap<String, CopyOnWriteArraySet<DspEngineAudioProcessor>>()
+
+    /** Compatibility overload used only by the legacy just_audio sink patch. */
+    @JvmStatic
+    fun createProcessors(): Array<AudioProcessor> = createProcessors("legacy")
 
     @JvmStatic
-    fun createProcessors(): Array<AudioProcessor> {
+    fun createProcessors(deckId: String): Array<AudioProcessor> {
         return try {
             val allow = ENABLE_NATIVE_LIVE_DSP && DspSessionGate.isNativeAllowed()
-            val proc = DspEngineAudioProcessor()
+            val proc = DspEngineAudioProcessor(deckId)
             proc.setNativeProcessEnabled(allow)
+            proc.setDeckActive(deckId == "legacy" || deckId.startsWith("preview_") || DspEngineRegistry.isActiveDeck(deckId))
+            processorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(proc)
             val active = DspEngineRegistry.activeCount()
             if (allow) {
                 Log.i(
                     TAG,
-                    "Injected 1 host AudioProcessor(s) native=ON " +
+                    "Injected 1 host AudioProcessor(s) native=ON deck=$deckId " +
                         "(session ok; registry_active=$active — dual A/B uses 2 injects)"
                 )
             } else {
                 Log.i(
                     TAG,
-                    "Injected 1 host AudioProcessor(s) pass-through " +
+                    "Injected 1 host AudioProcessor(s) pass-through deck=$deckId " +
                         "(ENABLE=$ENABLE_NATIVE_LIVE_DSP gate_tripped=${DspSessionGate.isTripped()})"
                 )
             }
@@ -50,5 +59,35 @@ object DspEngineSinkHook {
             Log.e(TAG, "Failed to create DspEngineAudioProcessor", t)
             emptyArray()
         }
+    }
+
+    /** Re-registers a processor if Media3 resets and later reconfigures its sink. */
+    @JvmStatic
+    fun trackProcessor(processor: DspEngineAudioProcessor, deckId: String) {
+        processorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(processor)
+    }
+
+    /** Drops all processor references when the owning ExoPlayer is released. */
+    @JvmStatic
+    fun forgetDeck(deckId: String) {
+        processorsByDeck.remove(deckId)
+    }
+
+    /** Removes released processor instances so a stale deck cannot be reactivated. */
+    @JvmStatic
+    fun forgetProcessor(processor: DspEngineAudioProcessor) {
+        processorsByDeck.values.forEach { it.remove(processor) }
+    }
+
+    /** Activates a deck's native handle immediately before it is allowed to output. */
+    @JvmStatic
+    fun activateDeck(deckId: String) {
+        processorsByDeck[deckId]?.forEach { it.setDeckActive(true) }
+    }
+
+    /** Releases a deck's native handle while its ExoPlayer remains reusable as standby. */
+    @JvmStatic
+    fun suspendDeck(deckId: String) {
+        processorsByDeck[deckId]?.forEach { it.setDeckActive(false) }
     }
 }

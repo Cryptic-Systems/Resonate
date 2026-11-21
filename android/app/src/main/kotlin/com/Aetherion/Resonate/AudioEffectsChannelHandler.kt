@@ -42,11 +42,18 @@ internal class AudioEffectsChannelHandler {
                     "setLiveDspEnabled",
                     "setLiveDspPreampDb",
                     "setLiveDspDvcDb",
+                    "setLiveDspDvc",
+                    "setLiveDspLimiterConfig",
+                    "setLiveDspDither",
                     "setLiveDspLimiterCeiling",
                     "setLiveDspCrossoverHz",
                     "setLiveDspEqBands",
+                    "setLiveDspParametricEqBands",
                     "setLiveDspSpeakerMode",
                     "setLiveDspVirtualBass",
+                    "setLiveDspIntelligenceConfig",
+                    "setLiveDspAutoDynamicsConfig",
+                    "setLiveDspDeckAnalysisHint",
                     "getLiveDspStatus" -> liveDspChannelHandler.handle(call, result)
                     "refreshVisualizers" -> {
                         effectsBridge.refreshVisualizers()

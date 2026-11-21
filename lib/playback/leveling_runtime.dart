@@ -21,6 +21,16 @@ class LevelingRuntime {
     _recomputeEffectiveScale();
   }
 
+  /// Compose an optional secondary track trim without replacing the canonical
+  /// loudness-analysis trim. A disabled secondary normalizer passes 1.0 and
+  /// therefore preserves [trackScale].
+  double composeAdditionalTrackScale(double additionalScale) {
+    final safeAdditional = additionalScale.isFinite
+        ? additionalScale.clamp(0.0, 1.0).toDouble()
+        : 1.0;
+    return (trackScale * safeAdditional).clamp(0.0, 1.0).toDouble();
+  }
+
   void _recomputeEffectiveScale() {
     effectivePreampScale =
         (userPreampScale * trackScale).clamp(0.0, 1.0).toDouble();

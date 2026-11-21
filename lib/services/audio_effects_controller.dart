@@ -1,4 +1,3 @@
-import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio_effects_bridge.dart';
@@ -8,10 +7,10 @@ import 'audio_effects_bridge.dart';
 /// Called only *after* play has started (deferred from MusicProvider) so we
 /// never race ExoPlayer session attach / setAudioSource on the critical path.
 class AudioEffectsController {
-  final AndroidEqualizer equalizerA;
-  final AndroidEqualizer equalizerB;
-  final AndroidLoudnessEnhancer loudnessA;
-  final AndroidLoudnessEnhancer loudnessB;
+  final dynamic equalizerA;
+  final dynamic equalizerB;
+  final dynamic loudnessA;
+  final dynamic loudnessB;
 
   AudioEffectsController({
     required this.equalizerA,
@@ -31,7 +30,7 @@ class AudioEffectsController {
     // runs after source setup and on A/B handoffs, so restoring old Android
     // Equalizer band preferences here could silently re-enable a second EQ
     // after the user switched the authoritative EQ off.
-    for (final eq in <AndroidEqualizer>[equalizerA, equalizerB]) {
+    for (final eq in <dynamic>[equalizerA, equalizerB]) {
       try {
         await eq.setEnabled(false);
       } catch (_) {}
@@ -39,7 +38,7 @@ class AudioEffectsController {
 
     // LoudnessEnhancer is retired. Track leveling and the Resonate preamp/DVC
     // path own gain; never let legacy preferences create a competing gain stage.
-    for (final loud in <AndroidLoudnessEnhancer>[loudnessA, loudnessB]) {
+    for (final loud in <dynamic>[loudnessA, loudnessB]) {
       try {
         await loud.setTargetGain(0.0);
         await loud.setEnabled(false);
@@ -54,7 +53,7 @@ class AudioEffectsController {
     );
   }
 
-  Future<void> activateFor(AudioPlayer player) async {
+  Future<void> activateFor(dynamic player) async {
     try {
       await syncAll();
       final sessionId = player.androidAudioSessionId;
@@ -78,7 +77,7 @@ class AudioEffectsController {
   /// Temporarily attenuate the lowest EQ bands during a DJ overlap.
   /// Returns the exact pre-transition gains so the user's EQ is restored byte-for-byte.
   Future<Map<int, double>> duckBassForTransition({
-    required AndroidEqualizer equalizer,
+    required dynamic equalizer,
     double attenuationDb = 4.0,
   }) async {
     final original = <int, double>{};
@@ -101,7 +100,7 @@ class AudioEffectsController {
 
   /// Restore the exact EQ gains captured before a DJ bass duck.
   Future<void> restoreBassAfterTransition({
-    required AndroidEqualizer equalizer,
+    required dynamic equalizer,
     required Map<int, double> original,
   }) async {
     if (original.isEmpty) return;

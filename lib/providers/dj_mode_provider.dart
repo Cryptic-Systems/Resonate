@@ -19,7 +19,7 @@ class DjModeProvider extends ChangeNotifier {
     _idle = DjIdleAnalysisService(analysis: _analysis);
     _lastObservedPlaying = music.isPlaying;
     music.addListener(_onMusicChanged);
-    unawaited(_load());
+    ready = _load();
   }
 
   final MusicProvider music;
@@ -30,14 +30,14 @@ class DjModeProvider extends ChangeNotifier {
   bool _beatAlign = true;
   bool _tempoMatch = false;
   bool _harmonicMix = false;
-  int _maxStretchPercent = 12;
-  bool _analyzeIdle = false;
+  int _maxStretchPercent = 6;
+  bool _analyzeIdle = true;
   bool _transitionSfx = true;
   DjAggressiveness _aggressiveness = DjAggressiveness.balanced;
   double _minConfidence = 0.40;
   bool _loaded = false;
+  late final Future<void> ready;
   bool _lastObservedPlaying = false;
-  DateTime? _lastEventScanAt;
   Timer? _eventScanDebounce;
 
   bool get isLoaded => _loaded;
@@ -55,7 +55,7 @@ class DjModeProvider extends ChangeNotifier {
         minConfidence: _minConfidence,
         harmonicMix: harmonicMixActive,
       );
-  bool get analyzeIdleActive => _enabled && _analyzeIdle;
+  bool get analyzeIdleActive => _analyzeIdle;
 
   bool get beatAlign => _beatAlign;
   bool get tempoMatch => _tempoMatch;
@@ -72,7 +72,7 @@ class DjModeProvider extends ChangeNotifier {
       _tempoMatch = await DjModeSettingsStore.tempoMatch();
       _harmonicMix = await DjModeSettingsStore.harmonicMix();
       _maxStretchPercent = await DjModeSettingsStore.maxStretchPercent();
-      _analyzeIdle = await DjModeSettingsStore.analyzeIdle();
+      _analyzeIdle = true; // mandatory library analysis is independent of DJ playback opt-in.
       _transitionSfx = await DjModeSettingsStore.transitionSfx();
       _aggressiveness = await DjModeSettingsStore.aggressiveness();
       _minConfidence = await DjModeSettingsStore.minConfidence();
@@ -109,11 +109,8 @@ class DjModeProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('DjMode setEnabled failed: $e');
     }
-    if (value) {
-      _maybeStartIdleScan();
-    } else {
-      _idle.stop();
-    }
+    // Disabling DJ playback must not cancel the required library analysis queue.
+    _maybeStartIdleScan();
   }
 
   Future<void> setBeatAlign(bool value) async {
@@ -138,7 +135,7 @@ class DjModeProvider extends ChangeNotifier {
   }
 
   Future<void> setMaxStretchPercent(int value) async {
-    _maxStretchPercent = value.clamp(3, 20);
+    _maxStretchPercent = value.clamp(3, 6);
     _syncToMusic();
     notifyListeners();
     await DjModeSettingsStore.setMaxStretchPercent(_maxStretchPercent);
@@ -167,42 +164,37 @@ class DjModeProvider extends ChangeNotifier {
   }
 
   Future<void> setAnalyzeIdle(bool value) async {
-    _analyzeIdle = value;
+    // Compatibility setter: the old opt-out is retired because DJ analysis
+    // is now a mandatory library capability, independent of playback mode.
+    _analyzeIdle = true;
     notifyListeners();
-    await DjModeSettingsStore.setAnalyzeIdle(value);
-    if (value && _enabled) {
-      _maybeStartIdleScan();
-    } else {
-      _idle.stop();
-    }
+    await DjModeSettingsStore.setAnalyzeIdle(true);
+    _maybeStartIdleScan();
   }
 
   void _maybeStartIdleScan() {
-    if (!_enabled || !_analyzeIdle || music.isPlaying) return;
-    unawaited(_idle.startIfNeeded(maxSongs: 48));
+    if (!_loaded || music.isPlaying) return;
+    // One resumable pass covers the complete library. Each completed track is
+    // persisted before advancing, so a process stop resumes by skipping it.
+    unawaited(_idle.startIfNeeded(maxSongs: 1 << 30));
   }
 
   /// Called by app lifecycle and audio-route events. Work is intentionally
   /// small and rate-limited so unlock/BT event bursts do not start many scans.
   void onAnalysisOpportunity(String reason) {
-    if (!_loaded || !_enabled || !_analyzeIdle) return;
+    if (!_loaded) return;
     _eventScanDebounce?.cancel();
     _eventScanDebounce = Timer(const Duration(seconds: 8), () {
-      if (!_enabled || !_analyzeIdle || music.isPlaying || _idle.isRunning) {
+      if (music.isPlaying || _idle.isRunning) {
         return;
       }
-      final now = DateTime.now();
-      final last = _lastEventScanAt;
-      if (last != null && now.difference(last) < const Duration(minutes: 2)) {
-        return;
-      }
-      _lastEventScanAt = now;
+
       unawaited(ResonateDiagnostics.recordDj(
         stage: 'idle_scan_trigger',
         outcome: 'scheduled',
         reason: reason,
       ));
-      unawaited(_idle.startIfNeeded(maxSongs: 12));
+      unawaited(_idle.startIfNeeded(maxSongs: 1 << 30));
     });
   }
 
@@ -214,7 +206,7 @@ class DjModeProvider extends ChangeNotifier {
       _eventScanDebounce?.cancel();
       _idle.stop();
     } else {
-      onAnalysisOpportunity('playback_became_idle');
+      _maybeStartIdleScan();
     }
   }
 
@@ -227,15 +219,7 @@ class DjModeProvider extends ChangeNotifier {
   }
 
   /// Manual trigger from settings / diagnostics.
-  Future<void> runIdleScanNow({int maxSongs = 48}) async {
-    if (!_enabled) {
-      await ResonateDiagnostics.recordDj(
-        stage: 'idle_scan_rejected',
-        outcome: 'failed',
-        reason: 'dj_mode_off',
-      );
-      return;
-    }
+  Future<void> runIdleScanNow({int maxSongs = 1 << 30}) async {
     await _idle.startIfNeeded(maxSongs: maxSongs);
   }
 }

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../../services/dj_pcm_bpm.dart';
 import '../../services/dj_pcm_features.dart';
 import '../core/dj_types.dart';
+import 'dj_silence_detector.dart';
 
 /// Decoded PCM window. Codec decoding stays outside the DJ engine.
 class DjDecodedPcmWindow {
@@ -27,17 +28,22 @@ class DjDecodedPcmWindow {
 class DjPcmProfileAnalyzer {
   final DjPcmBpmAnalyzer _bpm;
   final DjPcmFeatureAnalyzer _features;
+  final DjSilenceDetector _silenceDetector;
 
   const DjPcmProfileAnalyzer({
     DjPcmBpmAnalyzer bpm = const DjPcmBpmAnalyzer(),
     DjPcmFeatureAnalyzer features = const DjPcmFeatureAnalyzer(),
-  }) : _bpm = bpm, _features = features;
+    DjSilenceDetector silenceDetector = const DjSilenceDetector(),
+  }) : _bpm = bpm,
+       _features = features,
+       _silenceDetector = silenceDetector;
 
   DjTrackProfile analyze({
     required String songId,
     required int durationMs,
     required List<DjDecodedPcmWindow> windows,
     String? fingerprint,
+    double? maxSafeBassDb,
     int analysisVersion = 1,
   }) {
     if (windows.isEmpty || durationMs <= 0) {
@@ -51,6 +57,31 @@ class DjPcmProfileAnalyzer {
 
     final bpmSamples = <_BpmSample>[];
     final featureSamples = <_FeatureSample>[];
+    final rmsSamples = _extractRmsSamples(windows, durationMs);
+    final measured = _measureDspAnalysis(windows);
+    final safeBass = maxSafeBassDb != null &&
+            maxSafeBassDb.isFinite &&
+            maxSafeBassDb >= 0 &&
+            maxSafeBassDb <= 18
+        ? maxSafeBassDb
+        : null;
+    final dspAnalysis = DspAnalysisMetrics(
+      samplePeakDb: measured.samplePeakDb,
+      truePeakDb: measured.truePeakDb,
+      rmsDb: measured.rmsDb,
+      crestDb: measured.crestDb,
+      bassEnergyDb: measured.bassEnergyDb,
+      maxSafeBassDb: safeBass,
+    );
+    final detectedSilence = _silenceDetector.detect(
+      rmsSamples,
+      durationMs: durationMs,
+    ).map((region) => DjSilenceRegion(
+      startMs: region.startMs,
+      endMs: region.endMs,
+      minimumDbfs: region.minimumDbfs,
+      confidence: region.confidence,
+    )).toList(growable: false);
 
     for (final window in windows) {
       final bpm = _bpm.estimateFromPcm16(
@@ -135,10 +166,145 @@ class DjPcmProfileAnalyzer {
       sections: sections,
       energyCurve: energy,
       spectrum: spectrum,
+      dspAnalysis: dspAnalysis,
       transitions: markers,
+      silenceRegions: detectedSilence,
       analysisConfidence: confidence,
       analysisVersion: analysisVersion,
     );
+  }
+
+  /// Measures the DSP-ENGINE offline-analysis inputs from actual signed PCM16.
+  /// The bass filter is reset for each sampled window; gaps are never treated as audio.
+  DspAnalysisMetrics _measureDspAnalysis(List<DjDecodedPcmWindow> windows) {
+    var samplePeak = 0.0;
+    var truePeak = 0.0;
+    var squareSum = 0.0;
+    var bassSquareSum = 0.0;
+    var sampleCount = 0;
+    var bassCount = 0;
+    const floor = 1.0e-8;
+
+    for (final window in windows) {
+      if (window.sampleRate < 8000 || window.channels < 1 ||
+          window.channels > 8 || window.pcm.length < 2 * window.channels) {
+        continue;
+      }
+      final frameBytes = 2 * window.channels;
+      final frameCount = window.pcm.length ~/ frameBytes;
+      if (frameCount < 4) continue;
+      final data = ByteData.sublistView(window.pcm);
+      final mono = List<double>.filled(frameCount, 0);
+      for (var frame = 0; frame < frameCount; frame++) {
+        var monoSum = 0.0;
+        for (var channel = 0; channel < window.channels; channel++) {
+          final value = data.getInt16(frame * frameBytes + channel * 2, Endian.little) / 32768.0;
+          final magnitude = value.abs();
+          if (magnitude > samplePeak) samplePeak = magnitude;
+          squareSum += value * value;
+          sampleCount++;
+          monoSum += value;
+        }
+        mono[frame] = monoSum / window.channels;
+      }
+
+      // Four-times inter-sample peak estimate using Catmull-Rom interpolation.
+      // Measure channels independently so anti-phase stereo cannot cancel.
+      // This is a practical oversampled estimate, not a certified BS.1770 meter.
+      for (var i = 1; i < frameCount - 2; i++) {
+        for (var channel = 0; channel < window.channels; channel++) {
+          double at(int frame) => data.getInt16(
+                frame * frameBytes + channel * 2,
+                Endian.little,
+              ) / 32768.0;
+          final a = at(i - 1), b = at(i), c = at(i + 1), d = at(i + 2);
+          for (var phase = 1; phase < 4; phase++) {
+            final t = phase / 4.0;
+            final t2 = t * t, t3 = t2 * t;
+            final value = 0.5 * (
+              2 * b + (-a + c) * t +
+              (2 * a - 5 * b + 4 * c - d) * t2 +
+              (-a + 3 * b - 3 * c + d) * t3
+            );
+            if (value.abs() > truePeak) truePeak = value.abs();
+          }
+        }
+      }
+      if (samplePeak > truePeak) truePeak = samplePeak;
+
+      final alpha = 1.0 - math.exp(-2.0 * math.pi * 120.0 / window.sampleRate);
+      var low = 0.0;
+      for (final value in mono) {
+        low += alpha * (value - low);
+        bassSquareSum += low * low;
+        bassCount++;
+      }
+    }
+
+    if (sampleCount == 0 || bassCount == 0) return const DspAnalysisMetrics();
+    final rms = math.sqrt(squareSum / sampleCount);
+    final bassRms = math.sqrt(bassSquareSum / bassCount);
+    double db(double value) => 20.0 * math.log(math.max(value, floor)) / math.ln10;
+    final samplePeakDb = db(samplePeak).clamp(-160.0, 6.0).toDouble();
+    final rmsDb = db(rms).clamp(-160.0, 0.1).toDouble();
+    return DspAnalysisMetrics(
+      samplePeakDb: samplePeakDb,
+      truePeakDb: db(truePeak).clamp(-160.0, 6.0).toDouble(),
+      rmsDb: rmsDb,
+      crestDb: (samplePeakDb - rmsDb).clamp(0.0, 30.0).toDouble(),
+      bassEnergyDb: db(bassRms).clamp(-160.0, 0.1).toDouble(),
+    );
+  }
+
+  /// Measures 100 ms RMS frames directly from decoded signed PCM16.
+  /// Frames retain their absolute track timestamps; the detector will split
+  /// evidence at gaps between windows rather than bridging missing audio.
+  List<DjRmsSample> _extractRmsSamples(
+    List<DjDecodedPcmWindow> windows,
+    int durationMs,
+  ) {
+    const frameDurationMs = 100;
+    final result = <DjRmsSample>[];
+    for (final window in windows) {
+      if (window.sampleRate <= 0 || window.channels <= 0 ||
+          window.startMs < 0 || window.pcm.length < 2 * window.channels) {
+        continue;
+      }
+      final bytesPerFrame = 2 * window.channels;
+      final frameSampleCount = math
+          .max(1, window.sampleRate * frameDurationMs ~/ 1000)
+          .toInt();
+      final data = ByteData.sublistView(window.pcm);
+      var byteOffset = 0;
+      while (byteOffset + bytesPerFrame <= window.pcm.length) {
+        final remaining = window.pcm.length - byteOffset;
+        final availableFrames = remaining ~/ bytesPerFrame;
+        final frames = math.min(frameSampleCount, availableFrames).toInt();
+        final frameStartMs = window.startMs +
+            ((byteOffset ~/ bytesPerFrame) * 1000 ~/ window.sampleRate);
+        if (frameStartMs >= durationMs) break;
+        // Ignore a truncated trailing fragment; it is not a reliable RMS window.
+        if (frames < frameSampleCount ~/ 2) break;
+        var squareSum = 0.0;
+        final sampleCount = frames * window.channels;
+        for (var i = 0; i < sampleCount; i++) {
+          final sample = data.getInt16(byteOffset + i * 2, Endian.little);
+          final normalized = sample / 32768.0;
+          squareSum += normalized * normalized;
+        }
+        final rms = math.sqrt(squareSum / sampleCount);
+        final measuredMs =
+            math.max(1, frames * 1000 ~/ window.sampleRate).toInt();
+        result.add(DjRmsSample(
+          timeMs: frameStartMs,
+          rms: rms,
+          windowMs: measuredMs,
+        ));
+        byteOffset += frames * bytesPerFrame;
+        if (byteOffset >= window.pcm.length) break;
+      }
+    }
+    return result;
   }
 
   ({double confidence, double phaseStability, bool hasEvidence}) _aggregateBeatEvidence(

@@ -17,6 +17,66 @@ class DjExecutionPlanner {
     required DjTransitionCandidate candidate,
     DjPolicy policy = DjPolicy.balanced,
   }) {
+    if (!_profileMetricsValid(outgoing) || !_profileMetricsValid(incoming)) {
+      return DjExecutionPlan(
+        candidate: candidate,
+        fallback: true,
+        reason: 'invalid_track_profile',
+        steps: const [],
+      );
+    }
+
+    final candidateMetricsValid =
+        candidate.score.isFinite &&
+        candidate.confidence.isFinite &&
+        candidate.score >= 0 &&
+        candidate.score <= 1 &&
+        candidate.confidence >= 0 &&
+        candidate.confidence <= 1 &&
+        candidate.scores.values.every(
+          (value) => value.isFinite && value >= 0 && value <= 1,
+        );
+    if (!candidateMetricsValid) {
+      return DjExecutionPlan(
+        candidate: candidate,
+        fallback: true,
+        reason: 'invalid_candidate_metrics',
+        steps: const [],
+      );
+    }
+
+    // Reviewed/approved plans can outlive a DJ policy change. Re-check the
+    // current policy at the final execution boundary, not only in the brain.
+    if (!policy.acceptsCandidate(candidate)) {
+      return DjExecutionPlan(
+        candidate: candidate,
+        fallback: true,
+        reason: 'policy_rejected_candidate',
+        steps: const [],
+      );
+    }
+
+    final outgoingAvailable = outgoing.durationMs == null
+        ? null
+        : outgoing.durationMs! - candidate.outgoingStartMs;
+    final incomingAvailable = incoming.durationMs == null
+        ? null
+        : incoming.durationMs! - candidate.incomingStartMs;
+    if (candidate.outgoingStartMs < 0 ||
+        candidate.incomingStartMs < 0 ||
+        candidate.durationMs < 2000 ||
+        (outgoingAvailable != null &&
+            (outgoingAvailable < 2000 || candidate.durationMs > outgoingAvailable)) ||
+        (incomingAvailable != null &&
+            (incomingAvailable < 2000 || candidate.durationMs > incomingAvailable))) {
+      return DjExecutionPlan(
+        candidate: candidate,
+        fallback: true,
+        reason: 'insufficient_playable_duration',
+        steps: const [],
+      );
+    }
+
     final risks = riskEngine.evaluate(
       outgoing: outgoing,
       incoming: incoming,
@@ -35,8 +95,23 @@ class DjExecutionPlanner {
 
     final bassDuck = risks.contains(DjRiskType.bassCollision);
     final longerFade = risks.contains(DjRiskType.energyShock);
+    var durationLimit = 15000;
+    if (outgoingAvailable != null && outgoingAvailable < durationLimit) {
+      durationLimit = outgoingAvailable;
+    }
+    if (incomingAvailable != null && incomingAvailable < durationLimit) {
+      durationLimit = incomingAvailable;
+    }
+    final requestedDuration = longerFade
+        ? (candidate.durationMs * 1.25).round()
+        : candidate.durationMs;
+    // Media3 accepts crossfades up to 15 seconds. Keep the planner's execution
+    // timeline inside that native command contract even when a phrase blend
+    // or energy extension requests a longer duration.
+    final effectiveDurationMs =
+        requestedDuration.clamp(2000, durationLimit).toInt();
     final sfxTriggerMs = _phraseSnappedSfxMs(
-      durationMs: candidate.durationMs,
+      durationMs: effectiveDurationMs,
       kind: candidate.kind,
       outgoing: outgoing,
       outgoingStartMs: candidate.outgoingStartMs,
@@ -48,12 +123,12 @@ class DjExecutionPlanner {
       DjExecutionStep(action: 'start_incoming', atMs: 0),
       if (longerFade)
         DjExecutionStep(action: 'extend_crossfade', atMs: 0, parameters: {
-          'durationMs': (candidate.durationMs * 1.25).round().clamp(2500, 20000),
+          'durationMs': effectiveDurationMs,
         }),
       if (bassDuck)
         DjExecutionStep(action: 'duck_incoming_bass', atMs: 0, parameters: {
           'amount': 0.35,
-          'durationMs': candidate.durationMs ~/ 2,
+          'durationMs': effectiveDurationMs ~/ 2,
         }),
       DjExecutionStep(action: 'phrase_align', atMs: 0, parameters: {
         'kind': candidate.kind.name,
@@ -62,8 +137,22 @@ class DjExecutionPlanner {
         'kind': candidate.kind.name,
         'snapped': true,
       }),
-      DjExecutionStep(action: 'complete_transition', atMs: candidate.durationMs),
+      DjExecutionStep(action: 'complete_transition', atMs: effectiveDurationMs),
     ];
+
+    if (!_executionStepsValid(
+      steps: steps,
+      durationMs: effectiveDurationMs,
+      incoming: incoming,
+      candidate: candidate,
+    )) {
+      return DjExecutionPlan(
+        candidate: candidate,
+        fallback: true,
+        reason: 'invalid_execution_timeline',
+        steps: const [],
+      );
+    }
 
     return DjExecutionPlan(
       candidate: candidate,
@@ -72,6 +161,176 @@ class DjExecutionPlanner {
     );
   }
 
+
+  static bool _executionStepsValid({
+    required List<DjExecutionStep> steps,
+    required int durationMs,
+    required DjTrackProfile incoming,
+    required DjTransitionCandidate candidate,
+  }) {
+    const allowedActions = {
+      'prepare_incoming',
+      'start_incoming',
+      'extend_crossfade',
+      'duck_incoming_bass',
+      'phrase_align',
+      'trigger_sfx',
+      'complete_transition',
+    };
+    final counts = <String, int>{};
+    bool hasExactKeys(Map<String, dynamic> values, Set<String> keys) =>
+        values.length == keys.length && keys.every(values.containsKey);
+    var previousAtMs = -1;
+    for (final step in steps) {
+      if (!allowedActions.contains(step.action) ||
+          step.atMs < 0 ||
+          step.atMs > durationMs ||
+          step.atMs < previousAtMs) {
+        return false;
+      }
+      previousAtMs = step.atMs;
+      counts.update(step.action, (count) => count + 1, ifAbsent: () => 1);
+      final parameters = step.parameters;
+      switch (step.action) {
+        case 'prepare_incoming':
+          if (!hasExactKeys(parameters, {'seekMs'})) return false;
+          final seekMs = parameters['seekMs'];
+          if (seekMs is! int ||
+              seekMs != candidate.incomingStartMs ||
+              seekMs < 0 ||
+              (incoming.durationMs != null && seekMs >= incoming.durationMs!)) {
+            return false;
+          }
+          break;
+        case 'start_incoming':
+          if (step.atMs != 0 || parameters.isNotEmpty) return false;
+          break;
+        case 'extend_crossfade':
+          if (!hasExactKeys(parameters, {'durationMs'}) || step.atMs != 0 || parameters['durationMs'] != durationMs) {
+            return false;
+          }
+        case 'duck_incoming_bass':
+          if (!hasExactKeys(parameters, {'amount', 'durationMs'})) return false;
+          final amount = parameters['amount'];
+          final duckDuration = parameters['durationMs'];
+          if (step.atMs != 0 ||
+              amount is! num ||
+              !amount.isFinite ||
+              amount <= 0 ||
+              amount > 1 ||
+              duckDuration is! int ||
+              duckDuration <= 0 ||
+              duckDuration > durationMs) {
+            return false;
+          }
+          break;
+        case 'phrase_align':
+          if (!hasExactKeys(parameters, {'kind'})) return false;
+          if (step.atMs != 0 || parameters['kind'] != candidate.kind.name) {
+            return false;
+          }
+          break;
+        case 'trigger_sfx':
+          if (!hasExactKeys(parameters, {'kind', 'snapped'})) return false;
+          if (step.atMs <= 0 ||
+              step.atMs >= durationMs ||
+              parameters['kind'] != candidate.kind.name ||
+              parameters['snapped'] != true) {
+            return false;
+          }
+          break;
+        case 'complete_transition':
+          if (step.atMs != durationMs || parameters.isNotEmpty) return false;
+          break;
+      }
+    }
+
+    const requiredActions = [
+      'prepare_incoming',
+      'start_incoming',
+      'phrase_align',
+      'trigger_sfx',
+      'complete_transition',
+    ];
+    if (requiredActions.any((action) => counts[action] != 1) ||
+        counts.values.any((count) => count != 1)) {
+      return false;
+    }
+    if (steps.first.action != 'prepare_incoming' ||
+        steps.last.action != 'complete_transition') {
+      return false;
+    }
+    final prepareIndex = steps.indexWhere((s) => s.action == 'prepare_incoming');
+    final startIndex = steps.indexWhere((s) => s.action == 'start_incoming');
+    if (prepareIndex >= startIndex) return false;
+    return true;
+  }
+
+  static bool _profileMetricsValid(DjTrackProfile profile) {
+    bool unit(double value) => value.isFinite && value >= 0 && value <= 1;
+    final beat = profile.beatGrid;
+    final spectrum = profile.spectrum;
+    final bpm = beat.bpm;
+    if ((profile.durationMs != null && profile.durationMs! <= 0) ||
+        !unit(profile.analysisConfidence) ||
+        (bpm != null && (!bpm.isFinite || bpm <= 40 || bpm >= 240)) ||
+        !unit(beat.confidence) ||
+        !unit(beat.downbeatConfidence) ||
+        !unit(beat.barConfidence) ||
+        !unit(beat.phraseConfidence) ||
+        beat.beatsPerBar < 1 ||
+        beat.beatsPerBar > 12 ||
+        beat.beatsPerPhrase < 1 ||
+        beat.beatsPerPhrase > 64 ||
+        (profile.keyRoot != null &&
+            (profile.keyRoot! < 0 || profile.keyRoot! > 11)) ||
+        !unit(profile.keyConfidence) ||
+        !unit(spectrum.bass) ||
+        !unit(spectrum.mids) ||
+        !unit(spectrum.highs) ||
+        !unit(spectrum.centroid) ||
+        !unit(spectrum.bassDensity) ||
+        !unit(spectrum.spectralFlux) ||
+        !unit(spectrum.confidence)) {
+      return false;
+    }
+    bool validTimes(List<int> times) {
+      var previous = -1;
+      for (final time in times) {
+        if (time < 0 ||
+            (profile.durationMs != null && time > profile.durationMs!) ||
+            time <= previous) {
+          return false;
+        }
+        previous = time;
+      }
+      return true;
+    }
+    if (!validTimes(beat.beatMs) || !validTimes(beat.downbeatMs)) {
+      return false;
+    }
+    final firstBeat = beat.firstBeatMs;
+    if (firstBeat != null &&
+        (firstBeat < 0 ||
+            (profile.durationMs != null && firstBeat > profile.durationMs!))) {
+      return false;
+    }
+    for (final point in profile.energyCurve) {
+      if (point.timeMs < 0 ||
+          (profile.durationMs != null && point.timeMs > profile.durationMs!) ||
+          !unit(point.value) ||
+          !unit(point.loudness) ||
+          !unit(point.bass) ||
+          !unit(point.mids) ||
+          !unit(point.highs) ||
+          !point.slope.isFinite) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+
   /// Prefer a beat/phrase boundary during the crossfade instead of a fixed 35%.
   static int _phraseSnappedSfxMs({
     required int durationMs,
@@ -79,7 +338,7 @@ class DjExecutionPlanner {
     required DjTrackProfile outgoing,
     required int outgoingStartMs,
   }) {
-    final dur = durationMs.clamp(500, 20000);
+    final dur = durationMs.clamp(500, 15000);
     final fraction = switch (kind) {
       DjTransitionKind.safeCrossfade => 0.22,
       DjTransitionKind.energyBridge => 0.28,

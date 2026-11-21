@@ -3,8 +3,8 @@ import 'package:audio_service/audio_service.dart';
 import '../models/song.dart';
 import 'playback_authority.dart';
 
-/// System-media bridge for Resonate. MusicProvider owns the only AudioPlayers;
-/// this service forwards transport commands and mirrors playback state.
+/// System-media bridge for Resonate. The canonical playback session owns audio;
+/// this service forwards transport commands and mirrors its published state.
 class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   final List<MediaItem> _items = [];
   String? _lastMediaItemId;
@@ -107,7 +107,16 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
 
   void publishPositionTick({required bool playing, required Duration position, Duration? bufferedPosition, double speed = 1.0, bool force = false}) {
     final now = DateTime.now();
-    if (!force && _lastPlaying == playing && now.difference(_lastPositionPublish) < const Duration(milliseconds: 400)) return;
+    // Keep routine high-frequency ticks throttled, but never suppress a
+    // seek or discontinuous Media3 position update just because playback state
+    // was published moments earlier.
+    final positionDelta = (position - playbackState.value.position).abs();
+    if (!force &&
+        _lastPlaying == playing &&
+        now.difference(_lastPositionPublish) < const Duration(milliseconds: 400) &&
+        positionDelta < const Duration(milliseconds: 250)) {
+      return;
+    }
     _lastPlaying = playing;
     _lastPositionPublish = now;
     playbackState.add(playbackState.value.copyWith(

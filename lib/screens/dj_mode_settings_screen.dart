@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 
 import '../providers/dj_mode_provider.dart';
 import '../dj_engine/core/dj_policy.dart';
+import 'dj_transition_studio_screen.dart';
+import 'dj_workspace_screen.dart';
 
 /// Settings surface for optional DJ Mode (Intelligence-style master switch).
 class DjModeSettingsScreen extends StatelessWidget {
@@ -56,6 +58,34 @@ class DjModeSettingsScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
+              ResonateGlassCard(
+                margin: EdgeInsets.zero,
+                padding: EdgeInsets.zero,
+                child: ListTile(
+                  leading: Icon(Icons.graphic_eq_rounded, color: scheme.primary),
+                  title: const Text('Open DJ Workspace', style: TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: const Text('Live session overview, transition preparation and DJ set planning.'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const DjWorkspaceScreen()),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              ResonateGlassCard(
+                margin: EdgeInsets.zero,
+                padding: EdgeInsets.zero,
+                child: ListTile(
+                  leading: Icon(Icons.tune_rounded, color: scheme.primary),
+                  title: const Text('DJ Transition Studio', style: TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: const Text('Compare track pairs, edit Mix-In / Mix-Out cues and inspect transition recommendations.'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const DjTransitionStudioScreen()),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
               Text(
                 'Features',
                 style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
@@ -100,7 +130,7 @@ class DjModeSettingsScreen extends StatelessWidget {
                   title: const Text('Max tempo stretch'),
                   subtitle: Text(
                     on
-                        ? '±${dj.maxStretchPercent}% (used when tempo match is on)'
+                        ? '±${dj.maxStretchPercent}% (DJ tempo matching is capped at 6%)'
                         : 'Enable DJ Mode to adjust',
                   ),
                   trailing: Text('${dj.maxStretchPercent}%'),
@@ -110,8 +140,8 @@ class DjModeSettingsScreen extends StatelessWidget {
                 Slider(
                   value: dj.maxStretchPercent.toDouble(),
                   min: 3,
-                  max: 20,
-                  divisions: 17,
+                  max: 6,
+                  divisions: 3,
                   label: '±${dj.maxStretchPercent}%',
                   onChanged: (v) => dj.setMaxStretchPercent(v.round()),
                 ),
@@ -125,14 +155,16 @@ class DjModeSettingsScreen extends StatelessWidget {
                 value: dj.transitionSfx,
                 onChanged: on ? dj.setTransitionSfx : null,
               ),
-              _prefTile(
-                context,
-                enabled: on,
-                title: 'Analyze library when idle',
-                subtitle:
-                    'Quiet background BPM / energy / structure scan while idle. Never blocks play.',
-                value: dj.analyzeIdle,
-                onChanged: on ? dj.setAnalyzeIdle : null,
+              ResonateGlassCard(
+                margin: EdgeInsets.zero,
+                padding: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'Library analysis runs automatically after Resonate scans your music. It builds BPM, beat-grid, energy and transition profiles for DJ features, pauses while music is playing, and resumes when the player is idle or the app returns to the foreground. Android Battery Saver can defer background work.',
+                    style: text.bodySmall,
+                  ),
+                ),
               ),
               const SizedBox(height: 24),
               ResonateGlassCard(

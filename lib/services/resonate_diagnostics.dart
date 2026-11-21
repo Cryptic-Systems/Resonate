@@ -18,11 +18,13 @@ class ResonateDiagnostics {
   static const _crashesKey = 'resonate_diagnostics_crashes_v3';
   static const _sessionKey = 'resonate_diagnostics_session_id';
   static const _sequenceKey = 'resonate_diagnostics_sequence';
-  static const _maxEvents = 4000;
+  static const _droppedEventsKey = 'resonate_diagnostics_dropped_events';
+  static const _eventsMigratedKey = 'resonate_diagnostics_events_migrated';
+  static const _maxEvents = 10000;
   static const _maxCrashes = 100;
   static const _maxFeedback = 100;
   static const _maxStackTraceChars = 24000;
-  static const _maxValueChars = 4000;
+  static const _maxValueChars = 8000;
   static const _mediaStoreChannel = MethodChannel('com.aetherion.resonate/media_store');
   static Future<void> _writeSerial = Future<void>.value();
   static String? _sessionId;
@@ -30,6 +32,8 @@ class ResonateDiagnostics {
   static final List<Map<String, dynamic>> _pendingEvents = <Map<String, dynamic>>[];
   static Timer? _flushTimer;
   static Future<void> _flushInFlight = Future<void>.value();
+  static Future<File?>? _eventLogFileFuture;
+  static int? _eventLogCount;
 
   static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
@@ -81,6 +85,58 @@ class ResonateDiagnostics {
     }
   }
 
+  static Future<File?> _eventLogFile() {
+    return _eventLogFileFuture ??= () async {
+      try {
+        final directory = await getApplicationSupportDirectory();
+        await directory.create(recursive: true);
+        return File('${directory.path}/resonate-diagnostics-events.jsonl');
+      } catch (_) {
+        return null;
+      }
+    }();
+  }
+
+  static Future<List<Map<String, dynamic>>> _readEventLog(
+    SharedPreferences prefs,
+  ) async {
+    try {
+      final file = await _eventLogFile();
+      if (file != null) {
+        if (prefs.getBool(_eventsMigratedKey) != true) {
+          final legacy = _decodeList(prefs.getString(_eventsKey));
+          if (legacy.isNotEmpty) {
+            await file.writeAsString(
+              '${legacy.map(jsonEncode).join('\n')}\n',
+              mode: FileMode.append,
+              flush: true,
+            );
+          }
+          await prefs.remove(_eventsKey);
+          await prefs.setBool(_eventsMigratedKey, true);
+        }
+        if (await file.exists()) {
+          final lines = await file.readAsLines();
+          final events = <Map<String, dynamic>>[];
+          for (final line in lines) {
+            if (line.trim().isEmpty) continue;
+            try {
+              final decoded = jsonDecode(line);
+              if (decoded is Map) events.add(Map<String, dynamic>.from(decoded));
+            } catch (_) {
+              // Ignore one malformed record; later JSONL records remain usable.
+            }
+          }
+          _eventLogCount = events.length;
+          return events;
+        }
+        _eventLogCount = 0;
+        return <Map<String, dynamic>>[];
+      }
+    } catch (_) {}
+    return _decodeList(prefs.getString(_eventsKey));
+  }
+
   static Future<void> record(String type, [Map<String, dynamic> data = const {}]) async {
     try {
       final entry = await _entry(type, data);
@@ -91,20 +147,78 @@ class ResonateDiagnostics {
   }
 
   static Future<void> _flushPendingEvents() async {
-    if (_pendingEvents.isEmpty) return;
+    if (_pendingEvents.isEmpty) {
+      _flushTimer?.cancel();
+      _flushTimer = null;
+      return;
+    }
     _flushInFlight = _flushInFlight.then((_) async {
       if (_pendingEvents.isEmpty) return;
       try {
         final batch = List<Map<String, dynamic>>.from(_pendingEvents);
         _pendingEvents.clear();
         final prefs = await _prefs();
-        final items = _decodeList(prefs.getString(_eventsKey));
-        items.addAll(batch);
-        if (items.length > _maxEvents) items.removeRange(0, items.length - _maxEvents);
-        await prefs.setString(_eventsKey, jsonEncode(items));
+        final file = await _eventLogFile();
+        if (file == null) {
+          // Storage-plugin fallback for tests or devices where app-support
+          // storage is temporarily unavailable.
+          final items = _decodeList(prefs.getString(_eventsKey));
+          items.addAll(batch);
+          if (items.length > _maxEvents) {
+            final dropped = items.length - _maxEvents;
+            items.removeRange(0, dropped);
+            await prefs.setInt(
+              _droppedEventsKey,
+              (prefs.getInt(_droppedEventsKey) ?? 0) + dropped,
+            );
+          }
+          await prefs.setString(_eventsKey, jsonEncode(items));
+          return;
+        }
+
+        await file.parent.create(recursive: true);
+        if (prefs.getBool(_eventsMigratedKey) != true) {
+          final legacy = _decodeList(prefs.getString(_eventsKey));
+          if (legacy.isNotEmpty) {
+            await file.writeAsString(
+              '${legacy.map(jsonEncode).join('\n')}\n',
+              mode: FileMode.append,
+              flush: true,
+            );
+          }
+          await prefs.remove(_eventsKey);
+          await prefs.setBool(_eventsMigratedKey, true);
+        }
+        _eventLogCount ??= await file.exists()
+            ? (await file.readAsLines()).where((line) => line.trim().isNotEmpty).length
+            : 0;
+        await file.writeAsString(
+          '${batch.map(jsonEncode).join('\n')}\n',
+          mode: FileMode.append,
+          flush: true,
+        );
+        _eventLogCount = (_eventLogCount ?? 0) + batch.length;
+        if (_eventLogCount! > _maxEvents) {
+          final lines = await file.readAsLines();
+          final dropped = lines.length - _maxEvents;
+          final retained = lines.skip(dropped < 0 ? 0 : dropped).toList();
+          await file.writeAsString(
+            retained.join('\n') + (retained.isEmpty ? '' : '\n'),
+            flush: true,
+          );
+          _eventLogCount = retained.length;
+          await prefs.setInt(
+            _droppedEventsKey,
+            (prefs.getInt(_droppedEventsKey) ?? 0) + (dropped > 0 ? dropped : 0),
+          );
+        }
       } catch (_) {}
     });
     await _flushInFlight;
+    if (_pendingEvents.isEmpty) {
+      _flushTimer?.cancel();
+      _flushTimer = null;
+    }
   }
 
   /// High-value playback checkpoint. Call this at commands, state changes,
@@ -305,7 +419,7 @@ class ResonateDiagnostics {
         final stamp = DateTime.now().toIso8601String().replaceAll(':', '-');
         final file = File('${directory.path}/resonate-crash-$stamp.json');
         await file.writeAsString(const JsonEncoder.withIndent('  ').convert({
-          'reportVersion': 5,
+          'reportVersion': 6,
           'app': 'Resonate',
           'createdAt': DateTime.now().toIso8601String(),
           ...entry,
@@ -341,15 +455,16 @@ class ResonateDiagnostics {
     await _flushPendingEvents();
     await _writeSerial;
     final prefs = await _prefs();
-    final events = _decodeList(prefs.getString(_eventsKey));
+    final events = await _readEventLog(prefs);
     final crashes = _decodeList(prefs.getString(_crashesKey));
     final feedback = _decodeList(prefs.getString(_feedbackKey));
     return {
-      'reportVersion': 5,
+      'reportVersion': 6,
       'createdAt': DateTime.now().toIso8601String(),
       'app': 'Resonate',
       'diagnosticsSessionId': await _getSessionId(),
       'sequence': prefs.getInt(_sequenceKey) ?? _sequence,
+      'droppedEventCount': prefs.getInt(_droppedEventsKey) ?? 0,
       'buildMode': kDebugMode ? 'debug' : kProfileMode ? 'profile' : 'release',
       'platform': Platform.operatingSystem,
       'platformVersion': Platform.operatingSystemVersion,
@@ -659,8 +774,13 @@ class ResonateDiagnostics {
     await _writeSerial;
     final prefs = await _prefs();
     await prefs.remove(_eventsKey);
+    final eventFile = await _eventLogFile();
+    try { if (eventFile != null && await eventFile.exists()) await eventFile.delete(); } catch (_) {}
+    _eventLogCount = 0;
+    await prefs.remove(_eventsMigratedKey);
     await prefs.remove(_crashesKey);
     await prefs.remove(_feedbackKey);
+    await prefs.remove(_droppedEventsKey);
   }
 
   static Future<int> eventCount() async { final report = await snapshot(); return (report['events'] as List).length; }
@@ -678,15 +798,84 @@ class ResonateDiagnostics {
     };
   }
 
+  static const Set<String> _audioContentDiagnosticKeys = {
+    'audio', 'audiodata', 'audiobytes', 'rawaudio', 'pcm', 'pcmdata',
+    'pcmsamples', 'waveform', 'waveformsamples', 'recording', 'recordingdata',
+  };
+
+  static const Set<String> _sensitiveDiagnosticKeys = {
+    'password', 'passwd', 'authorization', 'proxyauthorization',
+    'accesstoken', 'refreshtoken', 'idtoken', 'authtoken',
+    'apikey', 'clientsecret', 'secretkey', 'privatekey',
+    'cookie', 'setcookie', 'email', 'phonenumber', 'contactnumber',
+  };
+
+  static String _sanitizeDiagnosticString(String value) {
+    var result = value;
+    // Credentials can leak through native exception messages and HTTP URLs.
+    result = result.replaceAll(
+      RegExp(r'Bearer\s+[A-Za-z0-9._~+/-]+=*', caseSensitive: false),
+      'Bearer [REDACTED]',
+    );
+    result = result.replaceAllMapped(
+      RegExp(r'([?&](?:access_token|refresh_token|token|api_key|apikey|password|secret)=)[^&\s]+', caseSensitive: false),
+      (match) => '${match.group(1)}[REDACTED]',
+    );
+    result = result.replaceAll(
+      RegExp(r'([\w.+-]+)@([\w.-]+\.[A-Za-z]{2,})'),
+      '[EMAIL_REDACTED]',
+    );
+    result = result.replaceAll(
+      RegExp(r'(?:file://)?/storage/emulated/\d+/[^\s,;]+'),
+      '/storage/emulated/[USER]/[PATH_REDACTED]',
+    );
+    result = result.replaceAll(
+      RegExp(r'(?:file://)?/data/(?:user|user_de)/\d+/[^\s,;]+'),
+      '/data/[APP_DATA_REDACTED]',
+    );
+    if (result.length > _maxValueChars) {
+      result = '${result.substring(0, _maxValueChars)}…[truncated]';
+    }
+    return result;
+  }
+
   static Map<String, dynamic> _sanitize(Map<String, dynamic> input) {
-    dynamic clean(dynamic value) {
-      if (value == null || value is num || value is bool || value is String) {
-        if (value is String && value.length > _maxValueChars) return '${value.substring(0, _maxValueChars)}…[truncated]';
-        return value;
+    dynamic clean(dynamic value, {String? key}) {
+      final normalizedKey = key?.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      if (normalizedKey != null && _audioContentDiagnosticKeys.contains(normalizedKey)) {
+        return '[AUDIO_CONTENT_EXCLUDED]';
       }
-      if (value is Map) return {for (final e in value.entries) e.key.toString(): clean(e.value)};
-      if (value is Iterable) return value.take(200).map(clean).toList();
-      return value.toString().length > _maxValueChars ? '${value.toString().substring(0, _maxValueChars)}…[truncated]' : value.toString();
+      if (value is Uint8List || value is ByteData || value is ByteBuffer ||
+          value is Int16List || value is Float32List) {
+        return '[BINARY_CONTENT_EXCLUDED]';
+      }
+      if (normalizedKey != null &&
+          (_sensitiveDiagnosticKeys.contains(normalizedKey) ||
+              normalizedKey.endsWith('password') ||
+              normalizedKey.endsWith('secret') ||
+              normalizedKey.endsWith('privatekey'))) {
+        return '[REDACTED]';
+      }
+      if (value == null || value is num || value is bool) return value;
+      if (value is String) {
+        // Keep useful track identity while avoiding disclosure of a user's
+        // complete storage hierarchy in diagnostic exports.
+        if (normalizedKey == 'filepath' || normalizedKey == 'fileuri') {
+          final path = value.replaceAll(String.fromCharCode(92), '/');
+          final parts = path.split('/').where((part) => part.isNotEmpty).toList();
+          final basename = parts.isEmpty ? null : parts.last;
+          return basename == null ? '[PATH_REDACTED]' : _sanitizeDiagnosticString(basename);
+        }
+        return _sanitizeDiagnosticString(value);
+      }
+      if (value is Map) {
+        return <String, dynamic>{
+          for (final entry in value.entries)
+            entry.key.toString(): clean(entry.value, key: entry.key.toString()),
+        };
+      }
+      if (value is Iterable) return value.take(200).map((item) => clean(item)).toList();
+      return _sanitizeDiagnosticString(value.toString());
     }
     return Map<String, dynamic>.from(clean(input) as Map);
   }

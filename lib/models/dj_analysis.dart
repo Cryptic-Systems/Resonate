@@ -7,9 +7,10 @@
 /// [analysisVersion] lets the engine re-analyze in the background when the
 /// estimator improves, without discarding older rows or blocking playback.
 class DjAnalysis {
-  /// Bump when the analyzer pipeline changes in a meaningful way
-  /// (v1: native PCM BPM; v2: energy/loudness; v3: beatOffset + ID3+PCM merge).
-  static const int currentVersion = 7;
+  /// Bump when the analyzer pipeline changes in a meaningful way.
+  /// v8 adds measured PCM level metrics; v9 adds DSP-ENGINE's measured
+  /// per-track maximum-safe-bass probe to the persisted DSP profile.
+  static const int currentVersion = 9;
 
   final String songId;
   final double? bpm;
@@ -31,7 +32,9 @@ class DjAnalysis {
   final double? energy;
   /// Approximate loudness 0–1 from PCM window.
   final double? loudness;
+  /// Intro cue position in milliseconds from the start of the track.
   final int? introHintMs;
+  /// Outro cue position in milliseconds from the start of the track.
   final int? outroHintMs;
   final String? sectionHint;
 

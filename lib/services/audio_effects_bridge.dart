@@ -75,6 +75,92 @@ class AudioEffectsBridge {
     }
   }
 
+  /// Configure DSP-ENGINE v0.6 shared headroom and adaptive processors.
+  /// Analysis hints are intentionally separate because they belong to a track/deck.
+  static Future<Map<String, dynamic>?> setLiveDspIntelligenceConfig({
+    double bassWeight = 0.50,
+    double preampWeight = 0.20,
+    double gainWeight = 0.30,
+    bool autoPreampEnabled = false,
+    double autoPreampTargetDb = 0,
+    bool autoVirtualBassEnabled = false,
+    double autoVirtualBassTarget = 0.55,
+    bool silenceHygieneEnabled = false,
+    double silenceThresholdDb = -70,
+    double silenceHoldMs = 500,
+  }) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspIntelligenceConfig', {
+        'bassWeight': bassWeight,
+        'preampWeight': preampWeight,
+        'gainWeight': gainWeight,
+        'autoPreampEnabled': autoPreampEnabled,
+        'autoPreampTargetDb': autoPreampTargetDb,
+        'autoVirtualBassEnabled': autoVirtualBassEnabled,
+        'autoVirtualBassTarget': autoVirtualBassTarget,
+        'silenceHygieneEnabled': silenceHygieneEnabled,
+        'silenceThresholdDb': silenceThresholdDb,
+        'silenceHoldMs': silenceHoldMs,
+      });
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (e) {
+      debugPrint('setLiveDspIntelligenceConfig failed: $e');
+    }
+    return null;
+  }
+
+  /// Configure DSP-ENGINE online auto-bass and auto-DVC.
+  static Future<Map<String, dynamic>?> setLiveDspAutoDynamicsConfig({
+    bool autoBassEnabled = false,
+    double autoBassTargetDb = 4,
+    double autoBassMarginDb = 1,
+    double autoBassFreqHz = 80,
+    bool autoGainEnabled = false,
+    double autoGainTargetRmsDb = -18,
+    double autoGainBiasDb = 0,
+    double autoGainMaxBoostDb = 6,
+    double autoGainMaxCutDb = 12,
+    double autoGainWindowMs = 400,
+  }) async {
+    final values = <double>[
+      autoBassTargetDb, autoBassMarginDb, autoBassFreqHz,
+      autoGainTargetRmsDb, autoGainBiasDb, autoGainMaxBoostDb,
+      autoGainMaxCutDb, autoGainWindowMs,
+    ];
+    if (values.any((value) => !value.isFinite) ||
+        autoBassTargetDb < 0 || autoBassTargetDb > 12 ||
+        autoBassMarginDb < 0 || autoBassMarginDb > 12 ||
+        autoBassFreqHz < 40 || autoBassFreqHz > 160 ||
+        autoGainTargetRmsDb < -30 || autoGainTargetRmsDb > -8 ||
+        autoGainBiasDb < -6 || autoGainBiasDb > 6 ||
+        autoGainMaxBoostDb < 0 || autoGainMaxBoostDb > 12 ||
+        autoGainMaxCutDb < 0 || autoGainMaxCutDb > 24 ||
+        autoGainWindowMs < 200 || autoGainWindowMs > 3000) {
+      return null;
+    }
+    try {
+      final raw = await _channel.invokeMethod<dynamic>(
+        'setLiveDspAutoDynamicsConfig',
+        {
+          'autoBassEnabled': autoBassEnabled,
+          'autoBassTargetDb': autoBassTargetDb,
+          'autoBassMarginDb': autoBassMarginDb,
+          'autoBassFreqHz': autoBassFreqHz,
+          'autoGainEnabled': autoGainEnabled,
+          'autoGainTargetRmsDb': autoGainTargetRmsDb,
+          'autoGainBiasDb': autoGainBiasDb,
+          'autoGainMaxBoostDb': autoGainMaxBoostDb,
+          'autoGainMaxCutDb': autoGainMaxCutDb,
+          'autoGainWindowMs': autoGainWindowMs,
+        },
+      );
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (e) {
+      debugPrint('setLiveDspAutoDynamicsConfig failed: $e');
+    }
+    return null;
+  }
+
   static Future<Map<String, dynamic>?> setLiveDspPreampDb(double db) async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('setLiveDspPreampDb', {
@@ -89,17 +175,28 @@ class AudioEffectsBridge {
 
   /// Set the native Digital Volume Control gain, independent of EQ preamp.
   /// The native engine smooths the transition; range is -24 dB to +6 dB.
-  static Future<Map<String, dynamic>?> setLiveDspDvcDb(double db) async {
+  static Future<Map<String, dynamic>?> setLiveDspDvc({
+    bool enabled = true,
+    required double db,
+    bool smoothing = true,
+    double smoothingMs = 15,
+  }) async {
     try {
-      final raw = await _channel.invokeMethod<dynamic>('setLiveDspDvcDb', {
-        'db': db.clamp(-24.0, 6.0),
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspDvc', {
+        'enabled': enabled,
+        'db': db.clamp(-120.0, 24.0),
+        'smoothing': smoothing,
+        'smoothingMs': smoothingMs.clamp(0.0, 200.0),
       });
       if (raw is Map) return Map<String, dynamic>.from(raw);
     } catch (e) {
-      debugPrint('setLiveDspDvcDb failed: $e');
+      debugPrint('setLiveDspDvc failed: $e');
     }
     return null;
   }
+
+  static Future<Map<String, dynamic>?> setLiveDspDvcDb(double db) =>
+      setLiveDspDvc(db: db);
 
   static Future<Map<String, dynamic>?> setLiveDspEqBands({
     List<double>? centersHz,
@@ -157,12 +254,154 @@ class AudioEffectsBridge {
     return const <double>[];
   }
 
+  /// Apply measured PCM analysis to one physical Media3 deck. Callers must
+  /// validate current PlaybackControlArbiter ownership before this live write.
+  static Future<bool> setLiveDspDeckAnalysisHint({
+    required String deckId,
+    required String songId,
+    required double samplePeakDb,
+    required double truePeakDb,
+    required double rmsDb,
+    required double crestDb,
+    required double bassEnergyDb,
+    double? maxSafeBassDb,
+  }) async {
+    final result = await setLiveDspDeckAnalysisHintDetailed(
+      deckId: deckId,
+      songId: songId,
+      samplePeakDb: samplePeakDb,
+      truePeakDb: truePeakDb,
+      rmsDb: rmsDb,
+      crestDb: crestDb,
+      bassEnergyDb: bassEnergyDb,
+      maxSafeBassDb: maxSafeBassDb,
+    );
+    return result['ok'] == true;
+  }
+
+  /// Detailed result preserves the native registry's rejection reason.
+  static Future<Map<String, dynamic>> setLiveDspDeckAnalysisHintDetailed({
+    required String deckId,
+    required String songId,
+    required double samplePeakDb,
+    required double truePeakDb,
+    required double rmsDb,
+    required double crestDb,
+    required double bassEnergyDb,
+    double? maxSafeBassDb,
+  }) async {
+    if (!const {'A', 'B'}.contains(deckId)) {
+      return <String, dynamic>{'ok': false, 'reason': 'invalid_deck'};
+    }
+    if (songId.trim().isEmpty) {
+      return <String, dynamic>{'ok': false, 'reason': 'blank_song_id'};
+    }
+    final metrics = [
+      samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb,
+    ];
+    if (metrics.any((value) => !value.isFinite) ||
+        samplePeakDb < -160 || samplePeakDb > 6 ||
+        truePeakDb < -160 || truePeakDb > 6 ||
+        rmsDb < -160 || rmsDb > 0.1 ||
+        crestDb < 0 || crestDb > 30 ||
+        bassEnergyDb < -160 || bassEnergyDb > 0.1 ||
+        (maxSafeBassDb != null &&
+            (!maxSafeBassDb.isFinite || maxSafeBassDb < 0 || maxSafeBassDb > 18))) {
+      return <String, dynamic>{'ok': false, 'reason': 'invalid_metrics'};
+    }
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspDeckAnalysisHint', {
+        'deckId': deckId,
+        'songId': songId,
+        'samplePeakDb': samplePeakDb,
+        'truePeakDb': truePeakDb,
+        'rmsDb': rmsDb,
+        'crestDb': crestDb,
+        'bassEnergyDb': bassEnergyDb,
+        'maxSafeBassDb': maxSafeBassDb ?? 24.0,
+      });
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+      return <String, dynamic>{'ok': false, 'reason': 'invalid_native_response'};
+    } catch (e) {
+      debugPrint('setLiveDspDeckAnalysisHint failed: $e');
+      return <String, dynamic>{
+        'ok': false,
+        'reason': 'platform_exception',
+        'error': e.toString(),
+      };
+    }
+  }
+
   static Future<Map<String, dynamic>?> getLiveDspStatus() async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('getLiveDspStatus');
       if (raw is Map) return Map<String, dynamic>.from(raw);
     } catch (e) {
       debugPrint('getLiveDspStatus failed: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> setLiveDspParametricEqBands({
+    required List<double> frequenciesHz,
+    required List<double> gainsDb,
+    required List<double> qs,
+    required List<int> types,
+    bool enabled = true,
+  }) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspParametricEqBands', {
+        'frequenciesHz': frequenciesHz,
+        'gainsDb': gainsDb,
+        'qs': qs,
+        'types': types,
+        'enabled': enabled,
+      });
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (e) {
+      debugPrint('setLiveDspParametricEqBands failed: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> setLiveDspLimiterConfig({
+    required bool enabled,
+    required int mode,
+    required double thresholdDb,
+    required double releaseMs,
+    required double attackMs,
+    required double lookaheadMs,
+    required double kneeDb,
+  }) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspLimiterConfig', {
+        'enabled': enabled,
+        'mode': mode.clamp(0, 3),
+        'thresholdDb': thresholdDb.clamp(-24.0, 0.0),
+        'releaseMs': releaseMs.clamp(1.0, 2000.0),
+        'attackMs': attackMs.clamp(0.01, 100.0),
+        'lookaheadMs': lookaheadMs.clamp(0.0, 40.0),
+        'kneeDb': kneeDb.clamp(0.0, 12.0),
+      });
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (e) {
+      debugPrint('setLiveDspLimiterConfig failed: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> setLiveDspDither({
+    required bool enabled,
+    required int mode,
+  }) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspDither', {
+        'enabled': enabled,
+        'mode': mode.clamp(0, 2),
+      });
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (e) {
+      debugPrint('setLiveDspDither failed: $e');
     }
     return null;
   }
@@ -179,8 +418,8 @@ class AudioEffectsBridge {
   }) async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('setLiveDspLimiterCeiling', {
-        'highDb': highDb.clamp(-6.0, -0.1),
-        'lowDb': lowDb.clamp(-6.0, -0.1),
+        'highDb': highDb.clamp(-12.0, -0.05),
+        'lowDb': lowDb.clamp(-12.0, -0.05),
       });
       if (raw is Map) return Map<String, dynamic>.from(raw);
     } catch (e) {

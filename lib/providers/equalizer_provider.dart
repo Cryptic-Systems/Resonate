@@ -5,10 +5,11 @@ import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/dsp_settings.dart';
+import '../playback/playback_control_arbiter.dart';
+import '../models/resonate_sound_profile.dart';
 import '../services/eq_lean_store.dart';
 import '../services/resonate_dsp_pipeline.dart';
 import 'music_provider.dart';
@@ -20,8 +21,8 @@ import '../services/equalizer_dvc_sync.dart';
 /// One band in the app's fixed 10-band software curve (source of truth).
 class StudioBand {
   final int index;
-  final double frequencyHz;
-  final String label;
+  double frequencyHz;
+  String label;
   double gainDb;
 
   StudioBand({
@@ -32,7 +33,7 @@ class StudioBand {
   });
 }
 
-/// Hardware band exposed by AndroidEqualizer (device-dependent count).
+/// Hardware band exposed by legacy hardware equalizer (device-dependent count).
 class EqualizerBandState {
   final int index;
   final double centerFrequency;
@@ -79,15 +80,16 @@ class EqualizerPreset {
 
 /// Software 10-band equalizer model.
 ///
-/// Android's [AndroidEqualizer] only exposes as many bands as the device DSP
+/// Android's [legacy hardware equalizer] only exposes as many bands as the device DSP
 /// provides (often 5). This provider always owns a fixed 10-band studio curve
 /// and maps it onto hardware bands. Preamp is applied via
-/// [AndroidLoudnessEnhancer] when available.
+/// [legacy hardware loudness enhancer] when available.
 class EqualizerProvider extends ChangeNotifier {
-  AndroidEqualizer? _androidEqualizer;
-  AndroidLoudnessEnhancer? _loudnessEnhancer;
+  dynamic _androidEqualizer;
+  dynamic _loudnessEnhancer;
 
   final List<StudioBand> studioBands = [];
+  List<ParametricEqBand> parametricEqBands = <ParametricEqBand>[];
   final List<EqualizerBandState> bandStates = []; // hardware mirror
   final Map<String, double> bands = {}; // label → gain for legacy callers
 
@@ -97,9 +99,11 @@ class EqualizerProvider extends ChangeNotifier {
   bool autoEqHeadroom = false;
   String? activeSongId;
   List<EqualizerPreset> customPresets = [];
+  List<ResonateSoundProfile> customSoundProfiles = [];
 
-  /// 31-band studio model (ISO-ish centers). Mapped onto device hardware EQ;
-  /// true per-band software DSP is a later native step.
+  /// 31-band studio control model. The live curve is processed by the
+  /// native DSP-ENGINE AudioProcessor in each Media3 deck; Android hardware EQ
+  /// remains a read-only capability mirror and is not stacked into playback.
   static const List<double> studioFrequencies = [
     20, 25, 32, 40, 50, 63, 80, 100, 125, 160,
     200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600,
@@ -122,18 +126,32 @@ class EqualizerProvider extends ChangeNotifier {
     if (gains.isEmpty) {
       return List<double>.filled(studioFrequencies.length, 0.0);
     }
+    if (gains.length == 1) {
+      return List<double>.filled(
+        studioFrequencies.length,
+        gains.first.clamp(studioMinDb, studioMaxDb).toDouble(),
+      );
+    }
+    // EQ frequency axes are logarithmic. Interpolating in linear Hz bends
+    // legacy curves toward the upper edge of each octave and under-shapes
+    // the lower-mid / presence region between the old ten-band centers.
     final srcHz = gains.length == 10 ? _legacy10Hz : [
       for (var i = 0; i < gains.length; i++)
-        studioFrequencies.first +
-            (studioFrequencies.last - studioFrequencies.first) *
-                (i / (gains.length - 1).clamp(1, 1000)),
+        math.exp(
+          math.log(studioFrequencies.first) +
+              (math.log(studioFrequencies.last) -
+                      math.log(studioFrequencies.first)) *
+                  (i / (gains.length - 1)),
+        ),
     ];
     double at(double hz) {
       if (hz <= srcHz.first) return gains.first;
       if (hz >= srcHz.last) return gains.last;
+      final logHz = math.log(hz);
       for (var i = 0; i < srcHz.length - 1; i++) {
         if (hz >= srcHz[i] && hz <= srcHz[i + 1]) {
-          final t = (hz - srcHz[i]) / (srcHz[i + 1] - srcHz[i]);
+          final t = (logHz - math.log(srcHz[i])) /
+              (math.log(srcHz[i + 1]) - math.log(srcHz[i]));
           return gains[i] + (gains[i + 1] - gains[i]) * t;
         }
       }
@@ -154,8 +172,8 @@ class EqualizerProvider extends ChangeNotifier {
   final ResonateDspPipeline _dspPipeline = ResonateDspPipeline();
 
   EqualizerProvider({
-    AndroidEqualizer? equalizer,
-    AndroidLoudnessEnhancer? loudnessEnhancer,
+    dynamic equalizer,
+    dynamic loudnessEnhancer,
     MusicProvider? music,
     BluetoothProvider? bluetooth,
   })  : _androidEqualizer = equalizer,
@@ -163,7 +181,7 @@ class EqualizerProvider extends ChangeNotifier {
         _music = music,
         _bluetooth = bluetooth {
     _initStudioBands();
-    _initialize();
+    ready = _initialize();
     _music?.addListener(_onMusicChanged);
     _bluetooth?.addListener(_onBluetoothChanged);
     // Output route → speaker protection / virtual bass on live DSP engines.
@@ -174,8 +192,12 @@ class EqualizerProvider extends ChangeNotifier {
     // enabled it. Hardware EQ still binds after playback has been running.
     _music?.onAndroidSession = (sessionId) {
       unawaited(attachNativeSession(sessionId));
-    unawaited(AudioOutputRouteService.instance.refreshNow());
+      unawaited(AudioOutputRouteService.instance.refreshNow());
     };
+    final currentSessionId = _music?.activeAudioSessionId;
+    if (currentSessionId != null && currentSessionId > 0) {
+      unawaited(attachNativeSession(currentSessionId));
+    }
   }
 
   bool get learnedEqEnabled => _learnedEqEnabled;
@@ -251,11 +273,13 @@ class EqualizerProvider extends ChangeNotifier {
     final route = AudioOutputRouteService.instance;
     // Auto DSP posture: phone speaker → protection + virtual bass;
     // headphones / BT → full DSP, light bass; car → full DSP, no virtual bass.
-    syncSpeakerPolicy(
+    unawaited(syncSpeakerPolicy(
       needsSpeakerProtection: route.needsSpeakerProtection,
       virtualBassAmount: route.suggestedVirtualBass,
       route: route.route,
-    );
+      arbiter: _music?.playbackControlArbiter,
+      priority: PlaybackControlPriority.safetyOverride,
+    ));
   }
 
 
@@ -272,8 +296,16 @@ class EqualizerProvider extends ChangeNotifier {
     } catch (_) {}
     // Persisted master state must be applied to the registry even when no sink
     // exists yet; the registry carries it forward to future A/B engines.
-    await ResonateNativeDspBridge.setEnabled(true);
-    final sid = _music?.audioPlayer.androidAudioSessionId;
+    await _withDspProfileLease(
+      operation: 'enable_dsp_profile',
+      priority: PlaybackControlPriority.interactive,
+      action: (lease) async {
+        if (_authorizeDspWrite(lease, 'enable_dsp_profile')) {
+          await ResonateNativeDspBridge.setEnabled(true);
+        }
+      },
+    );
+    final sid = _music?.activeAudioSessionId;
     if (sid != null && sid > 0) unawaited(attachNativeSession(sid));
     notifyListeners();
   }
@@ -478,6 +510,184 @@ class EqualizerProvider extends ChangeNotifier {
         ...customPresets,
       ];
 
+  static ResonateSoundProfile _advancedProfile({
+    required String name,
+    required String description,
+    required Map<double, double> gains,
+    Map<double, double> qValues = const {},
+    Map<double, int> filterTypes = const {},
+    double preampDb = -3.0,
+    int limiterMode = 2,
+    double limiterThresholdDb = -1.2,
+    double limiterReleaseMs = 75,
+    double limiterAttackMs = 0.5,
+    double limiterLookaheadMs = 4,
+    double limiterKneeDb = 2,
+    double crossoverHz = 120,
+  }) {
+    final filters = [
+      for (final hz in studioFrequencies)
+        ParametricEqBand(
+          frequencyHz: hz,
+          gainDb: gains[hz] ?? 0,
+          q: qValues[hz] ?? 1.0,
+          type: filterTypes[hz] ?? 0,
+        ),
+    ];
+    return ResonateSoundProfile(
+      id: 'resonate:${name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-') }',
+      name: name,
+      description: description,
+      category: 'Resonate Advanced',
+      isBuiltIn: true,
+      settings: DspSettings(
+        preset: name,
+        eqBandGainsDb: filters.map((band) => band.gainDb).toList(),
+        parametricEqBands: filters,
+        preampDb: preampDb,
+        autoEqHeadroom: true,
+        dvcEnabled: true,
+        dvcDb: 0,
+        dvcSmoothing: true,
+        dvcSmoothingMs: 18,
+        limiterEnabled: true,
+        limiterMode: limiterMode,
+        limiterThresholdDb: limiterThresholdDb,
+        limiterReleaseMs: limiterReleaseMs,
+        limiterAttackMs: limiterAttackMs,
+        limiterLookaheadMs: limiterLookaheadMs,
+        limiterKneeDb: limiterKneeDb,
+        limiterHighCeilingDb: -0.6,
+        limiterLowCeilingDb: -0.4,
+        crossoverHz: crossoverHz,
+      ),
+    );
+  }
+
+  /// More assertive, deliberately engineered profiles. Each uses the complete
+  /// 31-section parametric bank plus headroom and true-peak protection.
+  /// These are creative starting points, not headphone-specific corrections.
+  static List<ResonateSoundProfile> get advancedSoundProfileCatalog => [
+        _advancedProfile(
+          name: 'Resonate Subforge',
+          description: 'Deep sub-bass, physical kick weight and a clear upper-mid edge.',
+          gains: {
+            20: 2.0, 25: 3.0, 32: 4.2, 40: 4.8, 50: 5.0, 63: 4.6,
+            80: 3.8, 100: 3.0, 125: 2.2, 160: 1.2, 200: 0.3,
+            250: -0.8, 315: -1.2, 400: -0.8, 500: -0.2,
+            800: 0.5, 1000: 0.8, 1250: 1.0, 1600: 1.4,
+            2000: 1.8, 2500: 1.8, 3150: 1.4, 4000: 0.8,
+          },
+          qValues: {40: 0.707, 63: 4.0, 100: 3.8, 250: 3.8, 315: 3.8, 2000: 3.6},
+          filterTypes: {40: 1},
+          preampDb: -5.5,
+          limiterMode: 2,
+          limiterThresholdDb: -1.4,
+          limiterReleaseMs: 90,
+          limiterAttackMs: 0.4,
+          limiterLookaheadMs: 5,
+        ),
+        _advancedProfile(
+          name: 'Resonate Midrange Atlas',
+          description: 'Fills low-mid body, vocal fundamentals and upper-mid presence without a treble spike.',
+          gains: {
+            63: 0.4, 80: 0.8, 100: 1.0, 125: 1.2, 160: 1.0, 200: 0.8,
+            250: 0.6, 315: 1.2, 400: 1.6, 500: 2.0, 630: 2.2,
+            800: 2.4, 1000: 2.6, 1250: 2.8, 1600: 2.8, 2000: 2.6,
+            2500: 2.2, 3150: 1.8, 4000: 1.2, 5000: 0.6,
+          },
+          qValues: {
+            315: 3.4, 400: 3.5, 500: 3.6, 630: 3.7, 800: 3.8,
+            1000: 3.8, 1250: 3.8, 1600: 3.7, 2000: 3.6, 2500: 3.4,
+          },
+          preampDb: -3.8,
+          limiterMode: 2,
+          limiterThresholdDb: -1.3,
+          limiterReleaseMs: 65,
+          limiterAttackMs: 0.35,
+          limiterLookaheadMs: 4,
+        ),
+        _advancedProfile(
+          name: 'Resonate Titan Pulse',
+          description: 'High-impact bass and forward mids for dense, energetic mixes.',
+          gains: {
+            20: 1.5, 25: 2.4, 32: 3.5, 40: 4.2, 50: 4.4, 63: 4.1,
+            80: 3.6, 100: 3.2, 125: 2.7, 160: 2.0, 200: 1.2,
+            250: 0.2, 315: -0.8, 400: -0.5, 500: 0.4,
+            630: 0.9, 800: 1.4, 1000: 1.8, 1250: 2.2,
+            1600: 2.5, 2000: 2.8, 2500: 2.6, 3150: 2.1,
+            4000: 1.4, 5000: 0.8,
+          },
+          qValues: {40: 0.707, 63: 4.0, 100: 3.8, 315: 3.8, 2000: 3.6},
+          filterTypes: {40: 1},
+          preampDb: -5.8,
+          limiterMode: 2,
+          limiterThresholdDb: -1.5,
+          limiterReleaseMs: 85,
+          limiterAttackMs: 0.3,
+          limiterLookaheadMs: 5,
+        ),
+        _advancedProfile(
+          name: 'Resonate Velvet Drive',
+          description: 'Dense, warm low mids with a smooth vocal and instrument body.',
+          gains: {
+            32: 0.8, 40: 1.2, 50: 1.6, 63: 2.0, 80: 2.3, 100: 2.5,
+            125: 2.4, 160: 2.2, 200: 1.8, 250: 1.5, 315: 1.3,
+            400: 1.2, 500: 1.2, 630: 1.1, 800: 1.0, 1000: 0.9,
+            1250: 0.8, 1600: 0.6, 2000: 0.4, 2500: 0.2,
+          },
+          qValues: {63: 0.707, 80: 3.8, 125: 3.8, 250: 3.8, 400: 3.8, 630: 3.8, 1000: 3.8},
+          filterTypes: {63: 1},
+          preampDb: -3.2,
+          limiterMode: 3,
+          limiterThresholdDb: -1.4,
+          limiterReleaseMs: 100,
+          limiterAttackMs: 0.7,
+          limiterLookaheadMs: 2,
+          limiterKneeDb: 3,
+          crossoverHz: 150,
+        ),
+      ];
+
+  List<ResonateSoundProfile> get advancedSoundProfiles =>
+      advancedSoundProfileCatalog;
+
+  /// Complete DSP snapshots built from Resonate's original tone curves.
+  /// Other processing stages retain the conservative canonical defaults.
+  List<ResonateSoundProfile> get builtInSoundProfiles {
+    final core = resonatePresets.map((item) {
+      final gains = expandGainsToStudio(item.gains);
+      final filters = [
+        for (var i = 0; i < studioFrequencies.length; i++)
+          ParametricEqBand(
+            frequencyHz: studioFrequencies[i],
+            gainDb: gains[i],
+            q: 4.3,
+            type: 0,
+          ),
+      ];
+      final slug = item.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+      return ResonateSoundProfile(
+        id: 'resonate:$slug',
+        name: item.name,
+        description: 'Resonate tone curve with the standard DSP safety configuration.',
+        category: item.category,
+        isBuiltIn: true,
+        settings: DspSettings().copyWith(
+          preset: item.name,
+          eqBandGainsDb: gains,
+          parametricEqBands: filters,
+        ),
+      );
+    }).toList(growable: false);
+    return [...core, ...advancedSoundProfiles];
+  }
+
+  List<ResonateSoundProfile> get allSoundProfiles => [
+        ...builtInSoundProfiles,
+        ...customSoundProfiles,
+      ];
+
   List<String> get categories {
     final set = <String>{};
     for (final p in allPresets) {
@@ -491,8 +701,8 @@ class EqualizerProvider extends ChangeNotifier {
 
   /// Re-bind when MusicProvider switches active engine (A/B).
   void attachHardware({
-    AndroidEqualizer? equalizer,
-    AndroidLoudnessEnhancer? loudnessEnhancer,
+    dynamic equalizer,
+    dynamic loudnessEnhancer,
   }) {
     _androidEqualizer = equalizer;
     _loudnessEnhancer = loudnessEnhancer;
@@ -501,12 +711,13 @@ class EqualizerProvider extends ChangeNotifier {
 
   Future<void> _reloadHardwareAndApply() async {
     await _loadHardwareBands();
-    await _pushToHardware();
-    await _applyPreamp();
+    await _pushToHardware(priority: PlaybackControlPriority.background);
+    await _applyPreamp(priority: PlaybackControlPriority.background);
     notifyListeners();
   }
 
   bool _hardwareBound = false;
+  late final Future<void> ready;
   int _leanRequestRevision = 0;
   int _manualPresetRevision = 0;
 
@@ -546,6 +757,7 @@ class EqualizerProvider extends ChangeNotifier {
     final occupied = <String>{
       ...builtInPresets.map((item) => item.name.toLowerCase()),
       ...resonatePresets.map((item) => item.name.toLowerCase()),
+      ...advancedSoundProfileCatalog.map((item) => item.name.toLowerCase()),
       ...existingCustomPresets
           .where((item) => item.name != replacingName)
           .map((item) => item.name.toLowerCase()),
@@ -562,7 +774,7 @@ class EqualizerProvider extends ChangeNotifier {
 
   Future<void> _initialize() async {
     try {
-      // Do NOT await AndroidEqualizer.parameters here. That completer finishes
+      // Do NOT await legacy hardware equalizer.parameters here. That completer finishes
       // at first play and then setEnabled/setGain races session attach.
       final prefs = await SharedPreferences.getInstance();
       final canonical = await DspSettings.load();
@@ -575,7 +787,32 @@ class EqualizerProvider extends ChangeNotifier {
       await DspSettings.update((settings) => settings.copyWith(masterEnabled: true, eqEnabled: true));
       preamp = canonical.preampDb;
       autoEqHeadroom = canonical.autoEqHeadroom;
+      final restoredParametric = canonical.parametricEqBands;
+      if (restoredParametric.isNotEmpty) {
+        parametricEqBands = List<ParametricEqBand>.generate(
+          studioBands.length,
+          (index) => index < restoredParametric.length
+              ? restoredParametric[index].copyWith()
+              : ParametricEqBand(
+                  frequencyHz: studioBands[index].frequencyHz,
+                  gainDb: studioBands[index].gainDb,
+                  q: 4.3,
+                  type: 0,
+                ),
+          growable: true,
+        );
+        for (var i = 0; i < studioBands.length; i++) {
+          final band = parametricEqBands[i];
+          studioBands[i]
+            ..frequencyHz = band.frequencyHz
+            ..label = _labelForFrequency(band.frequencyHz)
+            ..gainDb = band.gainDb;
+        }
+      } else {
+        parametricEqBands = <ParametricEqBand>[];
+      }
       await _loadCustomPresets(prefs);
+      await _loadCustomSoundProfiles(prefs);
 
       // Restore studio curve from prefs if present.
       var restoredStudio = false;
@@ -617,14 +854,12 @@ class EqualizerProvider extends ChangeNotifier {
       }
       // Restore the full active native profile immediately. These registry
       // calls update sticky state even if playback has not created a sink yet.
-      await _applyPreamp();
-      await _pushLiveDspCurve(dvcDb: canonical.dvcDb);
-      await AudioEffectsBridge.setLiveDspLimiterCeiling(
-        highDb: canonical.limiterHighCeilingDb,
-        lowDb: canonical.limiterLowCeilingDb,
+      await _applyPreamp(priority: PlaybackControlPriority.background);
+      await _pushLiveDspCurve(
+        settings: canonical,
+        priority: PlaybackControlPriority.background,
       );
-      await AudioEffectsBridge.setLiveDspCrossoverHz(canonical.crossoverHz);
-      final sessionId = _music?.audioPlayer.androidAudioSessionId;
+      final sessionId = _music?.activeAudioSessionId;
       if (sessionId != null && sessionId > 0) {
         unawaited(attachNativeSession(sessionId));
       }
@@ -648,9 +883,9 @@ class EqualizerProvider extends ChangeNotifier {
           _applyStudioGains(match.first.gains);
         }
       }
-      await _pushToHardware();
-      await _applyPreamp();
-      await _pushLiveDspCurve();
+      await _pushToHardware(priority: PlaybackControlPriority.background);
+      await _applyPreamp(priority: PlaybackControlPriority.background);
+      await _pushLiveDspCurve(priority: PlaybackControlPriority.background);
       debugPrint('EQ re-applied after hardware bind preset=$preset preamp=$preamp');
       try {
         final prefs = await SharedPreferences.getInstance();
@@ -719,40 +954,134 @@ class EqualizerProvider extends ChangeNotifier {
   /// The native DSP processor is the single audio-path owner for EQ. Android's
   /// device Equalizer/DynamicsProcessing APIs are intentionally not written here;
   /// doing so would stack a second EQ on the same PCM stream.
-  Future<void> _pushToHardware() async {
+  List<ParametricEqBand> _effectiveParametricBands() {
+    if (parametricEqBands.length == studioBands.length) {
+      return parametricEqBands.map((band) => band.copyWith()).toList(growable: false);
+    }
+    return studioBands.map((band) => ParametricEqBand(
+      frequencyHz: band.frequencyHz,
+      gainDb: band.gainDb,
+      q: 4.3,
+      type: 0,
+    )).toList(growable: false);
+  }
+
+  void _ensureParametricBands() {
+    if (parametricEqBands.length == studioBands.length) return;
+    parametricEqBands = _effectiveParametricBands().toList(growable: true);
+  }
+
+  Future<void> _pushToHardware({
+    PlaybackControlPriority priority = PlaybackControlPriority.interactive,
+  }) async {
+    await _withDspProfileLease(
+      operation: 'equalizer_profile',
+      priority: priority,
+      action: (lease) async {
+        if (!_authorizeDspWrite(lease, 'parametric_eq')) return;
+        try {
+          final filters = _effectiveParametricBands();
+          await AudioEffectsBridge.setLiveDspParametricEqBands(
+            frequenciesHz: filters.map((band) => band.frequencyHz).toList(),
+            gainsDb: filters.map((band) => band.gainDb).toList(),
+            qs: filters.map((band) => band.q).toList(),
+            types: filters.map((band) => band.type).toList(),
+            enabled: true,
+          );
+        } catch (e) {
+          debugPrint('live DSP EQ push failed: $e');
+        }
+      },
+    );
+  }
+
+  Future<void> _withDspProfileLease({
+    required String operation,
+    required PlaybackControlPriority priority,
+    required Future<void> Function(PlaybackControlLease? lease) action,
+  }) async {
+    final arbiter = _music?.playbackControlArbiter;
+    if (arbiter == null) {
+      await action(null);
+      return;
+    }
+    final lease = await arbiter.acquire(
+      owner: 'dsp_profile_${priority.name}',
+      priority: priority,
+    );
+    if (lease == null) return;
     try {
-      final centers = studioBands.map((b) => b.frequencyHz).toList();
-      final gains = studioBands.map((b) => b.gainDb).toList();
-      // Await the native write so repeated on/off changes are applied in order.
-      // A fire-and-forget write could finish after a newer toggle and restore
-      // the stale EQ state.
-      await syncStudioBandsToNativeEq(
-        centersHz: centers,
-        gainsDb: gains,
-        enabled: true,
-      );
-    } catch (e) {
-      debugPrint('live DSP EQ push failed: $e');
+      if (!lease.authorizeWrite(operation)) return;
+      await action(lease);
+    } finally {
+      await lease.release();
     }
   }
 
-  /// Attach native Resonate DSP to a just_audio Android session id.
+  bool _authorizeDspWrite(PlaybackControlLease? lease, String operation) =>
+      lease == null || lease.authorizeWrite(operation);
+
+  Future<void> setParametricEqBands(
+    List<ParametricEqBand> filters, {
+    bool markCustom = true,
+  }) async {
+    if (filters.length != studioBands.length) return;
+    final safe = filters.map((band) => band.copyWith()).toList(growable: true);
+    if (markCustom) _manualPresetRevision++;
+    parametricEqBands = safe;
+    for (var i = 0; i < safe.length; i++) {
+      studioBands[i]
+        ..frequencyHz = safe[i].frequencyHz
+        ..label = _labelForFrequency(safe[i].frequencyHz)
+        ..gainDb = safe[i].gainDb;
+      bands[studioBands[i].label] = safe[i].gainDb;
+    }
+    if (markCustom) preset = 'Custom';
+    await _pushToHardware();
+    await _applyPreamp();
+    await _save();
+    notifyListeners();
+  }
+
+  Future<void> setParametricEqBand(int index, ParametricEqBand band) async {
+    if (index < 0 || index >= studioBands.length) return;
+    _manualPresetRevision++;
+    _ensureParametricBands();
+    final safe = band.copyWith();
+    parametricEqBands[index] = safe;
+    studioBands[index]
+      ..frequencyHz = safe.frequencyHz
+      ..label = _labelForFrequency(safe.frequencyHz)
+      ..gainDb = safe.gainDb;
+    bands[studioBands[index].label] = safe.gainDb;
+    preset = 'Custom';
+    await _pushToHardware();
+    await _applyPreamp();
+    await _save();
+    notifyListeners();
+  }
+
+  /// Refresh native Resonate DSP status for the active Android playback session.
+  /// The PCM processor itself is injected into each Media3 deck's audio sink.
   Future<void> attachNativeSession(int sessionId) async {
     // Always attach Resonate DSP to each active Android playback session.
     try {
       final ok = await ResonateNativeDspBridge.attachSession(sessionId);
       if (ok) {
-        await _pushToHardware();
+        await _pushToHardware(priority: PlaybackControlPriority.background);
         notifyListeners();
       }
     } catch (e, st) {
       debugPrint('attachNativeSession failed: $e');
       debugPrint('$st');
-      // Stay on hardware EQ only — never rethrow (prevents Activity death).
+      // Keep playback fail-open; native sink processors remain pass-through
+      // if unavailable. Never rethrow across the Flutter activity boundary.
     }
   }
 
-  Future<void> _applyPreamp() async {
+  Future<void> _applyPreamp({
+    PlaybackControlPriority priority = PlaybackControlPriority.interactive,
+  }) async {
     // Mature DSP owns EQ preamp/DVC. Do not mirror it into player volume or
     // Android LoudnessEnhancer, otherwise the same gain is applied twice.
     final peakBandBoost = studioBands.isEmpty
@@ -761,20 +1090,34 @@ class EqualizerProvider extends ChangeNotifier {
     final requestedPreamp = autoEqHeadroom
         ? math.min(preamp, preamp - math.max(0.0, peakBandBoost))
         : preamp;
-    // Conservative estimate based on the largest positive studio-band gain;
-    // bounded by the DSP's supported -6 dB preamp floor.
     final effective = requestedPreamp.clamp(-6.0, 6.0).toDouble();
-    try {
-      await AudioEffectsBridge.setLiveDspPreampDb(effective);
-    } catch (e) {
-      debugPrint('live DSP preamp push failed: $e');
-    }
-    // Keep legacy Android LoudnessEnhancer explicitly disabled for this path.
-    if (_loudnessEnhancer != null) {
-      try {
-        await _loudnessEnhancer!.setTargetGain(0);
-        await _loudnessEnhancer!.setEnabled(false);
-      } catch (_) {}
+    await _withDspProfileLease(
+      operation: 'equalizer_preamp',
+      priority: priority,
+      action: (lease) async {
+        if (!_authorizeDspWrite(lease, 'preamp')) return;
+        try {
+          await AudioEffectsBridge.setLiveDspPreampDb(effective);
+        } catch (e) {
+          debugPrint('live DSP preamp push failed: $e');
+        }
+        if (!_authorizeDspWrite(lease, 'disable_legacy_loudness')) return;
+        if (_loudnessEnhancer != null) {
+          try {
+            await _loudnessEnhancer!.setTargetGain(0);
+            await _loudnessEnhancer!.setEnabled(false);
+          } catch (_) {}
+        }
+      },
+    );
+  }
+
+  void _syncParametricGainsFromStudio() {
+    if (parametricEqBands.length != studioBands.length) return;
+    for (var i = 0; i < studioBands.length; i++) {
+      parametricEqBands[i] = parametricEqBands[i].copyWith(
+        gainDb: studioBands[i].gainDb,
+      );
     }
   }
 
@@ -785,44 +1128,89 @@ class EqualizerProvider extends ChangeNotifier {
       studioBands[i].gainDb = g.clamp(studioMinDb, studioMaxDb);
       bands[studioBands[i].label] = studioBands[i].gainDb;
     }
+    _syncParametricGainsFromStudio();
   }
 
 
-  Future<void> _pushLiveDspCurve({double? dvcDb}) async {
-    try {
-      final centers = studioBands.map((b) => b.frequencyHz).toList();
-      final gains = studioBands.map((b) => b.gainDb).toList();
+  Future<void> _pushLiveDspCurve({
+    DspSettings? settings,
+    PlaybackControlPriority priority = PlaybackControlPriority.background,
+  }) async {
+    await _withDspProfileLease(
+      operation: 'dsp_profile_curve',
+      priority: priority,
+      action: (lease) async {
+        try {
+          final canonical = settings ?? await DspSettings.load();
+          final filters = _effectiveParametricBands();
+          if (!_authorizeDspWrite(lease, 'enable_dsp')) return;
+          await ResonateNativeDspBridge.setEnabled(true);
+          if (!_authorizeDspWrite(lease, 'parametric_eq')) return;
+          await AudioEffectsBridge.setLiveDspParametricEqBands(
+            frequenciesHz: filters.map((band) => band.frequencyHz).toList(),
+            gainsDb: filters.map((band) => band.gainDb).toList(),
+            qs: filters.map((band) => band.q).toList(),
+            types: filters.map((band) => band.type).toList(),
+            enabled: true,
+          );
+          if (!_authorizeDspWrite(lease, 'dvc')) return;
+          await AudioEffectsBridge.setLiveDspDvc(
+            enabled: canonical.dvcEnabled,
+            db: canonical.dvcDb,
+            smoothing: canonical.dvcSmoothing,
+            smoothingMs: canonical.dvcSmoothingMs,
+          );
+          if (!_authorizeDspWrite(lease, 'limiter_config')) return;
+          await AudioEffectsBridge.setLiveDspLimiterConfig(
+            enabled: canonical.limiterEnabled,
+            mode: canonical.limiterMode,
+            thresholdDb: canonical.limiterThresholdDb,
+            releaseMs: canonical.limiterReleaseMs,
+            attackMs: canonical.limiterAttackMs,
+            lookaheadMs: canonical.limiterLookaheadMs,
+            kneeDb: canonical.limiterKneeDb,
+          );
+          if (!_authorizeDspWrite(lease, 'limiter_ceiling')) return;
+          await AudioEffectsBridge.setLiveDspLimiterCeiling(
+            highDb: canonical.limiterHighCeilingDb,
+            lowDb: canonical.limiterLowCeilingDb,
+          );
+          if (!_authorizeDspWrite(lease, 'crossover')) return;
+          await AudioEffectsBridge.setLiveDspCrossoverHz(canonical.crossoverHz);
+          if (!_authorizeDspWrite(lease, 'dither')) return;
+          await AudioEffectsBridge.setLiveDspDither(
+            enabled: canonical.ditherEnabled,
+            mode: canonical.ditherMode,
+          );
 
-      // Master bypass, EQ enable, preamp, and DVC are independent stages.
-      // Apply the canonical master state even before the first sink registers.
-      await ResonateNativeDspBridge.setEnabled(true);
-      await AudioEffectsBridge.setLiveDspEqBands(
-        centersHz: centers,
-        gainsDb: gains,
-        // Send the EQ preference independently; the native registry combines
-        // it with master DSP state for each live and newly registered engine.
-        enabled: true,
-      );
-      final resolvedDvcDb = dvcDb ?? (await DspSettings.load()).dvcDb;
-      await AudioEffectsBridge.setLiveDspDvcDb(resolvedDvcDb);
-
-      // _applyPreamp() owns the effective gain, including automatic headroom.
-      // Do not write raw [preamp] here afterwards: that would undo headroom.
-      final route = AudioOutputRouteService.instance;
-      syncSpeakerPolicy(
-        needsSpeakerProtection: route.needsSpeakerProtection,
-        virtualBassAmount: route.suggestedVirtualBass,
-        route: route.route,
-      );
-    } catch (e) {
-      debugPrint('pushLiveDspCurve failed: $e');
-    }
+          // _applyPreamp() owns the effective gain, including automatic headroom.
+          final route = AudioOutputRouteService.instance;
+          await syncSpeakerPolicy(
+            needsSpeakerProtection: route.needsSpeakerProtection,
+            virtualBassAmount: route.suggestedVirtualBass,
+            route: route.route,
+            lease: lease,
+          );
+        } catch (e) {
+          debugPrint('pushLiveDspCurve failed: $e');
+        }
+      },
+    );
   }
 
   Future<void> setStudioBandGain(int index, double gainDb) async {
     if (index < 0 || index >= studioBands.length) return;
     _manualPresetRevision++;
     studioBands[index].gainDb = gainDb.clamp(studioMinDb, studioMaxDb);
+    _ensureParametricBands();
+    final existingFilter = parametricEqBands[index];
+    parametricEqBands[index] = existingFilter.copyWith(
+      gainDb: studioBands[index].gainDb,
+      // The graphic EQ gain slider cannot alter a low/high-pass response;
+      // convert that band back to a peak filter so the visible control works.
+      type: existingFilter.type >= 3 ? 0 : existingFilter.type,
+      q: existingFilter.type >= 3 ? 1 : existingFilter.q,
+    );
     bands[studioBands[index].label] = studioBands[index].gainDb;
     preset = 'Custom';
     await _pushToHardware();
@@ -919,6 +1307,7 @@ class EqualizerProvider extends ChangeNotifier {
       band.gainDb = 0.0;
       bands[band.label] = 0.0;
     }
+    _syncParametricGainsFromStudio();
     preset = 'Custom';
     await _save();
     await _pushToHardware();
@@ -953,9 +1342,226 @@ class EqualizerProvider extends ChangeNotifier {
 
   Future<void> deleteCustomPreset(String name) async {
     customPresets.removeWhere((p) => p.name == name);
+    customSoundProfiles.removeWhere((profile) => profile.name == name);
     if (preset == name) preset = 'Custom';
     await _saveCustomPresets();
+    await _saveCustomSoundProfiles();
     await _save();
+    notifyListeners();
+  }
+
+  /// Save the current complete DSP state as a user-owned sound profile.
+  /// The legacy EQ-only preset remains available for older import/export flows.
+  Future<String?> saveCustomSoundProfile(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return null;
+    if (trimmed.length > 64) {
+      throw const FormatException('Profile names must be 64 characters or fewer.');
+    }
+    final builtInNames = builtInSoundProfiles
+        .map((profile) => profile.name.toLowerCase())
+        .toSet();
+    var uniqueName = trimmed;
+    if (builtInNames.contains(uniqueName.toLowerCase())) {
+      var suffix = 2;
+      do {
+        final marker = ' (Custom $suffix)';
+        uniqueName = '${trimmed.substring(0, math.max(1, 64 - marker.length)).trimRight()}$marker';
+        suffix++;
+      } while (builtInNames.contains(uniqueName.toLowerCase()));
+    }
+
+    final existingIndex = customSoundProfiles.indexWhere(
+      (profile) => profile.name.toLowerCase() == uniqueName.toLowerCase(),
+    );
+    final existing = existingIndex >= 0 ? customSoundProfiles[existingIndex] : null;
+    await _save();
+    final current = await DspSettings.load();
+    final snapshot = current.copyWith(
+      masterEnabled: true,
+      eqEnabled: true,
+      preset: uniqueName,
+      eqBandGainsDb: studioBands.map((band) => band.gainDb).toList(),
+      parametricEqBands: _effectiveParametricBands(),
+    );
+    final slug = uniqueName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+    var profileId = existing?.id ?? 'custom:$slug';
+    var idSuffix = 2;
+    while (existing == null &&
+        customSoundProfiles.any((profile) => profile.id == profileId)) {
+      profileId = 'custom:$slug-$idSuffix';
+      idSuffix++;
+    }
+    final profile = ResonateSoundProfile(
+      id: profileId,
+      name: uniqueName,
+      description: existing?.description ?? 'User-created complete Resonate DSP configuration.',
+      category: 'Custom',
+      settings: snapshot,
+    );
+    if (existingIndex >= 0) {
+      customSoundProfiles[existingIndex] = profile;
+    } else {
+      customSoundProfiles.add(profile);
+    }
+    await _saveCustomSoundProfiles();
+    notifyListeners();
+    return uniqueName;
+  }
+
+  /// Exports complete user-created profiles. Built-in profiles remain part of
+  /// the app catalog and are not duplicated into personal backups.
+  String exportSoundProfilesJson() {
+    if (customSoundProfiles.isEmpty) {
+      throw StateError('There are no custom sound profiles to export yet.');
+    }
+    return const JsonEncoder.withIndent('  ').convert({
+      'format': 'resonate-sound-profiles',
+      'version': 1,
+      'exportedAt': DateTime.now().toUtc().toIso8601String(),
+      'profiles': customSoundProfiles.map((profile) => profile.toJson()).toList(),
+    });
+  }
+
+  /// Validates the entire bundle before writing anything. Name collisions are
+  /// preserved as distinct profiles with an "(Imported)" suffix.
+  Future<int> importSoundProfilesJson(String source) async {
+    if (source.length > 1024 * 1024) {
+      throw const FormatException('Sound profile files must be smaller than 1 MB.');
+    }
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(source);
+    } on FormatException {
+      throw const FormatException('This file is not valid JSON.');
+    }
+    if (decoded is! Map) {
+      throw const FormatException('Expected a Resonate sound profile bundle.');
+    }
+    final bundle = Map<String, dynamic>.from(decoded);
+    final rawProfiles = bundle['profiles'];
+    if (bundle['format'] != 'resonate-sound-profiles' ||
+        bundle['version'] != 1 ||
+        rawProfiles is! List ||
+        rawProfiles.isEmpty ||
+        rawProfiles.length > 100) {
+      throw const FormatException('Unsupported or empty Resonate sound profile bundle.');
+    }
+
+    // Parse and validate every item before mutating the in-memory catalog.
+    final incoming = <ResonateSoundProfile>[];
+    for (final item in rawProfiles) {
+      if (item is! Map) {
+        throw const FormatException('A sound profile entry is malformed.');
+      }
+      final profile = ResonateSoundProfile.fromJson(Map<String, dynamic>.from(item));
+      if (profile.name.length > 64 || profile.description.length > 280 ||
+          profile.settings.eqBandGainsDb.length > studioBands.length ||
+          profile.settings.parametricEqBands.length > studioBands.length) {
+        throw const FormatException('A sound profile exceeds supported field limits.');
+      }
+      incoming.add(profile);
+    }
+
+    final occupied = <String>{
+      ...builtInSoundProfiles.map((profile) => profile.name.toLowerCase()),
+      ...customSoundProfiles.map((profile) => profile.name.toLowerCase()),
+    };
+    final staged = <ResonateSoundProfile>[];
+    final occupiedIds = customSoundProfiles.map((profile) => profile.id).toSet();
+    for (final profile in incoming) {
+      final baseName = profile.name.trim();
+      var name = baseName;
+      var suffix = 1;
+      while (occupied.contains(name.toLowerCase())) {
+        final marker = suffix == 1 ? ' (Imported)' : ' (Imported $suffix)';
+        name = '${baseName.substring(0, math.max(1, 64 - marker.length)).trimRight()}$marker';
+        suffix++;
+      }
+      occupied.add(name.toLowerCase());
+      final slug = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+      var profileId = 'custom:$slug';
+      var idSuffix = 2;
+      while (occupiedIds.contains(profileId)) {
+        profileId = 'custom:$slug-$idSuffix';
+        idSuffix++;
+      }
+      occupiedIds.add(profileId);
+      staged.add(ResonateSoundProfile(
+        id: profileId,
+        name: name,
+        description: profile.description,
+        category: 'Custom',
+        settings: profile.settings.copyWith(preset: name),
+      ));
+    }
+
+    customSoundProfiles.addAll(staged);
+    await _saveCustomSoundProfiles();
+    notifyListeners();
+    return staged.length;
+  }
+
+  /// Apply one complete profile snapshot. Route-based speaker protection still
+  /// takes precedence over profile preferences for safe device operation.
+  Future<void> applySoundProfile(ResonateSoundProfile profile) async {
+    final source = profile.settings;
+    final filters = source.parametricEqBands.length == studioBands.length
+        ? source.parametricEqBands.map((band) => band.copyWith()).toList(growable: true)
+        : <ParametricEqBand>[
+            for (var i = 0; i < studioBands.length; i++)
+              ParametricEqBand(
+                frequencyHz: studioFrequencies[i],
+                gainDb: i < source.eqBandGainsDb.length ? source.eqBandGainsDb[i] : 0,
+                q: 4.3,
+                type: 0,
+              ),
+          ];
+    final gains = filters.map((band) => band.gainDb).toList(growable: false);
+    final snapshot = source.copyWith(
+      masterEnabled: true,
+      eqEnabled: true,
+      preset: profile.name,
+      eqBandGainsDb: gains,
+      parametricEqBands: filters,
+    );
+
+    _manualPresetRevision++;
+    preset = profile.name;
+    preamp = snapshot.preampDb;
+    autoEqHeadroom = snapshot.autoEqHeadroom;
+    parametricEqBands = filters;
+    for (var i = 0; i < studioBands.length; i++) {
+      final band = filters[i];
+      studioBands[i]
+        ..frequencyHz = band.frequencyHz
+        ..label = _labelForFrequency(band.frequencyHz)
+        ..gainDb = band.gainDb;
+      bands[studioBands[i].label] = band.gainDb;
+    }
+
+    // Persist before pushing to the sticky native registry, so new A/B
+    // processors inherit the same complete snapshot.
+    await DspSettings.save(snapshot);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('equalizer_enabled', true);
+    await prefs.setString('equalizer_preset', profile.name);
+    await prefs.setDouble('equalizer_preamp', preamp);
+    for (var i = 0; i < studioBands.length; i++) {
+      await prefs.setDouble('eq_studio_band_$i', studioBands[i].gainDb);
+    }
+    await _pushToHardware();
+    await _applyPreamp();
+    await _pushLiveDspCurve(
+      settings: snapshot,
+      priority: PlaybackControlPriority.interactive,
+    );
+    notifyListeners();
+  }
+
+  Future<void> deleteCustomSoundProfile(String id) async {
+    customSoundProfiles.removeWhere((profile) => profile.id == id);
+    await _saveCustomSoundProfiles();
     notifyListeners();
   }
 
@@ -1104,6 +1710,79 @@ class EqualizerProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _loadCustomSoundProfiles(SharedPreferences prefs) async {
+    try {
+      final raw = prefs.getString('resonate_custom_sound_profiles_v1');
+      final decoded = raw == null || raw.isEmpty ? const <dynamic>[] : jsonDecode(raw);
+      if (decoded is! List) throw const FormatException('Invalid sound profile list.');
+      final loaded = <ResonateSoundProfile>[];
+      final occupied = builtInSoundProfiles.map((p) => p.name.toLowerCase()).toSet();
+      for (final item in decoded) {
+        if (item is! Map) continue;
+        final profile = ResonateSoundProfile.fromJson(Map<String, dynamic>.from(item));
+        if (profile.isBuiltIn || occupied.contains(profile.name.toLowerCase())) continue;
+        occupied.add(profile.name.toLowerCase());
+        loaded.add(ResonateSoundProfile(
+          id: profile.id,
+          name: profile.name,
+          description: profile.description,
+          category: 'Custom',
+          settings: profile.settings,
+        ));
+      }
+
+      // Migrate older EQ-only custom presets without discarding the rest of
+      // the user's current DSP configuration. Their old curves become the EQ
+      // stage of a complete profile; all other stages retain current values.
+      final current = await DspSettings.load();
+      for (final legacy in customPresets) {
+        if (occupied.contains(legacy.name.toLowerCase())) continue;
+        final gains = normalizePresetGains(legacy.gains);
+        final filters = [
+          for (var i = 0; i < studioFrequencies.length; i++)
+            ParametricEqBand(
+              frequencyHz: studioFrequencies[i],
+              gainDb: gains[i],
+              q: 4.3,
+              type: 0,
+            ),
+        ];
+        final slug = legacy.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+        loaded.add(ResonateSoundProfile(
+          id: 'custom:$slug',
+          name: legacy.name,
+          description: 'Migrated from an earlier EQ-only custom preset.',
+          category: 'Custom',
+          settings: current.copyWith(
+            preset: legacy.name,
+            eqBandGainsDb: gains,
+            parametricEqBands: filters,
+          ),
+        ));
+        occupied.add(legacy.name.toLowerCase());
+      }
+      customSoundProfiles = loaded;
+      if (raw == null || loaded.length != decoded.length) {
+        await _saveCustomSoundProfiles();
+      }
+    } catch (e) {
+      debugPrint('custom sound profiles load failed: $e');
+      customSoundProfiles = [];
+    }
+  }
+
+  Future<void> _saveCustomSoundProfiles() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'resonate_custom_sound_profiles_v1',
+        jsonEncode(customSoundProfiles.map((profile) => profile.toJson()).toList()),
+      );
+    } catch (e) {
+      debugPrint('custom sound profiles save failed: $e');
+    }
+  }
+
   Future<void> _saveCustomPresets() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -1135,6 +1814,7 @@ class EqualizerProvider extends ChangeNotifier {
         eqEnabled: true,
         preset: preset,
         eqBandGainsDb: studioBands.map((band) => band.gainDb).toList(),
+        parametricEqBands: _effectiveParametricBands(),
         preampDb: preamp,
         autoEqHeadroom: autoEqHeadroom,
       ));

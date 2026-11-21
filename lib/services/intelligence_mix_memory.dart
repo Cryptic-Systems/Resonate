@@ -22,6 +22,7 @@ class IntelligenceMixMemory {
         'createdAt': mix.createdAt.toIso8601String(),
         'songIds': mix.songs.map((song) => song.id).toList(),
         'parentMixId': mix.parentMixId,
+        'queueIntentId': mix.queueIntentId,
         'edition': mix.edition,
         'previousContinuityScore': mix.previousContinuityScore,
         'artistHints': mix.songs.map((s) => s.artist).toSet().take(4).toList(),

@@ -16,6 +16,7 @@ import 'playlists_screen.dart';
 import 'album_screen.dart';
 import 'artist_screen.dart';
 import '../services/duplicate_detection.dart';
+import '../services/dj_shuffle_flow.dart';
 
 String _formatDuration(Duration d) {
   if (d.inMilliseconds <= 0) return '—';
@@ -206,19 +207,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final song = songs[index];
     final fromHere = songs.sublist(index);
     final resumeAt = music.resumePositionFor(song.id);
-    final playback = music.playSong(
+    final ok = await music.playSong(
       song,
       queue: List<Song>.from(fromHere),
       startIndex: 0,
       resumeIfPossible: resumeAt != null,
       resumeAtMs: resumeAt,
     );
-    if (mounted) {
-      openShellPlayer(context);
-    }
-    final ok = await playback;
     if (!mounted) return;
     if (ok) {
+      // Do not reveal the Player tab until Media3 has committed this selection.
+      // This avoids briefly presenting the outgoing track's stale UI snapshot.
+      openShellPlayer(context);
       await library.updatePlayCount(song.id);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -415,8 +415,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       onTap: () async {
                         Navigator.pop(ctx);
                         final music = context.read<MusicProvider>();
-                        await music.playSong(s);
-                        if (mounted) {
+                        final started = await music.playSong(s);
+                        if (mounted && started) {
                           openShellPlayer(context);
                         }
                       },
@@ -446,49 +446,47 @@ class _LibraryScreenState extends State<LibraryScreen> {
           IconButton(
             tooltip: 'Search library',
             icon: Icon(
-              _searchController.text.isEmpty ? Icons.search_rounded : Icons.search_off_rounded,
+              _searchController.text.isEmpty
+                  ? Icons.search_rounded
+                  : Icons.search_off_rounded,
             ),
             onPressed: _showSearch,
           ),
-          IconButton(
-            tooltip: 'Select',
-            icon: const Icon(Icons.checklist_rounded),
-            onPressed: () => _toggleSelectMode(true),
-          ),
-          IconButton(
-            tooltip: 'Liked Songs',
-            icon: const Icon(Icons.favorite_rounded),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const LikedSongsScreen()),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Playlists',
-            icon: const Icon(Icons.queue_music_rounded),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const PlaylistsScreen()),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: () async {
-              final library = context.read<LibraryProvider>();
-              await library.loadAllSongs();
-              await library.loadFavoriteSongs();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Library refreshed')),
-                );
-              }
-            },
-          ),
           PopupMenuButton<String>(
+            tooltip: 'More library options',
+            icon: const Icon(Icons.more_vert_rounded),
             onSelected: (value) async {
               final library = context.read<LibraryProvider>();
-              if (const ['title', 'artist', 'album', 'date_added', 'duration'].contains(value)) {
+              if (value == 'select') {
+                _toggleSelectMode(true);
+                return;
+              }
+              if (value == 'liked') {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LikedSongsScreen()),
+                );
+                return;
+              }
+              if (value == 'playlists') {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PlaylistsScreen()),
+                );
+                return;
+              }
+              if (value == 'refresh') {
+                await library.loadAllSongs();
+                await library.loadFavoriteSongs();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Library refreshed')),
+                  );
+                }
+                return;
+              }
+              if (const ['title', 'artist', 'album', 'date_added', 'duration']
+                  .contains(value)) {
                 library.setSortBy(value);
               }
               if (const ['all', 'favorites', 'recent'].contains(value)) {
@@ -504,6 +502,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
               }
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'select', child: Text('Select tracks')),
+              PopupMenuItem(value: 'liked', child: Text('Liked songs')),
+              PopupMenuItem(value: 'playlists', child: Text('Playlists')),
+              PopupMenuItem(value: 'refresh', child: Text('Refresh library')),
+              PopupMenuDivider(),
               PopupMenuItem(value: 'title', child: Text('Sort by Title')),
               PopupMenuItem(value: 'artist', child: Text('Sort by Artist')),
               PopupMenuItem(value: 'album', child: Text('Sort by Album')),
@@ -692,12 +695,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       if (songs.isEmpty) return;
                       final music = context.read<MusicProvider>();
                       await music.setShuffleEnabled(false);
-                      await music.playSong(
+                      final started = await music.playSong(
                         songs.first,
                         queue: List.from(songs),
                         startIndex: 0,
                       );
-                      if (mounted) {
+                      if (mounted && started) {
                         openShellPlayer(context);
                       }
                     },
@@ -708,28 +711,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: FilledButton.tonalIcon(
-                    onPressed: () async {
-                      final library = context.read<LibraryProvider>();
-                      final songs = List.of(
-                        library.filteredSongs.isNotEmpty ||
-                                library.searchQuery.isNotEmpty ||
-                                library.filterBy != 'all'
-                            ? library.filteredSongs
-                            : library.allSongs,
-                      );
-                      if (songs.isEmpty) return;
-                      songs.shuffle();
-                      final music = context.read<MusicProvider>();
-                      await music.setShuffleEnabled(true);
-                      await music.playSong(
-                        songs.first,
-                        queue: songs,
-                        startIndex: 0,
-                      );
-                      if (mounted) {
-                        openShellPlayer(context);
-                      }
-                    },
+                    onPressed: () => DjShuffleFlow.fromLibrary(context),
                     icon: const Icon(Icons.shuffle_rounded),
                     label: const Text('Shuffle'),
                   ),

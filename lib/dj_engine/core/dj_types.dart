@@ -8,7 +8,7 @@ enum DjSectionType { unknown, intro, verse, preChorus, chorus, drop, breakdown, 
 
 enum DjTransitionKind { outroIntro, phraseBlend, breakdownDrop, beatBlend, energyBridge, safeCrossfade }
 
-enum DjRiskType { bassCollision, energyShock, harmonicConflict, structureCollision, tempoInstability, lowConfidence }
+enum DjRiskType { bassCollision, energyShock, harmonicConflict, structureCollision, tempoInstability, lowConfidence, silenceEvidenceMismatch }
 
 class DjTimePoint {
   final int timeMs;
@@ -118,7 +118,58 @@ class DjTransitionMarkers {
   });
 }
 
+/// Confidence-weighted near-silence evidence measured from decoded PCM.
+/// This is descriptive track metadata only; it never executes playback actions.
+class DjSilenceRegion {
+  final int startMs;
+  final int endMs;
+  final double minimumDbfs;
+  final double confidence;
+
+  const DjSilenceRegion({
+    required this.startMs,
+    required this.endMs,
+    required this.minimumDbfs,
+    required this.confidence,
+  });
+
+  int get durationMs => (endMs - startMs).clamp(0, 1 << 30);
+}
+
 /// Richer replacement/future companion to the current DjAnalysis model.
+/// Measured from decoded PCM16, never inferred from DJ energy scores.
+/// All level values are dBFS; true peak may exceed 0 dBFS due to inter-sample peaks.
+class DspAnalysisMetrics {
+  final double samplePeakDb;
+  final double truePeakDb;
+  final double rmsDb;
+  final double crestDb;
+  final double bassEnergyDb;
+  /// Measured DSP-ENGINE offline safe-bass cap; null means not probed.
+  final double? maxSafeBassDb;
+
+  const DspAnalysisMetrics({
+    this.samplePeakDb = -160,
+    this.truePeakDb = -160,
+    this.rmsDb = -160,
+    this.crestDb = 0,
+    this.bassEnergyDb = -160,
+    this.maxSafeBassDb,
+  });
+
+  bool get isMeasured => samplePeakDb > -160 || truePeakDb > -160 || rmsDb > -160;
+  bool get isValid => [
+    samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb,
+  ].every((v) => v.isFinite) &&
+      samplePeakDb >= -160 && samplePeakDb <= 6 &&
+      truePeakDb >= -160 && truePeakDb <= 6 &&
+      rmsDb >= -160 && rmsDb <= 0.1 &&
+      crestDb >= 0 && crestDb <= 30 &&
+      bassEnergyDb >= -160 && bassEnergyDb <= 0.1 &&
+      (maxSafeBassDb == null ||
+          (maxSafeBassDb!.isFinite && maxSafeBassDb! >= 0 && maxSafeBassDb! <= 18));
+}
+
 class DjTrackProfile {
   final String songId;
   final int? durationMs;
@@ -131,7 +182,9 @@ class DjTrackProfile {
   final List<DjSection> sections;
   final List<DjEnergyPoint> energyCurve;
   final DjSpectralProfile spectrum;
+  final DspAnalysisMetrics dspAnalysis;
   final DjTransitionMarkers transitions;
+  final List<DjSilenceRegion> silenceRegions;
   final double analysisConfidence;
   final int analysisVersion;
 
@@ -147,7 +200,9 @@ class DjTrackProfile {
     this.sections = const [],
     this.energyCurve = const [],
     this.spectrum = const DjSpectralProfile(),
+    this.dspAnalysis = const DspAnalysisMetrics(),
     this.transitions = const DjTransitionMarkers(),
+    this.silenceRegions = const [],
     this.analysisConfidence = 0,
     this.analysisVersion = 1,
   });

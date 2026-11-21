@@ -9,6 +9,7 @@ import '../providers/music_provider.dart';
 import '../providers/playlist_provider.dart';
 import 'player_screen.dart';
 import '../navigation/shell_nav.dart';
+import '../services/dj_shuffle_flow.dart';
 
 class PlaylistsScreen extends StatelessWidget {
   const PlaylistsScreen({super.key});
@@ -85,12 +86,12 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     if (mounted) openShellPlayer(context);
   }
   Future<void> _shuffleAll(List<Song> songs) async {
-    if (songs.isEmpty) return;
-    final shuffled = List<Song>.from(songs)..shuffle();
-    final music = context.read<MusicProvider>();
-    await music.setShuffleEnabled(true);
-    await music.playSong(shuffled.first, queue: shuffled, startIndex: 0);
-    if (mounted) openShellPlayer(context);
+    await DjShuffleFlow.fromPlaylist(
+      context,
+      songs,
+      playlistName: widget.playlist.name,
+      playlistId: widget.playlist.id,
+    );
   }
   Future<void> _addAllToQueue(List<Song> songs) async {
     if (songs.isEmpty) return;
