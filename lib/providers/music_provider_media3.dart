@@ -1286,6 +1286,7 @@ extension MusicProviderMedia3 on MusicProvider {
     if (!_repeatSelfFadeExecuting &&
         !_repeatSelfHandoffInFlight &&
         !_repeatSelfHandoffArmed &&
+        _repeatModeCommandPendingGeneration == 0 &&
         observedRepeatMode != _repeatMode) {
       final transitionActive = _crossfadeInProgress ||
           _automaticCrossfadeInFlight || _crossfadePreloadInFlight ||
@@ -1293,6 +1294,7 @@ extension MusicProviderMedia3 on MusicProvider {
       if (transitionActive) {
         _cancelAutomaticPlaybackWork(reason: 'external_repeat_mode_changed');
       }
+      final previousMode = _repeatMode;
       _repeatSelfDjPlanGeneration++;
       _repeatSelfDjPlanSongId = null;
       _repeatSelfDjPlanAttempted = false;
@@ -1300,6 +1302,31 @@ extension MusicProviderMedia3 on MusicProvider {
       _repeatSelfDjPreloadInFlight = false;
       _repeatSelfDjPreparation = null;
       _repeatMode = observedRepeatMode;
+      unawaited(ResonateDiagnostics.record('media3_repeat_mode_external_change', {
+        'previousMode': previousMode.name,
+        'observedMode': observedRepeatMode.name,
+        'songId': currentSong?.id,
+        'queueIndex': _queueIndex,
+        'positionMs': state.position.inMilliseconds,
+        'activeDeckId': state.activeDeckId,
+        'crossfadeStatus': state.crossfadeStatus,
+        'transitionWasActive': transitionActive,
+      }));
+    } else if (!_repeatSelfFadeExecuting &&
+        !_repeatSelfHandoffInFlight &&
+        !_repeatSelfHandoffArmed &&
+        _repeatModeCommandPendingGeneration != 0 &&
+        observedRepeatMode != _repeatMode) {
+      unawaited(ResonateDiagnostics.record('media3_repeat_mode_stale_snapshot_ignored', {
+        'requestedMode': _repeatMode.name,
+        'observedMode': observedRepeatMode.name,
+        'pendingGeneration': _repeatModeCommandPendingGeneration,
+        'songId': currentSong?.id,
+        'queueIndex': _queueIndex,
+        'positionMs': state.position.inMilliseconds,
+        'activeDeckId': state.activeDeckId,
+        'crossfadeStatus': state.crossfadeStatus,
+      }));
     }
     if (pendingSelectionMismatch) {
       // Preserve the optimistic library selection and its zero/resume position
@@ -1412,12 +1439,35 @@ extension MusicProviderMedia3 on MusicProvider {
         owner: 'dsp_analysis_hint',
         priority: PlaybackControlPriority.background,
       );
-      if (lease == null) return;
+      if (lease == null) {
+        await ResonateDiagnostics.record('media3_dsp_analysis_hint_skipped', {
+          'deckId': deckId,
+          'songId': song.id,
+          'standby': standby,
+          'reason': 'arbiter_lease_unavailable',
+          'activeOwner': playbackControlArbiter.activeOwner,
+        });
+        return;
+      }
       try {
-        if (!currentRequest() ||
-            !lease.authorizeWrite('dsp:analysis_hint:$deckId:$song.id')) return;
+        final requestCurrentBeforeWrite = currentRequest();
+        final writeAuthorized = requestCurrentBeforeWrite &&
+            lease.authorizeWrite('dsp:analysis_hint:$deckId:$song.id');
+        if (!writeAuthorized) {
+          await ResonateDiagnostics.record('media3_dsp_analysis_hint_skipped', {
+            'deckId': deckId,
+            'songId': song.id,
+            'standby': standby,
+            'reason': requestCurrentBeforeWrite
+                ? 'arbiter_write_not_authorized'
+                : 'request_stale_before_native_write',
+            'leaseCurrent': lease.isCurrent,
+            'activeOwner': playbackControlArbiter.activeOwner,
+          });
+          return;
+        }
         final metrics = profile.dspAnalysis;
-        final applied = await AudioEffectsBridge.setLiveDspDeckAnalysisHint(
+        final bridgeAccepted = await AudioEffectsBridge.setLiveDspDeckAnalysisHint(
           deckId: deckId,
           songId: song.id,
           samplePeakDb: metrics.samplePeakDb,
@@ -1427,10 +1477,18 @@ extension MusicProviderMedia3 on MusicProvider {
           bassEnergyDb: metrics.bassEnergyDb,
           maxSafeBassDb: metrics.maxSafeBassDb,
         );
+        final leaseCurrentAfterBridge = lease.isCurrent;
+        final requestCurrentAfterBridge = currentRequest();
+        final accepted = bridgeAccepted &&
+            leaseCurrentAfterBridge &&
+            requestCurrentAfterBridge;
         await ResonateDiagnostics.record('media3_dsp_analysis_hint', {
           'deckId': deckId,
           'songId': song.id,
-          'applied': applied && lease.isCurrent && currentRequest(),
+          'applied': accepted,
+          'bridgeAccepted': bridgeAccepted,
+          'leaseCurrentAfterBridge': leaseCurrentAfterBridge,
+          'requestCurrentAfterBridge': requestCurrentAfterBridge,
           'standby': standby,
           'analysisVersion': profile.analysisVersion,
         });
