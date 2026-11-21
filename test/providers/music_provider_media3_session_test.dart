@@ -3732,6 +3732,74 @@ void main() {
       }
     });
 
+    test('user transport preemption cancels an in-flight manual crossfade', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-preempt-outgoing');
+      final incoming = _song('manual-preempt-incoming');
+      final fadeGate = Completer<void>();
+      session.crossfadeGate = fadeGate;
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(
+          await provider.playSong(outgoing, queue: <Song>[outgoing, incoming]),
+          isTrue,
+        );
+        await provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        expect(provider.hasPreparedManualDjDeck, isTrue);
+
+        final transition = provider.crossfadePreparedManualDjDeck(
+          duration: const Duration(seconds: 2),
+        );
+        for (var attempt = 0;
+            attempt < 50 &&
+                !session.calls.any((call) => call.startsWith('crossfade:'));
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+        expect(
+          session.calls.any((call) => call.startsWith('crossfade:')),
+          isTrue,
+          reason: 'The manual crossfade must have entered its native operation.',
+        );
+
+        final userLease = await arbiter.acquire(
+          owner: 'user_transport_during_fade_test',
+          priority: PlaybackControlPriority.userTransport,
+        );
+        expect(userLease, isNotNull);
+        expect(
+          session.crossfadeCancelled,
+          isTrue,
+          reason: 'User transport preemption must cancel the in-flight native fade.',
+        );
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(session.calls, contains('clearDeckEqOverlay:standby'));
+        expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+
+        // Let the fake native call return after cancellation. It must not
+        // promote the incoming track or retain the manual lease.
+        fadeGate.complete();
+        await expectLater(transition, throwsStateError);
+        expect(session.currentSongValue, same(outgoing));
+        expect(session.queueIndexValue, 0);
+        expect(arbiter.activeOwner, 'user_transport_during_fade_test');
+        await userLease!.release();
+        expect(arbiter.activeOwner, isNull);
+      } finally {
+        if (!fadeGate.isCompleted) fadeGate.complete();
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
     test('provider disposal retires manual standby and releases external arbiter lease', () async {
       final session = _FakePlaybackSession();
       final arbiter = PlaybackControlArbiter();
