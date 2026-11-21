@@ -112,6 +112,14 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     final djApplied = (summary['djApplied'] as num?)?.toInt() ?? 0;
     final djHint = summary['djHealthHint']?.toString() ?? '';
     final intelStages = (summary['intelligenceStages'] as Map?)?.length ?? 0;
+    final eventTypes = (summary['eventTypes'] as Map?) ?? const {};
+    final audioUnderruns = eventTypes['media3_audio_underrun'] ?? 0;
+    final gainDiscontinuities =
+        eventTypes['media3_crossfade_gain_discontinuity'] ?? 0;
+    final repeatEvents = (eventTypes['repeat_mode_command_requested'] ?? 0) +
+        (eventTypes['repeat_mode_command_completed'] ?? 0);
+    final dspHintEvents = eventTypes['media3_dsp_analysis_hint'] ?? 0;
+    final droppedEvents = (_report['droppedEventCount'] as num?)?.toInt() ?? 0;
 
     return ResonateGlassScaffold(
       title: const Text('Privacy & Diagnostics'),
@@ -153,7 +161,27 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                 ListTile(
                   leading: const Icon(Icons.timeline_rounded),
                   title: const Text('Diagnostic events'),
-                  subtitle: Text('$events recent events stored locally'),
+                  subtitle: Text('$events recent events stored locally · $droppedEvents older events rotated out'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.graphic_eq_rounded),
+                  title: const Text('Native audio underruns'),
+                  subtitle: Text('$audioUnderruns underrun event batches captured from Media3'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.multiline_chart_rounded),
+                  title: const Text('Crossfade gain discontinuities'),
+                  subtitle: Text('$gainDiscontinuities large gain-step events detected during fades'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.repeat_rounded),
+                  title: const Text('Repeat-mode activity'),
+                  subtitle: Text('$repeatEvents repeat-mode request/completion events'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.tune_rounded),
+                  title: const Text('DSP analysis hints'),
+                  subtitle: Text('$dspHintEvents native per-deck analysis hint events'),
                 ),
                 ListTile(
                   leading: const Icon(Icons.psychology_outlined),
