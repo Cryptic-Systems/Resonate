@@ -31,27 +31,8 @@ class DjWorkspaceScreen extends StatefulWidget {
 
 class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
   bool _buildingMix = false;
-  bool _manualTransitionBusy = false;
-  bool _manualDeckPrepared = false;
-  bool _manualCueDirty = false;
-  int? _selectedDeckBIndex;
-  double _manualFadeMs = 5000;
-  double _manualCueMs = 0;
-  MusicProvider? _musicProvider;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _musicProvider ??= context.read<MusicProvider>();
-  }
-
-  @override
-  void dispose() {
-    final provider = _musicProvider;
-    if (provider != null) unawaited(provider.cancelPreparedManualDjDeck());
-    super.dispose();
-  }
-
+  // DJ Workspace is deliberately observational. Transport and manual deck
+  // preparation controls belong to the dedicated DJ Console.
   String _clock(Duration value) {
     final seconds = value.inSeconds.clamp(0, 1 << 30);
     return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
@@ -61,135 +42,6 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const DjTransitionStudioScreen()),
     );
-  }
-
-  Future<void> _prepareManualDeck(int incomingQueueIndex) async {
-    if (_manualTransitionBusy) return;
-    setState(() {
-      _manualTransitionBusy = true;
-      _manualDeckPrepared = false;
-      _manualCueDirty = false;
-    });
-    final provider = context.read<MusicProvider>();
-    try {
-      await provider.prepareManualDjDeck(
-        incomingQueueIndex: incomingQueueIndex,
-        incomingStartPosition: Duration(milliseconds: _manualCueMs.round()),
-      );
-      if (!mounted) {
-        // The route may have been dismissed while native standby preparation
-        // was in flight. Retire any lease acquired after dispose() ran.
-        await provider.cancelPreparedManualDjDeck();
-        return;
-      }
-      setState(() => _manualDeckPrepared = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Deck B is prepared and ready.')),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _manualDeckPrepared = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Deck B could not be prepared: $error')),
-      );
-    } finally {
-      if (mounted) setState(() => _manualTransitionBusy = false);
-    }
-  }
-
-  Future<void> _applyManualCue() async {
-    if (_manualTransitionBusy || !_manualDeckPrepared) return;
-    setState(() => _manualTransitionBusy = true);
-    try {
-      await context.read<MusicProvider>().cuePreparedManualDjDeck(
-        Duration(milliseconds: _manualCueMs.round()),
-      );
-      if (!mounted) return;
-      setState(() => _manualCueDirty = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Deck B cue point updated.')),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _manualDeckPrepared = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Deck B cue update failed: $error')),
-      );
-    } finally {
-      if (mounted) setState(() => _manualTransitionBusy = false);
-    }
-  }
-
-  Future<void> _cancelPreparedDeck() async {
-    if (_manualTransitionBusy) return;
-    setState(() => _manualTransitionBusy = true);
-    try {
-      await context.read<MusicProvider>().cancelPreparedManualDjDeck();
-      if (!mounted) return;
-      setState(() {
-        _manualDeckPrepared = false;
-        _manualCueDirty = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Deck B preparation cancelled; playback control released.')),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not cancel Deck B preparation: $error')),
-      );
-    } finally {
-      if (mounted) setState(() => _manualTransitionBusy = false);
-    }
-  }
-
-  Future<void> _selectIncomingTrack(int? value) async {
-    if (value == null || _manualTransitionBusy) return;
-    setState(() {
-      _manualTransitionBusy = true;
-      _manualDeckPrepared = false;
-      _manualCueDirty = false;
-    });
-    try {
-      // Retire the old standby and release its interactive lease before
-      // allowing another prepare operation to start.
-      await context.read<MusicProvider>().cancelPreparedManualDjDeck();
-      if (!mounted) return;
-      setState(() {
-        _selectedDeckBIndex = value;
-        _manualCueMs = 0;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not change the incoming track: $error')),
-      );
-    } finally {
-      if (mounted) setState(() => _manualTransitionBusy = false);
-    }
-  }
-
-  Future<void> _crossfadePreparedDeck() async {
-    if (_manualTransitionBusy || !_manualDeckPrepared || _manualCueDirty) return;
-    setState(() => _manualTransitionBusy = true);
-    try {
-      await context.read<MusicProvider>().crossfadePreparedManualDjDeck(
-        duration: Duration(milliseconds: _manualFadeMs.round()),
-      );
-      if (!mounted) return;
-      setState(() => _manualDeckPrepared = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Manual DJ transition completed.')),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _manualDeckPrepared = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Manual DJ transition was not completed: $error')),
-      );
-    } finally {
-      if (mounted) setState(() => _manualTransitionBusy = false);
-    }
   }
 
   Future<void> _buildLibraryMix() async {
@@ -360,317 +212,149 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
               ),
 
               const SizedBox(height: 14),
-              Text('MANUAL DECK CONTROL', style: theme.textTheme.labelLarge),
+              Text('LIVE DECK MONITOR', style: theme.textTheme.labelLarge),
               const SizedBox(height: 8),
               Builder(builder: (context) {
-                final manualDeckPrepared = music.hasPreparedManualDjDeck;
                 final deckState = music.media3ShadowState;
-                final activeDeckId = deckState?.activeDeckId ?? "A";
-                final standbyDeckId = activeDeckId == "A" ? "B" : "A";
-                // Keep the selector aligned with Media3's exact queue
-                // eligibility rule. The native adapter filters empty paths;
-                // exposing those rows here would let the operator select an
-                // occurrence that can never become a standby deck.
-                final targets = music.queue.asMap().entries
-                    .where((entry) =>
-                        entry.key != music.queueIndex &&
-                        entry.value.filePath.trim().isNotEmpty)
-                    .toList(growable: false);
-                final selectedIndex = targets.any(
-                  (entry) => entry.key == _selectedDeckBIndex,
-                )
-                    ? _selectedDeckBIndex
-                    : (targets.isEmpty ? null : targets.first.key);
-                final selectedSong = selectedIndex == null
-                    ? null
-                    : music.queue[selectedIndex];
-                final cueMaxMs = selectedSong == null ||
-                        selectedSong.duration <= Duration.zero
-                    ? 0
-                    : (selectedSong.duration.inMilliseconds - 1).clamp(0, 1 << 31);
-                final cueValueMs = _manualCueMs.clamp(0.0, cueMaxMs.toDouble());
+                final activeDeckId = deckState?.activeDeckId ?? 'A';
+                final standbyDeckId = activeDeckId == 'A' ? 'B' : 'A';
                 final incomingMediaId = deckState?.incomingMediaId;
+                Song? standbySong;
+                if (incomingMediaId != null) {
+                  for (final candidate in music.queue) {
+                    if (candidate.id == incomingMediaId) {
+                      standbySong = candidate;
+                      break;
+                    }
+                  }
+                }
                 final incomingStatus = deckState?.crossfadeStatus;
                 final incomingReady = deckState?.incomingReady == true;
-                final incomingIdentityMatches = selectedSong != null &&
-                    incomingMediaId == selectedSong.id;
-                // Readiness is a conjunction, not a single stale telemetry bit:
-                // the selected occurrence, native media identity, and native
-                // standby state must all agree before the UI calls Deck B ready.
-                final incomingDeckReady = incomingReady &&
+                final incomingIdentityMatches = standbySong != null;
+                final standbyDeckReady = incomingReady &&
                     incomingIdentityMatches &&
-                    incomingStatus == "ready" &&
+                    incomingStatus == 'ready' &&
                     !music.transitionInProgress;
-                final standbyStateLabel = incomingIdentityMatches
-                    ? incomingDeckReady
-                        ? "Ready"
-                        : incomingStatus == "preparing"
-                            ? "Loaded · preparing"
-                            : incomingStatus == "ready"
-                                ? "Loaded · verifying"
+                final standbyStateLabel = music.transitionInProgress
+                    ? 'Transition in progress'
+                    : standbyDeckReady
+                        ? 'Prepared · muted'
+                        : incomingStatus == 'preparing'
+                            ? 'Preparing incoming track'
+                            : incomingMediaId != null && !incomingIdentityMatches
+                                ? 'Loaded track is outside the current queue'
+                                : incomingReady
+                                    ? 'Native ready · identity unverified'
+                                    : 'Standby idle';
+                final underrunsA = deckState?.audioUnderrunCountA ?? 0;
+                final underrunsB = deckState?.audioUnderrunCountB ?? 0;
+                final underruns = underrunsA + underrunsB;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ResonateGlassCard(
+                      margin: EdgeInsets.zero,
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _DeckPerformancePanel(
+                            activeSong: song,
+                            standbySong: standbySong,
+                            activeDeckId: activeDeckId,
+                            activeProgress: progress,
+                            activePosition: music.currentPosition,
+                            activeDuration: duration,
+                            standbyPosition: incomingIdentityMatches
+                                ? (deckState?.incomingPosition ?? Duration.zero)
+                                : Duration.zero,
+                            standbyReady: standbyDeckReady,
+                            isPlaying: music.isPlaying,
+                            transitionActive: music.transitionInProgress,
+                            liveSpectrum: visualization.frequencies,
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.monitor_heart_outlined,
+                                color: theme.colorScheme.primary,
+                                size: 19,
+                              ),
+                              const SizedBox(width: 8),
+                              Text('ENGINE OBSERVATION',
+                                  style: theme.textTheme.labelLarge),
+                              const Spacer(),
+                              _StatusPill(
+                                label: music.transitionInProgress
+                                    ? 'Transitioning'
+                                    : music.isPlaying
+                                        ? 'Playing'
+                                        : 'Paused',
+                                active: music.isPlaying ||
+                                    music.transitionInProgress,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          _TelemetryRow(
+                            icon: Icons.speaker_group_outlined,
+                            label: 'Live output',
+                            value: 'Deck $activeDeckId · ${((deckState?.activeDeckVolume ?? 1.0) * 100).round()}% gain',
+                          ),
+                          const SizedBox(height: 7),
+                          _TelemetryRow(
+                            icon: Icons.album_outlined,
+                            label: 'Standby',
+                            value: 'Deck $standbyDeckId · $standbyStateLabel',
+                            valueColor: standbyDeckReady
+                                ? const Color(0xFF8CE6B0)
                                 : music.transitionInProgress
-                                    ? "Transitioning"
-                                    : "Not ready"
-                    : incomingMediaId != null
-                        ? "Different track loaded"
-                        : incomingStatus == "preparing"
-                            ? "Preparing"
-                            : incomingReady
-                                ? "Ready · identity unknown"
-                                : "Empty";
-                return ResonateGlassCard(
-                  margin: EdgeInsets.zero,
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _DeckPerformancePanel(
-                        activeSong: song,
-                        standbySong: selectedSong,
-                        activeDeckId: activeDeckId,
-                        activeProgress: progress,
-                        activePosition: music.currentPosition,
-                        activeDuration: duration,
-                        standbyPosition: incomingIdentityMatches
-                            ? (deckState?.incomingPosition ?? Duration.zero)
-                            : Duration.zero,
-                        standbyReady: incomingDeckReady,
-                        isPlaying: music.isPlaying,
-                        transitionActive: music.transitionInProgress,
-                        liveSpectrum: visualization.frequencies,
-                      ),
-                      const SizedBox(height: 14),
-                      Row(children: [
-                        const Icon(Icons.speaker_group_rounded),
-                        const SizedBox(width: 8),
-                        Text('LIVE OUTPUT · DECK $activeDeckId', style: theme.textTheme.labelLarge),
-                        const Spacer(),
-                        const _StatusPill(label: 'Live output', active: true),
-                      ]),
-                      const SizedBox(height: 4),
-                      Text(
-                        song?.title ?? 'No active track',
-                        style: theme.textTheme.titleMedium,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        song?.artist ?? 'Start playback to arm the decks.',
-                        style: theme.textTheme.bodySmall,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const Divider(height: 22),
-                      Row(children: [
-                        const Icon(Icons.queue_music_rounded),
-                        const SizedBox(width: 8),
-                        Text('STANDBY · DECK $standbyDeckId', style: theme.textTheme.labelLarge),
-                      ]),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Standby: $standbyStateLabel · Gain ${((deckState?.standbyDeckVolume ?? 0.0) * 100).round()}%',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                      Text(
-                        'Live gain: ${((deckState?.activeDeckVolume ?? 1.0) * 100).round()}%',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                      Text(
-                        'Underruns · Deck A ${deckState?.audioUnderrunCountA ?? 0} / Deck B ${deckState?.audioUnderrunCountB ?? 0}',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                      Text(
-                        'Audio sessions · Live ${deckState?.audioSessionId ?? '—'} / Standby ${deckState?.standbyAudioSessionId ?? '—'}',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                      if (deckState?.lastUnderrunDeck != null)
-                        Text(
-                          'Last underrun · Deck ${deckState!.lastUnderrunDeck} · ${deckState.lastUnderrunBufferSizeFrames} frames (${deckState.lastUnderrunBufferSizeMs} ms) · ${deckState.lastUnderrunElapsedSinceFeedMs} ms since feed',
-                          style: theme.textTheme.bodySmall,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      if (incomingMediaId != null) ...[
-                        Text(
-                          incomingIdentityMatches
-                              ? 'Loaded: ${selectedSong!.title} · ${selectedSong.artist}'
-                              : 'Loaded media ID differs from the selected track.',
-                          style: theme.textTheme.bodySmall,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (incomingIdentityMatches)
+                                    ? const Color(0xFFFFC56E)
+                                    : null,
+                          ),
+                          const SizedBox(height: 7),
+                          _TelemetryRow(
+                            icon: Icons.volume_off_outlined,
+                            label: 'Standby gain',
+                            value: '${((deckState?.standbyDeckVolume ?? 0.0) * 100).round()}% · muted by design',
+                          ),
+                          const SizedBox(height: 7),
+                          _TelemetryRow(
+                            icon: Icons.graphic_eq_outlined,
+                            label: 'Audio underruns',
+                            value: 'Deck A $underrunsA · Deck B $underrunsB',
+                            valueColor: underruns > 0
+                                ? theme.colorScheme.error
+                                : null,
+                          ),
+                          if (deckState?.lastUnderrunDeck != null) ...[
+                            const SizedBox(height: 7),
+                            _TelemetryRow(
+                              icon: Icons.warning_amber_rounded,
+                              label: 'Latest underrun',
+                              value: 'Deck ${deckState!.lastUnderrunDeck} · ${deckState.lastUnderrunBufferSizeMs} ms buffer · ${deckState.lastUnderrunElapsedSinceFeedMs} ms since feed',
+                              valueColor: theme.colorScheme.error,
+                            ),
+                          ],
+                          if (incomingMediaId != null && standbySong == null) ...[
+                            const SizedBox(height: 9),
+                            Text(
+                              'Media3 reports an incoming media item that cannot currently be matched to a track in the visible queue. Its identity is intentionally not guessed.',
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ],
+                          const SizedBox(height: 10),
                           Text(
-                            'Standby position: ${(deckState?.incomingPosition.inMilliseconds ?? 0) ~/ 1000}s',
-                            style: theme.textTheme.bodySmall,
-                          ),
-                      ] else if (incomingReady)
-                        Text(
-                          'Native standby reports ready, but its media identity is unavailable; selected-track readiness is not confirmed.',
-                          style: theme.textTheme.bodySmall,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      const SizedBox(height: 8),
-                      if (targets.isEmpty)
-                        Text(
-                          music.queue.length <= 1
-                              ? 'Add another playable track to the active queue to prepare Deck B.'
-                              : 'No other playable queue entries are available for Deck B.',
-                          style: theme.textTheme.bodySmall,
-                        )
-                      else
-                        DropdownButtonFormField<int>(
-                          value: selectedIndex,
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Incoming queue track',
-                            border: OutlineInputBorder(),
-                          ),
-                          items: targets.map((entry) => DropdownMenuItem<int>(
-                            value: entry.key,
-                            child: Text(
-                              '${entry.value.title} · ${entry.value.artist}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          )).toList(growable: false),
-                          onChanged: _manualTransitionBusy
-                              ? null
-                              : (value) => unawaited(_selectIncomingTrack(value)),
-                        ),
-                      const SizedBox(height: 12),
-                      Row(children: [
-                        Text('Deck B cue-in', style: theme.textTheme.labelMedium),
-                        const Spacer(),
-                        Text(
-                          cueMaxMs == 0
-                              ? 'Start of track'
-                              : '${(cueValueMs / 1000).toStringAsFixed(2)} s',
-                          style: theme.textTheme.labelMedium,
-                        ),
-                      ]),
-                      Slider(
-                        value: cueValueMs,
-                        min: 0,
-                        max: cueMaxMs > 0 ? cueMaxMs.toDouble() : 1,
-                        label: 'Deck B cue-in',
-                        semanticFormatterCallback: (value) =>
-                            '${(value / 1000).toStringAsFixed(2)} seconds',
-                        onChanged: _manualTransitionBusy || cueMaxMs == 0
-                            ? null
-                            : (value) => setState(() {
-                                _manualCueMs = value;
-                                if (manualDeckPrepared) _manualCueDirty = true;
-                              }),
-                      ),
-                      const SizedBox(height: 14),
-                      Row(children: [
-                        Text('Crossfade duration', style: theme.textTheme.labelMedium),
-                        const Spacer(),
-                        Text(
-                          '${(_manualFadeMs / 1000).toStringAsFixed(2)} s',
-                          style: theme.textTheme.labelMedium,
-                        ),
-                      ]),
-                      Slider(
-                        value: _manualFadeMs,
-                        min: 250,
-                        max: 15000,
-                        divisions: 59,
-                        label: 'Crossfade duration',
-                        semanticFormatterCallback: (value) =>
-                            '${(value / 1000).toStringAsFixed(2)} seconds',
-                        onChanged: _manualTransitionBusy
-                            ? null
-                            : (value) => setState(() => _manualFadeMs = value),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: selectedIndex == null ||
-                                  !music.isPlaying ||
-                                  _manualTransitionBusy ||
-                                  music.transitionInProgress
-                              ? null
-                              : () => _prepareManualDeck(selectedIndex),
-                          icon: _manualTransitionBusy
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.queue_music_rounded),
-                          label: Text(
-                            _manualTransitionBusy
-                                ? 'Preparing Deck B…'
-                                : manualDeckPrepared
-                                    ? 'Re-prepare Deck B'
-                                    : 'Prepare Deck B',
-                          ),
-                        ),
-                      ),
-                      if (manualDeckPrepared) ...[
-                        const SizedBox(height: 6),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: _manualTransitionBusy || !_manualCueDirty
-                                ? null
-                                : _applyManualCue,
-                            icon: const Icon(Icons.my_location_rounded),
-                            label: Text(
-                              _manualCueDirty
-                                  ? 'Apply updated cue point'
-                                  : 'Cue point applied',
+                            'This is a watch-only view. Deck preparation, manual cueing and crossfader operation are reserved for DJ Console. Standby remains muted while Media3 owns deck preparation and transitions.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
-                        ),
-                      ],
-                      if (manualDeckPrepared) ...[
-                        const SizedBox(height: 6),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: _manualTransitionBusy ? null : _cancelPreparedDeck,
-                            icon: const Icon(Icons.cancel_outlined),
-                            label: const Text('Cancel Deck B preparation'),
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 6),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: !manualDeckPrepared ||
-                                  _manualCueDirty ||
-                                  !music.isPlaying ||
-                                  _manualTransitionBusy ||
-                                  music.transitionInProgress
-                              ? null
-                              : _crossfadePreparedDeck,
-                          icon: _manualTransitionBusy && manualDeckPrepared
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.swap_horiz_rounded),
-                          label: Text(
-                            _manualTransitionBusy && manualDeckPrepared
-                                ? 'Transition in progress…'
-                                : 'Crossfade prepared Deck B',
-                          ),
-                        ),
+                        ],
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Prepare loads the incoming occurrence on muted Media3 standby. You can adjust and apply its cue before starting the crossfade. Each live operation takes the interactive playback lease; native Media3 remains responsible for the gain envelope and deck promotion.',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 );
               }),
               const SizedBox(height: 14),
@@ -827,7 +511,7 @@ class _DeckPerformancePanel extends StatelessWidget {
           const SizedBox(width: 7),
           Expanded(child: Text(
             transitionActive ? 'NATIVE TRANSITION · DECK PROMOTION IN PROGRESS' :
-            standbyReady ? 'STANDBY ARMED · READY FOR OPERATOR HANDOFF' :
+            standbyReady ? 'STANDBY PREPARED · MUTED AND MONITORED' :
             'DUAL-DECK MONITOR · STANDBY IS MUTED',
             maxLines: 2, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.labelSmall?.copyWith(
@@ -935,7 +619,13 @@ class _DeckVisualTile extends StatelessWidget {
             Center(child: Icon(isActive ? Icons.graphic_eq_rounded : Icons.album_rounded,
               size: 34, color: accent.withValues(alpha: song == null ? 0.35 : 0.92))),
             Positioned(left: 7, bottom: 6, child: Text(
-              isReady ? (isActive ? 'OUTPUT' : 'MUTED') : 'EMPTY',
+              isActive
+                  ? (song == null ? 'EMPTY' : 'OUTPUT')
+                  : song == null
+                      ? 'EMPTY'
+                      : isReady
+                          ? 'MUTED · READY'
+                          : 'MUTED · PREPARING',
               style: const TextStyle(color: Colors.white70, fontSize: 8,
                 fontWeight: FontWeight.w900, letterSpacing: 1.2))),
           ]))),
@@ -1132,6 +822,47 @@ class _DeckWaveformPainter extends CustomPainter {
   bool shouldRepaint(covariant _DeckWaveformPainter old) =>
     old.seed != seed || old.progress != progress || old.color != color ||
     old.phase != phase || !listEquals(old.spectrum, spectrum);
+}
+
+class _TelemetryRow extends StatelessWidget {
+  const _TelemetryRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 17, color: theme.colorScheme.onSurfaceVariant),
+        const SizedBox(width: 9),
+        SizedBox(
+          width: 104,
+          child: Text(label, style: theme.textTheme.bodySmall),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: valueColor ?? theme.colorScheme.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _WorkspaceAction extends StatelessWidget {
