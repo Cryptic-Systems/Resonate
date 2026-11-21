@@ -74,6 +74,7 @@ void main() {
         'lastMediaTransitionDeckId': 'B',
         'lastMediaTransitionMediaId': 'track-b',
         'lastMediaTransitionReason': 0,
+        'lastMediaTransitionReasonName': 'repeat',
         'lastMediaTransitionElapsedRealtimeMs': 987700,
         'repeatMode': 'off',
         'crossfadeStatus': 'completed',
@@ -82,6 +83,7 @@ void main() {
       expect(state.lastMediaTransitionDeckId, 'B');
       expect(state.lastMediaTransitionMediaId, 'track-b');
       expect(state.lastMediaTransitionReason, 0);
+      expect(state.lastMediaTransitionReasonName, 'repeat');
       expect(state.lastMediaTransitionElapsedRealtimeMs, 987700);
     });
 
