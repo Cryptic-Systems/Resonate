@@ -97,7 +97,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
         builder: (_) => const AlertDialog(
           title: Text('What is collected?'),
           content: Text(
-              'Resonate records technical events needed to diagnose playback, Intelligence, and DJ Mode problems: timestamps, playback commands, song/queue state, player state, engine transitions, DJ handoff outcomes, errors, stack traces, app/build mode and OS information. Feedback text is included when you choose to save it. Music files, microphone audio, contacts, credentials and arbitrary files are not collected. Reports are never uploaded automatically.'),
+              'Resonate records detailed local development telemetry: playback commands and state, queue changes, repeat and crossfade transitions, Media3/player state, DSP and controller arbitration, DJ/Intelligence decisions, app lifecycle, memory-pressure signals, Flutter/platform exceptions, stack traces, build mode and OS information. Diagnostic text is sanitized to redact common credentials and email addresses; full storage paths are reduced to filenames. Music/audio files, microphone recordings, contacts, passwords, access tokens, private keys and arbitrary file contents are not collected. Reports remain on this device until you explicitly export them; nothing is uploaded automatically.'),
         ),
       );
 
@@ -139,7 +139,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                         ]),
                         const SizedBox(height: 12),
                         const Text(
-                            'Diagnostics stay on this device. Save report lets you choose where the JSON is stored. Report a problem opens your installed email app directly. Nothing is uploaded automatically.'),
+                            'Expanded development telemetry stays on this device. Save report lets you choose where the JSON is stored. Common secrets and email addresses are redacted. Audio files are never recorded or included. Nothing is uploaded automatically.'),
                       ],
                     ),
                   ),
@@ -192,7 +192,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   leading: const Icon(Icons.visibility_outlined),
                   title: const Text('What is collected?'),
                   subtitle: const Text(
-                      'Playback, Intelligence, and DJ Mode diagnostics. No audio files or microphone data.'),
+                      'Expanded playback, Media3, DSP, DJ, app lifecycle and error telemetry. No audio files or microphone data.'),
                   onTap: _showWhatCollected,
                 ),
                 ListTile(
