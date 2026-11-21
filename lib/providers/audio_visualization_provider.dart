@@ -128,8 +128,11 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
 
   void _syncCapture() {
     _captureGeneration++;
+    final hadLiveSpectrum = _hasReceivedSpectrumSample;
+    final hadLevels = frequencies.any((value) => value != 0.0);
     _hasReceivedSpectrumSample = false;
     frequencies = List<double>.filled(32, 0.0);
+    if (hadLiveSpectrum || hadLevels) notifyListeners();
     _captureTimer?.cancel();
     _captureTimer = null;
     if (_disposed || !_preferencesLoaded || !enabled || !_playbackActive) return;
@@ -174,13 +177,14 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
       // playback/capture session if playback resumed before they completed.
       if (_disposed || generation != _captureGeneration || !enabled || !_playbackActive) return;
       if (next.isEmpty) {
+        final hadLiveSpectrum = _hasReceivedSpectrumSample;
+        final hadLevels = frequencies.any((value) => value != 0.0);
         _hasReceivedSpectrumSample = false;
-        if (frequencies.any((value) => value != 0.0)) {
-          frequencies = List<double>.filled(32, 0.0);
-        }
-        notifyListeners();
+        if (hadLevels) frequencies = List<double>.filled(32, 0.0);
+        if (hadLiveSpectrum || hadLevels) notifyListeners();
         return;
       }
+      final availabilityChanged = !_hasReceivedSpectrumSample;
       _hasReceivedSpectrumSample = true;
       final count = next.length < frequencies.length ? next.length : frequencies.length;
       final alpha = 1.0 - smoothing * 0.88;
@@ -192,7 +196,7 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
         if ((updated[i] - frequencies[i]).abs() > 0.002) changed = true;
       }
       // Avoid rebuilding both consumers for imperceptible numerical noise.
-      if (changed) {
+      if (changed || availabilityChanged) {
         frequencies = updated;
         notifyListeners();
       }
