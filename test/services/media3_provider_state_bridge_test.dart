@@ -139,6 +139,7 @@ void main() {
     });
 
     test('projects live standby readiness, identity and position', () async {
+      await runtime.loadQueue([_song('outgoing')]);
       backend.value = _snapshot(
         mediaId: 'outgoing',
         activeDeckId: 'B',
@@ -147,7 +148,8 @@ void main() {
         incomingReady: true,
         incomingPosition: const Duration(seconds: 12),
       );
-      await runtime.loadQueue([_song('outgoing')]);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
       await bridge.start();
 
       expect(bridge.current.activeDeckId, 'B');
