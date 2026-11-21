@@ -76,6 +76,7 @@ class Media3PlaybackService : MediaSessionService() {
     private val audioDiagnosticsLock = Any()
     private val audioUnderrunCounts = mutableMapOf("A" to 0, "B" to 0)
     @Volatile private var lastUnderrunDeck: String? = null
+    @Volatile private var lastUnderrunBufferSizeFrames: Int = 0
     @Volatile private var lastUnderrunBufferSizeMs: Long = 0L
     @Volatile private var lastUnderrunElapsedSinceFeedMs: Long = 0L
     @Volatile private var lastUnderrunElapsedRealtimeMs: Long = 0L
@@ -89,6 +90,7 @@ class Media3PlaybackService : MediaSessionService() {
             "underrunCountA" to (audioUnderrunCounts["A"] ?: 0),
             "underrunCountB" to (audioUnderrunCounts["B"] ?: 0),
             "lastUnderrunDeck" to lastUnderrunDeck,
+            "lastUnderrunBufferSizeFrames" to lastUnderrunBufferSizeFrames,
             "lastUnderrunBufferSizeMs" to lastUnderrunBufferSizeMs,
             "lastUnderrunElapsedSinceFeedMs" to lastUnderrunElapsedSinceFeedMs,
             "lastUnderrunElapsedRealtimeMs" to lastUnderrunElapsedRealtimeMs,
@@ -456,6 +458,7 @@ class Media3PlaybackService : MediaSessionService() {
                 synchronized(audioDiagnosticsLock) {
                     audioUnderrunCounts[deckId] = (audioUnderrunCounts[deckId] ?: 0) + 1
                     lastUnderrunDeck = deckId
+                    lastUnderrunBufferSizeFrames = bufferSize.coerceAtLeast(0)
                     lastUnderrunBufferSizeMs = bufferSizeMs
                     lastUnderrunElapsedSinceFeedMs = elapsedSinceLastFeedMs
                     lastUnderrunElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime()
