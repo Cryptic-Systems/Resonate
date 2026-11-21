@@ -25,34 +25,7 @@ DjTempoStretchPlan? _safeProfileTempoStretch(
     maxStretchPercent: maxStretchPercent,
   );
 }
-extension MusicProviderDjHandoff on MusicProvider {
-
-  Future<void> previewDjTransition({
-    required Uri outgoingUri, required Uri incomingUri,
-    required Duration outgoingStart, required Duration incomingStart,
-    required Duration duration,
-  }) async {
-    final session = _media3ProviderSession;
-    if (session == null || !_media3ProviderSessionActive) {
-      throw StateError('Start a track once to activate Media3 before auditioning a DJ transition.');
-    }
-    if (session is! PlaybackTransitionPreviewBackend) {
-      throw UnsupportedError('The active playback session does not support isolated DJ preview.');
-    }
-    await (session as PlaybackTransitionPreviewBackend).playTransitionPreview(
-      outgoingUri: outgoingUri, incomingUri: incomingUri,
-      outgoingStart: outgoingStart, incomingStart: incomingStart, duration: duration,
-    );
-  }
-
-  Future<void> stopDjTransitionPreview() async {
-    final session = _media3ProviderSession;
-    if (session is PlaybackTransitionPreviewBackend) {
-      await (session as PlaybackTransitionPreviewBackend).stopTransitionPreview();
-    }
-  }
-
-  /// A standby deck prepared for an explicit operator handoff. Queue occurrence
+/// A standby deck prepared for an explicit operator handoff. Queue occurrence
 /// identity is retained so duplicate song IDs cannot silently retarget Deck B.
 class ManualDjPreparedDeck {
   const ManualDjPreparedDeck({
