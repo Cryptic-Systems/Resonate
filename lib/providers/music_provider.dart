@@ -3714,11 +3714,16 @@ class MusicProvider extends ChangeNotifier {
             owner: 'user_transport',
             priority: PlaybackControlPriority.userTransport,
           );
-          if (lease == null ||
-              !lease.authorizeWrite('transport:$command')) {
-            // The established transport epoch/coordinator remains the
-            // fail-safe authority if the arbiter is closing or unavailable.
-            return await operation();
+          if (lease == null) {
+            throw StateError(
+              'Playback control authority is unavailable; refusing transport write.',
+            );
+          }
+          if (!lease.authorizeWrite('transport:$command')) {
+            await lease.release();
+            throw StateError(
+              'Playback control lease was rejected; refusing transport write.',
+            );
           }
           try {
             return await operation();
