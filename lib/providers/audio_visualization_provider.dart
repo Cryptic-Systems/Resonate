@@ -18,6 +18,13 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
   bool smoothAnimation = true;
   double frameRate = 24;
   List<double> frequencies = List<double>.filled(32, 0.0);
+  bool _hasReceivedSpectrumSample = false;
+  int _captureGeneration = 0;
+
+  /// True only after a non-empty native spectrum sample has arrived for the
+  /// current capture generation. A zero-valued sample is still valid silence.
+  bool get hasLiveSpectrum => _hasReceivedSpectrumSample &&
+      enabled && _playbackActive && _capturePermissionGranted;
 
   Timer? _captureTimer;
   bool _playbackActive = false;
@@ -87,7 +94,10 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
     if (enabled == value) return;
     enabled = value;
     if (value) _permissionChecked = false;
-    if (!value) frequencies = List<double>.filled(32, 0.0);
+    if (!value) {
+      _hasReceivedSpectrumSample = false;
+      frequencies = List<double>.filled(32, 0.0);
+    }
     _save();
     _syncCapture();
     notifyListeners();
@@ -109,6 +119,7 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
     if (_playbackActive == value) return;
     _playbackActive = value;
     if (!value) {
+      _hasReceivedSpectrumSample = false;
       frequencies = List<double>.filled(32, 0.0);
       notifyListeners();
     }
@@ -116,6 +127,9 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
   }
 
   void _syncCapture() {
+    _captureGeneration++;
+    _hasReceivedSpectrumSample = false;
+    frequencies = List<double>.filled(32, 0.0);
     _captureTimer?.cancel();
     _captureTimer = null;
     if (_disposed || !_preferencesLoaded || !enabled || !_playbackActive) return;
@@ -151,19 +165,23 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
 
   Future<void> _captureSpectrum() async {
     if (_captureInFlight || _disposed || !enabled || !_playbackActive) return;
+    final generation = _captureGeneration;
     _captureInFlight = true;
     try {
       final next = await AudioEffectsBridge.getAudioSpectrum();
-      // A request may complete after pause, disable, or session teardown.
-      // Never let that late reply resurrect a stale spectrum.
-      if (_disposed || !enabled || !_playbackActive) return;
+      // A request may complete after pause, disable, restart or session
+      // teardown. Generation fencing also rejects replies from an earlier
+      // playback/capture session if playback resumed before they completed.
+      if (_disposed || generation != _captureGeneration || !enabled || !_playbackActive) return;
       if (next.isEmpty) {
+        _hasReceivedSpectrumSample = false;
         if (frequencies.any((value) => value != 0.0)) {
           frequencies = List<double>.filled(32, 0.0);
-          notifyListeners();
         }
+        notifyListeners();
         return;
       }
+      _hasReceivedSpectrumSample = true;
       final count = next.length < frequencies.length ? next.length : frequencies.length;
       final alpha = 1.0 - smoothing * 0.88;
       final updated = List<double>.filled(32, 0.0);
@@ -179,7 +197,8 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
         notifyListeners();
       }
     } catch (_) {
-      if (!_disposed && _playbackActive && frequencies.any((v) => v != 0.0)) {
+      if (!_disposed && generation == _captureGeneration && _playbackActive) {
+        _hasReceivedSpectrumSample = false;
         frequencies = List<double>.filled(32, 0.0);
         notifyListeners();
       }
