@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -357,6 +358,17 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      _DeckPerformancePanel(
+                        activeSong: song,
+                        standbySong: selectedSong,
+                        activeDeckId: activeDeckId,
+                        activeProgress: progress,
+                        standbyPosition: deckState?.incomingPosition ?? Duration.zero,
+                        standbyReady: deckState?.incomingReady == true && incomingIdentityMatches,
+                        isPlaying: music.isPlaying,
+                        transitionActive: music.transitionInProgress,
+                      ),
+                      const SizedBox(height: 14),
                       Row(children: [
                         const Icon(Icons.speaker_group_rounded),
                         const SizedBox(width: 8),
@@ -623,6 +635,300 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
       ),
     );
   }
+}
+
+class _DeckPerformancePanel extends StatelessWidget {
+  const _DeckPerformancePanel({
+    required this.activeSong, required this.standbySong,
+    required this.activeDeckId, required this.activeProgress,
+    required this.standbyPosition, required this.standbyReady,
+    required this.isPlaying, required this.transitionActive,
+  });
+
+  final Song? activeSong;
+  final Song? standbySong;
+  final String activeDeckId;
+  final double activeProgress;
+  final Duration standbyPosition;
+  final bool standbyReady;
+  final bool isPlaying;
+  final bool transitionActive;
+
+  @override
+  Widget build(BuildContext context) {
+    final activeColor = const Color(0xFF62D6FF);
+    final standbyColor = const Color(0xFFB18CFF);
+    final standbyId = activeDeckId == 'A' ? 'B' : 'A';
+    final standbyDuration = standbySong?.duration ?? Duration.zero;
+    final standbyProgress = standbyDuration.inMilliseconds <= 0 ? 0.0 :
+      (standbyPosition.inMilliseconds / standbyDuration.inMilliseconds).clamp(0.0, 1.0).toDouble();
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+          colors: [Color(0xF0101B2C), Color(0xF0171329)],
+        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+        boxShadow: [BoxShadow(color: activeColor.withValues(alpha: 0.08), blurRadius: 24)],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.graphic_eq_rounded, color: Color(0xFF8FE5FF), size: 18),
+          const SizedBox(width: 8),
+          Text('DECK ARRAY', style: theme.textTheme.labelLarge?.copyWith(
+            color: Colors.white, letterSpacing: 1.5, fontWeight: FontWeight.w800)),
+          const Spacer(),
+          _DeckLiveBadge(active: isPlaying, transitioning: transitionActive),
+        ]),
+        const SizedBox(height: 12),
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: _DeckVisualTile(
+            deckLabel: 'DECK ' + activeDeckId, role: 'ON AIR',
+            song: activeSong, accent: activeColor, progress: activeProgress,
+            duration: activeSong?.duration ?? Duration.zero,
+            isActive: true, isReady: activeSong != null, isPlaying: isPlaying,
+          )),
+          const SizedBox(width: 8),
+          Expanded(child: _DeckVisualTile(
+            deckLabel: 'DECK ' + standbyId, role: 'STANDBY',
+            song: standbySong, accent: standbyColor, progress: standbyProgress,
+            duration: standbyDuration, isActive: false,
+            isReady: standbyReady, isPlaying: false,
+          )),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Icon(Icons.compare_arrows_rounded,
+            color: transitionActive ? const Color(0xFFFFC56E) : Colors.white54, size: 18),
+          const SizedBox(width: 7),
+          Expanded(child: Text(
+            transitionActive ? 'NATIVE TRANSITION · DECK PROMOTION IN PROGRESS' :
+            standbyReady ? 'STANDBY ARMED · READY FOR OPERATOR HANDOFF' :
+            'DUAL-DECK MONITOR · STANDBY IS MUTED',
+            maxLines: 2, overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: transitionActive ? const Color(0xFFFFD18B) : Colors.white70,
+              letterSpacing: 0.55, fontWeight: FontWeight.w700))),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 420), width: 8, height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: transitionActive ? const Color(0xFFFFC56E) :
+                standbyReady ? const Color(0xFF8CE6B0) : Colors.white30,
+              boxShadow: [BoxShadow(
+                color: (transitionActive ? const Color(0xFFFFC56E) :
+                  standbyReady ? const Color(0xFF8CE6B0) : Colors.transparent).withValues(alpha: 0.55),
+                blurRadius: 9)],
+            )),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _DeckLiveBadge extends StatelessWidget {
+  const _DeckLiveBadge({required this.active, required this.transitioning});
+  final bool active;
+  final bool transitioning;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = transitioning ? const Color(0xFFFFC56E) :
+      active ? const Color(0xFF8CE6B0) : Colors.white54;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 350),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.13),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: color.withValues(alpha: 0.38))),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 6, height: 6, decoration: BoxDecoration(
+          color: color, shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: color.withValues(alpha: 0.7), blurRadius: 6)])),
+        const SizedBox(width: 6),
+        Text(transitioning ? 'BLENDING' : active ? 'LIVE' : 'MONITOR',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: color, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+      ]),
+    );
+  }
+}
+
+class _DeckVisualTile extends StatelessWidget {
+  const _DeckVisualTile({
+    required this.deckLabel, required this.role, required this.song,
+    required this.accent, required this.progress, required this.duration,
+    required this.isActive, required this.isReady, required this.isPlaying,
+  });
+  final String deckLabel, role;
+  final Song? song;
+  final Color accent;
+  final double progress;
+  final Duration duration;
+  final bool isActive, isReady, isPlaying;
+
+  String _clock(Duration value) {
+    final seconds = value.inSeconds.clamp(0, 1 << 30);
+    return seconds ~/ 60 .toString() + ':' + (seconds % 60).toString().padLeft(2, '0');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = song?.title ?? (isActive ? 'No active track' : 'Choose incoming track');
+    final artist = song?.artist ?? (isActive ? 'Start playback to activate' : 'Deck is empty');
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 420),
+      padding: const EdgeInsets.all(9),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: isActive ? 0.075 : 0.035),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accent.withValues(alpha: isReady ? 0.62 : 0.20),
+          width: isActive ? 1.25 : 1)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text(deckLabel, style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: accent, letterSpacing: 1, fontWeight: FontWeight.w900)),
+          const Spacer(),
+          Text(role, style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: Colors.white60, fontSize: 9, letterSpacing: 0.7)),
+        ]),
+        const SizedBox(height: 8),
+        AspectRatio(aspectRatio: 1.9, child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Stack(fit: StackFit.expand, children: [
+            DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(
+              begin: Alignment.topLeft, end: Alignment.bottomRight,
+              colors: [accent.withValues(alpha: 0.30), const Color(0xFF101321), const Color(0xFF241B3B)]))),
+            Positioned(right: -12, top: -18, child: Icon(Icons.album_rounded,
+              size: 94, color: accent.withValues(alpha: 0.14))),
+            Center(child: Icon(isActive ? Icons.graphic_eq_rounded : Icons.album_rounded,
+              size: 34, color: accent.withValues(alpha: song == null ? 0.35 : 0.92))),
+            Positioned(left: 7, bottom: 6, child: Text(
+              isReady ? (isActive ? 'OUTPUT' : 'MUTED') : 'EMPTY',
+              style: const TextStyle(color: Colors.white70, fontSize: 8,
+                fontWeight: FontWeight.w900, letterSpacing: 1.2))),
+          ]))),
+        const SizedBox(height: 8),
+        Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: Colors.white, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 2),
+        Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white60)),
+        const SizedBox(height: 8),
+        SizedBox(height: 58, width: double.infinity, child: _DeckWaveform(
+          seed: song?.id ?? deckLabel, progress: progress, color: accent,
+          animate: isPlaying && isActive)),
+        const SizedBox(height: 3),
+        Row(children: [
+          Text(_clock(Duration(milliseconds: (duration.inMilliseconds * progress).round())),
+            style: const TextStyle(color: Colors.white70, fontSize: 10)),
+          const Spacer(),
+          Text(_clock(duration), style: const TextStyle(color: Colors.white54, fontSize: 10)),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _DeckWaveform extends StatefulWidget {
+  const _DeckWaveform({required this.seed, required this.progress,
+    required this.color, required this.animate});
+  final String seed;
+  final double progress;
+  final Color color;
+  final bool animate;
+
+  @override
+  State<_DeckWaveform> createState() => _DeckWaveformState();
+}
+
+class _DeckWaveformState extends State<_DeckWaveform> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800));
+    if (widget.animate) _controller.repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DeckWaveform oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.animate && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!widget.animate && _controller.isAnimating) {
+      _controller.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _controller,
+    builder: (context, _) => CustomPaint(painter: _DeckWaveformPainter(
+      seed: widget.seed, progress: widget.progress.clamp(0.0, 1.0),
+      color: widget.color, phase: _controller.value)),
+  );
+}
+
+class _DeckWaveformPainter extends CustomPainter {
+  _DeckWaveformPainter({required this.seed, required this.progress,
+    required this.color, required this.phase});
+  final String seed;
+  final double progress, phase;
+  final Color color;
+
+  int get _seedValue => seed.codeUnits.fold<int>(17,
+    (value, unit) => (value * 31 + unit) & 0x7fffffff);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    const count = 76;
+    final center = size.height / 2;
+    const gap = 1.35;
+    final barWidth = (size.width - (count - 1) * gap) / count;
+    final seedValue = _seedValue;
+    final gridPaint = Paint()..color = Colors.white.withValues(alpha: 0.10)..strokeWidth = 0.7;
+    for (var beat = 0; beat <= 8; beat++) {
+      final x = size.width * beat / 8;
+      canvas.drawLine(Offset(x, 2), Offset(x, size.height - 2), gridPaint);
+    }
+    for (var i = 0; i < count; i++) {
+      final x = i * (barWidth + gap);
+      final envelope = 0.25 + 0.75 * math.pow(
+        (math.sin((i / count) * math.pi * 2.6 + seedValue % 13) + 1) / 2, 0.75).toDouble();
+      final texture = 0.52 + 0.48 * math.sin(i * 1.71 + seedValue * 0.001).abs();
+      final pulse = 1 + 0.055 * math.sin(phase * math.pi * 2 + i * 0.12);
+      final height = (size.height * 0.78 * envelope * texture * pulse).clamp(3.0, size.height - 3);
+      final played = i / count <= progress;
+      final paint = Paint()..color = color.withValues(alpha: played ? 0.98 : 0.30);
+      canvas.drawRRect(RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(x + barWidth / 2, center),
+          width: barWidth.clamp(0.8, 4), height: height),
+        const Radius.circular(2)), paint);
+    }
+    final playheadX = size.width * progress;
+    final playheadPaint = Paint()..color = Colors.white..strokeWidth = 1.4
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5);
+    canvas.drawLine(Offset(playheadX, 0), Offset(playheadX, size.height), playheadPaint);
+    canvas.drawCircle(Offset(playheadX, 3), 2.2, Paint()..color = Colors.white);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DeckWaveformPainter old) =>
+    old.seed != seed || old.progress != progress || old.color != color || old.phase != phase;
 }
 
 class _WorkspaceAction extends StatelessWidget {
