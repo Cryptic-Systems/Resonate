@@ -363,6 +363,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                         standbySong: selectedSong,
                         activeDeckId: activeDeckId,
                         activeProgress: progress,
+                        activePosition: music.currentPosition,
                         standbyPosition: deckState?.incomingPosition ?? Duration.zero,
                         standbyReady: deckState?.incomingReady == true && incomingIdentityMatches,
                         isPlaying: music.isPlaying,
@@ -641,7 +642,7 @@ class _DeckPerformancePanel extends StatelessWidget {
   const _DeckPerformancePanel({
     required this.activeSong, required this.standbySong,
     required this.activeDeckId, required this.activeProgress,
-    required this.standbyPosition, required this.standbyReady,
+    required this.activePosition, required this.standbyPosition, required this.standbyReady,
     required this.isPlaying, required this.transitionActive,
   });
 
@@ -649,6 +650,7 @@ class _DeckPerformancePanel extends StatelessWidget {
   final Song? standbySong;
   final String activeDeckId;
   final double activeProgress;
+  final Duration activePosition;
   final Duration standbyPosition;
   final bool standbyReady;
   final bool isPlaying;
@@ -689,13 +691,14 @@ class _DeckPerformancePanel extends StatelessWidget {
             deckLabel: 'DECK ' + activeDeckId, role: 'ON AIR',
             song: activeSong, accent: activeColor, progress: activeProgress,
             duration: activeSong?.duration ?? Duration.zero,
+            position: activePosition,
             isActive: true, isReady: activeSong != null, isPlaying: isPlaying,
           )),
           const SizedBox(width: 8),
           Expanded(child: _DeckVisualTile(
             deckLabel: 'DECK ' + standbyId, role: 'STANDBY',
             song: standbySong, accent: standbyColor, progress: standbyProgress,
-            duration: standbyDuration, isActive: false,
+            duration: standbyDuration, position: standbyPosition, isActive: false,
             isReady: standbyReady, isPlaying: false,
           )),
         ]),
@@ -762,13 +765,14 @@ class _DeckVisualTile extends StatelessWidget {
   const _DeckVisualTile({
     required this.deckLabel, required this.role, required this.song,
     required this.accent, required this.progress, required this.duration,
-    required this.isActive, required this.isReady, required this.isPlaying,
+    required this.position, required this.isActive, required this.isReady, required this.isPlaying,
   });
   final String deckLabel, role;
   final Song? song;
   final Color accent;
   final double progress;
   final Duration duration;
+  final Duration position;
   final bool isActive, isReady, isPlaying;
 
   String _clock(Duration value) {
@@ -820,12 +824,12 @@ class _DeckVisualTile extends StatelessWidget {
         Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white60)),
         const SizedBox(height: 8),
-        SizedBox(height: 58, width: double.infinity, child: _DeckWaveform(
+        Text('SIGNAL MAP · VISUAL GUIDE', style: Theme.of(context).textTheme.labelSmall?.copyWith(\n            color: Colors.white38, fontSize: 8, letterSpacing: 0.8)),\n        const SizedBox(height: 3),\n        SizedBox(height: 58, width: double.infinity, child: _DeckWaveform(
           seed: song?.id ?? deckLabel, progress: progress, color: accent,
           animate: isPlaying && isActive)),
         const SizedBox(height: 3),
         Row(children: [
-          Text(_clock(Duration(milliseconds: (duration.inMilliseconds * progress).round())),
+          Text(_clock(position),
             style: const TextStyle(color: Colors.white70, fontSize: 10)),
           const Spacer(),
           Text(_clock(duration), style: const TextStyle(color: Colors.white54, fontSize: 10)),
