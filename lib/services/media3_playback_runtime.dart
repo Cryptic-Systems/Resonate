@@ -632,6 +632,7 @@ class Media3PlaybackRuntime {
   Future<void> seekStandby({
     required Duration position,
     required String expectedMediaId,
+    required int expectedQueueIndex,
   }) async {
     _ensureAlive();
     if (position.isNegative) {
@@ -640,12 +641,23 @@ class Media3PlaybackRuntime {
     if (expectedMediaId.trim().isEmpty) {
       throw ArgumentError.value(expectedMediaId, 'expectedMediaId', 'Must not be empty.');
     }
+    if (expectedQueueIndex < 0 || expectedQueueIndex >= _queue.length ||
+        _queue[expectedQueueIndex].id != expectedMediaId ||
+        _queue[expectedQueueIndex].filePath.trim().isEmpty) {
+      throw ArgumentError.value(expectedQueueIndex, 'expectedQueueIndex',
+          'Must identify the expected playable occurrence in the committed queue.');
+    }
+    final nativeQueueIndex = _queue
+        .take(expectedQueueIndex)
+        .where((song) => song.filePath.trim().isNotEmpty)
+        .length;
     if (_backend is! PlaybackStandbyCueBackend) {
       throw UnsupportedError('This playback backend does not support standby cueing.');
     }
     await _run(() => (_backend as PlaybackStandbyCueBackend).seekStandby(
           position: position,
           expectedMediaId: expectedMediaId,
+          expectedQueueIndex: nativeQueueIndex,
         ));
   }
 
