@@ -629,6 +629,7 @@ class Media3PlaybackClient {
   Future<void> seekStandby({
     required Duration position,
     required String expectedMediaId,
+    required int expectedQueueIndex,
   }) async {
     if (position.isNegative) {
       throw ArgumentError.value(position, 'position', 'Must not be negative.');
@@ -636,11 +637,15 @@ class Media3PlaybackClient {
     if (expectedMediaId.trim().isEmpty) {
       throw ArgumentError.value(expectedMediaId, 'expectedMediaId', 'Must not be empty.');
     }
+    if (expectedQueueIndex < 0) {
+      throw ArgumentError.value(expectedQueueIndex, 'expectedQueueIndex', 'Must not be negative.');
+    }
     await _invokeAccepted(
       'seekStandby',
       <String, Object>{
         'positionMs': position.inMilliseconds,
         'expectedMediaId': expectedMediaId,
+        'expectedQueueIndex': expectedQueueIndex,
       },
     );
   }
