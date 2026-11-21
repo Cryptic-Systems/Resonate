@@ -123,6 +123,13 @@ class MusicProvider extends ChangeNotifier {
   PlaybackControlLease? _manualDjPreparedLease;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
   bool get media3ProviderSessionActive => _media3ProviderSessionActive;
+  /// True only while the operator's prepared standby deck still owns its lease.
+  /// UI should derive readiness from this instead of caching a local flag: a
+  /// higher-priority user transport can revoke the lease asynchronously.
+  bool get hasPreparedManualDjDeck =>
+      _manualDjPreparedDeck != null &&
+      _manualDjPreparedLease != null &&
+      _manualDjPreparedLease!.isCurrent;
   @visibleForTesting
   bool get debugLegacyEngineConstructed => _engines != null;
   /// The exact session that owns canonical playback after provider handoff.
