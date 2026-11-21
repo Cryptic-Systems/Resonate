@@ -22,6 +22,9 @@ void main() {
         'crossfadeProgress': 0.5,
         'activeDeckVolume': 0.7071,
         'standbyDeckVolume': 0.7071,
+        'incomingMediaId': 'track-incoming',
+        'incomingReady': true,
+        'incomingPositionMs': 4567,
         'repeatMode': 'all',
         'shuffleModeEnabled': true,
         'hasError': false,
@@ -42,6 +45,9 @@ void main() {
       expect(state.crossfadeProgress, 0.5);
       expect(state.activeDeckVolume, 0.7071);
       expect(state.standbyDeckVolume, 0.7071);
+      expect(state.incomingMediaId, 'track-incoming');
+      expect(state.incomingReady, isTrue);
+      expect(state.incomingPosition, const Duration(milliseconds: 4567));
       expect(state.repeatMode, 'all');
       expect(state.shuffleModeEnabled, isTrue);
       expect(state.hasError, isFalse);
