@@ -236,7 +236,8 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                 final incomingStatus = deckState?.crossfadeStatus;
                 final incomingReady = deckState?.incomingReady == true;
                 final incomingIdentityMatches = standbySong != null;
-                final standbyDeckReady = incomingReady &&
+                final standbyDeckReady = activeDeckId != null &&
+                    incomingReady &&
                     incomingIdentityMatches &&
                     incomingStatus == 'ready' &&
                     !music.transitionInProgress;
