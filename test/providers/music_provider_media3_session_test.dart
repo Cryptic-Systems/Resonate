@@ -304,6 +304,7 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
     preloadedIndex = queueIndex;
     preloadedStartPosition = startPosition;
     await preloadNextGate?.future;
+    calls.add('preloadNext:settled');
     crossfadeStatusValue = 'ready';
   }
 
@@ -3793,6 +3794,97 @@ void main() {
           provider.queue.map((song) => song.id).toList(),
           <String>[outgoing.id, tail.id],
         );
+      } finally {
+        if (!preloadGate.isCompleted) preloadGate.complete();
+        await provider.cancelPreparedManualDjDeck();
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+        await arbiter.close();
+      }
+    });
+
+    test('user transport waits for a revoked manual preload to settle and clean up', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-preempt-outgoing');
+      final incoming = _song('manual-preempt-incoming');
+      final preloadGate = Completer<void>();
+      session.preloadNextGate = preloadGate;
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(
+          await provider.playSong(
+            outgoing,
+            queue: <Song>[outgoing, incoming],
+          ),
+          isTrue,
+        );
+
+        final preparation = provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        for (var attempt = 0;
+            attempt < 50 &&
+                !session.calls.any((call) => call.startsWith('preloadNext:'));
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+        expect(
+          session.calls.any((call) => call.startsWith('preloadNext:')),
+          isTrue,
+          reason: 'Manual preload must be blocked before user transport preempts it.',
+        );
+
+        var userLeaseGranted = false;
+        final userLeaseFuture = arbiter.acquire(
+          owner: 'user_transport',
+          priority: PlaybackControlPriority.userTransport,
+        ).then((lease) {
+          userLeaseGranted = lease != null;
+          return lease;
+        });
+
+        for (var attempt = 0;
+            attempt < 50 && !session.calls.contains('cancelCrossfade');
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+        expect(session.calls, contains('cancelCrossfade'));
+        expect(
+          userLeaseGranted,
+          isFalse,
+          reason: 'The arbiter must wait for the dispatched native preload to settle.',
+        );
+        expect(arbiter.activeOwner, isNull);
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+
+        preloadGate.complete();
+        await expectLater(preparation, throwsStateError);
+        final userLease = await userLeaseFuture;
+
+        expect(userLease, isNotNull);
+        expect(arbiter.activeOwner, 'user_transport');
+        expect(userLeaseGranted, isTrue);
+        final preloadSettledIndex = session.calls.indexOf('preloadNext:settled');
+        expect(preloadSettledIndex, greaterThanOrEqualTo(0));
+        expect(
+          session.calls.lastIndexOf('cancelCrossfade'),
+          greaterThan(preloadSettledIndex),
+          reason: 'A final standby cancellation must run after native preload settles.',
+        );
+        expect(
+          session.calls.lastIndexOf('clearDeckEqOverlay:standby'),
+          greaterThan(preloadSettledIndex),
+          reason: 'The standby overlay must be cleared after native preload settles.',
+        );
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(provider.currentSong?.id, outgoing.id);
+        await userLease!.release();
       } finally {
         if (!preloadGate.isCompleted) preloadGate.complete();
         await provider.cancelPreparedManualDjDeck();
