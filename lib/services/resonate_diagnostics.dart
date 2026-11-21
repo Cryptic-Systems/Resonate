@@ -18,11 +18,11 @@ class ResonateDiagnostics {
   static const _crashesKey = 'resonate_diagnostics_crashes_v3';
   static const _sessionKey = 'resonate_diagnostics_session_id';
   static const _sequenceKey = 'resonate_diagnostics_sequence';
-  static const _maxEvents = 4000;
+  static const _maxEvents = 10000;
   static const _maxCrashes = 100;
   static const _maxFeedback = 100;
   static const _maxStackTraceChars = 24000;
-  static const _maxValueChars = 4000;
+  static const _maxValueChars = 8000;
   static const _mediaStoreChannel = MethodChannel('com.aetherion.resonate/media_store');
   static Future<void> _writeSerial = Future<void>.value();
   static String? _sessionId;
@@ -305,7 +305,7 @@ class ResonateDiagnostics {
         final stamp = DateTime.now().toIso8601String().replaceAll(':', '-');
         final file = File('${directory.path}/resonate-crash-$stamp.json');
         await file.writeAsString(const JsonEncoder.withIndent('  ').convert({
-          'reportVersion': 5,
+          'reportVersion': 6,
           'app': 'Resonate',
           'createdAt': DateTime.now().toIso8601String(),
           ...entry,
@@ -678,15 +678,63 @@ class ResonateDiagnostics {
     };
   }
 
+  static const Set<String> _sensitiveDiagnosticKeys = {
+    'password', 'passwd', 'authorization', 'proxyauthorization',
+    'accesstoken', 'refreshtoken', 'idtoken', 'authtoken',
+    'apikey', 'clientsecret', 'secretkey', 'privatekey',
+    'cookie', 'setcookie', 'email', 'phonenumber', 'contactnumber',
+  };
+
+  static String _sanitizeDiagnosticString(String value) {
+    var result = value;
+    // Credentials can leak through native exception messages and HTTP URLs.
+    result = result.replaceAll(
+      RegExp(r'Bearer\\s+[A-Za-z0-9._~+/-]+=*', caseSensitive: false),
+      'Bearer [REDACTED]',
+    );
+    result = result.replaceAll(
+      RegExp(r'([?&](?:access_token|refresh_token|token|api_key|apikey|password|secret)=)[^&\\s]+', caseSensitive: false),
+      r'$1[REDACTED]',
+    );
+    result = result.replaceAll(
+      RegExp(r'([\\w.+-]+)@([\\w.-]+\\.[A-Za-z]{2,})'),
+      '[EMAIL_REDACTED]',
+    );
+    if (result.length > _maxValueChars) {
+      result = '${result.substring(0, _maxValueChars)}…[truncated]';
+    }
+    return result;
+  }
+
   static Map<String, dynamic> _sanitize(Map<String, dynamic> input) {
-    dynamic clean(dynamic value) {
-      if (value == null || value is num || value is bool || value is String) {
-        if (value is String && value.length > _maxValueChars) return '${value.substring(0, _maxValueChars)}…[truncated]';
-        return value;
+    dynamic clean(dynamic value, {String? key}) {
+      final normalizedKey = key?.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      if (normalizedKey != null &&
+          (_sensitiveDiagnosticKeys.contains(normalizedKey) ||
+              normalizedKey.endsWith('password') ||
+              normalizedKey.endsWith('secret') ||
+              normalizedKey.endsWith('privatekey'))) {
+        return '[REDACTED]';
       }
-      if (value is Map) return {for (final e in value.entries) e.key.toString(): clean(e.value)};
-      if (value is Iterable) return value.take(200).map(clean).toList();
-      return value.toString().length > _maxValueChars ? '${value.toString().substring(0, _maxValueChars)}…[truncated]' : value.toString();
+      if (value == null || value is num || value is bool) return value;
+      if (value is String) {
+        // Keep useful track identity while avoiding disclosure of a user's
+        // complete storage hierarchy in diagnostic exports.
+        if (normalizedKey == 'filepath' || normalizedKey == 'fileuri') {
+          final path = value.replaceAll('\\\\', '/');
+          final basename = path.split('/').where((part) => part.isNotEmpty).lastOrNull;
+          return basename == null ? '[PATH_REDACTED]' : _sanitizeDiagnosticString(basename);
+        }
+        return _sanitizeDiagnosticString(value);
+      }
+      if (value is Map) {
+        return <String, dynamic>{
+          for (final entry in value.entries)
+            entry.key.toString(): clean(entry.value, key: entry.key.toString()),
+        };
+      }
+      if (value is Iterable) return value.take(200).map((item) => clean(item)).toList();
+      return _sanitizeDiagnosticString(value.toString());
     }
     return Map<String, dynamic>.from(clean(input) as Map);
   }
