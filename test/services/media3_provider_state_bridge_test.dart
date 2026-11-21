@@ -33,6 +33,9 @@ PlaybackSnapshot _snapshot({
   double crossfadeProgress = 0.0,
   double activeDeckVolume = 1.0,
   double standbyDeckVolume = 0.0,
+  String? incomingMediaId,
+  bool incomingReady = false,
+  Duration incomingPosition = Duration.zero,
 }) =>
     PlaybackSnapshot(
       connected: true,
@@ -58,6 +61,9 @@ PlaybackSnapshot _snapshot({
       crossfadeProgress: crossfadeProgress,
       activeDeckVolume: activeDeckVolume,
       standbyDeckVolume: standbyDeckVolume,
+      incomingMediaId: incomingMediaId,
+      incomingReady: incomingReady,
+      incomingPosition: incomingPosition,
       repeatMode: repeatMode,
       shuffleModeEnabled: shuffleModeEnabled,
       hasError: false,
@@ -130,6 +136,24 @@ void main() {
       await bridge.dispose();
       await runtime.dispose();
       await backend.controller.close();
+    });
+
+    test('projects live standby readiness, identity and position', () async {
+      backend.value = _snapshot(
+        mediaId: 'outgoing',
+        activeDeckId: 'B',
+        crossfadeStatus: 'ready',
+        incomingMediaId: 'incoming',
+        incomingReady: true,
+        incomingPosition: const Duration(seconds: 12),
+      );
+      await runtime.loadQueue([_song('outgoing')]);
+      await bridge.start();
+
+      expect(bridge.current.activeDeckId, 'B');
+      expect(bridge.current.incomingMediaId, 'incoming');
+      expect(bridge.current.incomingReady, isTrue);
+      expect(bridge.current.incomingPosition, const Duration(seconds: 12));
     });
 
     test('projects reconciled Media3 state without optimistic changes', () async {
