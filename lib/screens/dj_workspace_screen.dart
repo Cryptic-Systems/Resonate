@@ -773,7 +773,7 @@ class _DeckVisualTile extends StatelessWidget {
 
   String _clock(Duration value) {
     final seconds = value.inSeconds.clamp(0, 1 << 30);
-    return seconds ~/ 60 .toString() + ':' + (seconds % 60).toString().padLeft(2, '0');
+    return (seconds ~/ 60).toString() + ':' + (seconds % 60).toString().padLeft(2, '0');
   }
 
   @override
@@ -877,7 +877,7 @@ class _DeckWaveformState extends State<_DeckWaveform> with SingleTickerProviderS
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _controller,
     builder: (context, _) => CustomPaint(painter: _DeckWaveformPainter(
-      seed: widget.seed, progress: widget.progress.clamp(0.0, 1.0),
+      seed: widget.seed, progress: widget.progress.clamp(0.0, 1.0).toDouble(),
       color: widget.color, phase: _controller.value)),
   );
 }
@@ -916,7 +916,7 @@ class _DeckWaveformPainter extends CustomPainter {
       final paint = Paint()..color = color.withValues(alpha: played ? 0.98 : 0.30);
       canvas.drawRRect(RRect.fromRectAndRadius(
         Rect.fromCenter(center: Offset(x + barWidth / 2, center),
-          width: barWidth.clamp(0.8, 4), height: height),
+          width: barWidth.clamp(0.8, 4).toDouble(), height: height.toDouble()),
         const Radius.circular(2)), paint);
     }
     final playheadX = size.width * progress;
