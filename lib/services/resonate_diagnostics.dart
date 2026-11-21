@@ -818,7 +818,7 @@ class ResonateDiagnostics {
       'Bearer [REDACTED]',
     );
     result = result.replaceAllMapped(
-      RegExp(r'([?&](?:access_token|refresh_token|token|api_key|apikey|password|secret)=)[^&\\s]+', caseSensitive: false),
+      RegExp(r'([?&](?:access_token|refresh_token|token|api_key|apikey|password|secret)=)[^&\s]+', caseSensitive: false),
       (match) => '${match.group(1)}[REDACTED]',
     );
     result = result.replaceAll(
