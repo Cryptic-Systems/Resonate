@@ -96,6 +96,7 @@ abstract interface class PlaybackStandbyCueBackend {
   Future<void> seekStandby({
     required Duration position,
     required String expectedMediaId,
+    required int expectedQueueIndex,
   });
 }
 
