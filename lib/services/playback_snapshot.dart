@@ -30,6 +30,13 @@ class PlaybackSnapshot {
     this.incomingMediaId,
     this.incomingReady = false,
     this.incomingPosition = Duration.zero,
+    this.audioUnderrunCountA = 0,
+    this.audioUnderrunCountB = 0,
+    this.lastUnderrunDeck,
+    this.lastUnderrunBufferSizeFrames = 0,
+    this.lastUnderrunBufferSizeMs = 0,
+    this.lastUnderrunElapsedSinceFeedMs = 0,
+    this.lastUnderrunElapsedRealtimeMs = 0,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -65,6 +72,14 @@ class PlaybackSnapshot {
   final String? incomingMediaId;
   final bool incomingReady;
   final Duration incomingPosition;
+  /// Cumulative native underruns attributed to physical A/B output decks.
+  final int audioUnderrunCountA;
+  final int audioUnderrunCountB;
+  final String? lastUnderrunDeck;
+  final int lastUnderrunBufferSizeFrames;
+  final int lastUnderrunBufferSizeMs;
+  final int lastUnderrunElapsedSinceFeedMs;
+  final int lastUnderrunElapsedRealtimeMs;
   final double volume;
   /// Current queue repeat policy: `off`, `one`, or `all`.
   final String repeatMode;
