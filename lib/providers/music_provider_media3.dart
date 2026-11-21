@@ -1467,7 +1467,7 @@ extension MusicProviderMedia3 on MusicProvider {
           return;
         }
         final metrics = profile.dspAnalysis;
-        final bridgeAccepted = await AudioEffectsBridge.setLiveDspDeckAnalysisHint(
+        final bridgeResult = await AudioEffectsBridge.setLiveDspDeckAnalysisHintDetailed(
           deckId: deckId,
           songId: song.id,
           samplePeakDb: metrics.samplePeakDb,
@@ -1477,6 +1477,7 @@ extension MusicProviderMedia3 on MusicProvider {
           bassEnergyDb: metrics.bassEnergyDb,
           maxSafeBassDb: metrics.maxSafeBassDb,
         );
+        final bridgeAccepted = bridgeResult['ok'] == true;
         final leaseCurrentAfterBridge = lease.isCurrent;
         final requestCurrentAfterBridge = currentRequest();
         final accepted = bridgeAccepted &&
@@ -1487,6 +1488,8 @@ extension MusicProviderMedia3 on MusicProvider {
           'songId': song.id,
           'applied': accepted,
           'bridgeAccepted': bridgeAccepted,
+          'bridgeReason': bridgeResult['reason'],
+          'bridgeError': bridgeResult['error'],
           'leaseCurrentAfterBridge': leaseCurrentAfterBridge,
           'requestCurrentAfterBridge': requestCurrentAfterBridge,
           'standby': standby,
