@@ -817,9 +817,9 @@ class ResonateDiagnostics {
       RegExp(r'Bearer\s+[A-Za-z0-9._~+/-]+=*', caseSensitive: false),
       'Bearer [REDACTED]',
     );
-    result = result.replaceAll(
-      RegExp(r'([?&](?:access_token|refresh_token|token|api_key|apikey|password|secret)=)[^&\s]+', caseSensitive: false),
-      r'$1[REDACTED]',
+    result = result.replaceAllMapped(
+      RegExp(r'([?&](?:access_token|refresh_token|token|api_key|apikey|password|secret)=)[^&\\s]+', caseSensitive: false),
+      (match) => '${match.group(1)}[REDACTED]',
     );
     result = result.replaceAll(
       RegExp(r'([\w.+-]+)@([\w.-]+\.[A-Za-z]{2,})'),
