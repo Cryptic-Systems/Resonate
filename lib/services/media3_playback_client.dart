@@ -44,6 +44,10 @@ class Media3PlaybackState {
     this.lastMediaTransitionReason = -1,
     this.lastMediaTransitionReasonName = 'unknown',
     this.lastMediaTransitionElapsedRealtimeMs = 0,
+    this.lastPreloadInvalidationReason,
+    this.lastPreloadInvalidationElapsedRealtimeMs = 0,
+    this.preloadInvalidationCount = 0,
+    this.incomingMediaId,
     required this.hasError,
     required this.error,
   });
@@ -88,6 +92,10 @@ class Media3PlaybackState {
   final int lastMediaTransitionReason;
   final String lastMediaTransitionReasonName;
   final int lastMediaTransitionElapsedRealtimeMs;
+  final String? lastPreloadInvalidationReason;
+  final int lastPreloadInvalidationElapsedRealtimeMs;
+  final int preloadInvalidationCount;
+  final String? incomingMediaId;
   final bool hasError;
   final String? error;
 
@@ -165,6 +173,10 @@ class Media3PlaybackState {
       lastMediaTransitionReason: integerValue(map['lastMediaTransitionReason'], -1),
       lastMediaTransitionReasonName: stringValue(map['lastMediaTransitionReasonName']) ?? 'unknown',
       lastMediaTransitionElapsedRealtimeMs: integerValue(map['lastMediaTransitionElapsedRealtimeMs']),
+      lastPreloadInvalidationReason: stringValue(map['lastPreloadInvalidationReason']),
+      lastPreloadInvalidationElapsedRealtimeMs: integerValue(map['lastPreloadInvalidationElapsedRealtimeMs']),
+      preloadInvalidationCount: integerValue(map['preloadInvalidationCount']),
+      incomingMediaId: stringValue(map['incomingMediaId']),
       hasError: boolValue(map['hasError']),
       error: stringValue(map['error']),
     );
@@ -211,6 +223,20 @@ class Media3PlaybackClient {
           'positionMs': state.position.inMilliseconds,
           'activeDeckId': state.activeDeckId,
           'repeatMode': state.repeatMode,
+          'crossfadeStatus': state.crossfadeStatus,
+          'crossfadeProgress': state.crossfadeProgress,
+        }));
+      }
+      if (state.lastPreloadInvalidationElapsedRealtimeMs > 0 &&
+          state.lastPreloadInvalidationElapsedRealtimeMs !=
+              previous.lastPreloadInvalidationElapsedRealtimeMs) {
+        unawaited(ResonateDiagnostics.record('media3_preload_invalidated', {
+          'reason': state.lastPreloadInvalidationReason ?? 'unknown',
+          'invalidationCount': state.preloadInvalidationCount,
+          'nativeElapsedRealtimeMs': state.lastPreloadInvalidationElapsedRealtimeMs,
+          'activeMediaId': state.mediaId,
+          'incomingMediaId': state.incomingMediaId,
+          'activeDeckId': state.activeDeckId,
           'crossfadeStatus': state.crossfadeStatus,
           'crossfadeProgress': state.crossfadeProgress,
         }));
