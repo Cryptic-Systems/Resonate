@@ -8,6 +8,7 @@ import '../providers/music_provider.dart';
 import '../services/dj_session_coordinator.dart';
 import '../ui/resonate_glass.dart';
 import 'dj_suggestion_mix_screen.dart';
+import 'dj_mode_settings_screen.dart';
 import 'dj_transition_studio_screen.dart';
 
 /// Dedicated entry point for DJ preparation and live-session awareness.
@@ -246,25 +247,6 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
           );
         },
       ),
-    );
-  }
-}
-
-class _DjSettingsRoute extends StatelessWidget {
-  const _DjSettingsRoute();
-
-  @override
-  Widget build(BuildContext context) => const _DjSettingsScreenProxy();
-}
-
-class _DjSettingsScreenProxy extends StatelessWidget {
-  const _DjSettingsScreenProxy();
-
-  @override
-  Widget build(BuildContext context) {
-    // Keep the workspace independent from settings implementation details.
-    return const Scaffold(
-      body: Center(child: Text('Open DJ Mode settings from the Settings screen.')),
     );
   }
 }
