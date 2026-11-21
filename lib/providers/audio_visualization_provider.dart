@@ -176,7 +176,7 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
       // teardown. Generation fencing also rejects replies from an earlier
       // playback/capture session if playback resumed before they completed.
       if (_disposed || generation != _captureGeneration || !enabled || !_playbackActive) return;
-      if (next.isEmpty) {
+      if (next.isEmpty || !next.any((value) => value.isFinite)) {
         final hadLiveSpectrum = _hasReceivedSpectrumSample;
         final hadLevels = frequencies.any((value) => value != 0.0);
         _hasReceivedSpectrumSample = false;
