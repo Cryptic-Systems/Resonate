@@ -1055,6 +1055,7 @@ class Media3PlaybackService : MediaSessionService() {
         "activeDeckId" to activeDeckId,
         "activeMediaId" to activePlayer.currentMediaItem?.mediaId,
         "incomingReady" to (standbyPlayer?.playbackState == Player.STATE_READY),
+        "incomingMediaId" to standbyPlayer?.currentMediaItem?.mediaId,
         "activePositionMs" to activePlayer.currentPosition.coerceAtLeast(0L),
         "incomingPositionMs" to (standbyPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L),
         "activeVolume" to activePlayer.volume,
