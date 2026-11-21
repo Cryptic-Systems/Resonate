@@ -617,13 +617,17 @@ class Media3PlaybackBridge(
                 "seekStandby" -> {
                     val positionMs = call.argument<Number>("positionMs")?.toLong()
                     val expectedMediaId = call.argument<String>("expectedMediaId")
-                    if (positionMs == null || positionMs < 0L || expectedMediaId.isNullOrBlank()) {
+                    val expectedQueueIndex = call.argument<Number>("expectedQueueIndex")?.toInt()
+                    if (positionMs == null || positionMs < 0L || expectedMediaId.isNullOrBlank() ||
+                        expectedQueueIndex == null || expectedQueueIndex < 0
+                    ) {
                         result.error("INVALID_STANDBY_SEEK", "A nonnegative position and expected incoming media ID are required.", null)
                         return
                     }
                     val accepted = Media3PlaybackService.instance?.seekStandby(
                         positionMs,
                         expectedMediaId,
+                        expectedQueueIndex,
                     ) == true
                     if (accepted) result.success(true)
                     else result.error("STANDBY_SEEK_REJECTED", "The incoming deck is not safely cueable or its identity changed.", null)
