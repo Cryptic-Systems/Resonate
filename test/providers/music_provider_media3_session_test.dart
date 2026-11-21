@@ -3632,15 +3632,7 @@ void main() {
         playbackControlArbiter: arbiter,
       );
       final outgoing = _song('manual-filtered-outgoing');
-      final unavailable = Song(
-        id: 'manual-filtered-unavailable',
-        title: 'Unavailable',
-        artist: 'Artist',
-        album: 'Album',
-        filePath: '',
-        duration: const Duration(minutes: 3),
-        dateAdded: DateTime.utc(2026, 1, 1),
-      );
+      final filteredMiddle = _song('manual-filtered-middle');
       final incoming = _song('manual-filtered-incoming');
 
       try {
@@ -3648,16 +3640,16 @@ void main() {
         expect(
           await provider.playSong(
             outgoing,
-            queue: <Song>[outgoing, unavailable, incoming],
+            queue: <Song>[outgoing, filteredMiddle, incoming],
           ),
           isTrue,
         );
 
-        // Mirror the production Media3 adapter: the provider retains all
-        // original queue entries, while the native session contains only
-        // playable entries. Native index 1 therefore represents UI index 2.
-        session.queue = <Song>[outgoing, incoming];
+        // Simulate a native queue that omits a provider-queue entry while
+        // retaining the original ordered queue in MusicProvider. Native index
+        // 1 therefore represents UI index 2 for this handoff.
         expect(provider.queueIndex, 0);
+        session.queue = <Song>[outgoing, incoming];
         await provider.prepareManualDjDeck(incomingQueueIndex: 2);
 
         expect(session.preloadedIndex, 1);
