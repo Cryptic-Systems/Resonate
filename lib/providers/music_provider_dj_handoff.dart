@@ -257,7 +257,7 @@ extension MusicProviderDjHandoff on MusicProvider {
       } catch (_) {}
     }
     await lease.release();
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   Future<void> cuePreparedManualDjDeck(Duration position) async {
