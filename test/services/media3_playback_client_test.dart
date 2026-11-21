@@ -483,17 +483,20 @@ void main() {
       await client.seekStandby(
         position: const Duration(milliseconds: 12345),
         expectedMediaId: 'incoming-occurrence-7',
+        expectedQueueIndex: 7,
       );
 
       expect(captured?.method, 'seekStandby');
       final arguments = Map<Object?, Object?>.from(captured!.arguments as Map);
       expect(arguments['positionMs'], 12345);
       expect(arguments['expectedMediaId'], 'incoming-occurrence-7');
+      expect(arguments['expectedQueueIndex'], 7);
 
       await expectLater(
         client.seekStandby(
           position: const Duration(milliseconds: -1),
           expectedMediaId: 'incoming-occurrence-7',
+          expectedQueueIndex: 7,
         ),
         throwsArgumentError,
       );
@@ -501,6 +504,7 @@ void main() {
         client.seekStandby(
           position: Duration.zero,
           expectedMediaId: ' ',
+          expectedQueueIndex: 7,
         ),
         throwsArgumentError,
       );
