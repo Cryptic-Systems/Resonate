@@ -303,6 +303,7 @@ class _FakePlaybackSession implements PlaybackEngineSession {
     preloadedIndex = queueIndex;
     preloadedStartPosition = startPosition;
     await preloadNextGate?.future;
+    crossfadeStatusValue = 'ready';
   }
 
   @override
@@ -3607,6 +3608,68 @@ void main() {
       );
       provider.dispose();
     });
+    test('manual standby lease blocks automatic replacement and cleans up on user preemption', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-lease-outgoing');
+      final incoming = _song('manual-lease-incoming');
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(
+          await provider.playSong(outgoing, queue: <Song>[outgoing, incoming]),
+          isTrue,
+        );
+
+        await provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        expect(provider.hasPreparedManualDjDeck, isTrue);
+        expect(session.crossfadeStatus, 'ready');
+        final playCallsAfterPrepare =
+            session.calls.where((call) => call == 'play').length;
+
+        final automaticLease = await arbiter.acquire(
+          owner: 'dj_automatic_test',
+          priority: PlaybackControlPriority.automatic,
+        );
+        expect(
+          automaticLease,
+          isNull,
+          reason: 'Automatic DJ must not replace a manually prepared standby deck.',
+        );
+        expect(provider.hasPreparedManualDjDeck, isTrue);
+        expect(session.calls, isNot(contains('cancelCrossfade')));
+
+        final userLease = await arbiter.acquire(
+          owner: 'user_transport_test',
+          priority: PlaybackControlPriority.userTransport,
+        );
+        expect(userLease, isNotNull);
+        expect(
+          provider.hasPreparedManualDjDeck,
+          isFalse,
+          reason: 'User transport must revoke manual standby ownership.',
+        );
+        expect(session.calls, contains('cancelCrossfade'));
+        expect(session.calls, contains('clearDeckEqOverlay:standby'));
+        expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+        expect(
+          session.calls.where((call) => call == 'play').length,
+          playCallsAfterPrepare,
+          reason: 'Revocation cleanup must not start or restart either deck.',
+        );
+        await userLease!.release();
+      } finally {
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
   });
 }
 
