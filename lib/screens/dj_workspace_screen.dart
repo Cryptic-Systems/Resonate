@@ -888,12 +888,27 @@ class _DeckWaveformState extends State<_DeckWaveform> with SingleTickerProviderS
   }
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: _controller,
-    builder: (context, _) => CustomPaint(painter: _DeckWaveformPainter(
-      seed: widget.seed, progress: widget.progress.clamp(0.0, 1.0).toDouble(),
-      color: widget.color, phase: _controller.value)),
-  );
+  Widget build(BuildContext context) {
+    final progress = widget.progress.clamp(0.0, 1.0).toDouble();
+    return Semantics(
+      image: true,
+      label: 'Illustrative signal guide, not measured audio waveform data. '
+          'Playback position ${(progress * 100).round()} percent.',
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) => CustomPaint(
+            painter: _DeckWaveformPainter(
+              seed: widget.seed,
+              progress: progress,
+              color: widget.color,
+              phase: _controller.value,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _DeckWaveformPainter extends CustomPainter {
@@ -911,7 +926,9 @@ class _DeckWaveformPainter extends CustomPainter {
     if (size.isEmpty) return;
     const count = 76;
     final center = size.height / 2;
-    const gap = 1.35;
+    // Keep the complete bar train inside narrow deck tiles instead of
+    // forcing a minimum bar width that can overflow small layouts.
+    final gap = math.min(1.35, math.max(0.35, size.width / (count * 5)));
     final barWidth = (size.width - (count - 1) * gap) / count;
     final seedValue = _seedValue;
     final gridPaint = Paint()..color = Colors.white.withValues(alpha: 0.10)..strokeWidth = 0.7;
@@ -930,7 +947,7 @@ class _DeckWaveformPainter extends CustomPainter {
       final paint = Paint()..color = color.withValues(alpha: played ? 0.98 : 0.30);
       canvas.drawRRect(RRect.fromRectAndRadius(
         Rect.fromCenter(center: Offset(x + barWidth / 2, center),
-          width: barWidth.clamp(0.8, 4).toDouble(), height: height.toDouble()),
+          width: barWidth.clamp(0.35, 4).toDouble(), height: height.toDouble()),
         const Radius.circular(2)), paint);
     }
     final playheadX = size.width * progress;
