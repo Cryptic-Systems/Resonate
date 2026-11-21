@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -30,6 +32,20 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
   int? _selectedDeckBIndex;
   double _manualFadeMs = 5000;
   double _manualCueMs = 0;
+  MusicProvider? _musicProvider;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _musicProvider ??= context.read<MusicProvider>();
+  }
+
+  @override
+  void dispose() {
+    final provider = _musicProvider;
+    if (provider != null) unawaited(provider.cancelPreparedManualDjDeck());
+    super.dispose();
+  }
 
   String _clock(Duration value) {
     final seconds = value.inSeconds.clamp(0, 1 << 30);
@@ -355,12 +371,15 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                           )).toList(growable: false),
                           onChanged: _manualTransitionBusy
                               ? null
-                              : (value) => setState(() {
+                              : (value) {
+                                  unawaited(context.read<MusicProvider>().cancelPreparedManualDjDeck());
+                                  setState(() {
                                   _selectedDeckBIndex = value;
                                   _manualCueMs = 0;
                                   _manualDeckPrepared = false;
                                   _manualCueDirty = false;
-                                }),
+                                  });
+                                },
                         ),
                       const SizedBox(height: 12),
                       Row(children: [
