@@ -8,7 +8,6 @@ import '../providers/music_provider.dart';
 import '../services/dj_session_coordinator.dart';
 import '../ui/resonate_glass.dart';
 import 'dj_suggestion_mix_screen.dart';
-import 'dj_mode_settings_screen.dart';
 import 'dj_transition_studio_screen.dart';
 
 /// Dedicated entry point for DJ preparation and live-session awareness.
@@ -215,15 +214,6 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                 subtitle: 'Build a reviewable library sequence with track-pair transition plans.',
                 loading: _buildingMix,
                 onTap: _buildingMix ? null : _buildLibraryMix,
-              ),
-              const SizedBox(height: 10),
-              _WorkspaceAction(
-                icon: Icons.tune_rounded,
-                title: 'DJ settings',
-                subtitle: 'Configure beat alignment, tempo matching, confidence and transition effects.',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const _DjSettingsRoute()),
-                ),
               ),
               const SizedBox(height: 18),
               ResonateGlassCard(
