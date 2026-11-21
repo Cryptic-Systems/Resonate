@@ -542,7 +542,7 @@ class Media3PlaybackService : MediaSessionService() {
                             isAutomaticTransition = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO,
                         )
                     if (!preserveIncomingForFade) {
-                        clearPreload()
+                        clearPreload("active_deck_media_item_transition")
                         stopTransitionPreview()
                     }
                 }
