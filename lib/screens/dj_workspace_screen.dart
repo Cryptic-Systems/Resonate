@@ -118,9 +118,9 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Prepare. Perform. Stay in control.',
+                        Text('Watch the mix unfold.',
                             style: theme.textTheme.titleMedium),
-                        Text('DJ intelligence works alongside the existing Media3 playback engine.',
+                        Text('Live deck activity, incoming preparation and transitions — observed in real time.',
                             style: theme.textTheme.bodySmall),
                       ],
                     ),
@@ -586,8 +586,8 @@ class _DeckVisualTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final liveSpectrum = spectrum;
-    final title = song?.title ?? (isActive ? 'No active track' : 'Choose incoming track');
-    final artist = song?.artist ?? (isActive ? 'Start playback to activate' : 'Deck is empty');
+    final title = song?.title ?? (isActive ? 'No active track' : 'Awaiting incoming track');
+    final artist = song?.artist ?? (isActive ? 'Start playback to activate' : 'Media3 standby monitor');
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return AnimatedContainer(
       duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 420),
@@ -636,8 +636,8 @@ class _DeckVisualTile extends StatelessWidget {
           style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white60)),
         const SizedBox(height: 8),
         Text(
-          liveSpectrum == null
-              ? 'SIGNAL MAP · VISUAL GUIDE'
+          liveSpectrum == null || liveSpectrum.isEmpty
+              ? 'SIGNAL GUIDE · LIVE BANDS UNAVAILABLE'
               : liveSpectrum.any((value) => value.isFinite && value > 0.002)
                   ? 'LIVE OUTPUT · 32-BAND SPECTRUM'
                   : 'LIVE SPECTRUM · LEVELS AT FLOOR',
@@ -646,7 +646,8 @@ class _DeckVisualTile extends StatelessWidget {
         const SizedBox(height: 3),
         SizedBox(height: 58, width: double.infinity, child: _DeckWaveform(
           seed: song?.id ?? deckLabel, progress: progress, color: accent,
-          spectrum: liveSpectrum, animate: isPlaying && isActive && liveSpectrum == null)),
+          spectrum: liveSpectrum, animate: isPlaying && isActive &&
+              (liveSpectrum == null || liveSpectrum.isEmpty))),
         const SizedBox(height: 3),
         Row(children: [
           Text(_clock(position),
@@ -713,13 +714,14 @@ class _DeckWaveformState extends State<_DeckWaveform> with SingleTickerProviderS
   Widget build(BuildContext context) {
     final progress = widget.progress.clamp(0.0, 1.0).toDouble();
     final liveSpectrum = widget.spectrum;
+    final hasLiveBands = liveSpectrum != null && liveSpectrum.isNotEmpty;
     final hasLiveActivity = liveSpectrum?.any(
           (value) => value.isFinite && value > 0.002) ??
         false;
     return Semantics(
       image: true,
-      label: '${liveSpectrum == null
-          ? 'Illustrative signal guide, not measured audio waveform data.'
+      label: '${!hasLiveBands
+          ? 'Illustrative signal guide; live spectrum bands are unavailable.'
           : hasLiveActivity
               ? 'Live 32-band audio output spectrum.'
               : 'Live 32-band audio output spectrum; current levels are at the floor.'} '
