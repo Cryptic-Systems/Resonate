@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import '../models/song.dart';
+import 'resonate_diagnostics.dart';
 
 /// Immutable playback snapshot published by the native Media3 session.
 class Media3PlaybackState {
@@ -32,6 +33,12 @@ class Media3PlaybackState {
     this.standbyDeckVolume = 0.0,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
+    this.audioUnderrunCountA = 0,
+    this.audioUnderrunCountB = 0,
+    this.lastUnderrunDeck,
+    this.lastUnderrunBufferSizeMs = 0,
+    this.lastUnderrunElapsedSinceFeedMs = 0,
+    this.lastUnderrunElapsedRealtimeMs = 0,
     required this.hasError,
     required this.error,
   });
@@ -65,6 +72,12 @@ class Media3PlaybackState {
   final double standbyDeckVolume;
   final String repeatMode;
   final bool shuffleModeEnabled;
+  final int audioUnderrunCountA;
+  final int audioUnderrunCountB;
+  final String? lastUnderrunDeck;
+  final int lastUnderrunBufferSizeMs;
+  final int lastUnderrunElapsedSinceFeedMs;
+  final int lastUnderrunElapsedRealtimeMs;
   final bool hasError;
   final String? error;
 
@@ -77,6 +90,10 @@ class Media3PlaybackState {
     String? stringValue(Object? value) => value is String ? value : null;
 
     final rawDuration = map['durationMs'];
+    final rawAudioDiagnostics = map['audioDiagnostics'];
+    final audioDiagnostics = rawAudioDiagnostics is Map
+        ? Map<Object?, Object?>.from(rawAudioDiagnostics)
+        : const <Object?, Object?>{};
     return Media3PlaybackState(
       connected: boolValue(map['connected']),
       isPlaying: boolValue(map['isPlaying']),
@@ -127,6 +144,12 @@ class Media3PlaybackState {
           ? map['repeatMode'] as String
           : 'off',
       shuffleModeEnabled: boolValue(map['shuffleModeEnabled']),
+      audioUnderrunCountA: integerValue(audioDiagnostics['underrunCountA']),
+      audioUnderrunCountB: integerValue(audioDiagnostics['underrunCountB']),
+      lastUnderrunDeck: stringValue(audioDiagnostics['lastUnderrunDeck']),
+      lastUnderrunBufferSizeMs: integerValue(audioDiagnostics['lastUnderrunBufferSizeMs']),
+      lastUnderrunElapsedSinceFeedMs: integerValue(audioDiagnostics['lastUnderrunElapsedSinceFeedMs']),
+      lastUnderrunElapsedRealtimeMs: integerValue(audioDiagnostics['lastUnderrunElapsedRealtimeMs']),
       hasError: boolValue(map['hasError']),
       error: stringValue(map['error']),
     );
@@ -145,13 +168,85 @@ class Media3PlaybackClient {
 
   final MethodChannel _methodChannel;
   final EventChannel _eventChannel;
+  Media3PlaybackState? _lastObservedState;
 
   Stream<Media3PlaybackState> get states => _eventChannel
       .receiveBroadcastStream()
       .where((event) => event is Map)
-      .map((event) => Media3PlaybackState.fromMap(
-            Map<Object?, Object?>.from(event as Map),
-          ));
+      .map((event) {
+        final state = Media3PlaybackState.fromMap(
+          Map<Object?, Object?>.from(event as Map),
+        );
+        _recordNativeDiagnostics(state);
+        return state;
+      });
+
+  void _recordNativeDiagnostics(Media3PlaybackState state) {
+    final previous = _lastObservedState;
+    if (previous != null) {
+      final newUnderrunsA = state.audioUnderrunCountA - previous.audioUnderrunCountA;
+      final newUnderrunsB = state.audioUnderrunCountB - previous.audioUnderrunCountB;
+      if (newUnderrunsA > 0 || newUnderrunsB > 0) {
+        unawaited(ResonateDiagnostics.record('media3_audio_underrun', {
+          'countDeltaA': newUnderrunsA.clamp(0, 1000),
+          'countDeltaB': newUnderrunsB.clamp(0, 1000),
+          'totalCountA': state.audioUnderrunCountA,
+          'totalCountB': state.audioUnderrunCountB,
+          'lastDeck': state.lastUnderrunDeck,
+          'bufferSizeMs': state.lastUnderrunBufferSizeMs,
+          'elapsedSinceLastFeedMs': state.lastUnderrunElapsedSinceFeedMs,
+          'nativeElapsedRealtimeMs': state.lastUnderrunElapsedRealtimeMs,
+          'positionMs': state.position.inMilliseconds,
+          'mediaId': state.mediaId,
+          'activeDeckId': state.activeDeckId,
+          'crossfadeStatus': state.crossfadeStatus,
+          'crossfadeProgress': state.crossfadeProgress,
+          'activeDeckVolume': state.activeDeckVolume,
+          'standbyDeckVolume': state.standbyDeckVolume,
+          'isBuffering': state.isBuffering,
+          'audioSessionId': state.audioSessionId,
+          'standbyAudioSessionId': state.standbyAudioSessionId,
+        }));
+      }
+
+      final activeGainDelta = (state.activeDeckVolume - previous.activeDeckVolume).abs();
+      final standbyGainDelta = (state.standbyDeckVolume - previous.standbyDeckVolume).abs();
+      final transitionObserved = state.crossfadeStatus == 'fading' ||
+          state.crossfadeStatus == 'starting' ||
+          previous.crossfadeStatus == 'fading' ||
+          previous.crossfadeStatus == 'starting';
+      if (transitionObserved &&
+          (activeGainDelta >= 0.35 || standbyGainDelta >= 0.35)) {
+        unawaited(ResonateDiagnostics.record('media3_crossfade_gain_discontinuity', {
+          'activeGainBefore': previous.activeDeckVolume,
+          'activeGainAfter': state.activeDeckVolume,
+          'standbyGainBefore': previous.standbyDeckVolume,
+          'standbyGainAfter': state.standbyDeckVolume,
+          'activeGainDelta': activeGainDelta,
+          'standbyGainDelta': standbyGainDelta,
+          'threshold': 0.35,
+          'positionMs': state.position.inMilliseconds,
+          'mediaId': state.mediaId,
+          'activeDeckId': state.activeDeckId,
+          'crossfadeStatus': state.crossfadeStatus,
+          'crossfadeProgress': state.crossfadeProgress,
+        }));
+      }
+
+      if (state.hasError &&
+          (!previous.hasError || state.error != previous.error)) {
+        unawaited(ResonateDiagnostics.record('media3_player_error', {
+          'error': state.error,
+          'mediaId': state.mediaId,
+          'positionMs': state.position.inMilliseconds,
+          'activeDeckId': state.activeDeckId,
+          'crossfadeStatus': state.crossfadeStatus,
+          'playbackState': state.playbackState,
+        }));
+      }
+    }
+    _lastObservedState = state;
+  }
 
   Future<void> setSource(Uri uri) async {
     if (!uri.hasScheme) {
