@@ -59,6 +59,7 @@ extension MusicProviderDjHandoff on MusicProvider {
   Future<void> performManualDjTransition({
     required int incomingQueueIndex,
     required Duration duration,
+    Duration incomingStartPosition = Duration.zero,
   }) async {
     if (duration < const Duration(milliseconds: 250) ||
         duration > const Duration(seconds: 15)) {
@@ -80,6 +81,15 @@ extension MusicProviderDjHandoff on MusicProvider {
           'Choose a different track occurrence from the active queue.');
     }
     final incomingSong = _queue[incomingQueueIndex];
+    if (incomingStartPosition < Duration.zero ||
+        (incomingSong.duration > Duration.zero &&
+            incomingStartPosition >= incomingSong.duration)) {
+      throw ArgumentError.value(
+        incomingStartPosition,
+        'incomingStartPosition',
+        'Cue position must be non-negative and inside the incoming track.',
+      );
+    }
     final lease = await playbackControlArbiter.acquire(
       owner: 'dj_manual_transition',
       priority: PlaybackControlPriority.interactive,
@@ -115,6 +125,7 @@ extension MusicProviderDjHandoff on MusicProvider {
       await session.preloadNext(
         incomingSong,
         queueIndex: incomingQueueIndex,
+        startPosition: incomingStartPosition,
       );
       if (!stillOwnsTransition()) {
         throw StateError('Manual DJ transition was superseded during deck preparation.');
@@ -175,6 +186,7 @@ extension MusicProviderDjHandoff on MusicProvider {
         extra: {
           'outgoingSongId': outgoingSong.id,
           'incomingQueueIndex': incomingQueueIndex,
+          'incomingStartPositionMs': incomingStartPosition.inMilliseconds,
           'durationMs': duration.inMilliseconds,
         },
       );
@@ -205,6 +217,7 @@ extension MusicProviderDjHandoff on MusicProvider {
         extra: {
           'outgoingSongId': outgoingSong.id,
           'incomingQueueIndex': incomingQueueIndex,
+          'incomingStartPositionMs': incomingStartPosition.inMilliseconds,
         },
       );
       rethrow;
