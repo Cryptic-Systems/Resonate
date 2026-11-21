@@ -404,10 +404,10 @@ extension MusicProviderDjHandoff on MusicProvider {
       throw StateError('Prepare Deck B again before starting the crossfade.');
     }
     final incomingNativeIndex =
-        _manualDjNativeQueueIndex(prepared.incomingQueueIndex);
+        _manualDjNativeQueueIndices(session.queue)?[prepared.incomingQueueIndex];
     if (incomingNativeIndex == null) {
       await cancelPreparedManualDjDeck();
-      throw StateError('The selected Deck B track is no longer playable.');
+      throw StateError('The selected Deck B track is no longer in the native queue.');
     }
     try {
       if (!lease.authorizeWrite('dj_manual_crossfade') ||
