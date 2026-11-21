@@ -161,7 +161,7 @@ class ResonateDiagnostics {
           final legacy = _decodeList(prefs.getString(_eventsKey));
           if (legacy.isNotEmpty) {
             await file.writeAsString(
-              '${legacy.map(jsonEncode).join('\\n')}\\n',
+              '${legacy.map(jsonEncode).join('\n')}\n',
               mode: FileMode.append,
               flush: true,
             );
@@ -173,7 +173,7 @@ class ResonateDiagnostics {
             ? (await file.readAsLines()).where((line) => line.trim().isNotEmpty).length
             : 0;
         await file.writeAsString(
-          '${batch.map(jsonEncode).join('\\n')}\\n',
+          '${batch.map(jsonEncode).join('\n')}\n',
           mode: FileMode.append,
           flush: true,
         );
@@ -183,7 +183,7 @@ class ResonateDiagnostics {
           final dropped = lines.length - _maxEvents;
           final retained = lines.skip(dropped < 0 ? 0 : dropped).toList();
           await file.writeAsString(
-            retained.join('\\n') + (retained.isEmpty ? '' : '\\n'),
+            retained.join('\n') + (retained.isEmpty ? '' : '\n'),
             flush: true,
           );
           _eventLogCount = retained.length;
