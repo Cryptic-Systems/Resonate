@@ -3828,6 +3828,7 @@ void main() {
         );
 
         final preparation = provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        final preparationExpectation = expectLater(preparation, throwsStateError);
         for (var attempt = 0;
             attempt < 50 &&
                 !session.calls.any((call) => call.startsWith('preloadNext:'));
@@ -3840,6 +3841,8 @@ void main() {
           reason: 'Manual preload must be blocked before user transport preempts it.',
         );
 
+        final cancelCountBeforePreemption =
+            session.calls.where((call) => call == 'cancelCrossfade').length;
         var userLeaseGranted = false;
         final userLeaseFuture = arbiter.acquire(
           owner: 'user_transport',
@@ -3850,11 +3853,16 @@ void main() {
         });
 
         for (var attempt = 0;
-            attempt < 50 && !session.calls.contains('cancelCrossfade');
+            attempt < 50 &&
+                session.calls.where((call) => call == 'cancelCrossfade').length <=
+                    cancelCountBeforePreemption;
             attempt++) {
           await Future<void>.delayed(const Duration(milliseconds: 2));
         }
-        expect(session.calls, contains('cancelCrossfade'));
+        expect(
+          session.calls.where((call) => call == 'cancelCrossfade').length,
+          greaterThan(cancelCountBeforePreemption),
+        );
         expect(
           userLeaseGranted,
           isFalse,
@@ -3864,7 +3872,7 @@ void main() {
         expect(provider.hasPreparedManualDjDeck, isFalse);
 
         preloadGate.complete();
-        await expectLater(preparation, throwsStateError);
+        await preparationExpectation;
         final userLease = await userLeaseFuture;
 
         expect(userLease, isNotNull);
