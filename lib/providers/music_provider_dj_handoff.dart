@@ -82,21 +82,26 @@ extension MusicProviderDjHandoff on MusicProvider {
       candidate.id == expected.id &&
       candidate.filePath.trim() == expected.filePath.trim();
 
-  /// Converts an operator-facing queue occurrence into Media3's filtered,
-  /// playable queue index. An unavailable item must never be treated as a
-  /// native deck position.
-  int? _manualDjNativeQueueIndex(int originalQueueIndex) {
-    if (originalQueueIndex < 0 || originalQueueIndex >= _queue.length) {
-      return null;
+  /// Maps the native queue onto Resonate's operator-facing queue by
+  /// ordered media identity. Native playback may omit entries that remain in
+  /// the provider queue; never infer a native index from an original index.
+  /// Returning null means the two queues cannot be reconciled safely.
+  Map<int, int>? _manualDjNativeQueueIndices(List<Song> nativeQueue) {
+    final indices = <int, int>{};
+    var originalCursor = 0;
+    for (var nativeIndex = 0;
+        nativeIndex < nativeQueue.length;
+        nativeIndex++) {
+      final nativeSong = nativeQueue[nativeIndex];
+      while (originalCursor < _queue.length &&
+          !_sameManualDjEntry(_queue[originalCursor], nativeSong)) {
+        originalCursor++;
+      }
+      if (originalCursor >= _queue.length) return null;
+      indices[originalCursor] = nativeIndex;
+      originalCursor++;
     }
-    try {
-      return Media3MusicProviderAdapter.resolvePlayableStartIndex(
-        _queue,
-        originalQueueIndex,
-      );
-    } on ArgumentError {
-      return null;
-    }
+    return indices;
   }
 
   bool _manualDjPreparedDeckIsCurrent(
@@ -105,23 +110,21 @@ extension MusicProviderDjHandoff on MusicProvider {
   ) {
     final currentSong = session.currentSong;
     final nativeQueue = session.queue;
-    final outgoingNativeIndex =
-        _manualDjNativeQueueIndex(prepared.outgoingQueueIndex);
-    final incomingNativeIndex =
-        _manualDjNativeQueueIndex(prepared.incomingQueueIndex);
-    // PreparedDeck stores original Resonate queue occurrences. Translate
-    // both indices before comparing them with Media3's playable-only queue.
-    // Media IDs and paths still guard against duplicate/stale occurrences.
+    final nativeIndices = _manualDjNativeQueueIndices(nativeQueue);
+    final outgoingNativeIndex = nativeIndices?[prepared.outgoingQueueIndex];
+    final incomingNativeIndex = nativeIndices?[prepared.incomingQueueIndex];
+    // PreparedDeck stores original Resonate queue occurrences. Resolve both
+    // through the current native playlist and require an ordered identity map.
     return _media3ProviderSessionActive &&
         !_disposed &&
         currentSong != null &&
+        nativeIndices != null &&
         outgoingNativeIndex != null &&
         incomingNativeIndex != null &&
         outgoingNativeIndex != incomingNativeIndex &&
         _queueStore.index == prepared.outgoingQueueIndex &&
         _sameManualDjEntry(currentSong, prepared.outgoingSong) &&
         session.queueIndex == outgoingNativeIndex &&
-        outgoingNativeIndex < nativeQueue.length &&
         _sameManualDjEntry(
           nativeQueue[outgoingNativeIndex],
           prepared.outgoingSong,
@@ -134,7 +137,6 @@ extension MusicProviderDjHandoff on MusicProvider {
           _queue[prepared.incomingQueueIndex],
           prepared.incomingSong,
         ) &&
-        incomingNativeIndex < nativeQueue.length &&
         _sameManualDjEntry(
           nativeQueue[incomingNativeIndex],
           prepared.incomingSong,
@@ -154,13 +156,18 @@ extension MusicProviderDjHandoff on MusicProvider {
       throw StateError('Resume playback before preparing Deck B.');
     }
     final outgoingSong = session.currentSong;
+    final committedQueue = session.queue;
+    final nativeIndices = _manualDjNativeQueueIndices(committedQueue);
     final outgoingNativeIndex = session.queueIndex;
-    final outgoingIndex = outgoingNativeIndex == null
-        ? null
-        : Media3MusicProviderAdapter.resolveOriginalQueueIndex(
-            _queue,
-            outgoingNativeIndex,
-          );
+    int? outgoingIndex;
+    if (nativeIndices != null && outgoingNativeIndex != null) {
+      for (final entry in nativeIndices.entries) {
+        if (entry.value == outgoingNativeIndex) {
+          outgoingIndex = entry.key;
+          break;
+        }
+      }
+    }
     if (outgoingSong == null ||
         outgoingNativeIndex == null ||
         outgoingIndex == null ||
@@ -175,10 +182,9 @@ extension MusicProviderDjHandoff on MusicProvider {
       );
     }
     final incomingSong = _queue[incomingQueueIndex];
-    final incomingNativeIndex =
-        _manualDjNativeQueueIndex(incomingQueueIndex);
-    final committedQueue = session.queue;
-    if (incomingNativeIndex == null ||
+    final incomingNativeIndex = nativeIndices?[incomingQueueIndex];
+    if (nativeIndices == null ||
+        incomingNativeIndex == null ||
         incomingNativeIndex == outgoingNativeIndex ||
         outgoingNativeIndex < 0 ||
         outgoingNativeIndex >= committedQueue.length ||
@@ -349,10 +355,10 @@ extension MusicProviderDjHandoff on MusicProvider {
       throw StateError('Prepared Deck B is no longer available for cueing.');
     }
     final incomingNativeIndex =
-        _manualDjNativeQueueIndex(prepared.incomingQueueIndex);
+        _manualDjNativeQueueIndices(session.queue)?[prepared.incomingQueueIndex];
     if (incomingNativeIndex == null) {
       await cancelPreparedManualDjDeck();
-      throw StateError('The selected Deck B track is no longer playable.');
+      throw StateError('The selected Deck B track is no longer in the native queue.');
     }
     await (session as PlaybackStandbyCueBackend).seekStandby(
       position: position,
