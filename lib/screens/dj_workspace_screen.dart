@@ -380,19 +380,33 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                     : (selectedSong.duration.inMilliseconds - 1).clamp(0, 1 << 31);
                 final cueValueMs = _manualCueMs.clamp(0.0, cueMaxMs.toDouble());
                 final incomingMediaId = deckState?.incomingMediaId;
+                final incomingStatus = deckState?.crossfadeStatus;
                 final incomingReady = deckState?.incomingReady == true;
                 final incomingIdentityMatches = selectedSong != null &&
                     incomingMediaId == selectedSong.id;
+                // Readiness is a conjunction, not a single stale telemetry bit:
+                // the selected occurrence, native media identity, and native
+                // standby state must all agree before the UI calls Deck B ready.
+                final incomingDeckReady = incomingReady &&
+                    incomingIdentityMatches &&
+                    incomingStatus == "ready" &&
+                    !music.transitionInProgress;
                 final standbyStateLabel = incomingIdentityMatches
-                    ? incomingReady
+                    ? incomingDeckReady
                         ? "Ready"
-                        : "Loaded · preparing"
+                        : incomingStatus == "preparing"
+                            ? "Loaded · preparing"
+                            : incomingStatus == "ready"
+                                ? "Loaded · verifying"
+                                : music.transitionInProgress
+                                    ? "Transitioning"
+                                    : "Not ready"
                     : incomingMediaId != null
                         ? "Different track loaded"
-                        : incomingReady
-                            ? "Ready · identity unknown"
-                            : deckState?.crossfadeStatus == "preparing"
-                                ? "Preparing"
+                        : incomingStatus == "preparing"
+                            ? "Preparing"
+                            : incomingReady
+                                ? "Ready · identity unknown"
                                 : "Empty";
                 return ResonateGlassCard(
                   margin: EdgeInsets.zero,
@@ -410,7 +424,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                         standbyPosition: incomingIdentityMatches
                             ? (deckState?.incomingPosition ?? Duration.zero)
                             : Duration.zero,
-                        standbyReady: deckState?.incomingReady == true && incomingIdentityMatches,
+                        standbyReady: incomingDeckReady,
                         isPlaying: music.isPlaying,
                         transitionActive: music.transitionInProgress,
                         liveSpectrum: visualization.frequencies,
