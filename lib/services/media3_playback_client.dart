@@ -624,6 +624,27 @@ class Media3PlaybackClient {
     );
   }
 
+  /// Repositions only the prepared standby deck. Native code verifies that
+  /// the expected media identity is still loaded and no transition is running.
+  Future<void> seekStandby({
+    required Duration position,
+    required String expectedMediaId,
+  }) async {
+    if (position.isNegative) {
+      throw ArgumentError.value(position, 'position', 'Must not be negative.');
+    }
+    if (expectedMediaId.trim().isEmpty) {
+      throw ArgumentError.value(expectedMediaId, 'expectedMediaId', 'Must not be empty.');
+    }
+    await _invokeAccepted(
+      'seekStandby',
+      <String, Object>{
+        'positionMs': position.inMilliseconds,
+        'expectedMediaId': expectedMediaId,
+      },
+    );
+  }
+
   Future<void> crossfade({Duration duration = const Duration(seconds: 5)}) async {
     if (duration < const Duration(milliseconds: 250) ||
         duration > const Duration(seconds: 15)) {
