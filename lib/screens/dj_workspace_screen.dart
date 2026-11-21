@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../models/song.dart';
 
 import '../navigation/shell_nav.dart';
+import '../providers/audio_visualization_provider.dart';
 import '../providers/dj_mode_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
@@ -213,8 +214,8 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
     final theme = Theme.of(context);
     return ResonateGlassScaffold(
       title: const Text('DJ Workspace'),
-      body: Consumer2<MusicProvider, DjModeProvider>(
-        builder: (context, music, dj, _) {
+      body: Consumer3<MusicProvider, DjModeProvider, AudioVisualizationProvider>(
+        builder: (context, music, dj, visualization, _) {
           final song = music.currentSong;
           final duration = music.currentDuration ?? song?.duration ?? Duration.zero;
           final progress = duration.inMilliseconds <= 0
@@ -373,6 +374,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                         standbyReady: deckState?.incomingReady == true && incomingIdentityMatches,
                         isPlaying: music.isPlaying,
                         transitionActive: music.transitionInProgress,
+                        liveSpectrum: visualization.frequencies,
                       ),
                       const SizedBox(height: 14),
                       Row(children: [
@@ -650,6 +652,7 @@ class _DeckPerformancePanel extends StatelessWidget {
     required this.activePosition, required this.activeDuration,
     required this.standbyPosition, required this.standbyReady,
     required this.isPlaying, required this.transitionActive,
+    required this.liveSpectrum,
   });
 
   final Song? activeSong;
@@ -662,6 +665,7 @@ class _DeckPerformancePanel extends StatelessWidget {
   final bool standbyReady;
   final bool isPlaying;
   final bool transitionActive;
+  final List<double> liveSpectrum;
 
   @override
   Widget build(BuildContext context) {
@@ -700,6 +704,7 @@ class _DeckPerformancePanel extends StatelessWidget {
             duration: activeDuration,
             position: activePosition,
             isActive: true, isReady: activeSong != null, isPlaying: isPlaying,
+            spectrum: liveSpectrum,
           )),
           const SizedBox(width: 8),
           Expanded(child: _DeckVisualTile(
@@ -773,6 +778,7 @@ class _DeckVisualTile extends StatelessWidget {
     required this.deckLabel, required this.role, required this.song,
     required this.accent, required this.progress, required this.duration,
     required this.position, required this.isActive, required this.isReady, required this.isPlaying,
+    this.spectrum,
   });
   final String deckLabel, role;
   final Song? song;
@@ -781,6 +787,7 @@ class _DeckVisualTile extends StatelessWidget {
   final Duration duration;
   final Duration position;
   final bool isActive, isReady, isPlaying;
+  final List<double>? spectrum;
 
   String _clock(Duration value) {
     final seconds = value.inSeconds.clamp(0, 1 << 30);
@@ -831,12 +838,13 @@ class _DeckVisualTile extends StatelessWidget {
         Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white60)),
         const SizedBox(height: 8),
-        Text('SIGNAL MAP · VISUAL GUIDE', style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        Text(spectrum == null ? 'SIGNAL MAP · VISUAL GUIDE' : 'LIVE OUTPUT · 32-BAND SPECTRUM',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
             color: Colors.white38, fontSize: 8, letterSpacing: 0.8)),
         const SizedBox(height: 3),
         SizedBox(height: 58, width: double.infinity, child: _DeckWaveform(
           seed: song?.id ?? deckLabel, progress: progress, color: accent,
-          animate: isPlaying && isActive)),
+          spectrum: spectrum, animate: isPlaying && isActive && spectrum == null)),
         const SizedBox(height: 3),
         Row(children: [
           Text(_clock(position),
@@ -851,11 +859,12 @@ class _DeckVisualTile extends StatelessWidget {
 
 class _DeckWaveform extends StatefulWidget {
   const _DeckWaveform({required this.seed, required this.progress,
-    required this.color, required this.animate});
+    required this.color, required this.animate, this.spectrum});
   final String seed;
   final double progress;
   final Color color;
   final bool animate;
+  final List<double>? spectrum;
 
   @override
   State<_DeckWaveform> createState() => _DeckWaveformState();
@@ -892,7 +901,7 @@ class _DeckWaveformState extends State<_DeckWaveform> with SingleTickerProviderS
     final progress = widget.progress.clamp(0.0, 1.0).toDouble();
     return Semantics(
       image: true,
-      label: 'Illustrative signal guide, not measured audio waveform data. '
+      label: '${widget.spectrum == null ? 'Illustrative signal guide, not measured audio waveform data.' : 'Live 32-band audio output spectrum.'} '
           'Playback position ${(progress * 100).round()} percent.',
       child: RepaintBoundary(
         child: AnimatedBuilder(
@@ -903,6 +912,7 @@ class _DeckWaveformState extends State<_DeckWaveform> with SingleTickerProviderS
               progress: progress,
               color: widget.color,
               phase: _controller.value,
+              spectrum: widget.spectrum,
             ),
           ),
         ),
@@ -913,10 +923,11 @@ class _DeckWaveformState extends State<_DeckWaveform> with SingleTickerProviderS
 
 class _DeckWaveformPainter extends CustomPainter {
   _DeckWaveformPainter({required this.seed, required this.progress,
-    required this.color, required this.phase});
+    required this.color, required this.phase, this.spectrum});
   final String seed;
   final double progress, phase;
   final Color color;
+  final List<double>? spectrum;
 
   int get _seedValue => seed.codeUnits.fold<int>(17,
     (value, unit) => (value * 31 + unit) & 0x7fffffff);
@@ -938,13 +949,36 @@ class _DeckWaveformPainter extends CustomPainter {
     }
     for (var i = 0; i < count; i++) {
       final x = i * (barWidth + gap);
-      final envelope = 0.25 + 0.75 * math.pow(
-        (math.sin((i / count) * math.pi * 2.6 + seedValue % 13) + 1) / 2, 0.75).toDouble();
-      final texture = 0.52 + 0.48 * math.sin(i * 1.71 + seedValue * 0.001).abs();
-      final pulse = 1 + 0.055 * math.sin(phase * math.pi * 2 + i * 0.12);
-      final height = (size.height * 0.78 * envelope * texture * pulse).clamp(3.0, size.height - 3);
+      final hasLiveSpectrum = spectrum != null && spectrum!.isNotEmpty;
+      double amplitude = 0;
+      if (hasLiveSpectrum) {
+        final sourcePosition = i * (spectrum!.length - 1) / (count - 1);
+        final lower = sourcePosition.floor();
+        final upper = math.min(lower + 1, spectrum!.length - 1);
+        final blend = sourcePosition - lower;
+        final a = spectrum![lower].isFinite ? spectrum![lower].clamp(0.0, 1.0).toDouble() : 0.0;
+        final b = spectrum![upper].isFinite ? spectrum![upper].clamp(0.0, 1.0).toDouble() : 0.0;
+        amplitude = a + (b - a) * blend;
+      }
+      final envelope = hasLiveSpectrum
+          ? math.sqrt(amplitude)
+          : 0.25 + 0.75 * math.pow(
+              (math.sin((i / count) * math.pi * 2.6 + seedValue % 13) + 1) / 2,
+              0.75).toDouble();
+      final texture = hasLiveSpectrum
+          ? 1.0
+          : 0.52 + 0.48 * math.sin(i * 1.71 + seedValue * 0.001).abs();
+      final pulse = hasLiveSpectrum
+          ? 1.0
+          : 1 + 0.055 * math.sin(phase * math.pi * 2 + i * 0.12);
+      final height = (hasLiveSpectrum
+          ? 2.0 + size.height * 0.84 * envelope
+          : size.height * 0.78 * envelope * texture * pulse)
+          .clamp(2.0, size.height - 3);
       final played = i / count <= progress;
-      final paint = Paint()..color = color.withValues(alpha: played ? 0.98 : 0.30);
+      final paint = Paint()..color = color.withValues(
+        alpha: hasLiveSpectrum ? (0.35 + amplitude * 0.65) : played ? 0.98 : 0.30,
+      );
       canvas.drawRRect(RRect.fromRectAndRadius(
         Rect.fromCenter(center: Offset(x + barWidth / 2, center),
           width: barWidth.clamp(0.35, 4).toDouble(), height: height.toDouble()),
@@ -959,7 +993,8 @@ class _DeckWaveformPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DeckWaveformPainter old) =>
-    old.seed != seed || old.progress != progress || old.color != color || old.phase != phase;
+    old.seed != seed || old.progress != progress || old.color != color ||
+    old.phase != phase || !listEquals(old.spectrum, spectrum);
 }
 
 class _WorkspaceAction extends StatelessWidget {
