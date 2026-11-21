@@ -137,6 +137,32 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
     }
   }
 
+  Future<void> _selectIncomingTrack(int? value) async {
+    if (value == null || _manualTransitionBusy) return;
+    setState(() {
+      _manualTransitionBusy = true;
+      _manualDeckPrepared = false;
+      _manualCueDirty = false;
+    });
+    try {
+      // Retire the old standby and release its interactive lease before
+      // allowing another prepare operation to start.
+      await context.read<MusicProvider>().cancelPreparedManualDjDeck();
+      if (!mounted) return;
+      setState(() {
+        _selectedDeckBIndex = value;
+        _manualCueMs = 0;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not change the incoming track: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _manualTransitionBusy = false);
+    }
+  }
+
   Future<void> _crossfadePreparedDeck() async {
     if (_manualTransitionBusy || !_manualDeckPrepared || _manualCueDirty) return;
     setState(() => _manualTransitionBusy = true);
@@ -479,14 +505,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                           )).toList(growable: false),
                           onChanged: _manualTransitionBusy
                               ? null
-                              : (value) {
-                                  unawaited(context.read<MusicProvider>().cancelPreparedManualDjDeck());
-                                  setState(() {
-                                  _selectedDeckBIndex = value;
-                                  _manualCueMs = 0;
-                                  _manualCueDirty = false;
-                                  });
-                                },
+                              : (value) => unawaited(_selectIncomingTrack(value)),
                         ),
                       const SizedBox(height: 12),
                       Row(children: [
