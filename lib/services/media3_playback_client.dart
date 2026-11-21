@@ -39,6 +39,10 @@ class Media3PlaybackState {
     this.lastUnderrunBufferSizeMs = 0,
     this.lastUnderrunElapsedSinceFeedMs = 0,
     this.lastUnderrunElapsedRealtimeMs = 0,
+    this.lastMediaTransitionDeckId,
+    this.lastMediaTransitionMediaId,
+    this.lastMediaTransitionReason = -1,
+    this.lastMediaTransitionElapsedRealtimeMs = 0,
     required this.hasError,
     required this.error,
   });
@@ -78,6 +82,10 @@ class Media3PlaybackState {
   final int lastUnderrunBufferSizeMs;
   final int lastUnderrunElapsedSinceFeedMs;
   final int lastUnderrunElapsedRealtimeMs;
+  final String? lastMediaTransitionDeckId;
+  final String? lastMediaTransitionMediaId;
+  final int lastMediaTransitionReason;
+  final int lastMediaTransitionElapsedRealtimeMs;
   final bool hasError;
   final String? error;
 
@@ -150,6 +158,10 @@ class Media3PlaybackState {
       lastUnderrunBufferSizeMs: integerValue(audioDiagnostics['lastUnderrunBufferSizeMs']),
       lastUnderrunElapsedSinceFeedMs: integerValue(audioDiagnostics['lastUnderrunElapsedSinceFeedMs']),
       lastUnderrunElapsedRealtimeMs: integerValue(audioDiagnostics['lastUnderrunElapsedRealtimeMs']),
+      lastMediaTransitionDeckId: stringValue(map['lastMediaTransitionDeckId']),
+      lastMediaTransitionMediaId: stringValue(map['lastMediaTransitionMediaId']),
+      lastMediaTransitionReason: integerValue(map['lastMediaTransitionReason'], -1),
+      lastMediaTransitionElapsedRealtimeMs: integerValue(map['lastMediaTransitionElapsedRealtimeMs']),
       hasError: boolValue(map['hasError']),
       error: stringValue(map['error']),
     );
@@ -184,6 +196,33 @@ class Media3PlaybackClient {
   void _recordNativeDiagnostics(Media3PlaybackState state) {
     final previous = _lastObservedState;
     if (previous != null) {
+      if (state.lastMediaTransitionElapsedRealtimeMs > 0 &&
+          state.lastMediaTransitionElapsedRealtimeMs !=
+              previous.lastMediaTransitionElapsedRealtimeMs) {
+        unawaited(ResonateDiagnostics.record('media3_media_item_transition', {
+          'deckId': state.lastMediaTransitionDeckId,
+          'mediaId': state.lastMediaTransitionMediaId,
+          'reasonCode': state.lastMediaTransitionReason,
+          'nativeElapsedRealtimeMs': state.lastMediaTransitionElapsedRealtimeMs,
+          'positionMs': state.position.inMilliseconds,
+          'activeDeckId': state.activeDeckId,
+          'repeatMode': state.repeatMode,
+          'crossfadeStatus': state.crossfadeStatus,
+          'crossfadeProgress': state.crossfadeProgress,
+        }));
+      }
+      if (state.repeatMode != previous.repeatMode) {
+        unawaited(ResonateDiagnostics.record('media3_repeat_mode_observed', {
+          'previousMode': previous.repeatMode,
+          'observedMode': state.repeatMode,
+          'mediaId': state.mediaId,
+          'positionMs': state.position.inMilliseconds,
+          'activeDeckId': state.activeDeckId,
+          'crossfadeStatus': state.crossfadeStatus,
+          'crossfadeProgress': state.crossfadeProgress,
+        }));
+      }
+
       final newUnderrunsA = state.audioUnderrunCountA - previous.audioUnderrunCountA;
       final newUnderrunsB = state.audioUnderrunCountB - previous.audioUnderrunCountB;
       if (newUnderrunsA > 0 || newUnderrunsB > 0) {
