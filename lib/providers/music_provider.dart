@@ -119,6 +119,7 @@ class MusicProvider extends ChangeNotifier {
   Future<void>? _media3HandoffFuture;
   bool _media3ProviderSessionPrepared = false;
   bool _media3ProviderSessionActive = false;
+  ManualDjPreparedDeck? _manualDjPreparedDeck;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
   bool get media3ProviderSessionActive => _media3ProviderSessionActive;
   @visibleForTesting
