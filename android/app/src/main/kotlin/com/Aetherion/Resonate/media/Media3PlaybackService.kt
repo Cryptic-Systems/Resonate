@@ -1008,13 +1008,18 @@ class Media3PlaybackService : MediaSessionService() {
      * Only an idle, ready standby occurrence may be repositioned; the media ID
      * is supplied by the caller to fail closed if the preload was replaced.
      */
-    fun seekStandby(positionMs: Long, expectedMediaId: String): Boolean {
-        if (!::activePlayer.isInitialized || positionMs < 0L ||
+    fun seekStandby(
+        positionMs: Long,
+        expectedMediaId: String,
+        expectedQueueIndex: Int,
+    ): Boolean {
+        if (!::activePlayer.isInitialized || positionMs < 0L || expectedQueueIndex < 0 ||
             expectedMediaId.isBlank() || crossfadeStatus != "ready" ||
             pendingCrossfadeDurationMs != null || startingCrossfadeDurationMs != null
         ) return false
         val standby = standbyPlayer ?: return false
         if (standby.isPlaying || standby.playbackState != Player.STATE_READY ||
+            standby.currentMediaItemIndex != expectedQueueIndex ||
             standby.currentMediaItem?.mediaId != expectedMediaId
         ) return false
         val duration = standby.duration
