@@ -119,8 +119,17 @@ class MusicProvider extends ChangeNotifier {
   Future<void>? _media3HandoffFuture;
   bool _media3ProviderSessionPrepared = false;
   bool _media3ProviderSessionActive = false;
+  ManualDjPreparedDeck? _manualDjPreparedDeck;
+  PlaybackControlLease? _manualDjPreparedLease;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
   bool get media3ProviderSessionActive => _media3ProviderSessionActive;
+  /// True only while the operator's prepared standby deck still owns its lease.
+  /// UI should derive readiness from this instead of caching a local flag: a
+  /// higher-priority user transport can revoke the lease asynchronously.
+  bool get hasPreparedManualDjDeck =>
+      _manualDjPreparedDeck != null &&
+      _manualDjPreparedLease != null &&
+      _manualDjPreparedLease!.isCurrent;
   @visibleForTesting
   bool get debugLegacyEngineConstructed => _engines != null;
   /// The exact session that owns canonical playback after provider handoff.
@@ -3714,11 +3723,16 @@ class MusicProvider extends ChangeNotifier {
             owner: 'user_transport',
             priority: PlaybackControlPriority.userTransport,
           );
-          if (lease == null ||
-              !lease.authorizeWrite('transport:$command')) {
-            // The established transport epoch/coordinator remains the
-            // fail-safe authority if the arbiter is closing or unavailable.
-            return await operation();
+          if (lease == null) {
+            throw StateError(
+              'Playback control authority is unavailable; refusing transport write.',
+            );
+          }
+          if (!lease.authorizeWrite('transport:$command')) {
+            await lease.release();
+            throw StateError(
+              'Playback control lease was rejected; refusing transport write.',
+            );
           }
           try {
             return await operation();
@@ -4833,10 +4847,29 @@ class MusicProvider extends ChangeNotifier {
     _media3ShadowState = null;
     _activeAndroidAudioSessionId = null;
     final media3Session = _media3ProviderSession;
-    if (media3Session != null) unawaited(media3Session.dispose());
-    if (_ownsPlaybackControlArbiter) {
-      unawaited(playbackControlArbiter.close());
-    }
+    // A manual DJ standby lease can outlive the workspace that prepared it,
+    // especially when the arbiter is injected and therefore externally owned.
+    // Retire the standby deck and release that lease before disposing Media3
+    // or closing an arbiter owned by this provider.
+    unawaited(() async {
+      try {
+        await cancelPreparedManualDjDeck();
+      } catch (error) {
+        debugPrint('Manual DJ disposal cleanup failed: $error');
+      }
+      try {
+        await media3Session?.dispose();
+      } catch (error) {
+        debugPrint('Media3 session disposal failed: $error');
+      }
+      if (_ownsPlaybackControlArbiter) {
+        try {
+          await playbackControlArbiter.close();
+        } catch (error) {
+          debugPrint('Playback control arbiter disposal failed: $error');
+        }
+      }
+    }());
     final legacyEngines = _engines;
     if (legacyEngines != null) unawaited(legacyEngines.dispose());
     super.dispose();

@@ -11,7 +11,7 @@ import 'playback_snapshot.dart';
 /// Resonate's Song/queue model into immutable Media3 descriptors and forwards
 /// the native state stream. MusicProvider can migrate its transport boundary
 /// through this facade without exposing Media3 implementation details.
-class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackPlaylistSyncBackend, PlaybackSpeedBackend, PlaybackPitchBackend, PlaybackDeckSpeedBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend, PlaybackTransitionPreviewBackend {
+class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackStandbyCueBackend, PlaybackPlaylistSyncBackend, PlaybackSpeedBackend, PlaybackPitchBackend, PlaybackDeckSpeedBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend, PlaybackTransitionPreviewBackend {
   Media3MusicProviderAdapter({Media3PlaybackClient? client})
       : _client = client ?? Media3PlaybackClient();
 
@@ -309,6 +309,17 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
   }
 
   @override
+  Future<void> seekStandby({
+    required Duration position,
+    required String expectedMediaId,
+    required int expectedQueueIndex,
+  }) => _client.seekStandby(
+        position: position,
+        expectedMediaId: expectedMediaId,
+        expectedQueueIndex: expectedQueueIndex,
+      );
+
+  @override
   Future<void> crossfade({required Duration duration}) =>
       _client.crossfade(duration: duration);
 
@@ -344,6 +355,16 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
         crossfadeProgress: state.crossfadeProgress,
         activeDeckVolume: state.activeDeckVolume,
         standbyDeckVolume: state.standbyDeckVolume,
+        incomingMediaId: state.incomingMediaId,
+        incomingReady: state.incomingReady,
+        incomingPosition: state.incomingPosition,
+        audioUnderrunCountA: state.audioUnderrunCountA,
+        audioUnderrunCountB: state.audioUnderrunCountB,
+        lastUnderrunDeck: state.lastUnderrunDeck,
+        lastUnderrunBufferSizeFrames: state.lastUnderrunBufferSizeFrames,
+        lastUnderrunBufferSizeMs: state.lastUnderrunBufferSizeMs,
+        lastUnderrunElapsedSinceFeedMs: state.lastUnderrunElapsedSinceFeedMs,
+        lastUnderrunElapsedRealtimeMs: state.lastUnderrunElapsedRealtimeMs,
         repeatMode: state.repeatMode,
         shuffleModeEnabled: state.shuffleModeEnabled,
         hasError: state.hasError,

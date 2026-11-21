@@ -49,6 +49,8 @@ class Media3PlaybackState {
     this.lastPreloadInvalidationElapsedRealtimeMs = 0,
     this.preloadInvalidationCount = 0,
     this.incomingMediaId,
+    this.incomingReady = false,
+    this.incomingPosition = Duration.zero,
     required this.hasError,
     required this.error,
   });
@@ -98,6 +100,8 @@ class Media3PlaybackState {
   final int lastPreloadInvalidationElapsedRealtimeMs;
   final int preloadInvalidationCount;
   final String? incomingMediaId;
+  final bool incomingReady;
+  final Duration incomingPosition;
   final bool hasError;
   final String? error;
 
@@ -180,6 +184,8 @@ class Media3PlaybackState {
       lastPreloadInvalidationElapsedRealtimeMs: integerValue(map['lastPreloadInvalidationElapsedRealtimeMs']),
       preloadInvalidationCount: integerValue(map['preloadInvalidationCount']),
       incomingMediaId: stringValue(map['incomingMediaId']),
+      incomingReady: boolValue(map['incomingReady']),
+      incomingPosition: Duration(milliseconds: integerValue(map['incomingPositionMs']).clamp(0, 0x7fffffff).toInt()),
       hasError: boolValue(map['hasError']),
       error: stringValue(map['error']),
     );
@@ -620,6 +626,32 @@ class Media3PlaybackClient {
         'items': items.map((entry) => entry.toMap()).toList(growable: false),
         'startIndex': startIndex,
         'positionMs': startPosition.inMilliseconds,
+      },
+    );
+  }
+
+  /// Repositions only the prepared standby deck. Native code verifies that
+  /// the expected media identity is still loaded and no transition is running.
+  Future<void> seekStandby({
+    required Duration position,
+    required String expectedMediaId,
+    required int expectedQueueIndex,
+  }) async {
+    if (position.isNegative) {
+      throw ArgumentError.value(position, 'position', 'Must not be negative.');
+    }
+    if (expectedMediaId.trim().isEmpty) {
+      throw ArgumentError.value(expectedMediaId, 'expectedMediaId', 'Must not be empty.');
+    }
+    if (expectedQueueIndex < 0) {
+      throw ArgumentError.value(expectedQueueIndex, 'expectedQueueIndex', 'Must not be negative.');
+    }
+    await _invokeAccepted(
+      'seekStandby',
+      <String, Object>{
+        'positionMs': position.inMilliseconds,
+        'expectedMediaId': expectedMediaId,
+        'expectedQueueIndex': expectedQueueIndex,
       },
     );
   }

@@ -22,6 +22,9 @@ void main() {
         'crossfadeProgress': 0.5,
         'activeDeckVolume': 0.7071,
         'standbyDeckVolume': 0.7071,
+        'incomingMediaId': 'track-incoming',
+        'incomingReady': true,
+        'incomingPositionMs': 4567,
         'repeatMode': 'all',
         'shuffleModeEnabled': true,
         'hasError': false,
@@ -42,6 +45,9 @@ void main() {
       expect(state.crossfadeProgress, 0.5);
       expect(state.activeDeckVolume, 0.7071);
       expect(state.standbyDeckVolume, 0.7071);
+      expect(state.incomingMediaId, 'track-incoming');
+      expect(state.incomingReady, isTrue);
+      expect(state.incomingPosition, const Duration(milliseconds: 4567));
       expect(state.repeatMode, 'all');
       expect(state.shuffleModeEnabled, isTrue);
       expect(state.hasError, isFalse);
@@ -469,6 +475,43 @@ void main() {
 
       await expectLater(
         client.preloadNext(item, startPosition: const Duration(milliseconds: -1)),
+        throwsArgumentError,
+      );
+    });
+
+    test('forwards guarded standby cue identity and position', () async {
+      MethodCall? captured;
+      channel.setMockMethodCallHandler((call) async {
+        captured = call;
+        return true;
+      });
+
+      await client.seekStandby(
+        position: const Duration(milliseconds: 12345),
+        expectedMediaId: 'incoming-occurrence-7',
+        expectedQueueIndex: 7,
+      );
+
+      expect(captured?.method, 'seekStandby');
+      final arguments = Map<Object?, Object?>.from(captured!.arguments as Map);
+      expect(arguments['positionMs'], 12345);
+      expect(arguments['expectedMediaId'], 'incoming-occurrence-7');
+      expect(arguments['expectedQueueIndex'], 7);
+
+      await expectLater(
+        client.seekStandby(
+          position: const Duration(milliseconds: -1),
+          expectedMediaId: 'incoming-occurrence-7',
+          expectedQueueIndex: 7,
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.seekStandby(
+          position: Duration.zero,
+          expectedMediaId: ' ',
+          expectedQueueIndex: 7,
+        ),
         throwsArgumentError,
       );
     });

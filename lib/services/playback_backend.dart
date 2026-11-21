@@ -91,6 +91,15 @@ abstract interface class PlaybackPlaylistSyncBackend {
   Future<void> synchronizeQueue(List<Song> songs);
 }
 
+/// Optional capability for safely cueing a prepared incoming deck.
+abstract interface class PlaybackStandbyCueBackend {
+  Future<void> seekStandby({
+    required Duration position,
+    required String expectedMediaId,
+    required int expectedQueueIndex,
+  });
+}
+
 /// Optional crossfade capability for engines that own two synchronized decks.
 /// A backend without this capability must not emulate a crossfade by starting a
 /// second independent playback authority.

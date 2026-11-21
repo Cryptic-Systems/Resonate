@@ -59,6 +59,16 @@ class Media3ProviderStateBridge {
       crossfadeProgress: snapshot?.crossfadeProgress ?? 0.0,
       activeDeckVolume: snapshot?.activeDeckVolume ?? 1.0,
       standbyDeckVolume: snapshot?.standbyDeckVolume ?? 0.0,
+      incomingMediaId: snapshot?.incomingMediaId,
+      incomingReady: snapshot?.incomingReady ?? false,
+      incomingPosition: snapshot?.incomingPosition ?? Duration.zero,
+      audioUnderrunCountA: snapshot?.audioUnderrunCountA ?? 0,
+      audioUnderrunCountB: snapshot?.audioUnderrunCountB ?? 0,
+      lastUnderrunDeck: snapshot?.lastUnderrunDeck,
+      lastUnderrunBufferSizeFrames: snapshot?.lastUnderrunBufferSizeFrames ?? 0,
+      lastUnderrunBufferSizeMs: snapshot?.lastUnderrunBufferSizeMs ?? 0,
+      lastUnderrunElapsedSinceFeedMs: snapshot?.lastUnderrunElapsedSinceFeedMs ?? 0,
+      lastUnderrunElapsedRealtimeMs: snapshot?.lastUnderrunElapsedRealtimeMs ?? 0,
       repeatMode: snapshot?.repeatMode ?? 'off',
       shuffleModeEnabled: snapshot?.shuffleModeEnabled ?? false,
       hasError: state.hasError,
@@ -101,6 +111,16 @@ class Media3ProviderState {
     this.crossfadeProgress = 0.0,
     this.activeDeckVolume = 1.0,
     this.standbyDeckVolume = 0.0,
+    this.incomingMediaId,
+    this.incomingReady = false,
+    this.incomingPosition = Duration.zero,
+    this.audioUnderrunCountA = 0,
+    this.audioUnderrunCountB = 0,
+    this.lastUnderrunDeck,
+    this.lastUnderrunBufferSizeFrames = 0,
+    this.lastUnderrunBufferSizeMs = 0,
+    this.lastUnderrunElapsedSinceFeedMs = 0,
+    this.lastUnderrunElapsedRealtimeMs = 0,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -129,6 +149,16 @@ class Media3ProviderState {
         crossfadeProgress = 0.0,
         activeDeckVolume = 1.0,
         standbyDeckVolume = 0.0,
+        incomingMediaId = null,
+        incomingReady = false,
+        incomingPosition = Duration.zero,
+        audioUnderrunCountA = 0,
+        audioUnderrunCountB = 0,
+        lastUnderrunDeck = null,
+        lastUnderrunBufferSizeFrames = 0,
+        lastUnderrunBufferSizeMs = 0,
+        lastUnderrunElapsedSinceFeedMs = 0,
+        lastUnderrunElapsedRealtimeMs = 0,
         repeatMode = 'off',
         shuffleModeEnabled = false,
         hasError = false,
@@ -162,6 +192,16 @@ class Media3ProviderState {
   final double crossfadeProgress;
   final double activeDeckVolume;
   final double standbyDeckVolume;
+  final String? incomingMediaId;
+  final bool incomingReady;
+  final Duration incomingPosition;
+  final int audioUnderrunCountA;
+  final int audioUnderrunCountB;
+  final String? lastUnderrunDeck;
+  final int lastUnderrunBufferSizeFrames;
+  final int lastUnderrunBufferSizeMs;
+  final int lastUnderrunElapsedSinceFeedMs;
+  final int lastUnderrunElapsedRealtimeMs;
 
   final String repeatMode;
   final bool shuffleModeEnabled;

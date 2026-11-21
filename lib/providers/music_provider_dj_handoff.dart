@@ -25,6 +25,32 @@ DjTempoStretchPlan? _safeProfileTempoStretch(
     maxStretchPercent: maxStretchPercent,
   );
 }
+/// A standby deck prepared for an explicit operator handoff. Queue occurrence
+/// identity is retained so duplicate song IDs cannot silently retarget Deck B.
+class ManualDjPreparedDeck {
+  const ManualDjPreparedDeck({
+    required this.outgoingSong,
+    required this.incomingSong,
+    required this.outgoingQueueIndex,
+    required this.incomingQueueIndex,
+    required this.cuePosition,
+  });
+
+  final Song outgoingSong;
+  final Song incomingSong;
+  final int outgoingQueueIndex;
+  final int incomingQueueIndex;
+  final Duration cuePosition;
+
+  ManualDjPreparedDeck withCue(Duration value) => ManualDjPreparedDeck(
+        outgoingSong: outgoingSong,
+        incomingSong: incomingSong,
+        outgoingQueueIndex: outgoingQueueIndex,
+        incomingQueueIndex: incomingQueueIndex,
+        cuePosition: value,
+      );
+}
+
 extension MusicProviderDjHandoff on MusicProvider {
 
   Future<void> previewDjTransition({
@@ -50,6 +76,385 @@ extension MusicProviderDjHandoff on MusicProvider {
     if (session is PlaybackTransitionPreviewBackend) {
       await (session as PlaybackTransitionPreviewBackend).stopTransitionPreview();
     }
+  }
+
+  bool _sameManualDjEntry(Song candidate, Song expected) =>
+      candidate.id == expected.id &&
+      candidate.filePath.trim() == expected.filePath.trim();
+
+  bool _manualDjPreparedDeckIsCurrent(
+    PlaybackEngineSession session,
+    ManualDjPreparedDeck prepared,
+  ) {
+    final currentSong = session.currentSong;
+    final nativeQueue = session.queue;
+    // The native queue and Flutter's operator-facing queue must still refer
+    // to the same occurrences. A native preload can remain ready after the
+    // UI queue has been replaced; accepting it would cue/crossfade stale media.
+    return _media3ProviderSessionActive &&
+        !_disposed &&
+        currentSong != null &&
+        _sameManualDjEntry(currentSong, prepared.outgoingSong) &&
+        session.queueIndex == prepared.outgoingQueueIndex &&
+        prepared.outgoingQueueIndex >= 0 &&
+        prepared.outgoingQueueIndex < _queue.length &&
+        _sameManualDjEntry(
+          _queue[prepared.outgoingQueueIndex],
+          prepared.outgoingSong,
+        ) &&
+        prepared.incomingQueueIndex >= 0 &&
+        prepared.incomingQueueIndex < _queue.length &&
+        _sameManualDjEntry(
+          _queue[prepared.incomingQueueIndex],
+          prepared.incomingSong,
+        ) &&
+        prepared.incomingQueueIndex < nativeQueue.length &&
+        _sameManualDjEntry(
+          nativeQueue[prepared.incomingQueueIndex],
+          prepared.incomingSong,
+        );
+  }
+
+  Future<void> prepareManualDjDeck({
+    required int incomingQueueIndex,
+    Duration incomingStartPosition = Duration.zero,
+  }) async {
+    await cancelPreparedManualDjDeck();
+    final session = _media3ProviderSession;
+    if (session == null || !_media3ProviderSessionActive) {
+      throw StateError('Media3 playback must be active before preparing Deck B.');
+    }
+    if (!session.isPlaying) {
+      throw StateError('Resume playback before preparing Deck B.');
+    }
+    final outgoingSong = session.currentSong;
+    final outgoingIndex = session.queueIndex;
+    if (outgoingSong == null ||
+        outgoingIndex == null ||
+        incomingQueueIndex < 0 ||
+        incomingQueueIndex >= _queue.length ||
+        incomingQueueIndex == outgoingIndex) {
+      throw ArgumentError.value(
+        incomingQueueIndex,
+        'incomingQueueIndex',
+        'Choose a different track occurrence from the active queue.',
+      );
+    }
+    final incomingSong = _queue[incomingQueueIndex];
+    final committedQueue = session.queue;
+    if (outgoingIndex < 0 ||
+        outgoingIndex >= committedQueue.length ||
+        !_sameManualDjEntry(committedQueue[outgoingIndex], outgoingSong) ||
+        incomingQueueIndex >= committedQueue.length ||
+        !_sameManualDjEntry(committedQueue[incomingQueueIndex], incomingSong)) {
+      throw StateError(
+        'The DJ queue changed; refresh the workspace before preparing Deck B.',
+      );
+    }
+    if (incomingStartPosition < Duration.zero ||
+        (incomingSong.duration > Duration.zero &&
+            incomingStartPosition >= incomingSong.duration)) {
+      throw ArgumentError.value(
+        incomingStartPosition,
+        'incomingStartPosition',
+        'Cue position must be non-negative and inside the incoming track.',
+      );
+    }
+
+    final prepared = ManualDjPreparedDeck(
+      outgoingSong: outgoingSong,
+      incomingSong: incomingSong,
+      outgoingQueueIndex: outgoingIndex,
+      incomingQueueIndex: incomingQueueIndex,
+      cuePosition: incomingStartPosition,
+    );
+    final lease = await playbackControlArbiter.acquire(
+      owner: 'dj_manual_transition',
+      priority: PlaybackControlPriority.interactive,
+      onRevoked: (revocation) async {
+        if (revocation.reason == PlaybackControlRevocationReason.released) return;
+        _manualDjPreparedDeck = null;
+        _manualDjPreparedLease = null;
+        // User transport or a safety override owns output now. Retire the
+        // prepared standby deck before the higher-priority owner proceeds.
+        try { await session.cancelCrossfade(); } catch (_) {}
+        try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
+        try {
+          await session.setDeckPlaybackSpeeds(
+            activeSpeed: 1.0,
+            standbySpeed: 1.0,
+          );
+        } catch (_) {}
+        notifyListeners();
+      },
+    );
+    if (lease == null) {
+      throw StateError('DJ playback authority is busy; Deck B was not changed.');
+    }
+
+    try {
+      if (!lease.authorizeWrite('dj_manual_preload')) {
+        throw StateError('Manual DJ lease expired before deck preparation.');
+      }
+      await session.preloadNext(
+        incomingSong,
+        queueIndex: incomingQueueIndex,
+        startPosition: incomingStartPosition,
+      );
+      if (!lease.isCurrent ||
+          !_manualDjPreparedDeckIsCurrent(session, prepared)) {
+        throw StateError('Manual DJ preparation was superseded.');
+      }
+      if (session.crossfadeStatus != 'ready') {
+        throw StateError('Media3 standby deck did not reach its ready state.');
+      }
+      // Keep the interactive lease while the operator reviews Deck B. This
+      // prevents automatic DJ work from replacing the standby occurrence.
+      // User transport remains able to preempt this lease.
+      _manualDjPreparedDeck = prepared;
+      _manualDjPreparedLease = lease;
+      await ResonateDiagnostics.recordDj(
+        stage: 'manual_deck_prepare',
+        outcome: 'ready',
+        reason: 'operator_requested',
+        songId: incomingSong.id,
+        extra: {
+          'outgoingSongId': outgoingSong.id,
+          'incomingQueueIndex': incomingQueueIndex,
+          'cuePositionMs': incomingStartPosition.inMilliseconds,
+          'leaseHeldForReview': true,
+        },
+      );
+      _publishServiceState();
+      notifyListeners();
+    } catch (error) {
+      _manualDjPreparedDeck = null;
+      _manualDjPreparedLease = null;
+      if (lease.isCurrent) {
+        try { await session.cancelCrossfade(); } catch (_) {}
+        try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
+        try {
+          await session.setDeckPlaybackSpeeds(
+            activeSpeed: 1.0,
+            standbySpeed: 1.0,
+          );
+        } catch (_) {}
+      }
+      await lease.release();
+      await ResonateDiagnostics.recordDj(
+        stage: 'manual_deck_prepare',
+        outcome: 'failed',
+        reason: error.toString(),
+        songId: incomingSong.id,
+        extra: {'incomingQueueIndex': incomingQueueIndex},
+      );
+      rethrow;
+    }
+  }
+
+  /// Releases a prepared standby deck and its retained interactive lease.
+  /// Safe after revocation, promotion, or repeated cancellation.
+  Future<void> cancelPreparedManualDjDeck() async {
+    final lease = _manualDjPreparedLease;
+    final session = _media3ProviderSession;
+    _manualDjPreparedDeck = null;
+    _manualDjPreparedLease = null;
+    if (lease == null) return;
+    if (lease.isCurrent && session != null) {
+      try { await session.cancelCrossfade(); } catch (_) {}
+      try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
+      try {
+        await session.setDeckPlaybackSpeeds(
+          activeSpeed: 1.0,
+          standbySpeed: 1.0,
+        );
+      } catch (_) {}
+    }
+    await lease.release();
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<void> cuePreparedManualDjDeck(Duration position) async {
+    if (position < Duration.zero) {
+      throw ArgumentError.value(position, 'position', 'Must not be negative.');
+    }
+    final session = _media3ProviderSession;
+    final prepared = _manualDjPreparedDeck;
+    final lease = _manualDjPreparedLease;
+    if (session == null ||
+        session is! PlaybackStandbyCueBackend ||
+        prepared == null ||
+        lease == null ||
+        !lease.isCurrent ||
+        !_manualDjPreparedDeckIsCurrent(session, prepared)) {
+      await cancelPreparedManualDjDeck();
+      throw StateError('Prepare Deck B again before changing its cue point.');
+    }
+    if (prepared.incomingSong.duration > Duration.zero &&
+        position >= prepared.incomingSong.duration) {
+      throw ArgumentError.value(
+        position,
+        'position',
+        'Cue position must be inside the incoming track.',
+      );
+    }
+    if (!lease.authorizeWrite('dj_manual_standby_cue') ||
+        session.crossfadeStatus != 'ready') {
+      await cancelPreparedManualDjDeck();
+      throw StateError('Prepared Deck B is no longer available for cueing.');
+    }
+    await (session as PlaybackStandbyCueBackend).seekStandby(
+      position: position,
+      expectedMediaId: prepared.incomingSong.id,
+      expectedQueueIndex: prepared.incomingQueueIndex,
+    );
+    if (!lease.isCurrent ||
+        !_manualDjPreparedDeckIsCurrent(session, prepared)) {
+      throw StateError('Deck B cue operation was superseded.');
+    }
+    _manualDjPreparedDeck = prepared.withCue(position);
+    await ResonateDiagnostics.recordDj(
+      stage: 'manual_deck_cue',
+      outcome: 'applied',
+      reason: 'operator_requested',
+      songId: prepared.incomingSong.id,
+      extra: {
+        'incomingQueueIndex': prepared.incomingQueueIndex,
+        'cuePositionMs': position.inMilliseconds,
+      },
+    );
+    notifyListeners();
+  }
+
+  Future<void> crossfadePreparedManualDjDeck({
+    required Duration duration,
+  }) async {
+    if (duration < const Duration(milliseconds: 250) ||
+        duration > const Duration(seconds: 15)) {
+      throw ArgumentError.value(duration, 'duration', 'Must be 250 ms–15 s.');
+    }
+    final session = _media3ProviderSession;
+    final prepared = _manualDjPreparedDeck;
+    final lease = _manualDjPreparedLease;
+    if (session == null ||
+        prepared == null ||
+        lease == null ||
+        !lease.isCurrent ||
+        !_manualDjPreparedDeckIsCurrent(session, prepared) ||
+        !session.isPlaying ||
+        session.crossfadeStatus != 'ready') {
+      await cancelPreparedManualDjDeck();
+      throw StateError('Prepare Deck B again before starting the crossfade.');
+    }
+    try {
+      if (!lease.authorizeWrite('dj_manual_crossfade') ||
+          !_manualDjPreparedDeckIsCurrent(session, prepared)) {
+        throw StateError('Manual DJ lease expired before crossfade start.');
+      }
+      await session.crossfade(duration: duration);
+
+      final timeout = Stopwatch()..start();
+      while (session.currentSong == null ||
+          !_sameManualDjEntry(session.currentSong!, prepared.incomingSong) ||
+          session.queueIndex != prepared.incomingQueueIndex) {
+        if (!lease.isCurrent) {
+          throw StateError('Manual DJ transition was preempted by another playback controller.');
+        }
+        if (!_media3ProviderSessionActive || _disposed) {
+          throw StateError('Media3 session ended during the manual DJ transition.');
+        }
+        if (!session.isPlaying && session.crossfadeStatus != 'paused') {
+          throw StateError('Playback stopped before the manual DJ transition completed.');
+        }
+        if (session.crossfadeStatus == 'incoming_error' ||
+            session.crossfadeStatus == 'cancelled') {
+          throw StateError('Media3 could not complete the requested manual transition.');
+        }
+        if (timeout.elapsed > duration + const Duration(seconds: 8)) {
+          throw TimeoutException('Media3 did not promote the prepared DJ deck.');
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      }
+      if (!lease.isCurrent) {
+        throw StateError('Manual DJ transition lost playback authority at promotion.');
+      }
+      await session.setDeckPlaybackSpeeds(
+        activeSpeed: 1.0,
+        standbySpeed: 1.0,
+      );
+      if (!lease.isCurrent) {
+        throw StateError('Manual DJ transition was preempted during deck normalization.');
+      }
+      _manualDjPreparedDeck = null;
+      _manualDjPreparedLease = null;
+      _preloadedNextSongId = null;
+      _media3DjTransitionPreparation = null;
+      _crossfadeInProgress = false;
+      _automaticCrossfadeInFlight = false;
+      _transitionArmedAt = null;
+      _reconcileMedia3ProviderSession();
+      await _refreshTrackLevelingFor(prepared.incomingSong);
+      if (!lease.isCurrent) return;
+      _publishServiceState();
+      notifyListeners();
+      await ResonateDiagnostics.recordDj(
+        stage: 'manual_transition',
+        outcome: 'committed',
+        reason: 'operator_requested',
+        songId: prepared.incomingSong.id,
+        extra: {
+          'outgoingSongId': prepared.outgoingSong.id,
+          'incomingQueueIndex': prepared.incomingQueueIndex,
+          'incomingStartPositionMs': prepared.cuePosition.inMilliseconds,
+          'durationMs': duration.inMilliseconds,
+        },
+      );
+    } catch (error) {
+      if (lease.isCurrent) {
+        try { await session.cancelCrossfade(); } catch (_) {}
+        if (lease.isCurrent) {
+          try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
+        }
+        if (lease.isCurrent) {
+          try {
+            await session.setDeckPlaybackSpeeds(
+              activeSpeed: 1.0,
+              standbySpeed: 1.0,
+            );
+          } catch (_) {}
+        }
+      }
+      _manualDjPreparedDeck = null;
+      _manualDjPreparedLease = null;
+      await ResonateDiagnostics.recordDj(
+        stage: 'manual_transition',
+        outcome: 'failed',
+        reason: error.toString(),
+        songId: prepared.incomingSong.id,
+        extra: {
+          'outgoingSongId': prepared.outgoingSong.id,
+          'incomingQueueIndex': prepared.incomingQueueIndex,
+          'incomingStartPositionMs': prepared.cuePosition.inMilliseconds,
+        },
+      );
+      rethrow;
+    } finally {
+      await lease.release();
+    }
+  }
+
+  /// Backwards-compatible one-shot entry point. The workspace uses the
+  /// explicit prepare/cue/crossfade operations above.
+  Future<void> performManualDjTransition({
+    required int incomingQueueIndex,
+    required Duration duration,
+    Duration incomingStartPosition = Duration.zero,
+  }) async {
+    await prepareManualDjDeck(
+      incomingQueueIndex: incomingQueueIndex,
+      incomingStartPosition: incomingStartPosition,
+    );
+    await crossfadePreparedManualDjDeck(duration: duration);
   }
 
   /// Step 2–3: optional beat seek + tempo stretch for the incoming handoff.

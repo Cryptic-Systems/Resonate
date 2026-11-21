@@ -614,6 +614,24 @@ class Media3PlaybackBridge(
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_PRELOAD_FAILED", "The incoming deck could not be prepared.", null)
                 }
+                "seekStandby" -> {
+                    val positionMs = call.argument<Number>("positionMs")?.toLong()
+                    val expectedMediaId = call.argument<String>("expectedMediaId")
+                    val expectedQueueIndex = call.argument<Number>("expectedQueueIndex")?.toInt()
+                    if (positionMs == null || positionMs < 0L || expectedMediaId.isNullOrBlank() ||
+                        expectedQueueIndex == null || expectedQueueIndex < 0
+                    ) {
+                        result.error("INVALID_STANDBY_SEEK", "A nonnegative position and expected incoming media ID are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.seekStandby(
+                        positionMs,
+                        expectedMediaId,
+                        expectedQueueIndex,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("STANDBY_SEEK_REJECTED", "The incoming deck is not safely cueable or its identity changed.", null)
+                }
                 "crossfade" -> {
                     val durationMs = call.argument<Number>("durationMs")?.toLong()
                     if (durationMs == null || durationMs !in 250L..15000L) {
@@ -738,6 +756,8 @@ class Media3PlaybackBridge(
         "lastPreloadInvalidationElapsedRealtimeMs" to crossfade["lastPreloadInvalidationElapsedRealtimeMs"],
         "preloadInvalidationCount" to crossfade["preloadInvalidationCount"],
         "incomingMediaId" to crossfade["incomingMediaId"],
+        "incomingReady" to (crossfade["incomingReady"] == true),
+        "incomingPositionMs" to (crossfade["incomingPositionMs"] ?: 0L),
         "audioDiagnostics" to Media3PlaybackService.instance?.audioDiagnosticsState(),
         "hasError" to (player.playerError != null),
         "error" to player.playerError?.message,
