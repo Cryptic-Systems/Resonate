@@ -81,6 +81,19 @@ extension MusicProviderDjHandoff on MusicProvider {
           'Choose a different track occurrence from the active queue.');
     }
     final incomingSong = _queue[incomingQueueIndex];
+    // The provider queue and the Media3 command-lane queue must identify the
+    // same occurrences. Fail closed instead of asking native preload to act on
+    // a stale provider index after a queue edit or reconciliation race.
+    final committedQueue = session.queue;
+    if (outgoingIndex < 0 ||
+        outgoingIndex >= committedQueue.length ||
+        committedQueue[outgoingIndex].id != outgoingSong.id ||
+        incomingQueueIndex >= committedQueue.length ||
+        committedQueue[incomingQueueIndex].id != incomingSong.id) {
+      throw StateError(
+        'The DJ queue changed; refresh the workspace before preparing Deck B.',
+      );
+    }
     if (incomingStartPosition < Duration.zero ||
         (incomingSong.duration > Duration.zero &&
             incomingStartPosition >= incomingSong.duration)) {
@@ -116,7 +129,9 @@ extension MusicProviderDjHandoff on MusicProvider {
         _media3ProviderSessionActive &&
         !_disposed &&
         session.currentSong?.id == outgoingSong.id &&
-        session.queueIndex == outgoingIndex;
+        session.queueIndex == outgoingIndex &&
+        incomingQueueIndex < session.queue.length &&
+        session.queue[incomingQueueIndex].id == incomingSong.id;
 
     try {
       if (!lease.authorizeWrite('dj_manual_preload')) {
