@@ -27,6 +27,9 @@ class PlaybackSnapshot {
     this.crossfadeProgress = 0.0,
     this.activeDeckVolume = 1.0,
     this.standbyDeckVolume = 0.0,
+    this.incomingMediaId,
+    this.incomingReady = false,
+    this.incomingPosition = Duration.zero,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -58,6 +61,10 @@ class PlaybackSnapshot {
   final double crossfadeProgress;
   final double activeDeckVolume;
   final double standbyDeckVolume;
+  /// Incoming standby identity and readiness, independent of physical A/B role.
+  final String? incomingMediaId;
+  final bool incomingReady;
+  final Duration incomingPosition;
   final double volume;
   /// Current queue repeat policy: `off`, `one`, or `all`.
   final String repeatMode;
