@@ -315,7 +315,11 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                       Text(song.artist, style: theme.textTheme.bodyMedium,
                           maxLines: 1, overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 12),
-                      LinearProgressIndicator(value: progress),
+                      Semantics(
+                        label: 'Playback progress',
+                        value: '${(progress * 100).round()} percent',
+                        child: LinearProgressIndicator(value: progress),
+                      ),
                       const SizedBox(height: 6),
                       Row(
                         children: [
@@ -542,6 +546,9 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                         value: cueValueMs,
                         min: 0,
                         max: cueMaxMs > 0 ? cueMaxMs.toDouble() : 1,
+                        label: 'Deck B cue-in',
+                        semanticFormatterCallback: (value) =>
+                            '${(value / 1000).toStringAsFixed(2)} seconds',
                         onChanged: _manualTransitionBusy || cueMaxMs == 0
                             ? null
                             : (value) => setState(() {
@@ -563,6 +570,9 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                         min: 250,
                         max: 15000,
                         divisions: 59,
+                        label: 'Crossfade duration',
+                        semanticFormatterCallback: (value) =>
+                            '${(value / 1000).toStringAsFixed(2)} seconds',
                         onChanged: _manualTransitionBusy
                             ? null
                             : (value) => setState(() => _manualFadeMs = value),
@@ -1043,6 +1053,9 @@ class _DeckWaveformPainter extends CustomPainter {
     final gap = math.min(1.35, math.max(0.35, size.width / (count * 5)));
     final barWidth = (size.width - (count - 1) * gap) / count;
     final seedValue = _seedValue;
+    final bands = spectrum;
+    final hasLiveSpectrum = bands != null && bands.isNotEmpty;
+    final bandCount = bands?.length ?? 0;
     final gridPaint = Paint()..color = Colors.white.withValues(alpha: 0.10)..strokeWidth = 0.7;
     for (var beat = 0; beat <= 8; beat++) {
       final x = size.width * beat / 8;
@@ -1050,15 +1063,16 @@ class _DeckWaveformPainter extends CustomPainter {
     }
     for (var i = 0; i < count; i++) {
       final x = i * (barWidth + gap);
-      final hasLiveSpectrum = spectrum != null && spectrum!.isNotEmpty;
       double amplitude = 0;
       if (hasLiveSpectrum) {
-        final sourcePosition = i * (spectrum!.length - 1) / (count - 1);
+        final sourcePosition = i * (bandCount - 1) / (count - 1);
         final lower = sourcePosition.floor();
-        final upper = math.min(lower + 1, spectrum!.length - 1);
+        final upper = math.min(lower + 1, bandCount - 1);
         final blend = sourcePosition - lower;
-        final a = spectrum![lower].isFinite ? spectrum![lower].clamp(0.0, 1.0).toDouble() : 0.0;
-        final b = spectrum![upper].isFinite ? spectrum![upper].clamp(0.0, 1.0).toDouble() : 0.0;
+        final lowerValue = bands[lower];
+        final upperValue = bands[upper];
+        final a = lowerValue.isFinite ? lowerValue.clamp(0.0, 1.0).toDouble() : 0.0;
+        final b = upperValue.isFinite ? upperValue.clamp(0.0, 1.0).toDouble() : 0.0;
         amplitude = a + (b - a) * blend;
       }
       final envelope = hasLiveSpectrum
