@@ -1003,6 +1003,30 @@ class Media3PlaybackService : MediaSessionService() {
         }
     }
 
+    /**
+     * Cue the prepared incoming deck without touching canonical transport.
+     * Only an idle, ready standby occurrence may be repositioned; the media ID
+     * is supplied by the caller to fail closed if the preload was replaced.
+     */
+    fun seekStandby(positionMs: Long, expectedMediaId: String): Boolean {
+        if (!::activePlayer.isInitialized || positionMs < 0L ||
+            expectedMediaId.isBlank() || crossfadeStatus != "ready" ||
+            pendingCrossfadeDurationMs != null || startingCrossfadeDurationMs != null
+        ) return false
+        val standby = standbyPlayer ?: return false
+        if (standby.isPlaying || standby.playbackState != Player.STATE_READY ||
+            standby.currentMediaItem?.mediaId != expectedMediaId
+        ) return false
+        val duration = standby.duration
+        if (duration != C.TIME_UNSET && positionMs > duration) return false
+        return try {
+            standby.seekTo(positionMs)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun loadNewQueue(items: List<MediaItem>, startIndex: Int): Boolean {
         if (items.isEmpty() || startIndex !in items.indices ||
             items.any { it.localConfiguration?.uri == null } ||
