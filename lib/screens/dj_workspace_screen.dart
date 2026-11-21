@@ -43,29 +43,31 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
   }
 
   Future<void> _buildLibraryMix() async {
-    if (_buildingMix) return;
-    final dj = context.read<DjModeProvider>();
-    await dj.ready;
-    if (!mounted) return;
-    if (!dj.isEnabled) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enable DJ Mode before preparing a DJ set.')),
-      );
-      return;
-    }
-
-    final songs = context.read<LibraryProvider>().allSongs
-        .where((song) => song.filePath.trim().isNotEmpty)
-        .toList(growable: false);
-    if (songs.length < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add at least two available tracks to prepare a DJ set.')),
-      );
-      return;
-    }
-
+    if (_buildingMix || !mounted) return;
+    // Acquire the guard before the first await so rapid taps cannot start
+    // parallel analysis jobs or push competing result routes.
     setState(() => _buildingMix = true);
     try {
+      final dj = context.read<DjModeProvider>();
+      await dj.ready;
+      if (!mounted) return;
+      if (!dj.isEnabled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enable DJ Mode before preparing a DJ set.')),
+        );
+        return;
+      }
+
+      final songs = context.read<LibraryProvider>().allSongs
+          .where((song) => song.filePath.trim().isNotEmpty)
+          .toList(growable: false);
+      if (songs.length < 2) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Add at least two available tracks to prepare a DJ set.')),
+        );
+        return;
+      }
+
       final coordinator = DjSessionCoordinator(analysis: dj.analysis);
       final mix = await coordinator.create(
         songs: songs,
@@ -214,18 +216,23 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
               const SizedBox(height: 8),
               Builder(builder: (context) {
                 final deckState = music.media3ShadowState;
-                final activeDeckId = deckState?.activeDeckId ?? 'A';
-                final standbyDeckId = activeDeckId == 'A' ? 'B' : 'A';
+                final reportedDeckId = deckState?.activeDeckId;
+                final activeDeckId = reportedDeckId == 'A' || reportedDeckId == 'B'
+                    ? reportedDeckId
+                    : null;
+                final standbyDeckId = activeDeckId == null
+                    ? null
+                    : activeDeckId == 'A' ? 'B' : 'A';
                 final incomingMediaId = deckState?.incomingMediaId;
-                Song? standbySong;
-                if (incomingMediaId != null) {
-                  for (final candidate in music.queue) {
-                    if (candidate.id == incomingMediaId) {
-                      standbySong = candidate;
-                      break;
-                    }
-                  }
-                }
+                final matchingIncomingSongs = incomingMediaId == null
+                    ? <Song>[]
+                    : music.queue.where((candidate) => candidate.id == incomingMediaId).toList(growable: false);
+                // IDs alone cannot distinguish repeated queue occurrences. Only
+                // display a track when the visible queue has one unambiguous match.
+                final Song? standbySong = matchingIncomingSongs.length == 1
+                    ? matchingIncomingSongs.single
+                    : null;
+                final incomingIdentityAmbiguous = matchingIncomingSongs.length > 1;
                 final incomingStatus = deckState?.crossfadeStatus;
                 final incomingReady = deckState?.incomingReady == true;
                 final incomingIdentityMatches = standbySong != null;
@@ -239,14 +246,20 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                         ? 'Prepared · muted'
                         : incomingStatus == 'preparing'
                             ? 'Preparing incoming track'
-                            : incomingMediaId != null && !incomingIdentityMatches
-                                ? 'Loaded track is outside the current queue'
-                                : incomingReady
-                                    ? 'Native ready · identity unverified'
-                                    : 'Standby idle';
-                final underrunsA = deckState?.audioUnderrunCountA ?? 0;
-                final underrunsB = deckState?.audioUnderrunCountB ?? 0;
-                final underruns = underrunsA + underrunsB;
+                            : incomingIdentityAmbiguous
+                                ? 'Duplicate track ID · occurrence ambiguous'
+                                : incomingMediaId != null && !incomingIdentityMatches
+                                    ? 'Loaded track · identity unverified'
+                                    : incomingReady
+                                        ? 'Native ready · identity unverified'
+                                        : 'Standby idle';
+                final underrunsA = deckState?.audioUnderrunCountA;
+                final underrunsB = deckState?.audioUnderrunCountB;
+                final underruns = (underrunsA ?? 0) + (underrunsB ?? 0);
+                final hasDeckTelemetry = deckState != null;
+                final activeGain = deckState?.activeDeckVolume;
+                final standbyGain = deckState?.standbyDeckVolume;
+                final hasLiveSpectrum = visualization.hasLiveSpectrum;
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -260,6 +273,11 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                             activeSong: song,
                             standbySong: standbySong,
                             activeDeckId: activeDeckId,
+                            standbyIdentityLabel: incomingIdentityAmbiguous
+                                ? 'Duplicate incoming ID · occurrence ambiguous'
+                                : incomingMediaId != null && standbySong == null
+                                    ? 'Incoming identity unverified'
+                                    : null,
                             activeProgress: progress,
                             activePosition: music.currentPosition,
                             activeDuration: duration,
@@ -269,7 +287,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                             standbyReady: standbyDeckReady,
                             isPlaying: music.isPlaying,
                             transitionActive: music.transitionInProgress,
-                            liveSpectrum: visualization.frequencies,
+                            liveSpectrum: hasLiveSpectrum ? visualization.frequencies : null,
                           ),
                           const SizedBox(height: 14),
                           Row(
@@ -298,13 +316,17 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                           _TelemetryRow(
                             icon: Icons.speaker_group_outlined,
                             label: 'Live output',
-                            value: 'Deck $activeDeckId · ${((deckState?.activeDeckVolume ?? 1.0) * 100).round()}% gain',
+                            value: !hasDeckTelemetry || activeDeckId == null
+                                ? 'Deck identity / gain unavailable'
+                                : activeGain == null
+                                    ? 'Deck $activeDeckId · gain unavailable'
+                                    : 'Deck $activeDeckId · ${(activeGain * 100).round()}% gain',
                           ),
                           const SizedBox(height: 7),
                           _TelemetryRow(
                             icon: Icons.album_outlined,
                             label: 'Standby',
-                            value: 'Deck $standbyDeckId · $standbyStateLabel',
+                            value: '${standbyDeckId == null ? 'Deck identity unavailable' : 'Deck $standbyDeckId'} · $standbyStateLabel',
                             valueColor: standbyDeckReady
                                 ? const Color(0xFF8CE6B0)
                                 : music.transitionInProgress
@@ -315,13 +337,17 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                           _TelemetryRow(
                             icon: Icons.volume_off_outlined,
                             label: 'Standby gain',
-                            value: '${((deckState?.standbyDeckVolume ?? 0.0) * 100).round()}% · muted by design',
+                            value: standbyGain == null
+                                ? 'Gain unavailable · standby is designed to remain muted'
+                                : '${(standbyGain * 100).round()}% · muted by design',
                           ),
                           const SizedBox(height: 7),
                           _TelemetryRow(
                             icon: Icons.graphic_eq_outlined,
                             label: 'Audio underruns',
-                            value: 'Deck A $underrunsA · Deck B $underrunsB',
+                            value: !hasDeckTelemetry || underrunsA == null || underrunsB == null
+                                ? 'Telemetry unavailable'
+                                : 'Deck A $underrunsA · Deck B $underrunsB',
                             valueColor: underruns > 0
                                 ? theme.colorScheme.error
                                 : null,
@@ -338,7 +364,9 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                           if (incomingMediaId != null && standbySong == null) ...[
                             const SizedBox(height: 9),
                             Text(
-                              'Media3 reports an incoming media item that cannot currently be matched to a track in the visible queue. Its identity is intentionally not guessed.',
+                              incomingIdentityAmbiguous
+                                  ? 'More than one queue occurrence has this media ID. The Workspace will not guess which occurrence is loaded on the standby deck.'
+                                  : 'Media3 reports an incoming media item that cannot currently be matched to one track in the visible queue. Its identity is intentionally not guessed.',
                               style: theme.textTheme.bodySmall,
                             ),
                           ],
@@ -401,7 +429,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
 class _DeckPerformancePanel extends StatelessWidget {
   const _DeckPerformancePanel({
     required this.activeSong, required this.standbySong,
-    required this.activeDeckId, required this.activeProgress,
+    required this.activeDeckId, required this.standbyIdentityLabel, required this.activeProgress,
     required this.activePosition, required this.activeDuration,
     required this.standbyPosition, required this.standbyReady,
     required this.isPlaying, required this.transitionActive,
@@ -410,7 +438,8 @@ class _DeckPerformancePanel extends StatelessWidget {
 
   final Song? activeSong;
   final Song? standbySong;
-  final String activeDeckId;
+  final String? activeDeckId;
+  final String? standbyIdentityLabel;
   final double activeProgress;
   final Duration activePosition;
   final Duration activeDuration;
@@ -424,7 +453,7 @@ class _DeckPerformancePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final activeColor = const Color(0xFF62D6FF);
     final standbyColor = const Color(0xFFB18CFF);
-    final standbyId = activeDeckId == 'A' ? 'B' : 'A';
+    final standbyId = activeDeckId == null ? null : activeDeckId == 'A' ? 'B' : 'A';
     final standbyDuration = standbySong?.duration ?? Duration.zero;
     final standbyProgress = standbyDuration.inMilliseconds <= 0 ? 0.0 :
       (standbyPosition.inMilliseconds / standbyDuration.inMilliseconds).clamp(0.0, 1.0).toDouble();
@@ -454,8 +483,8 @@ class _DeckPerformancePanel extends StatelessWidget {
         LayoutBuilder(
           builder: (context, constraints) {
             final activeDeck = _DeckVisualTile(
-              deckLabel: 'DECK ' + activeDeckId,
-              role: 'ON AIR',
+              deckLabel: 'DECK ${activeDeckId ?? '—'}',
+              role: activeDeckId == null ? 'IDENTITY UNKNOWN' : 'ON AIR',
               song: activeSong,
               accent: activeColor,
               progress: activeProgress,
@@ -467,8 +496,8 @@ class _DeckPerformancePanel extends StatelessWidget {
               spectrum: liveSpectrum,
             );
             final standbyDeck = _DeckVisualTile(
-              deckLabel: 'DECK ' + standbyId,
-              role: 'STANDBY',
+              deckLabel: 'DECK ${standbyId ?? '—'}',
+              role: standbyId == null ? 'IDENTITY UNKNOWN' : 'STANDBY',
               song: standbySong,
               accent: standbyColor,
               progress: standbyProgress,
@@ -477,6 +506,7 @@ class _DeckPerformancePanel extends StatelessWidget {
               isActive: false,
               isReady: standbyReady,
               isPlaying: false,
+              unresolvedIdentityLabel: standbyIdentityLabel,
             );
 
             // Keep both decks side by side on normal screens, but give each
@@ -568,6 +598,7 @@ class _DeckVisualTile extends StatelessWidget {
     required this.accent, required this.progress, required this.duration,
     required this.position, required this.isActive, required this.isReady, required this.isPlaying,
     this.spectrum,
+    this.unresolvedIdentityLabel,
   });
   final String deckLabel, role;
   final Song? song;
@@ -577,6 +608,7 @@ class _DeckVisualTile extends StatelessWidget {
   final Duration position;
   final bool isActive, isReady, isPlaying;
   final List<double>? spectrum;
+  final String? unresolvedIdentityLabel;
 
   String _clock(Duration value) {
     final seconds = value.inSeconds.clamp(0, 1 << 30);
@@ -586,8 +618,8 @@ class _DeckVisualTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final liveSpectrum = spectrum;
-    final title = song?.title ?? (isActive ? 'No active track' : 'Awaiting incoming track');
-    final artist = song?.artist ?? (isActive ? 'Start playback to activate' : 'Media3 standby monitor');
+    final title = song?.title ?? (isActive ? 'No active track' : unresolvedIdentityLabel ?? 'Awaiting incoming track');
+    final artist = song?.artist ?? (isActive ? 'Start playback to activate' : unresolvedIdentityLabel != null ? 'Track occurrence not verified' : 'Media3 standby monitor');
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return AnimatedContainer(
       duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 420),
@@ -618,9 +650,9 @@ class _DeckVisualTile extends StatelessWidget {
               size: 34, color: accent.withValues(alpha: song == null ? 0.35 : 0.92))),
             Positioned(left: 7, bottom: 6, child: Text(
               isActive
-                  ? (song == null ? 'EMPTY' : 'OUTPUT')
+                  ? (song == null ? 'NO ACTIVE TRACK' : 'OUTPUT')
                   : song == null
-                      ? 'EMPTY'
+                      ? (unresolvedIdentityLabel == null ? 'AWAITING TRACK' : 'IDENTITY UNVERIFIED')
                       : isReady
                           ? 'MUTED · READY'
                           : 'MUTED · PREPARING',
