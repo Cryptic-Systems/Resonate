@@ -750,23 +750,57 @@ class _DeckPerformancePanel extends StatelessWidget {
           _DeckLiveBadge(active: isPlaying, transitioning: transitionActive),
         ]),
         const SizedBox(height: 12),
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(child: _DeckVisualTile(
-            deckLabel: 'DECK ' + activeDeckId, role: 'ON AIR',
-            song: activeSong, accent: activeColor, progress: activeProgress,
-            duration: activeDuration,
-            position: activePosition,
-            isActive: true, isReady: activeSong != null, isPlaying: isPlaying,
-            spectrum: liveSpectrum,
-          )),
-          const SizedBox(width: 8),
-          Expanded(child: _DeckVisualTile(
-            deckLabel: 'DECK ' + standbyId, role: 'STANDBY',
-            song: standbySong, accent: standbyColor, progress: standbyProgress,
-            duration: standbyDuration, position: standbyPosition, isActive: false,
-            isReady: standbyReady, isPlaying: false,
-          )),
-        ]),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final activeDeck = _DeckVisualTile(
+              deckLabel: 'DECK ' + activeDeckId,
+              role: 'ON AIR',
+              song: activeSong,
+              accent: activeColor,
+              progress: activeProgress,
+              duration: activeDuration,
+              position: activePosition,
+              isActive: true,
+              isReady: activeSong != null,
+              isPlaying: isPlaying,
+              spectrum: liveSpectrum,
+            );
+            final standbyDeck = _DeckVisualTile(
+              deckLabel: 'DECK ' + standbyId,
+              role: 'STANDBY',
+              song: standbySong,
+              accent: standbyColor,
+              progress: standbyProgress,
+              duration: standbyDuration,
+              position: standbyPosition,
+              isActive: false,
+              isReady: standbyReady,
+              isPlaying: false,
+            );
+
+            // Keep both decks side by side on normal screens, but give each
+            // deck the full card width on compact windows to preserve readable
+            // track labels and usable spectrum bars without horizontal squeeze.
+            if (constraints.maxWidth < 360) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  activeDeck,
+                  const SizedBox(height: 8),
+                  standbyDeck,
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: activeDeck),
+                const SizedBox(width: 8),
+                Expanded(child: standbyDeck),
+              ],
+            );
+          },
+        ),
         const SizedBox(height: 12),
         Row(children: [
           Icon(Icons.compare_arrows_rounded,
