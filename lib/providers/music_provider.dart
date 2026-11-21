@@ -1185,9 +1185,9 @@ class MusicProvider extends ChangeNotifier {
     // flags and the preload identity, but cancelling native crossfade cleanup
     // would tear down an already-committed handoff. Let its finalizer complete.
     final media3CrossfadeAlreadyPromoted = _media3ProviderSessionActive &&
-        _preloadedNextSongId != null &&
-        (_media3ProviderSession?.currentSong?.id == _preloadedNextSongId ||
-            _media3ProviderSession?.crossfadeStatus == 'completed');
+        (_media3ProviderSession?.crossfadeStatus == 'completed' ||
+            (_preloadedNextSongId != null &&
+                _media3ProviderSession?.currentSong?.id == _preloadedNextSongId));
     if (transitionActive &&
         !repeatSelfFadeInProgress &&
         !media3CrossfadeAlreadyPromoted) {
