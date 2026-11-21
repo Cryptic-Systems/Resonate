@@ -59,6 +59,9 @@ class Media3ProviderStateBridge {
       crossfadeProgress: snapshot?.crossfadeProgress ?? 0.0,
       activeDeckVolume: snapshot?.activeDeckVolume ?? 1.0,
       standbyDeckVolume: snapshot?.standbyDeckVolume ?? 0.0,
+      incomingMediaId: snapshot?.incomingMediaId,
+      incomingReady: snapshot?.incomingReady ?? false,
+      incomingPosition: snapshot?.incomingPosition ?? Duration.zero,
       repeatMode: snapshot?.repeatMode ?? 'off',
       shuffleModeEnabled: snapshot?.shuffleModeEnabled ?? false,
       hasError: state.hasError,
@@ -101,6 +104,9 @@ class Media3ProviderState {
     this.crossfadeProgress = 0.0,
     this.activeDeckVolume = 1.0,
     this.standbyDeckVolume = 0.0,
+    this.incomingMediaId,
+    this.incomingReady = false,
+    this.incomingPosition = Duration.zero,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -129,6 +135,9 @@ class Media3ProviderState {
         crossfadeProgress = 0.0,
         activeDeckVolume = 1.0,
         standbyDeckVolume = 0.0,
+        incomingMediaId = null,
+        incomingReady = false,
+        incomingPosition = Duration.zero,
         repeatMode = 'off',
         shuffleModeEnabled = false,
         hasError = false,
@@ -162,6 +171,9 @@ class Media3ProviderState {
   final double crossfadeProgress;
   final double activeDeckVolume;
   final double standbyDeckVolume;
+  final String? incomingMediaId;
+  final bool incomingReady;
+  final Duration incomingPosition;
 
   final String repeatMode;
   final bool shuffleModeEnabled;
