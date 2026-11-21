@@ -47,6 +47,27 @@ void main() {
       expect(state.hasError, isFalse);
     });
 
+    test('parses native underrun counters and timing context', () {
+      final state = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'positionMs': 43210,
+        'audioDiagnostics': <Object?, Object?>{
+          'underrunCountA': 2,
+          'underrunCountB': 1,
+          'lastUnderrunDeck': 'B',
+          'lastUnderrunBufferSizeMs': 84,
+          'lastUnderrunElapsedSinceFeedMs': 126,
+          'lastUnderrunElapsedRealtimeMs': 987654,
+        },
+      });
+
+      expect(state.audioUnderrunCountA, 2);
+      expect(state.audioUnderrunCountB, 1);
+      expect(state.lastUnderrunDeck, 'B');
+      expect(state.lastUnderrunBufferSizeMs, 84);
+      expect(state.lastUnderrunElapsedSinceFeedMs, 126);
+      expect(state.lastUnderrunElapsedRealtimeMs, 987654);
+    });
+
     test('parses buffering, completion, and buffered position independently', () {
       final buffering = Media3PlaybackState.fromMap(<Object?, Object?>{
         'playbackState': 2,
