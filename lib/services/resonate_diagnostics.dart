@@ -825,6 +825,18 @@ class ResonateDiagnostics {
       RegExp(r'([\w.+-]+)@([\w.-]+\.[A-Za-z]{2,})'),
       '[EMAIL_REDACTED]',
     );
+    result = result.replaceAll(
+      RegExp(r'(?:file://)?/storage/emulated/\d+/[^\s,;]+'),
+      '/storage/emulated/[USER]/[PATH_REDACTED]',
+    );
+    result = result.replaceAll(
+      RegExp(r'(?:file://)?/data/(?:user|user_de)/\d+/[^\s,;]+'),
+      '/data/[APP_DATA_REDACTED]',
+    );
+    result = result.replaceAll(
+      RegExp(r'[A-Za-z]:\\Users\\[^\\s,;]+', caseSensitive: false),
+      '[WINDOWS_USER_PATH_REDACTED]',
+    );
     if (result.length > _maxValueChars) {
       result = '${result.substring(0, _maxValueChars)}…[truncated]';
     }
