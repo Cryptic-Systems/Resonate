@@ -36,6 +36,13 @@ PlaybackSnapshot _snapshot({
   String? incomingMediaId,
   bool incomingReady = false,
   Duration incomingPosition = Duration.zero,
+  int audioUnderrunCountA = 0,
+  int audioUnderrunCountB = 0,
+  String? lastUnderrunDeck,
+  int lastUnderrunBufferSizeFrames = 0,
+  int lastUnderrunBufferSizeMs = 0,
+  int lastUnderrunElapsedSinceFeedMs = 0,
+  int lastUnderrunElapsedRealtimeMs = 0,
 }) =>
     PlaybackSnapshot(
       connected: true,
@@ -64,6 +71,13 @@ PlaybackSnapshot _snapshot({
       incomingMediaId: incomingMediaId,
       incomingReady: incomingReady,
       incomingPosition: incomingPosition,
+      audioUnderrunCountA: audioUnderrunCountA,
+      audioUnderrunCountB: audioUnderrunCountB,
+      lastUnderrunDeck: lastUnderrunDeck,
+      lastUnderrunBufferSizeFrames: lastUnderrunBufferSizeFrames,
+      lastUnderrunBufferSizeMs: lastUnderrunBufferSizeMs,
+      lastUnderrunElapsedSinceFeedMs: lastUnderrunElapsedSinceFeedMs,
+      lastUnderrunElapsedRealtimeMs: lastUnderrunElapsedRealtimeMs,
       repeatMode: repeatMode,
       shuffleModeEnabled: shuffleModeEnabled,
       hasError: false,
@@ -227,6 +241,32 @@ void main() {
       expect(projected.crossfadeProgress, 0.5);
       expect(projected.activeDeckVolume, 0.7071);
       expect(projected.standbyDeckVolume, 0.7071);
+    });
+
+    test('projects per-deck underrun counters and last native underrun context', () async {
+      await runtime.loadQueue([_song('track-1')]);
+      backend.value = _snapshot(
+        mediaId: 'track-1',
+        activeDeckId: 'B',
+        audioUnderrunCountA: 2,
+        audioUnderrunCountB: 1,
+        lastUnderrunDeck: 'B',
+        lastUnderrunBufferSizeFrames: 4096,
+        lastUnderrunBufferSizeMs: 84,
+        lastUnderrunElapsedSinceFeedMs: 126,
+        lastUnderrunElapsedRealtimeMs: 987654,
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+      await bridge.start();
+
+      expect(bridge.current.audioUnderrunCountA, 2);
+      expect(bridge.current.audioUnderrunCountB, 1);
+      expect(bridge.current.lastUnderrunDeck, 'B');
+      expect(bridge.current.lastUnderrunBufferSizeFrames, 4096);
+      expect(bridge.current.lastUnderrunBufferSizeMs, 84);
+      expect(bridge.current.lastUnderrunElapsedSinceFeedMs, 126);
+      expect(bridge.current.lastUnderrunElapsedRealtimeMs, 987654);
     });
 
     test('projects the active physical A/B deck identity', () async {
