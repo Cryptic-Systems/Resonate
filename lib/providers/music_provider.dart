@@ -4223,6 +4223,45 @@ class MusicProvider extends ChangeNotifier {
   }) {
     final nextTarget = _crossfadeTargetSong;
     final nextIndex = _crossfadeTargetIndex;
+
+    // A manual standby lease is pinned to two provider-queue occurrences,
+    // not merely media IDs. Queue edits before either occurrence can shift its
+    // index while leaving the native standby loaded. Retire that preparation
+    // immediately rather than holding the interactive lease until the next
+    // operator action discovers the stale mapping.
+    final manualPrepared = _manualDjPreparedDeck;
+    if (manualPrepared != null) {
+      final outgoingStillMatches =
+          manualPrepared.outgoingQueueIndex == _queueIndex &&
+          _queueIndex >= 0 &&
+          _queueIndex < _queue.length &&
+          _sameManualDjEntry(
+            _queue[_queueIndex],
+            manualPrepared.outgoingSong,
+          );
+      final incomingStillMatches =
+          manualPrepared.incomingQueueIndex >= 0 &&
+          manualPrepared.incomingQueueIndex < _queue.length &&
+          _sameManualDjEntry(
+            _queue[manualPrepared.incomingQueueIndex],
+            manualPrepared.incomingSong,
+          );
+      if (!outgoingStillMatches || !incomingStillMatches) {
+        unawaited(cancelPreparedManualDjDeck());
+        unawaited(ResonateDiagnostics.recordDj(
+          stage: 'manual_deck_prepare',
+          outcome: 'invalidated',
+          reason: 'provider_queue_occurrence_changed',
+          songId: manualPrepared.incomingSong.id,
+          extra: {
+            'outgoingQueueIndex': manualPrepared.outgoingQueueIndex,
+            'incomingQueueIndex': manualPrepared.incomingQueueIndex,
+            'currentQueueIndex': _queueIndex,
+          },
+        ));
+      }
+    }
+
     if (previousTargetId == nextTarget?.id &&
         previousTargetIndex == nextIndex) {
       return;
