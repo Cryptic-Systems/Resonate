@@ -447,7 +447,7 @@ class _DeckPerformancePanel extends StatelessWidget {
   final bool standbyReady;
   final bool isPlaying;
   final bool transitionActive;
-  final List<double> liveSpectrum;
+  final List<double>? liveSpectrum;
 
   @override
   Widget build(BuildContext context) {
