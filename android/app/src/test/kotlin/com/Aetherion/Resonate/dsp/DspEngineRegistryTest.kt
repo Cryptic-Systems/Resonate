@@ -482,6 +482,50 @@ class DspEngineRegistryTest {
     }
 
     @Test
+    fun analysis_hint_reports_stable_rejection_and_acceptance_reasons() {
+        assertEquals(
+            "invalid_deck",
+            DspEngineRegistry.applyDeckAnalysisHintWithReason(
+                "preview", "track-a", -1f, -0.5f, -14f, 13f, -8f,
+            ).second,
+        )
+        assertEquals(
+            "deck_track_unbound",
+            DspEngineRegistry.applyDeckAnalysisHintWithReason(
+                "A", "track-a", -1f, -0.5f, -14f, 13f, -8f,
+            ).second,
+        )
+
+        assertTrue(DspEngineRegistry.setDeckTrack("A", "track-a"))
+        assertEquals(
+            "deck_song_mismatch",
+            DspEngineRegistry.applyDeckAnalysisHintWithReason(
+                "A", "track-b", -1f, -0.5f, -14f, 13f, -8f,
+            ).second,
+        )
+        assertEquals(
+            "invalid_metrics",
+            DspEngineRegistry.applyDeckAnalysisHintWithReason(
+                "A", "track-a", Float.NaN, -0.5f, -14f, 13f, -8f,
+            ).second,
+        )
+        assertEquals(
+            "cached_for_future_engine",
+            DspEngineRegistry.applyDeckAnalysisHintWithReason(
+                "A", "track-a", -1f, -0.5f, -14f, 13f, -8f,
+            ).second,
+        )
+
+        assertTrue(DspEngineRegistry.register(109, 10909L, "A"))
+        assertEquals(
+            "applied",
+            DspEngineRegistry.applyDeckAnalysisHintWithReason(
+                "A", "track-a", -1f, -0.5f, -14f, 13f, -8f,
+            ).second,
+        )
+    }
+
+    @Test
     fun analysis_hints_are_isolated_by_physical_deck_and_media_identity() {
         assertTrue(DspEngineRegistry.setDeckTrack("A", "track-a"))
         assertTrue(DspEngineRegistry.setDeckTrack("B", "track-b"))
