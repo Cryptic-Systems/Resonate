@@ -158,7 +158,7 @@ class Media3PlaybackBridge(
                 "synchronizeQueue" -> {
                     val rawItems = call.argument<List<Map<String, Any?>>>("items")
                     if (rawItems.isNullOrEmpty()) {
-                        Media3PlaybackService.instance?.clearPreload()
+                        Media3PlaybackService.instance?.clearPreload("bridge_synchronize_queue_empty")
                         connected.stop()
                         connected.clearMediaItems()
                         result.success(true)
@@ -252,7 +252,7 @@ class Media3PlaybackBridge(
                     result.success(true)
                 }
                 "clearQueue" -> {
-                    Media3PlaybackService.instance?.clearPreload()
+                    Media3PlaybackService.instance?.clearPreload("bridge_clear_queue")
                     connected.stop()
                     connected.clearMediaItems()
                     result.success(true)
@@ -315,7 +315,7 @@ class Media3PlaybackBridge(
                         .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build())
                         .build()
                     // Single-source loads also invalidate any old incoming deck.
-                    Media3PlaybackService.instance?.clearPreload()
+                    Media3PlaybackService.instance?.clearPreload("bridge_single_source_load")
                     connected.setMediaItem(item)
                     connected.prepare()
                     result.success(true)
@@ -352,7 +352,7 @@ class Media3PlaybackBridge(
                     result.success(true)
                 }
                 "stop" -> {
-                    Media3PlaybackService.instance?.clearPreload()
+                    Media3PlaybackService.instance?.clearPreload("bridge_stop")
                     Media3PlaybackService.instance?.stopAuxiliarySound()
                     Media3PlaybackService.instance?.stopTransitionPreview()
                     connected.stop()
