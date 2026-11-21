@@ -347,17 +347,21 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                     ? 0
                     : (selectedSong.duration.inMilliseconds - 1).clamp(0, 1 << 31);
                 final cueValueMs = _manualCueMs.clamp(0.0, cueMaxMs.toDouble());
+                final incomingMediaId = deckState?.incomingMediaId;
+                final incomingReady = deckState?.incomingReady == true;
                 final incomingIdentityMatches = selectedSong != null &&
-                    deckState?.incomingMediaId == selectedSong.id;
+                    incomingMediaId == selectedSong.id;
                 final standbyStateLabel = incomingIdentityMatches
-                    ? deckState?.incomingReady == true
+                    ? incomingReady
                         ? "Ready"
                         : "Loaded · preparing"
-                    : deckState?.incomingMediaId != null
+                    : incomingMediaId != null
                         ? "Different track loaded"
-                        : deckState?.crossfadeStatus == "preparing"
-                            ? "Preparing"
-                            : "Empty";
+                        : incomingReady
+                            ? "Ready · identity unknown"
+                            : deckState?.crossfadeStatus == "preparing"
+                                ? "Preparing"
+                                : "Empty";
                 return ResonateGlassCard(
                   margin: EdgeInsets.zero,
                   padding: const EdgeInsets.all(14),
@@ -430,7 +434,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                      if (deckState?.incomingMediaId != null) ...[
+                      if (incomingMediaId != null) ...[
                         Text(
                           incomingIdentityMatches
                               ? 'Loaded: ${selectedSong!.title} · ${selectedSong.artist}'
@@ -439,11 +443,18 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
+                        if (incomingIdentityMatches)
+                          Text(
+                            'Standby position: ${(deckState?.incomingPosition.inMilliseconds ?? 0) ~/ 1000}s',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                      ] else if (incomingReady)
                         Text(
-                          'Standby position: ${(deckState?.incomingPosition.inMilliseconds ?? 0) ~/ 1000}s',
+                          'Native standby reports ready, but its media identity is unavailable; selected-track readiness is not confirmed.',
                           style: theme.textTheme.bodySmall,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ],
                       const SizedBox(height: 8),
                       if (targets.isEmpty)
                         Text(
