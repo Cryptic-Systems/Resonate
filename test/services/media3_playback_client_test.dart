@@ -54,6 +54,7 @@ void main() {
           'underrunCountA': 2,
           'underrunCountB': 1,
           'lastUnderrunDeck': 'B',
+          'lastUnderrunBufferSizeFrames': 4096,
           'lastUnderrunBufferSizeMs': 84,
           'lastUnderrunElapsedSinceFeedMs': 126,
           'lastUnderrunElapsedRealtimeMs': 987654,
@@ -63,6 +64,7 @@ void main() {
       expect(state.audioUnderrunCountA, 2);
       expect(state.audioUnderrunCountB, 1);
       expect(state.lastUnderrunDeck, 'B');
+      expect(state.lastUnderrunBufferSizeFrames, 4096);
       expect(state.lastUnderrunBufferSizeMs, 84);
       expect(state.lastUnderrunElapsedSinceFeedMs, 126);
       expect(state.lastUnderrunElapsedRealtimeMs, 987654);
