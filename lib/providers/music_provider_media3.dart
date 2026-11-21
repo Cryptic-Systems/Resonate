@@ -1428,12 +1428,52 @@ extension MusicProviderMedia3 on MusicProvider {
       // song selection, or preload. DJ analysis can populate this cache
       // independently; a missing profile simply means no deck hint yet.
       final profile = await analysisService.getProfile(song.id);
-      if (!currentRequest() ||
-          profile == null ||
-          profile.songId != song.id ||
-          !profile.dspAnalysis.isMeasured ||
-          !profile.dspAnalysis.isValid ||
-          profile.dspAnalysis.maxSafeBassDb == null) return;
+      if (!currentRequest()) {
+        await ResonateDiagnostics.record('media3_dsp_analysis_hint_skipped', {
+          'deckId': deckId,
+          'songId': song.id,
+          'standby': standby,
+          'reason': 'request_stale_after_profile_lookup',
+          'stage': 'profile_lookup',
+          'generation': generation,
+        });
+        return;
+      }
+      if (profile == null) {
+        await ResonateDiagnostics.record('media3_dsp_analysis_hint_skipped', {
+          'deckId': deckId,
+          'songId': song.id,
+          'standby': standby,
+          'reason': 'profile_unavailable',
+          'stage': 'profile_lookup',
+          'generation': generation,
+        });
+        return;
+      }
+      final profileRejection = profile.songId != song.id
+          ? 'profile_song_mismatch'
+          : !profile.dspAnalysis.isMeasured
+              ? 'profile_not_measured'
+              : !profile.dspAnalysis.isValid
+                  ? 'profile_invalid'
+                  : profile.dspAnalysis.maxSafeBassDb == null
+                      ? 'max_safe_bass_unavailable'
+                      : null;
+      if (profileRejection != null) {
+        await ResonateDiagnostics.record('media3_dsp_analysis_hint_skipped', {
+          'deckId': deckId,
+          'songId': song.id,
+          'standby': standby,
+          'reason': profileRejection,
+          'stage': 'profile_validation',
+          'profileSongIdMatches': profile.songId == song.id,
+          'isMeasured': profile.dspAnalysis.isMeasured,
+          'isValid': profile.dspAnalysis.isValid,
+          'hasMaxSafeBassDb': profile.dspAnalysis.maxSafeBassDb != null,
+          'analysisVersion': profile.analysisVersion,
+        });
+        return;
+      }
 
       final lease = await playbackControlArbiter.acquire(
         owner: 'dsp_analysis_hint',
