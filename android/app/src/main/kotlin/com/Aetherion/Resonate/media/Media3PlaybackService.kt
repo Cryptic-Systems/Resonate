@@ -672,7 +672,7 @@ class Media3PlaybackService : MediaSessionService() {
         val standby = standbyPlayer ?: return false
         val preparedIndex = standby.currentMediaItemIndex
         val preparedItem = standby.currentMediaItem ?: run {
-            clearPreload()
+            clearPreload("queue_sync_missing_prepared_item")
             return false
         }
         val preparedIdentity = Media3QueueEntryIdentity(
@@ -691,7 +691,7 @@ class Media3PlaybackService : MediaSessionService() {
                 preparedItem = preparedIdentity,
             )
         ) {
-            clearPreload()
+            clearPreload("queue_sync_prepared_occurrence_changed")
             return false
         }
 
@@ -905,7 +905,7 @@ class Media3PlaybackService : MediaSessionService() {
      */
     fun skipToNext(): Boolean {
         if (!::activePlayer.isInitialized) return false
-        clearPreload()
+        clearPreload("skip_to_next")
         activePlayer.seekToNextMediaItem()
         return true
     }
@@ -913,7 +913,7 @@ class Media3PlaybackService : MediaSessionService() {
     /** Same promotion-safe transport barrier as [skipToNext]. */
     fun skipToPrevious(): Boolean {
         if (!::activePlayer.isInitialized) return false
-        clearPreload()
+        clearPreload("skip_to_previous")
         activePlayer.seekToPreviousMediaItem()
         return true
     }
@@ -922,8 +922,15 @@ class Media3PlaybackService : MediaSessionService() {
      * Invalidates the standby deck when the active source or queue is replaced.
      * Without this, a later crossfade could promote a track from an obsolete queue.
      */
-    fun clearPreload(): Boolean {
+    private var lastPreloadInvalidationReason: String? = null
+    private var lastPreloadInvalidationElapsedRealtimeMs: Long? = null
+    private var preloadInvalidationCount: Long = 0
+
+    fun clearPreload(reason: String = "unspecified"): Boolean {
         if (!::activePlayer.isInitialized) return false
+        lastPreloadInvalidationReason = reason
+        lastPreloadInvalidationElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime()
+        preloadInvalidationCount++
         pendingCrossfadeDurationMs = null
         cancelCrossfade()
         val standby = standbyPlayer
@@ -948,7 +955,7 @@ class Media3PlaybackService : MediaSessionService() {
      */
     fun restorePrimaryDeckForNewSelection(): Boolean {
         if (!::activePlayer.isInitialized) return false
-        clearPreload()
+        clearPreload("restore_primary_deck_for_new_selection")
         stopTransitionPreview()
         if (activeDeckId == "A") return true
 
@@ -1063,6 +1070,9 @@ class Media3PlaybackService : MediaSessionService() {
             else -> "unknown"
         },
         "lastMediaTransitionElapsedRealtimeMs" to lastMediaTransitionElapsedRealtimeMs,
+        "lastPreloadInvalidationReason" to lastPreloadInvalidationReason,
+        "lastPreloadInvalidationElapsedRealtimeMs" to lastPreloadInvalidationElapsedRealtimeMs,
+        "preloadInvalidationCount" to preloadInvalidationCount,
     )
 
     private var isDestroyed = false
