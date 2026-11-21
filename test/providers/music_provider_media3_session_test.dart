@@ -72,7 +72,7 @@ Media3ProviderState _state({
       error: null,
     );
 
-class _FakePlaybackSession implements PlaybackEngineSession {
+class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueBackend {
   _FakePlaybackSession({bool synchronousStates = false})
       : states = StreamController<Media3ProviderState>.broadcast(
           sync: synchronousStates,
@@ -305,6 +305,21 @@ class _FakePlaybackSession implements PlaybackEngineSession {
     preloadedStartPosition = startPosition;
     await preloadNextGate?.future;
     crossfadeStatusValue = 'ready';
+  }
+
+  @override
+  Future<void> seekStandby({
+    required Duration position,
+    required String expectedMediaId,
+    required int expectedQueueIndex,
+  }) async {
+    calls.add('seekStandby:${position.inMilliseconds}:$expectedMediaId:$expectedQueueIndex');
+    if (crossfadeStatusValue != 'ready' ||
+        preloadedSong?.id != expectedMediaId ||
+        preloadedIndex != expectedQueueIndex) {
+      throw StateError('simulated standby identity mismatch');
+    }
+    preloadedStartPosition = position;
   }
 
   @override
@@ -3609,6 +3624,77 @@ void main() {
       );
       provider.dispose();
     });
+    test('manual DJ handoff maps original queue positions to filtered Media3 positions', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-filtered-outgoing');
+      final unavailable = Song(
+        id: 'manual-filtered-unavailable',
+        title: 'Unavailable',
+        artist: 'Artist',
+        album: 'Album',
+        filePath: '',
+        duration: const Duration(minutes: 3),
+        dateAdded: DateTime.utc(2026, 1, 1),
+      );
+      final incoming = _song('manual-filtered-incoming');
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(
+          await provider.playSong(
+            outgoing,
+            queue: <Song>[outgoing, unavailable, incoming],
+          ),
+          isTrue,
+        );
+
+        // Mirror the production Media3 adapter: the provider retains all
+        // original queue entries, while the native session contains only
+        // playable entries. Native index 1 therefore represents UI index 2.
+        session.queue = <Song>[outgoing, incoming];
+        expect(provider.queueIndex, 0);
+        await provider.prepareManualDjDeck(incomingQueueIndex: 2);
+
+        expect(session.preloadedIndex, 1);
+        expect(
+          session.calls,
+          contains('preloadNext:${incoming.id}:1:0'),
+          reason: 'The native preload must use the filtered playable index.',
+        );
+
+        await provider.cuePreparedManualDjDeck(const Duration(seconds: 12));
+        expect(
+          session.calls,
+          contains('seekStandby:12000:${incoming.id}:1'),
+          reason: 'Standby cueing must use the same translated native index.',
+        );
+
+        await provider.crossfadePreparedManualDjDeck(
+          duration: const Duration(seconds: 2),
+        );
+        expect(session.currentSongValue?.id, incoming.id);
+        expect(session.queueIndexValue, 1);
+        expect(provider.currentSong?.id, incoming.id);
+        expect(
+          provider.queueIndex,
+          2,
+          reason: 'The promoted native item must reconcile to its original UI queue occurrence.',
+        );
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(arbiter.activeOwner, isNull);
+      } finally {
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
     test('manual standby lease blocks automatic replacement and cleans up on user preemption', () async {
       final session = _FakePlaybackSession();
       final arbiter = PlaybackControlArbiter();
