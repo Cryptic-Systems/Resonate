@@ -756,6 +756,8 @@ class Media3PlaybackBridge(
         "lastPreloadInvalidationElapsedRealtimeMs" to crossfade["lastPreloadInvalidationElapsedRealtimeMs"],
         "preloadInvalidationCount" to crossfade["preloadInvalidationCount"],
         "incomingMediaId" to crossfade["incomingMediaId"],
+        "incomingReady" to (crossfade["incomingReady"] == true),
+        "incomingPositionMs" to (crossfade["incomingPositionMs"] ?: 0L),
         "audioDiagnostics" to Media3PlaybackService.instance?.audioDiagnosticsState(),
         "hasError" to (player.playerError != null),
         "error" to player.playerError?.message,
