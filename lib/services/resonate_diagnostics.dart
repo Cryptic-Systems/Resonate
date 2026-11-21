@@ -147,7 +147,11 @@ class ResonateDiagnostics {
   }
 
   static Future<void> _flushPendingEvents() async {
-    if (_pendingEvents.isEmpty) return;
+    if (_pendingEvents.isEmpty) {
+      _flushTimer?.cancel();
+      _flushTimer = null;
+      return;
+    }
     _flushInFlight = _flushInFlight.then((_) async {
       if (_pendingEvents.isEmpty) return;
       try {
@@ -211,6 +215,10 @@ class ResonateDiagnostics {
       } catch (_) {}
     });
     await _flushInFlight;
+    if (_pendingEvents.isEmpty) {
+      _flushTimer?.cancel();
+      _flushTimer = null;
+    }
   }
 
   /// High-value playback checkpoint. Call this at commands, state changes,
