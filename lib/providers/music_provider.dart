@@ -62,6 +62,7 @@ import '../playback/mode_playback_policy_state.dart';
 import '../playback/volume_facade.dart';
 import '../playback/player_stream_binder.dart';
 import '../playback/playback_control_arbiter.dart';
+import '../playback/repeat_mode_transition_policy.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
@@ -1184,13 +1185,20 @@ class MusicProvider extends ChangeNotifier {
     // Flutter. During that narrow window the provider still owns transition
     // flags and the preload identity, but cancelling native crossfade cleanup
     // would tear down an already-committed handoff. Let its finalizer complete.
-    final media3CrossfadeAlreadyPromoted = _media3ProviderSessionActive &&
-        (_media3ProviderSession?.crossfadeStatus == 'completed' ||
-            (_preloadedNextSongId != null &&
-                _media3ProviderSession?.currentSong?.id == _preloadedNextSongId));
-    if (transitionActive &&
-        !repeatSelfFadeInProgress &&
-        !media3CrossfadeAlreadyPromoted) {
+    final media3CrossfadeAlreadyPromoted =
+        RepeatModeTransitionPolicy.isMedia3HandoffPromoted(
+      media3SessionActive: _media3ProviderSessionActive,
+      crossfadeStatus: _media3ProviderSession?.crossfadeStatus,
+      preloadedSongId: _preloadedNextSongId,
+      media3CurrentSongId: _media3ProviderSession?.currentSong?.id,
+    );
+    final shouldCancelAutomaticWork =
+        RepeatModeTransitionPolicy.shouldCancelAutomaticWork(
+      transitionActive: transitionActive,
+      repeatSelfFadeInProgress: repeatSelfFadeInProgress,
+      media3HandoffPromoted: media3CrossfadeAlreadyPromoted,
+    );
+    if (shouldCancelAutomaticWork) {
       _cancelAutomaticPlaybackWork(reason: 'repeat_mode_changed_during_transition');
     } else if (repeatSelfFadeInProgress) {
       unawaited(ResonateDiagnostics.record('repeat_mode_change_deferred', {
