@@ -627,6 +627,28 @@ class Media3PlaybackRuntime {
     return uniqueMatch;
   }
 
+  /// Cue a prepared incoming occurrence through the serialized backend lane.
+  /// This is deliberately separate from the active-deck seek transport command.
+  Future<void> seekStandby({
+    required Duration position,
+    required String expectedMediaId,
+  }) async {
+    _ensureAlive();
+    if (position.isNegative) {
+      throw ArgumentError.value(position, 'position', 'Must not be negative.');
+    }
+    if (expectedMediaId.trim().isEmpty) {
+      throw ArgumentError.value(expectedMediaId, 'expectedMediaId', 'Must not be empty.');
+    }
+    if (_backend is! PlaybackStandbyCueBackend) {
+      throw UnsupportedError('This playback backend does not support standby cueing.');
+    }
+    await _run(() => (_backend as PlaybackStandbyCueBackend).seekStandby(
+          position: position,
+          expectedMediaId: expectedMediaId,
+        ));
+  }
+
   Future<void> crossfade({required Duration duration}) async {
     _ensureAlive();
     if (duration < const Duration(milliseconds: 250) ||
