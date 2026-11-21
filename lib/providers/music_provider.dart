@@ -1261,13 +1261,28 @@ class MusicProvider extends ChangeNotifier {
         if (_disposed || generation != _repeatModeCommandGeneration) return;
         unawaited(_synchronizeModePlaybackBoundary());
         unawaited(ResonateDiagnostics.record('repeat_mode_command_completed', {
+          'previousMode': previousMode.name,
           'mode': mode.name,
           'generation': generation,
           'songId': currentSong?.id,
+          'queueIndex': _queueIndex,
           'positionMs': currentPosition.inMilliseconds,
           'activeDeckId': _media3ShadowState?.activeDeckId,
           'nativeWriteDeferredForSelfFade': repeatSelfFadeInProgress,
         }));
+      } catch (error, stack) {
+        await ResonateDiagnostics.record('repeat_mode_command_failed', {
+          'previousMode': previousMode.name,
+          'requestedMode': mode.name,
+          'generation': generation,
+          'songId': currentSong?.id,
+          'queueIndex': _queueIndex,
+          'positionMs': currentPosition.inMilliseconds,
+          'activeDeckId': _media3ShadowState?.activeDeckId,
+          'error': error.toString(),
+          'stack': stack.toString(),
+        });
+        rethrow;
       } finally {
         if (_repeatModeCommandPendingGeneration == generation) {
           _repeatModeCommandPendingGeneration = 0;
