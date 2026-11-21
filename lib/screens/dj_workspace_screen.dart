@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/song.dart';
+
 import '../navigation/shell_nav.dart';
 import '../providers/dj_mode_provider.dart';
 import '../providers/library_provider.dart';
