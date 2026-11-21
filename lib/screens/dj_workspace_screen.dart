@@ -24,6 +24,9 @@ class DjWorkspaceScreen extends StatefulWidget {
 
 class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
   bool _buildingMix = false;
+  bool _manualTransitionBusy = false;
+  int? _selectedDeckBIndex;
+  double _manualFadeMs = 5000;
 
   String _clock(Duration value) {
     final seconds = value.inSeconds.clamp(0, 1 << 30);
@@ -34,6 +37,28 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const DjTransitionStudioScreen()),
     );
+  }
+
+  Future<void> _performManualTransition(int incomingQueueIndex) async {
+    if (_manualTransitionBusy) return;
+    setState(() => _manualTransitionBusy = true);
+    try {
+      await context.read<MusicProvider>().performManualDjTransition(
+        incomingQueueIndex: incomingQueueIndex,
+        duration: Duration(milliseconds: _manualFadeMs.round()),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Manual DJ transition completed.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Manual DJ transition was not completed: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _manualTransitionBusy = false);
+    }
   }
 
   Future<void> _buildLibraryMix() async {
@@ -198,6 +223,131 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                   ],
                 ),
               ),
+
+              const SizedBox(height: 14),
+              Text('MANUAL DECK CONTROL', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 8),
+              Builder(builder: (context) {
+                final targets = music.queue.asMap().entries
+                    .where((entry) => entry.key != music.queueIndex)
+                    .toList(growable: false);
+                final selectedIndex = targets.any(
+                  (entry) => entry.key == _selectedDeckBIndex,
+                )
+                    ? _selectedDeckBIndex
+                    : (targets.isEmpty ? null : targets.first.key);
+                final selectedSong = selectedIndex == null
+                    ? null
+                    : music.queue[selectedIndex];
+                return ResonateGlassCard(
+                  margin: EdgeInsets.zero,
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        const Icon(Icons.speaker_group_rounded),
+                        const SizedBox(width: 8),
+                        Text('DECK A', style: theme.textTheme.labelLarge),
+                        const Spacer(),
+                        const _StatusPill(label: 'Live output', active: true),
+                      ]),
+                      const SizedBox(height: 4),
+                      Text(
+                        song?.title ?? 'No active track',
+                        style: theme.textTheme.titleMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        song?.artist ?? 'Start playback to arm the decks.',
+                        style: theme.textTheme.bodySmall,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const Divider(height: 22),
+                      Row(children: [
+                        const Icon(Icons.queue_music_rounded),
+                        const SizedBox(width: 8),
+                        Text('DECK B · STANDBY', style: theme.textTheme.labelLarge),
+                      ]),
+                      const SizedBox(height: 8),
+                      if (targets.isEmpty)
+                        Text(
+                          'Add another track to the active queue to prepare Deck B.',
+                          style: theme.textTheme.bodySmall,
+                        )
+                      else
+                        DropdownButtonFormField<int>(
+                          value: selectedIndex,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Incoming queue track',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: targets.map((entry) => DropdownMenuItem<int>(
+                            value: entry.key,
+                            child: Text(
+                              '${entry.value.title} · ${entry.value.artist}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          )).toList(growable: false),
+                          onChanged: _manualTransitionBusy
+                              ? null
+                              : (value) => setState(() => _selectedDeckBIndex = value),
+                        ),
+                      const SizedBox(height: 14),
+                      Row(children: [
+                        Text('Crossfade duration', style: theme.textTheme.labelMedium),
+                        const Spacer(),
+                        Text(
+                          '${(_manualFadeMs / 1000).toStringAsFixed(2)} s',
+                          style: theme.textTheme.labelMedium,
+                        ),
+                      ]),
+                      Slider(
+                        value: _manualFadeMs,
+                        min: 250,
+                        max: 15000,
+                        divisions: 59,
+                        onChanged: _manualTransitionBusy
+                            ? null
+                            : (value) => setState(() => _manualFadeMs = value),
+                      ),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: selectedIndex == null ||
+                                  !music.isPlaying ||
+                                  _manualTransitionBusy ||
+                                  music.transitionInProgress
+                              ? null
+                              : () => _performManualTransition(selectedIndex),
+                          icon: _manualTransitionBusy
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.swap_horiz_rounded),
+                          label: Text(
+                            _manualTransitionBusy
+                                ? 'Transition in progress…'
+                                : 'Crossfade to Deck B',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Deck B is prepared on Media3 standby. The manual transition takes the interactive playback lease, preempts automatic DJ execution, and waits for native deck promotion before releasing control.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                );
+              }),
               const SizedBox(height: 14),
               Text('WORKSPACE TOOLS', style: theme.textTheme.labelLarge),
               const SizedBox(height: 8),
