@@ -392,6 +392,21 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                         'Live gain: ${((deckState?.activeDeckVolume ?? 1.0) * 100).round()}%',
                         style: theme.textTheme.bodySmall,
                       ),
+                      Text(
+                        'Underruns · Deck A ${deckState?.audioUnderrunCountA ?? 0} / Deck B ${deckState?.audioUnderrunCountB ?? 0}',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      Text(
+                        'Audio sessions · Live ${deckState?.audioSessionId ?? '—'} / Standby ${deckState?.standbyAudioSessionId ?? '—'}',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      if (deckState?.lastUnderrunDeck != null)
+                        Text(
+                          'Last underrun · Deck ${deckState!.lastUnderrunDeck} · ${deckState.lastUnderrunBufferSizeFrames} frames (${deckState.lastUnderrunBufferSizeMs} ms) · ${deckState.lastUnderrunElapsedSinceFeedMs} ms since feed',
+                          style: theme.textTheme.bodySmall,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       if (deckState?.incomingMediaId != null) ...[
                         Text(
                           incomingIdentityMatches
