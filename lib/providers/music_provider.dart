@@ -4847,10 +4847,29 @@ class MusicProvider extends ChangeNotifier {
     _media3ShadowState = null;
     _activeAndroidAudioSessionId = null;
     final media3Session = _media3ProviderSession;
-    if (media3Session != null) unawaited(media3Session.dispose());
-    if (_ownsPlaybackControlArbiter) {
-      unawaited(playbackControlArbiter.close());
-    }
+    // A manual DJ standby lease can outlive the workspace that prepared it,
+    // especially when the arbiter is injected and therefore externally owned.
+    // Retire the standby deck and release that lease before disposing Media3
+    // or closing an arbiter owned by this provider.
+    unawaited(() async {
+      try {
+        await cancelPreparedManualDjDeck();
+      } catch (error) {
+        debugPrint('Manual DJ disposal cleanup failed: $error');
+      }
+      try {
+        await media3Session?.dispose();
+      } catch (error) {
+        debugPrint('Media3 session disposal failed: $error');
+      }
+      if (_ownsPlaybackControlArbiter) {
+        try {
+          await playbackControlArbiter.close();
+        } catch (error) {
+          debugPrint('Playback control arbiter disposal failed: $error');
+        }
+      }
+    }());
     final legacyEngines = _engines;
     if (legacyEngines != null) unawaited(legacyEngines.dispose());
     super.dispose();
