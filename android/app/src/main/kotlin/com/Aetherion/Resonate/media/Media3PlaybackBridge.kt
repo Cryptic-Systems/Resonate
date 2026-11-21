@@ -732,6 +732,7 @@ class Media3PlaybackBridge(
         "lastMediaTransitionDeckId" to crossfade["lastMediaTransitionDeckId"],
         "lastMediaTransitionMediaId" to crossfade["lastMediaTransitionMediaId"],
         "lastMediaTransitionReason" to crossfade["lastMediaTransitionReason"],
+        "lastMediaTransitionReasonName" to crossfade["lastMediaTransitionReasonName"],
         "lastMediaTransitionElapsedRealtimeMs" to crossfade["lastMediaTransitionElapsedRealtimeMs"],
         "audioDiagnostics" to Media3PlaybackService.instance?.audioDiagnosticsState(),
         "hasError" to (player.playerError != null),
