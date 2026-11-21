@@ -614,6 +614,20 @@ class Media3PlaybackBridge(
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_PRELOAD_FAILED", "The incoming deck could not be prepared.", null)
                 }
+                "seekStandby" -> {
+                    val positionMs = call.argument<Number>("positionMs")?.toLong()
+                    val expectedMediaId = call.argument<String>("expectedMediaId")
+                    if (positionMs == null || positionMs < 0L || expectedMediaId.isNullOrBlank()) {
+                        result.error("INVALID_STANDBY_SEEK", "A nonnegative position and expected incoming media ID are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.seekStandby(
+                        positionMs,
+                        expectedMediaId,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("STANDBY_SEEK_REJECTED", "The incoming deck is not safely cueable or its identity changed.", null)
+                }
                 "crossfade" -> {
                     val durationMs = call.argument<Number>("durationMs")?.toLong()
                     if (durationMs == null || durationMs !in 250L..15000L) {
