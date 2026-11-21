@@ -223,21 +223,33 @@ extension MusicProviderDjHandoff on MusicProvider {
       priority: PlaybackControlPriority.interactive,
       onRevoked: (revocation) async {
         if (revocation.reason == PlaybackControlRevocationReason.released) return;
-        if (_manualDjPreparingLease?.generation == revocation.generation) {
+        final pendingPreparationSettled =
+            _manualDjPreparingLease?.generation == revocation.generation
+                ? _manualDjPreparationSettled
+                : null;
+        if (pendingPreparationSettled != null) {
           _manualDjPreparationInvalidated = true;
         }
         _manualDjPreparedDeck = null;
         _manualDjPreparedLease = null;
-        // User transport or a safety override owns output now. Retire the
-        // prepared standby deck before the higher-priority owner proceeds.
-        try { await session.cancelCrossfade(); } catch (_) {}
-        try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
-        try {
-          await session.setDeckPlaybackSpeeds(
-            activeSpeed: 1.0,
-            standbySpeed: 1.0,
-          );
-        } catch (_) {}
+        // Invalidate the standby immediately, then wait for any dispatched
+        // preload to settle before the arbiter grants the higher-priority
+        // controller. A second cleanup fences a late native prepare result.
+        Future<void> retireStandby() async {
+          try { await session.cancelCrossfade(); } catch (_) {}
+          try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
+          try {
+            await session.setDeckPlaybackSpeeds(
+              activeSpeed: 1.0,
+              standbySpeed: 1.0,
+            );
+          } catch (_) {}
+        }
+        await retireStandby();
+        if (pendingPreparationSettled != null) {
+          await pendingPreparationSettled.future;
+          await retireStandby();
+        }
         notifyListeners();
       },
     );
@@ -246,20 +258,26 @@ extension MusicProviderDjHandoff on MusicProvider {
     }
 
     final preparationDone = Completer<void>();
+    final preparationSettled = Completer<void>();
     _manualDjPreparingDeck = prepared;
     _manualDjPreparingLease = lease;
     _manualDjPreparationDone = preparationDone;
+    _manualDjPreparationSettled = preparationSettled;
     _manualDjPreparationInvalidated = false;
 
     try {
       if (!lease.authorizeWrite('dj_manual_preload')) {
         throw StateError('Manual DJ lease expired before deck preparation.');
       }
-      await session.preloadNext(
-        incomingSong,
-        queueIndex: incomingNativeIndex,
-        startPosition: incomingStartPosition,
-      );
+      try {
+        await session.preloadNext(
+          incomingSong,
+          queueIndex: incomingNativeIndex,
+          startPosition: incomingStartPosition,
+        );
+      } finally {
+        if (!preparationSettled.isCompleted) preparationSettled.complete();
+      }
       if (_manualDjPreparationInvalidated ||
           !identical(_manualDjPreparingLease, lease) ||
           !lease.isCurrent ||
@@ -275,6 +293,7 @@ extension MusicProviderDjHandoff on MusicProvider {
       _manualDjPreparingDeck = null;
       _manualDjPreparingLease = null;
       _manualDjPreparationDone = null;
+      _manualDjPreparationSettled = null;
       _manualDjPreparationInvalidated = false;
       _manualDjPreparedDeck = prepared;
       _manualDjPreparedLease = lease;
@@ -301,8 +320,10 @@ extension MusicProviderDjHandoff on MusicProvider {
         _manualDjPreparingDeck = null;
         _manualDjPreparingLease = null;
         _manualDjPreparationDone = null;
+        _manualDjPreparationSettled = null;
         _manualDjPreparationInvalidated = false;
       }
+      if (!preparationSettled.isCompleted) preparationSettled.complete();
       if (lease.isCurrent) {
         try { await session.cancelCrossfade(); } catch (_) {}
         try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
