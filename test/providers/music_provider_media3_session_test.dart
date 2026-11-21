@@ -3680,6 +3680,58 @@ void main() {
       }
     });
 
+    test('stale native queue identity retires manual standby before crossfade', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-stale-outgoing');
+      final incoming = _song('manual-stale-incoming');
+      final replacement = _song('manual-stale-replacement');
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(
+          await provider.playSong(outgoing, queue: <Song>[outgoing, incoming]),
+          isTrue,
+        );
+        await provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        expect(provider.hasPreparedManualDjDeck, isTrue);
+
+        // Simulate a native queue replacement while the previously prepared
+        // standby remains marked ready. The old queue index is no longer a
+        // valid identity token for the incoming deck.
+        session.queue = <Song>[outgoing, replacement];
+        session.calls.clear();
+
+        await expectLater(
+          provider.crossfadePreparedManualDjDeck(
+            duration: const Duration(seconds: 2),
+          ),
+          throwsStateError,
+        );
+
+        expect(
+          session.calls.where((call) => call.startsWith('crossfade:')),
+          isEmpty,
+          reason: 'A stale prepared occurrence must never start a native fade.',
+        );
+        expect(session.calls, contains('cancelCrossfade'));
+        expect(session.calls, contains('clearDeckEqOverlay:standby'));
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(arbiter.activeOwner, isNull);
+        expect(session.currentSongValue, same(outgoing));
+        expect(session.queueIndexValue, 0);
+      } finally {
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
     test('provider disposal retires manual standby and releases external arbiter lease', () async {
       final session = _FakePlaybackSession();
       final arbiter = PlaybackControlArbiter();
