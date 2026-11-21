@@ -49,6 +49,8 @@ class Media3PlaybackState {
     this.lastPreloadInvalidationElapsedRealtimeMs = 0,
     this.preloadInvalidationCount = 0,
     this.incomingMediaId,
+    this.incomingReady = false,
+    this.incomingPosition = Duration.zero,
     required this.hasError,
     required this.error,
   });
@@ -98,6 +100,8 @@ class Media3PlaybackState {
   final int lastPreloadInvalidationElapsedRealtimeMs;
   final int preloadInvalidationCount;
   final String? incomingMediaId;
+  final bool incomingReady;
+  final Duration incomingPosition;
   final bool hasError;
   final String? error;
 
@@ -180,6 +184,8 @@ class Media3PlaybackState {
       lastPreloadInvalidationElapsedRealtimeMs: integerValue(map['lastPreloadInvalidationElapsedRealtimeMs']),
       preloadInvalidationCount: integerValue(map['preloadInvalidationCount']),
       incomingMediaId: stringValue(map['incomingMediaId']),
+      incomingReady: boolValue(map['incomingReady']),
+      incomingPosition: Duration(milliseconds: integerValue(map['incomingPositionMs']).clamp(0, 0x7fffffff).toInt()),
       hasError: boolValue(map['hasError']),
       error: stringValue(map['error']),
     );
