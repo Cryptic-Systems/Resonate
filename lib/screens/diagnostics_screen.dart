@@ -119,6 +119,8 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     final repeatEvents = (eventTypes['repeat_mode_command_requested'] ?? 0) +
         (eventTypes['repeat_mode_command_completed'] ?? 0);
     final dspHintEvents = eventTypes['media3_dsp_analysis_hint'] ?? 0;
+    final dspHintSkippedEvents =
+        eventTypes['media3_dsp_analysis_hint_skipped'] ?? 0;
     final droppedEvents = (_report['droppedEventCount'] as num?)?.toInt() ?? 0;
 
     return ResonateGlassScaffold(
@@ -181,7 +183,10 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                 ListTile(
                   leading: const Icon(Icons.tune_rounded),
                   title: const Text('DSP analysis hints'),
-                  subtitle: Text('$dspHintEvents native per-deck analysis hint events'),
+                  subtitle: Text(
+                    '$dspHintEvents applied/attempted · '
+                    '$dspHintSkippedEvents skipped with reason',
+                  ),
                 ),
                 ListTile(
                   leading: const Icon(Icons.psychology_outlined),
