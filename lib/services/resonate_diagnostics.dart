@@ -18,6 +18,7 @@ class ResonateDiagnostics {
   static const _crashesKey = 'resonate_diagnostics_crashes_v3';
   static const _sessionKey = 'resonate_diagnostics_session_id';
   static const _sequenceKey = 'resonate_diagnostics_sequence';
+  static const _droppedEventsKey = 'resonate_diagnostics_dropped_events';
   static const _maxEvents = 10000;
   static const _maxCrashes = 100;
   static const _maxFeedback = 100;
@@ -100,7 +101,14 @@ class ResonateDiagnostics {
         final prefs = await _prefs();
         final items = _decodeList(prefs.getString(_eventsKey));
         items.addAll(batch);
-        if (items.length > _maxEvents) items.removeRange(0, items.length - _maxEvents);
+        if (items.length > _maxEvents) {
+          final dropped = items.length - _maxEvents;
+          items.removeRange(0, dropped);
+          await prefs.setInt(
+            _droppedEventsKey,
+            (prefs.getInt(_droppedEventsKey) ?? 0) + dropped,
+          );
+        }
         await prefs.setString(_eventsKey, jsonEncode(items));
       } catch (_) {}
     });
@@ -350,6 +358,7 @@ class ResonateDiagnostics {
       'app': 'Resonate',
       'diagnosticsSessionId': await _getSessionId(),
       'sequence': prefs.getInt(_sequenceKey) ?? _sequence,
+      'droppedEventCount': prefs.getInt(_droppedEventsKey) ?? 0,
       'buildMode': kDebugMode ? 'debug' : kProfileMode ? 'profile' : 'release',
       'platform': Platform.operatingSystem,
       'platformVersion': Platform.operatingSystemVersion,
@@ -661,6 +670,7 @@ class ResonateDiagnostics {
     await prefs.remove(_eventsKey);
     await prefs.remove(_crashesKey);
     await prefs.remove(_feedbackKey);
+    await prefs.remove(_droppedEventsKey);
   }
 
   static Future<int> eventCount() async { final report = await snapshot(); return (report['events'] as List).length; }
@@ -677,6 +687,11 @@ class ResonateDiagnostics {
       'data': sanitized,
     };
   }
+
+  static const Set<String> _audioContentDiagnosticKeys = {
+    'audio', 'audiodata', 'audiobytes', 'rawaudio', 'pcm', 'pcmdata',
+    'pcmsamples', 'waveform', 'waveformsamples', 'recording', 'recordingdata',
+  };
 
   static const Set<String> _sensitiveDiagnosticKeys = {
     'password', 'passwd', 'authorization', 'proxyauthorization',
@@ -709,6 +724,13 @@ class ResonateDiagnostics {
   static Map<String, dynamic> _sanitize(Map<String, dynamic> input) {
     dynamic clean(dynamic value, {String? key}) {
       final normalizedKey = key?.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      if (normalizedKey != null && _audioContentDiagnosticKeys.contains(normalizedKey)) {
+        return '[AUDIO_CONTENT_EXCLUDED]';
+      }
+      if (value is Uint8List || value is ByteData || value is ByteBuffer ||
+          value is Int16List || value is Float32List) {
+        return '[BINARY_CONTENT_EXCLUDED]';
+      }
       if (normalizedKey != null &&
           (_sensitiveDiagnosticKeys.contains(normalizedKey) ||
               normalizedKey.endsWith('password') ||
