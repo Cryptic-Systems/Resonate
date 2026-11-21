@@ -1,6 +1,6 @@
 # Resonate DJ Console — Product & Technical Direction
 
-**Status:** Product direction documented; implementation not started  
+**Status:** Product direction documented; DJ Workspace watch-only refactor underway; Console implementation not started  
 **Target branch:** `dj-workspace-development`  
 **Parent experience:** Existing DJ Workspace  
 **Primary form factor:** Landscape, with a deliberate portrait entry/rotation experience  
@@ -20,14 +20,15 @@ This is a new presentation and interaction mode over the existing playback syste
 These experiences have distinct jobs and should remain separate:
 
 1. **Standard Resonate Player — everyday listening.** Keep the familiar library, queue, artwork, playback controls, DSP access and system-media-control experience. Do not force DJ controls into the everyday player.
-2. **DJ Workspace — inspection and control.** Preserve the current dual-deck workspace, its active/standby visibility, live spectrum, transition state and playback-authority context. It is the overview and monitoring environment.
-3. **DJ Console — hands-on performance.** A dedicated mode launched from DJ Workspace. It presents two prominent decks, waveforms, jog controls and a central mixer in a landscape-oriented composition.
+2. **DJ Workspace — watch-only observation.** Preserve the dual-deck workspace as a live control-room window: active/standby identity, live spectrum, incoming preparation, transition state and useful engine telemetry. It does not prepare decks, set live cue points, trigger manual crossfades or mutate transport. It is the overview and monitoring environment.
+3. **DJ Console — hands-on performance.** A dedicated mode launched from DJ Workspace. It owns manual deck preparation, cueing, crossfader operation and other interactive performance controls, presented through two prominent decks, waveforms, jog controls and a central mixer in a landscape-oriented composition.
 
-The existing DJ Workspace is not a temporary prototype to be replaced. It is a companion view that explains and exposes the underlying deck relationship; the Console is the more immersive instrument surface.
+The existing DJ Workspace is not a temporary prototype to be replaced. It is a watch-only companion view that explains and exposes the underlying deck relationship; the Console is the more immersive instrument surface.
 
 ## 3. Entry, navigation and orientation
 
-- Provide a clear **Open DJ Console** action from DJ Workspace.
+- Provide a clear **Open DJ Console** action from DJ Workspace once the Console route is implemented.
+- Keep the DJ Workspace itself observational: no manual deck preparation, cue adjustment, crossfade triggering, jog manipulation or transport writes from its monitoring panels.
 - Entering the Console must not start, pause, seek, preload or otherwise mutate playback by itself.
 - Prefer landscape orientation while the Console is visible, subject to platform support and lifecycle correctness.
 - Restore the prior orientation policy when leaving the Console. Handle back navigation, app backgrounding, interruptions and route disposal without leaving the app locked in landscape.
