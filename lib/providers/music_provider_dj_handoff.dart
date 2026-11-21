@@ -81,15 +81,21 @@ extension MusicProviderDjHandoff on MusicProvider {
           'Choose a different track occurrence from the active queue.');
     }
     final incomingSong = _queue[incomingQueueIndex];
-    // The provider queue and the Media3 command-lane queue must identify the
-    // same occurrences. Fail closed instead of asking native preload to act on
-    // a stale provider index after a queue edit or reconciliation race.
+    bool sameQueueEntry(Song candidate, Song expected) =>
+        candidate.id == expected.id &&
+        candidate.filePath.trim() == expected.filePath.trim();
+
+    // Match both logical track ID and playable source URI. Libraries can
+    // contain stale/replaced file references with the same database ID; an
+    // ID-only check could otherwise preload a different physical recording.
+    // The provider queue and Media3 command-lane queue must identify the same
+    // occurrences before any standby deck mutation is permitted.
     final committedQueue = session.queue;
     if (outgoingIndex < 0 ||
         outgoingIndex >= committedQueue.length ||
-        committedQueue[outgoingIndex].id != outgoingSong.id ||
+        !sameQueueEntry(committedQueue[outgoingIndex], outgoingSong) ||
         incomingQueueIndex >= committedQueue.length ||
-        committedQueue[incomingQueueIndex].id != incomingSong.id) {
+        !sameQueueEntry(committedQueue[incomingQueueIndex], incomingSong)) {
       throw StateError(
         'The DJ queue changed; refresh the workspace before preparing Deck B.',
       );
@@ -124,14 +130,18 @@ extension MusicProviderDjHandoff on MusicProvider {
       throw StateError('DJ playback authority is busy; no deck was changed.');
     }
 
-    bool stillOwnsTransition() =>
-        lease.isCurrent &&
-        _media3ProviderSessionActive &&
-        !_disposed &&
-        session.currentSong?.id == outgoingSong.id &&
-        session.queueIndex == outgoingIndex &&
-        incomingQueueIndex < session.queue.length &&
-        session.queue[incomingQueueIndex].id == incomingSong.id;
+    bool stillOwnsTransition() {
+      final currentSong = session.currentSong;
+      final queue = session.queue;
+      return lease.isCurrent &&
+          _media3ProviderSessionActive &&
+          !_disposed &&
+          currentSong != null &&
+          sameQueueEntry(currentSong, outgoingSong) &&
+          session.queueIndex == outgoingIndex &&
+          incomingQueueIndex < queue.length &&
+          sameQueueEntry(queue[incomingQueueIndex], incomingSong);
+    }
 
     try {
       if (!lease.authorizeWrite('dj_manual_preload')) {
@@ -152,7 +162,8 @@ extension MusicProviderDjHandoff on MusicProvider {
       await session.crossfade(duration: duration);
 
       final timeout = Stopwatch()..start();
-      while (session.currentSong?.id != incomingSong.id ||
+      while (session.currentSong == null ||
+          !sameQueueEntry(session.currentSong!, incomingSong) ||
           session.queueIndex != incomingQueueIndex) {
         if (!lease.isCurrent) {
           throw StateError('Manual DJ transition was preempted by another playback controller.');
