@@ -747,6 +747,7 @@ class _DeckPerformancePanel extends StatelessWidget {
     final standbyProgress = standbyDuration.inMilliseconds <= 0 ? 0.0 :
       (standbyPosition.inMilliseconds / standbyDuration.inMilliseconds).clamp(0.0, 1.0).toDouble();
     final theme = Theme.of(context);
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -833,7 +834,7 @@ class _DeckPerformancePanel extends StatelessWidget {
               color: transitionActive ? const Color(0xFFFFD18B) : Colors.white70,
               letterSpacing: 0.55, fontWeight: FontWeight.w700))),
           AnimatedContainer(
-            duration: const Duration(milliseconds: 420), width: 8, height: 8,
+            duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 420), width: 8, height: 8,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: transitionActive ? const Color(0xFFFFC56E) :
@@ -858,8 +859,9 @@ class _DeckLiveBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = transitioning ? const Color(0xFFFFC56E) :
       active ? const Color(0xFF8CE6B0) : Colors.white54;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 350),
+      duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 350),
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.13),
@@ -904,8 +906,9 @@ class _DeckVisualTile extends StatelessWidget {
     final liveSpectrum = spectrum;
     final title = song?.title ?? (isActive ? 'No active track' : 'Choose incoming track');
     final artist = song?.artist ?? (isActive ? 'Start playback to activate' : 'Deck is empty');
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 420),
+      duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 420),
       padding: const EdgeInsets.all(9),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: isActive ? 0.075 : 0.035),
@@ -988,17 +991,28 @@ class _DeckWaveformState extends State<_DeckWaveform> with SingleTickerProviderS
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800));
-    if (widget.animate) _controller.repeat();
+  }
+
+  void _syncAnimationPreference() {
+    final shouldAnimate =
+        widget.animate && !MediaQuery.disableAnimationsOf(context);
+    if (shouldAnimate && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!shouldAnimate && _controller.isAnimating) {
+      _controller.stop();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncAnimationPreference();
   }
 
   @override
   void didUpdateWidget(covariant _DeckWaveform oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.animate && !_controller.isAnimating) {
-      _controller.repeat();
-    } else if (!widget.animate && _controller.isAnimating) {
-      _controller.stop();
-    }
+    _syncAnimationPreference();
   }
 
   @override
