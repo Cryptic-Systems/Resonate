@@ -242,12 +242,36 @@ ThemeData _theme(Brightness brightness, {bool pureBlack = false}) {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Capture framework and uncaught asynchronous failures in the local flight
+  // recorder, while preserving Flutter's normal error presentation.
+  FlutterError.onError = (details) {
+    unawaited(ResonateDiagnostics.recordCrash(
+      details.exception,
+      details.stack ?? StackTrace.current,
+      source: 'flutter_framework',
+    ));
+    FlutterError.presentError(details);
+  };
+  ui.PlatformDispatcher.instance.onError = (error, stack) {
+    unawaited(ResonateDiagnostics.recordCrash(
+      error,
+      stack,
+      source: 'platform_dispatcher',
+    ));
+    return false; // Keep the platform's normal uncaught-error handling.
+  };
+
+  await ResonateDiagnostics.record('app_started', {
+    'buildMode': kDebugMode ? 'debug' : kProfileMode ? 'profile' : 'release',
+    'platform': defaultTargetPlatform.name,
+    'locale': ui.PlatformDispatcher.instance.locale.toLanguageTag(),
+    'viewCount': ui.PlatformDispatcher.instance.views.length,
+  });
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-
-  await ResonateDiagnostics.record('app_started', {});
 
   runApp(const ResonateApp());
 }
@@ -526,6 +550,18 @@ class _LifecycleHomeState extends State<_LifecycleHome>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final music = context.read<MusicProvider>();
+    unawaited(ResonateDiagnostics.record('app_lifecycle', {
+      'state': state.name,
+      'songId': music.currentSong?.id,
+      'positionMs': music.currentPosition.inMilliseconds,
+      'isPlaying': music.isPlaying,
+      'queueIndex': music.queueIndex,
+      'queueLength': music.queue.length,
+      'repeatMode': music.repeatMode.name,
+      'crossfadeEnabled': music.crossfadeEnabled,
+      'transitionInProgress': music.transitionInProgress,
+    }));
     if (state == AppLifecycleState.resumed) {
       unawaited(context.read<MusicProvider>().onAppForegrounded());
       _startForegroundAnalysisOpportunities();
@@ -543,6 +579,15 @@ class _LifecycleHomeState extends State<_LifecycleHome>
         context.read<MusicProvider>().onAppBackgrounded();
       } catch (_) {}
     }
+  }
+
+  @override
+  void didHaveMemoryPressure() {
+    unawaited(ResonateDiagnostics.record('app_memory_pressure', {
+      'songId': context.read<MusicProvider>().currentSong?.id,
+      'isPlaying': context.read<MusicProvider>().isPlaying,
+      'lifecycleState': WidgetsBinding.instance.lifecycleState?.name,
+    }));
   }
 
   @override
