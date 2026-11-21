@@ -400,7 +400,6 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                                   setState(() {
                                   _selectedDeckBIndex = value;
                                   _manualCueMs = 0;
-                                  manualDeckPrepared = false;
                                   _manualCueDirty = false;
                                   });
                                 },
