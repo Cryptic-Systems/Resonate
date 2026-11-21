@@ -19,6 +19,7 @@ class ResonateDiagnostics {
   static const _sessionKey = 'resonate_diagnostics_session_id';
   static const _sequenceKey = 'resonate_diagnostics_sequence';
   static const _droppedEventsKey = 'resonate_diagnostics_dropped_events';
+  static const _eventsMigratedKey = 'resonate_diagnostics_events_migrated';
   static const _maxEvents = 10000;
   static const _maxCrashes = 100;
   static const _maxFeedback = 100;
@@ -31,6 +32,8 @@ class ResonateDiagnostics {
   static final List<Map<String, dynamic>> _pendingEvents = <Map<String, dynamic>>[];
   static Timer? _flushTimer;
   static Future<void> _flushInFlight = Future<void>.value();
+  static Future<File?>? _eventLogFileFuture;
+  static int? _eventLogCount;
 
   static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
@@ -82,6 +85,42 @@ class ResonateDiagnostics {
     }
   }
 
+  static Future<File?> _eventLogFile() {
+    return _eventLogFileFuture ??= () async {
+      try {
+        final directory = await getApplicationSupportDirectory();
+        await directory.create(recursive: true);
+        return File('${directory.path}/resonate-diagnostics-events.jsonl');
+      } catch (_) {
+        return null;
+      }
+    }();
+  }
+
+  static Future<List<Map<String, dynamic>>> _readEventLog(
+    SharedPreferences prefs,
+  ) async {
+    try {
+      final file = await _eventLogFile();
+      if (file != null && await file.exists()) {
+        final lines = await file.readAsLines();
+        final events = <Map<String, dynamic>>[];
+        for (final line in lines) {
+          if (line.trim().isEmpty) continue;
+          try {
+            final decoded = jsonDecode(line);
+            if (decoded is Map) events.add(Map<String, dynamic>.from(decoded));
+          } catch (_) {
+            // Ignore one malformed record; later JSONL records remain usable.
+          }
+        }
+        _eventLogCount = events.length;
+        return events;
+      }
+    } catch (_) {}
+    return _decodeList(prefs.getString(_eventsKey));
+  }
+
   static Future<void> record(String type, [Map<String, dynamic> data = const {}]) async {
     try {
       final entry = await _entry(type, data);
@@ -99,17 +138,60 @@ class ResonateDiagnostics {
         final batch = List<Map<String, dynamic>>.from(_pendingEvents);
         _pendingEvents.clear();
         final prefs = await _prefs();
-        final items = _decodeList(prefs.getString(_eventsKey));
-        items.addAll(batch);
-        if (items.length > _maxEvents) {
-          final dropped = items.length - _maxEvents;
-          items.removeRange(0, dropped);
+        final file = await _eventLogFile();
+        if (file == null) {
+          // Storage-plugin fallback for tests or devices where app-support
+          // storage is temporarily unavailable.
+          final items = _decodeList(prefs.getString(_eventsKey));
+          items.addAll(batch);
+          if (items.length > _maxEvents) {
+            final dropped = items.length - _maxEvents;
+            items.removeRange(0, dropped);
+            await prefs.setInt(
+              _droppedEventsKey,
+              (prefs.getInt(_droppedEventsKey) ?? 0) + dropped,
+            );
+          }
+          await prefs.setString(_eventsKey, jsonEncode(items));
+          return;
+        }
+
+        await file.parent.create(recursive: true);
+        if (prefs.getBool(_eventsMigratedKey) != true) {
+          final legacy = _decodeList(prefs.getString(_eventsKey));
+          if (legacy.isNotEmpty) {
+            await file.writeAsString(
+              '${legacy.map(jsonEncode).join('\\n')}\\n',
+              mode: FileMode.append,
+              flush: true,
+            );
+          }
+          await prefs.remove(_eventsKey);
+          await prefs.setBool(_eventsMigratedKey, true);
+        }
+        _eventLogCount ??= await file.exists()
+            ? (await file.readAsLines()).where((line) => line.trim().isNotEmpty).length
+            : 0;
+        await file.writeAsString(
+          '${batch.map(jsonEncode).join('\\n')}\\n',
+          mode: FileMode.append,
+          flush: true,
+        );
+        _eventLogCount = (_eventLogCount ?? 0) + batch.length;
+        if (_eventLogCount! > _maxEvents) {
+          final lines = await file.readAsLines();
+          final dropped = lines.length - _maxEvents;
+          final retained = lines.skip(dropped < 0 ? 0 : dropped).toList();
+          await file.writeAsString(
+            retained.join('\\n') + (retained.isEmpty ? '' : '\\n'),
+            flush: true,
+          );
+          _eventLogCount = retained.length;
           await prefs.setInt(
             _droppedEventsKey,
-            (prefs.getInt(_droppedEventsKey) ?? 0) + dropped,
+            (prefs.getInt(_droppedEventsKey) ?? 0) + (dropped > 0 ? dropped : 0),
           );
         }
-        await prefs.setString(_eventsKey, jsonEncode(items));
       } catch (_) {}
     });
     await _flushInFlight;
@@ -349,7 +431,7 @@ class ResonateDiagnostics {
     await _flushPendingEvents();
     await _writeSerial;
     final prefs = await _prefs();
-    final events = _decodeList(prefs.getString(_eventsKey));
+    final events = await _readEventLog(prefs);
     final crashes = _decodeList(prefs.getString(_crashesKey));
     final feedback = _decodeList(prefs.getString(_feedbackKey));
     return {
@@ -668,6 +750,10 @@ class ResonateDiagnostics {
     await _writeSerial;
     final prefs = await _prefs();
     await prefs.remove(_eventsKey);
+    final eventFile = await _eventLogFile();
+    try { if (eventFile != null && await eventFile.exists()) await eventFile.delete(); } catch (_) {}
+    _eventLogCount = 0;
+    await prefs.remove(_eventsMigratedKey);
     await prefs.remove(_crashesKey);
     await prefs.remove(_feedbackKey);
     await prefs.remove(_droppedEventsKey);
