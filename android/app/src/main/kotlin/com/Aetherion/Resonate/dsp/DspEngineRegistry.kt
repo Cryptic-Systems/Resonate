@@ -255,24 +255,40 @@ object DspEngineRegistry {
     fun applyDeckAnalysisHint(
         deckId: String, songId: String, samplePeakDb: Float, truePeakDb: Float,
         rmsDb: Float, crestDb: Float, bassEnergyDb: Float, maxSafeBassDb: Float = 24f,
-    ): Boolean {
-        if (deckId !in setOf("A", "B") || songId.isBlank() || deckTracks[deckId] != songId) return false
+    ): Boolean = applyDeckAnalysisHintWithReason(
+        deckId, songId, samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb, maxSafeBassDb,
+    ).first
+
+    /** Same guarded write with a stable reason for diagnostics and support reports. */
+    @JvmStatic
+    @Synchronized
+    fun applyDeckAnalysisHintWithReason(
+        deckId: String, songId: String, samplePeakDb: Float, truePeakDb: Float,
+        rmsDb: Float, crestDb: Float, bassEnergyDb: Float, maxSafeBassDb: Float = 24f,
+    ): Pair<Boolean, String> {
+        if (deckId !in setOf("A", "B")) return false to "invalid_deck"
+        if (songId.isBlank()) return false to "blank_song_id"
+        val registeredSongId = deckTracks[deckId]
+        if (registeredSongId != songId) {
+            return false to if (registeredSongId == null) "deck_track_unbound" else "deck_song_mismatch"
+        }
         val metrics = floatArrayOf(samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb, maxSafeBassDb)
         if (metrics.any { !it.isFinite() } ||
             samplePeakDb !in -160f..6f || truePeakDb !in -160f..6f ||
             rmsDb !in -160f..0.1f || crestDb !in 0f..30f ||
             bassEnergyDb !in -160f..0.1f ||
             (maxSafeBassDb != 24f && maxSafeBassDb !in 0f..18f)
-        ) return false
+        ) return false to "invalid_metrics"
         val hint = DeckAnalysisHint(songId, samplePeakDb, truePeakDb, rmsDb, crestDb, bassEnergyDb, maxSafeBassDb)
-        if (!applyAnalysisHintToDeck(deckId, hint)) return false
+        if (!applyAnalysisHintToDeck(deckId, hint)) return false to "native_apply_failed"
         // If both physical decks currently hold the exact same track (Repeat
         // One), keep their independent engines on the same measured profile.
         val siblingDeckId = if (deckId == "A") "B" else "A"
         if (deckTracks[siblingDeckId] == songId) {
             applyAnalysisHintToDeck(siblingDeckId, hint)
         }
-        return true
+        val engineCount = handles.values.count { it.deckId == deckId }
+        return true to if (engineCount == 0) "cached_for_future_engine" else "applied"
     }
 
     private fun applyAnalysisHintToDeck(deckId: String, hint: DeckAnalysisHint): Boolean {
