@@ -689,15 +689,15 @@ class ResonateDiagnostics {
     var result = value;
     // Credentials can leak through native exception messages and HTTP URLs.
     result = result.replaceAll(
-      RegExp(r'Bearer\\s+[A-Za-z0-9._~+/-]+=*', caseSensitive: false),
+      RegExp(r'Bearer\s+[A-Za-z0-9._~+/-]+=*', caseSensitive: false),
       'Bearer [REDACTED]',
     );
     result = result.replaceAll(
-      RegExp(r'([?&](?:access_token|refresh_token|token|api_key|apikey|password|secret)=)[^&\\s]+', caseSensitive: false),
+      RegExp(r'([?&](?:access_token|refresh_token|token|api_key|apikey|password|secret)=)[^&\s]+', caseSensitive: false),
       r'$1[REDACTED]',
     );
     result = result.replaceAll(
-      RegExp(r'([\\w.+-]+)@([\\w.-]+\\.[A-Za-z]{2,})'),
+      RegExp(r'([\w.+-]+)@([\w.-]+\.[A-Za-z]{2,})'),
       '[EMAIL_REDACTED]',
     );
     if (result.length > _maxValueChars) {
@@ -721,8 +721,9 @@ class ResonateDiagnostics {
         // Keep useful track identity while avoiding disclosure of a user's
         // complete storage hierarchy in diagnostic exports.
         if (normalizedKey == 'filepath' || normalizedKey == 'fileuri') {
-          final path = value.replaceAll('\\\\', '/');
-          final basename = path.split('/').where((part) => part.isNotEmpty).lastOrNull;
+          final path = value.replaceAll(String.fromCharCode(92), '/');
+          final parts = path.split('/').where((part) => part.isNotEmpty).toList();
+          final basename = parts.isEmpty ? null : parts.last;
           return basename == null ? '[PATH_REDACTED]' : _sanitizeDiagnosticString(basename);
         }
         return _sanitizeDiagnosticString(value);
