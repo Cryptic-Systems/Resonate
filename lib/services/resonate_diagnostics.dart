@@ -345,7 +345,7 @@ class ResonateDiagnostics {
     final crashes = _decodeList(prefs.getString(_crashesKey));
     final feedback = _decodeList(prefs.getString(_feedbackKey));
     return {
-      'reportVersion': 5,
+      'reportVersion': 6,
       'createdAt': DateTime.now().toIso8601String(),
       'app': 'Resonate',
       'diagnosticsSessionId': await _getSessionId(),
