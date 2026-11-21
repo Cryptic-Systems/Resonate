@@ -52,6 +52,167 @@ extension MusicProviderDjHandoff on MusicProvider {
     }
   }
 
+  /// Executes an operator-requested transition to an occurrence in the
+  /// committed queue. The interactive lease preempts automatic DJ work and
+  /// remains held until Media3 confirms that the requested occurrence became
+  /// the active deck.
+  Future<void> performManualDjTransition({
+    required int incomingQueueIndex,
+    required Duration duration,
+  }) async {
+    if (duration < const Duration(milliseconds: 250) ||
+        duration > const Duration(seconds: 15)) {
+      throw ArgumentError.value(duration, 'duration', 'Must be 250 ms–15 s.');
+    }
+    final session = _media3ProviderSession;
+    if (session == null || !_media3ProviderSessionActive) {
+      throw StateError('Media3 playback must be active before a manual DJ transition.');
+    }
+    if (!session.isPlaying) {
+      throw StateError('Resume playback before starting a manual DJ transition.');
+    }
+    final outgoingSong = session.currentSong;
+    final outgoingIndex = session.queueIndex;
+    if (outgoingSong == null || outgoingIndex == null ||
+        incomingQueueIndex < 0 || incomingQueueIndex >= _queue.length ||
+        incomingQueueIndex == outgoingIndex) {
+      throw ArgumentError.value(incomingQueueIndex, 'incomingQueueIndex',
+          'Choose a different track occurrence from the active queue.');
+    }
+    final incomingSong = _queue[incomingQueueIndex];
+    final lease = await playbackControlArbiter.acquire(
+      owner: 'dj_manual_transition',
+      priority: PlaybackControlPriority.interactive,
+      onRevoked: (revocation) async {
+        if (revocation.reason == PlaybackControlRevocationReason.released) return;
+        // A user transport command or safety override has taken ownership.
+        // Retire the manual fade before the arbiter grants that new owner.
+        try { await session.cancelCrossfade(); } catch (_) {}
+        try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
+        try {
+          await session.setDeckPlaybackSpeeds(
+            activeSpeed: 1.0,
+            standbySpeed: 1.0,
+          );
+        } catch (_) {}
+      },
+    );
+    if (lease == null) {
+      throw StateError('DJ playback authority is busy; no deck was changed.');
+    }
+
+    bool stillOwnsTransition() =>
+        lease.isCurrent &&
+        _media3ProviderSessionActive &&
+        !_disposed &&
+        session.currentSong?.id == outgoingSong.id &&
+        session.queueIndex == outgoingIndex;
+
+    try {
+      if (!lease.authorizeWrite('dj_manual_preload')) {
+        throw StateError('Manual DJ lease expired before deck preparation.');
+      }
+      await session.preloadNext(
+        incomingSong,
+        queueIndex: incomingQueueIndex,
+      );
+      if (!stillOwnsTransition()) {
+        throw StateError('Manual DJ transition was superseded during deck preparation.');
+      }
+
+      if (!lease.authorizeWrite('dj_manual_crossfade')) {
+        throw StateError('Manual DJ lease expired before crossfade start.');
+      }
+      await session.crossfade(duration: duration);
+
+      final timeout = Stopwatch()..start();
+      while (session.currentSong?.id != incomingSong.id ||
+          session.queueIndex != incomingQueueIndex) {
+        if (!lease.isCurrent) {
+          throw StateError('Manual DJ transition was preempted by another playback controller.');
+        }
+        if (!_media3ProviderSessionActive || _disposed) {
+          throw StateError('Media3 session ended during the manual DJ transition.');
+        }
+        if (!session.isPlaying && session.crossfadeStatus != 'paused') {
+          throw StateError('Playback stopped before the manual DJ transition completed.');
+        }
+        if (session.crossfadeStatus == 'incoming_error' ||
+            session.crossfadeStatus == 'cancelled') {
+          throw StateError('Media3 could not complete the requested manual transition.');
+        }
+        if (timeout.elapsed > duration + const Duration(seconds: 8)) {
+          throw TimeoutException('Media3 did not promote the prepared DJ deck.');
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      }
+      if (!lease.isCurrent) {
+        throw StateError('Manual DJ transition lost playback authority at promotion.');
+      }
+
+      await session.setDeckPlaybackSpeeds(
+        activeSpeed: 1.0,
+        standbySpeed: 1.0,
+      );
+      if (!lease.isCurrent) {
+        throw StateError('Manual DJ transition was preempted during deck normalization.');
+      }
+      _preloadedNextSongId = null;
+      _media3DjTransitionPreparation = null;
+      _crossfadeInProgress = false;
+      _automaticCrossfadeInFlight = false;
+      _transitionArmedAt = null;
+      _reconcileMedia3ProviderSession();
+      await _refreshTrackLevelingFor(incomingSong);
+      if (!lease.isCurrent) return;
+      _publishServiceState();
+      notifyListeners();
+      await ResonateDiagnostics.recordDj(
+        stage: 'manual_transition',
+        outcome: 'committed',
+        reason: 'operator_requested',
+        songId: incomingSong.id,
+        extra: {
+          'outgoingSongId': outgoingSong.id,
+          'incomingQueueIndex': incomingQueueIndex,
+          'durationMs': duration.inMilliseconds,
+        },
+      );
+    } catch (error) {
+      if (lease.isCurrent) {
+        // Cleanup each temporary deck setting independently. Never reload the
+        // outgoing queue or switch engines as a fallback for a failed fade.
+        try { await session.cancelCrossfade(); } catch (_) {}
+        if (lease.isCurrent) {
+          try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
+        }
+        if (lease.isCurrent) {
+          try {
+            await session.setDeckPlaybackSpeeds(
+              activeSpeed: 1.0,
+              standbySpeed: 1.0,
+            );
+          } catch (_) {}
+        }
+        _preloadedNextSongId = null;
+        _media3DjTransitionPreparation = null;
+      }
+      await ResonateDiagnostics.recordDj(
+        stage: 'manual_transition',
+        outcome: 'failed',
+        reason: error.toString(),
+        songId: incomingSong.id,
+        extra: {
+          'outgoingSongId': outgoingSong.id,
+          'incomingQueueIndex': incomingQueueIndex,
+        },
+      );
+      rethrow;
+    } finally {
+      await lease.release();
+    }
+  }
+
   /// Step 2–3: optional beat seek + tempo stretch for the incoming handoff.
   Future<void> _prepareDjHandoff({
     required dynamic outgoing,
