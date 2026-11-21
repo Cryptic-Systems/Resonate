@@ -3078,6 +3078,62 @@ void main() {
       await session.states.close();
     });
 
+    test('stale Media3 repeat snapshot cannot overwrite a pending local Repeat Off command', () async {
+      final session = _FakePlaybackSession();
+      final provider = MusicProvider(media3ProviderSession: session);
+      final song = _song('repeat-mode-stale-snapshot-fence');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
+      await provider.setRepeatMode(PlaybackRepeatMode.one);
+
+      session.states.add(_state(
+        song: song,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: const Duration(seconds: 42),
+        repeatMode: 'one',
+      ));
+      await Future<void>.delayed(Duration.zero);
+      expect(provider.repeatMode, PlaybackRepeatMode.one);
+
+      final nativeWriteGate = Completer<void>();
+      session.repeatModeGate = nativeWriteGate;
+      final turningOff = provider.setRepeatMode(PlaybackRepeatMode.off);
+      for (var attempt = 0;
+          attempt < 100 && !session.calls.contains('repeat:off');
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+      expect(provider.repeatMode, PlaybackRepeatMode.off);
+      expect(session.calls, contains('repeat:off'));
+
+      // This is a delayed snapshot captured before the native Off command
+      // completed. It must not resurrect Repeat One or invalidate playback.
+      session.states.add(_state(
+        song: song,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: const Duration(seconds: 43),
+        repeatMode: 'one',
+      ));
+      await Future<void>.delayed(Duration.zero);
+      expect(provider.repeatMode, PlaybackRepeatMode.off);
+      expect(provider.currentSong?.id, song.id);
+      expect(provider.currentPosition, const Duration(seconds: 43));
+
+      nativeWriteGate.complete();
+      await turningOff;
+      expect(session.repeatModeSet, PlaybackQueueRepeatMode.off);
+      expect(provider.repeatMode, PlaybackRepeatMode.off);
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
     test('repeat mode publishes immediately and rapid changes serialize latest native value', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
