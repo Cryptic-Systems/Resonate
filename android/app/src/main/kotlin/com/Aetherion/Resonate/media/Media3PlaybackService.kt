@@ -1048,6 +1048,13 @@ class Media3PlaybackService : MediaSessionService() {
         "lastMediaTransitionDeckId" to lastMediaTransitionDeckId,
         "lastMediaTransitionMediaId" to lastMediaTransitionMediaId,
         "lastMediaTransitionReason" to lastMediaTransitionReason,
+        "lastMediaTransitionReasonName" to when (lastMediaTransitionReason) {
+            Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT -> "repeat"
+            Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> "auto"
+            Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> "seek"
+            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED -> "playlist_changed"
+            else -> "unknown"
+        },
         "lastMediaTransitionElapsedRealtimeMs" to lastMediaTransitionElapsedRealtimeMs,
     )
 
