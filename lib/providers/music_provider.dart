@@ -121,6 +121,10 @@ class MusicProvider extends ChangeNotifier {
   bool _media3ProviderSessionActive = false;
   ManualDjPreparedDeck? _manualDjPreparedDeck;
   PlaybackControlLease? _manualDjPreparedLease;
+  ManualDjPreparedDeck? _manualDjPreparingDeck;
+  PlaybackControlLease? _manualDjPreparingLease;
+  Completer<void>? _manualDjPreparationDone;
+  bool _manualDjPreparationInvalidated = false;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
   bool get media3ProviderSessionActive => _media3ProviderSessionActive;
   /// True only while the operator's prepared standby deck still owns its lease.
@@ -4229,6 +4233,40 @@ class MusicProvider extends ChangeNotifier {
     // index while leaving the native standby loaded. Retire that preparation
     // immediately rather than holding the interactive lease until the next
     // operator action discovers the stale mapping.
+    final manualPreparing = _manualDjPreparingDeck;
+    if (manualPreparing != null) {
+      final outgoingStillMatches =
+          manualPreparing.outgoingQueueIndex == _queueIndex &&
+          _queueIndex >= 0 &&
+          _queueIndex < _queue.length &&
+          _sameManualDjEntry(
+            _queue[_queueIndex],
+            manualPreparing.outgoingSong,
+          );
+      final incomingStillMatches =
+          manualPreparing.incomingQueueIndex >= 0 &&
+          manualPreparing.incomingQueueIndex < _queue.length &&
+          _sameManualDjEntry(
+            _queue[manualPreparing.incomingQueueIndex],
+            manualPreparing.incomingSong,
+          );
+      if (!outgoingStillMatches || !incomingStillMatches) {
+        _manualDjPreparationInvalidated = true;
+        unawaited(cancelPreparedManualDjDeck());
+        unawaited(ResonateDiagnostics.recordDj(
+          stage: 'manual_deck_prepare',
+          outcome: 'invalidated',
+          reason: 'provider_queue_occurrence_changed_during_prepare',
+          songId: manualPreparing.incomingSong.id,
+          extra: {
+            'outgoingQueueIndex': manualPreparing.outgoingQueueIndex,
+            'incomingQueueIndex': manualPreparing.incomingQueueIndex,
+            'currentQueueIndex': _queueIndex,
+          },
+        ));
+      }
+    }
+
     final manualPrepared = _manualDjPreparedDeck;
     if (manualPrepared != null) {
       final outgoingStillMatches =
