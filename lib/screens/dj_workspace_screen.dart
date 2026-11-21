@@ -12,9 +12,9 @@ import 'dj_transition_studio_screen.dart';
 
 /// Dedicated entry point for DJ preparation and live-session awareness.
 ///
-/// This surface deliberately does not own a player or mutate deck state:
-/// Media3 remains the playback authority and DJ controllers must use the
-/// shared playback-control arbiter before making live-output changes.
+/// This surface never owns a player. Manual deck transitions are delegated
+/// to MusicProvider and must hold the shared playback-control arbiter while
+/// Media3 prepares and promotes the incoming deck.
 class DjWorkspaceScreen extends StatefulWidget {
   const DjWorkspaceScreen({super.key});
 
@@ -236,9 +236,6 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                 )
                     ? _selectedDeckBIndex
                     : (targets.isEmpty ? null : targets.first.key);
-                final selectedSong = selectedIndex == null
-                    ? null
-                    : music.queue[selectedIndex];
                 return ResonateGlassCard(
                   margin: EdgeInsets.zero,
                   padding: const EdgeInsets.all(14),
