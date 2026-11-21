@@ -824,7 +824,10 @@ class _DeckVisualTile extends StatelessWidget {
         Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white60)),
         const SizedBox(height: 8),
-        Text('SIGNAL MAP · VISUAL GUIDE', style: Theme.of(context).textTheme.labelSmall?.copyWith(\n            color: Colors.white38, fontSize: 8, letterSpacing: 0.8)),\n        const SizedBox(height: 3),\n        SizedBox(height: 58, width: double.infinity, child: _DeckWaveform(
+        Text('SIGNAL MAP · VISUAL GUIDE', style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: Colors.white38, fontSize: 8, letterSpacing: 0.8)),
+        const SizedBox(height: 3),
+        SizedBox(height: 58, width: double.infinity, child: _DeckWaveform(
           seed: song?.id ?? deckLabel, progress: progress, color: accent,
           animate: isPlaying && isActive)),
         const SizedBox(height: 3),
