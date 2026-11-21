@@ -223,6 +223,9 @@ extension MusicProviderDjHandoff on MusicProvider {
       priority: PlaybackControlPriority.interactive,
       onRevoked: (revocation) async {
         if (revocation.reason == PlaybackControlRevocationReason.released) return;
+        if (_manualDjPreparingLease?.generation == revocation.generation) {
+          _manualDjPreparationInvalidated = true;
+        }
         _manualDjPreparedDeck = null;
         _manualDjPreparedLease = null;
         // User transport or a safety override owns output now. Retire the
@@ -242,6 +245,12 @@ extension MusicProviderDjHandoff on MusicProvider {
       throw StateError('DJ playback authority is busy; Deck B was not changed.');
     }
 
+    final preparationDone = Completer<void>();
+    _manualDjPreparingDeck = prepared;
+    _manualDjPreparingLease = lease;
+    _manualDjPreparationDone = preparationDone;
+    _manualDjPreparationInvalidated = false;
+
     try {
       if (!lease.authorizeWrite('dj_manual_preload')) {
         throw StateError('Manual DJ lease expired before deck preparation.');
@@ -251,7 +260,9 @@ extension MusicProviderDjHandoff on MusicProvider {
         queueIndex: incomingNativeIndex,
         startPosition: incomingStartPosition,
       );
-      if (!lease.isCurrent ||
+      if (_manualDjPreparationInvalidated ||
+          !identical(_manualDjPreparingLease, lease) ||
+          !lease.isCurrent ||
           !_manualDjPreparedDeckIsCurrent(session, prepared)) {
         throw StateError('Manual DJ preparation was superseded.');
       }
@@ -261,8 +272,13 @@ extension MusicProviderDjHandoff on MusicProvider {
       // Keep the interactive lease while the operator reviews Deck B. This
       // prevents automatic DJ work from replacing the standby occurrence.
       // User transport remains able to preempt this lease.
+      _manualDjPreparingDeck = null;
+      _manualDjPreparingLease = null;
+      _manualDjPreparationDone = null;
+      _manualDjPreparationInvalidated = false;
       _manualDjPreparedDeck = prepared;
       _manualDjPreparedLease = lease;
+      preparationDone.complete();
       await ResonateDiagnostics.recordDj(
         stage: 'manual_deck_prepare',
         outcome: 'ready',
@@ -281,6 +297,12 @@ extension MusicProviderDjHandoff on MusicProvider {
     } catch (error) {
       _manualDjPreparedDeck = null;
       _manualDjPreparedLease = null;
+      if (identical(_manualDjPreparingLease, lease)) {
+        _manualDjPreparingDeck = null;
+        _manualDjPreparingLease = null;
+        _manualDjPreparationDone = null;
+        _manualDjPreparationInvalidated = false;
+      }
       if (lease.isCurrent) {
         try { await session.cancelCrossfade(); } catch (_) {}
         try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
@@ -292,6 +314,7 @@ extension MusicProviderDjHandoff on MusicProvider {
         } catch (_) {}
       }
       await lease.release();
+      if (!preparationDone.isCompleted) preparationDone.complete();
       await ResonateDiagnostics.recordDj(
         stage: 'manual_deck_prepare',
         outcome: 'failed',
@@ -306,8 +329,28 @@ extension MusicProviderDjHandoff on MusicProvider {
   /// Releases a prepared standby deck and its retained interactive lease.
   /// Safe after revocation, promotion, or repeated cancellation.
   Future<void> cancelPreparedManualDjDeck() async {
-    final lease = _manualDjPreparedLease;
+    final preparingLease = _manualDjPreparingLease;
+    final preparationDone = _manualDjPreparationDone;
     final session = _media3ProviderSession;
+    if (preparingLease != null && preparationDone != null) {
+      _manualDjPreparationInvalidated = true;
+      if (preparingLease.isCurrent && session != null) {
+        try { await session.cancelCrossfade(); } catch (_) {}
+        try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
+        try {
+          await session.setDeckPlaybackSpeeds(
+            activeSpeed: 1.0,
+            standbySpeed: 1.0,
+          );
+        } catch (_) {}
+      }
+      // Keep the lease until the in-flight preload acknowledges completion.
+      // Its owner then performs the final cleanup and releases authority.
+      await preparationDone.future;
+      return;
+    }
+
+    final lease = _manualDjPreparedLease;
     _manualDjPreparedDeck = null;
     _manualDjPreparedLease = null;
     if (lease == null) return;
