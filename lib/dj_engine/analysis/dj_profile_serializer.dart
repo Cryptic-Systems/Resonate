@@ -231,6 +231,49 @@ class DjProfileSerializer {
     return points;
   }
 
+  List<DjWaveformSegment> _waveformSegments(
+    dynamic value,
+    int? durationMs,
+  ) {
+    if (value is! List || durationMs == null || durationMs <= 0) {
+      return const [];
+    }
+    final segments = <DjWaveformSegment>[];
+    for (final raw in value.take(32).whereType<Map>()) {
+      final start = _time(raw['startMs'], durationMs);
+      final end = _time(raw['endMs'], durationMs);
+      final rawPeaks = raw['peaks'];
+      if (start == null ||
+          end == null ||
+          end <= start ||
+          rawPeaks is! List ||
+          rawPeaks.isEmpty ||
+          rawPeaks.length > 256) {
+        continue;
+      }
+      final peaks = <double>[];
+      var valid = true;
+      for (final item in rawPeaks) {
+        if (item is! num ||
+            !item.isFinite ||
+            item < 0 ||
+            item > 1) {
+          valid = false;
+          break;
+        }
+        peaks.add(item.toDouble());
+      }
+      if (!valid) continue;
+      segments.add(DjWaveformSegment(
+        startMs: start,
+        endMs: end,
+        peaks: peaks,
+      ));
+    }
+    segments.sort((a, b) => a.startMs.compareTo(b.startMs));
+    return segments;
+  }
+
   List<DjSilenceRegion> _silenceRegions(dynamic value, int? durationMs) {
     if (value is! List) return const [];
     final regions = <DjSilenceRegion>[];
