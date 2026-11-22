@@ -73,7 +73,8 @@ class DjPcmProfileAnalyzer {
       bassEnergyDb: measured.bassEnergyDb,
       maxSafeBassDb: safeBass,
     );
-    final waveformSegments = _buildWaveformSegments(windows, durationMs);\n    final detectedSilence = _silenceDetector.detect(
+    final waveformSegments = _buildWaveformSegments(windows, durationMs);
+    final detectedSilence = _silenceDetector.detect(
       rmsSamples,
       durationMs: durationMs,
     ).map((region) => DjSilenceRegion(
