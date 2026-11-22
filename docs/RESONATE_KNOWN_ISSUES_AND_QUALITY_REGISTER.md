@@ -223,6 +223,16 @@ This is a sampled waveform preview, not a continuous full-track waveform. Full-t
 - Add measured beat/phrase overlays only where beat-grid confidence supports them.
 - Design and benchmark a bounded-memory streaming decode/cache path before claiming full-track coverage.
 
+### DJ Console overlay milestone — confidence-gated timing visualization
+
+The Console now has a presentation-only overlay policy for measured PCM profile data. Beat ticks are hidden unless the track tempo grid is usable, confidence is at least 0.65, and at least eight measured/derived beat positions are present. Bar ticks require independent bar confidence of at least 0.68. Phrase ticks require phrase confidence of at least 0.72 and a complete phrase span. Section bands are limited to known section types with confidence of at least 0.70. The policy never creates timing positions; it filters the existing profile.
+
+Profile loading is now explicitly initiated when the canonical current song identity changes. Waveform, beat, phrase and section overlays are rendered only when the loaded profile's song ID exactly matches the current song ID and the native active physical deck is verified. A mismatched profile is hidden rather than reused.
+
+Focused policy tests cover low-confidence suppression, minimum beat coverage, separate bar/phrase gates, and section filtering. These overlays are visual guidance only; they do not drive transport, cueing, beatmatching or transition execution.
+
+**Validation:** CI build #2510 passed all Flutter analysis/tests, native DSP compile/unit/integration smoke, Android DSP tests, release APK integrity/size checks and artifact upload. The new overlay milestone is a subsequent change and requires its own CI run before it is considered validated.
+ 
 ## DJ Console — gated parallel workstream
 
 The landscape DJ Console visual foundation may proceed in parallel with playback hardening. It must not create another player or output path. The initial visual shell is observational. Sampled PCM peak envelopes are now derived from the existing distributed decode windows, persisted as optional sparse segments, and rendered only against the verified active physical deck. Unanalysed gaps remain visibly empty; no full-track waveform is implied. Existing cached profiles without waveform segments are backfilled by the idle analysis scan, subject to its retry cooldown. Manual deck preparation, cueing, jog/scratch, channel gain and crossfader actions remain unavailable until their Media3/DSP command contracts, lease behavior, cancellation rules and regression tests are implemented.
