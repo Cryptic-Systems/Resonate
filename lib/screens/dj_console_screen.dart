@@ -160,7 +160,7 @@ class _ConsoleDeck extends StatelessWidget {
   const _ConsoleDeck({
     required this.deck, required this.active, required this.compact,
     required this.status, required this.title, required this.artist, required this.progress,
-    required this.position, required this.duration,
+    required this.position, required this.duration, required this.profileFuture,
   });
 
   final String deck, status, title, artist;
