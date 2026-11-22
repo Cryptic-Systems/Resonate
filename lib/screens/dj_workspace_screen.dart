@@ -13,6 +13,7 @@ import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
 import '../services/dj_session_coordinator.dart';
 import '../ui/resonate_glass.dart';
+import 'dj_console_screen.dart';
 import 'dj_suggestion_mix_screen.dart';
 import 'dj_transition_studio_screen.dart';
 
@@ -34,6 +35,12 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
   String _clock(Duration value) {
     final seconds = value.inSeconds.clamp(0, 1 << 30);
     return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _openDjConsole() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const DjConsoleScreen()),
+    );
   }
 
   Future<void> _openTransitionStudio() async {
@@ -384,6 +391,15 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                   ],
                 );
               }),
+              const SizedBox(height: 14),
+              Text('PERFORMANCE', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 8),
+              _WorkspaceAction(
+                icon: Icons.album_rounded,
+                title: 'Open DJ Console',
+                subtitle: 'Enter the landscape two-deck performance environment. Interactive deck controls are being brought online in validated stages.',
+                onTap: _openDjConsole,
+              ),
               const SizedBox(height: 14),
               Text('WORKSPACE TOOLS', style: theme.textTheme.labelLarge),
               const SizedBox(height: 8),
