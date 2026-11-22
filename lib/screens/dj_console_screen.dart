@@ -1,3 +1,5 @@
+import 'dart:ui' show FontFeature;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -216,10 +218,15 @@ class _ConsoleDeck extends StatelessWidget {
             height: compact ? 42 : 58,
             decoration: BoxDecoration(color: const Color(0xFF080E15),
               borderRadius: BorderRadius.circular(9)),
-            child: CustomPaint(
-              painter: _ConsoleWavePainter(progress: progress, color: accent),
-              child: const SizedBox.expand(),
-            ),
+            child: Stack(fit: StackFit.expand, children: [
+              CustomPaint(
+                painter: _ConsoleWavePainter(progress: progress, color: accent),
+              ),
+              const Positioned(left: 7, top: 4, child: Text(
+                'VISUAL PLACEHOLDER · NOT TRACK ANALYSIS',
+                style: TextStyle(fontSize: 7, letterSpacing: .5, color: Colors.white54),
+              )),
+            ]),
           ),
           const SizedBox(height: 5),
           Row(children: [
