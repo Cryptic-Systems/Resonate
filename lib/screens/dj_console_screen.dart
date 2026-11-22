@@ -49,6 +49,11 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
       body: Consumer<MusicProvider>(
         builder: (context, music, _) {
           final song = music.currentSong;
+          final deckState = music.media3ShadowState;
+          final reportedDeckId = deckState?.activeDeckId;
+          final activeDeckId = reportedDeckId == 'A' || reportedDeckId == 'B'
+              ? reportedDeckId
+              : null;
           final duration = music.currentDuration ?? song?.duration ?? Duration.zero;
           final position = music.currentPosition;
           final progress = duration.inMilliseconds <= 0
@@ -64,7 +69,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                   children: [
                     Row(
                       children: [
-                        const _ConsoleStatus(label: 'MEDIA3 SESSION', active: true),
+                        _ConsoleStatus(label: song == null ? 'NO ACTIVE TRACK' : 'MEDIA3 SESSION', active: song != null),
                         const SizedBox(width: 8),
                         const _ConsoleStatus(label: 'PERFORMANCE CONTROLS LOCKED', active: false),
                         const Spacer(),
@@ -79,10 +84,14 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Expanded(child: _ConsoleDeck(
-                            deck: 'A', active: true, compact: compact,
-                            title: song?.title ?? 'Waiting for track',
-                            artist: song?.artist ?? 'Select music in the library',
-                            progress: progress, position: position, duration: duration,
+                            deck: activeDeckId == null ? 'PROGRAM · ID UNKNOWN' : 'DECK A',
+                            active: activeDeckId == 'A', compact: compact,
+                            status: activeDeckId == null ? 'IDENTITY UNKNOWN' : activeDeckId == 'A' ? 'ON AIR' : 'STANDBY',
+                            title: activeDeckId == 'B' ? 'Standby deck' : song?.title ?? 'Waiting for track',
+                            artist: activeDeckId == 'B' ? 'Awaiting verified standby metadata' : song?.artist ?? 'Select music in the library',
+                            progress: activeDeckId == 'B' ? 0 : progress,
+                            position: activeDeckId == 'B' ? Duration.zero : position,
+                            duration: activeDeckId == 'B' ? Duration.zero : duration,
                           )),
                           SizedBox(width: compact ? 8 : 12),
                           SizedBox(
@@ -91,10 +100,14 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                           ),
                           SizedBox(width: compact ? 8 : 12),
                           Expanded(child: _ConsoleDeck(
-                            deck: 'B', active: false, compact: compact,
-                            title: 'Standby deck',
-                            artist: 'Incoming track identity will appear here',
-                            progress: 0, position: Duration.zero, duration: Duration.zero,
+                            deck: activeDeckId == null ? 'STANDBY · UNMAPPED' : 'DECK B',
+                            active: activeDeckId == 'B', compact: compact,
+                            status: activeDeckId == null ? 'UNMAPPED' : activeDeckId == 'B' ? 'ON AIR' : 'STANDBY',
+                            title: activeDeckId == 'B' ? song?.title ?? 'Waiting for track' : 'Standby deck',
+                            artist: activeDeckId == 'B' ? song?.artist ?? 'Select music in the library' : 'Incoming track identity will appear here',
+                            progress: activeDeckId == 'B' ? progress : 0,
+                            position: activeDeckId == 'B' ? position : Duration.zero,
+                            duration: activeDeckId == 'B' ? duration : Duration.zero,
                           )),
                         ],
                       ),
@@ -133,11 +146,11 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
 class _ConsoleDeck extends StatelessWidget {
   const _ConsoleDeck({
     required this.deck, required this.active, required this.compact,
-    required this.title, required this.artist, required this.progress,
+    required this.status, required this.title, required this.artist, required this.progress,
     required this.position, required this.duration,
   });
 
-  final String deck, title, artist;
+  final String deck, status, title, artist;
   final bool active, compact;
   final double progress;
   final Duration position, duration;
@@ -166,7 +179,7 @@ class _ConsoleDeck extends StatelessWidget {
             Text('DECK $deck', style: theme.textTheme.labelLarge?.copyWith(
               color: accent, letterSpacing: 1.8, fontWeight: FontWeight.w800)),
             const Spacer(),
-            _ConsoleStatus(label: active ? 'AUDIBLE' : 'UNASSIGNED', active: active),
+            _ConsoleStatus(label: status, active: active),
           ]),
           const SizedBox(height: 10),
           Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
