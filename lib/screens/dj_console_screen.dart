@@ -253,18 +253,18 @@ class _ConsoleDeck extends StatelessWidget {
             future: profileFuture,
             builder: (context, snapshot) {
               final profile = snapshot.data;
-              final identityMatches = profile != null &&
-                  expectedSongId != null && profile.songId == expectedSongId;
-              final segments = identityMatches
-                  ? profile.waveformSegments
-                  : const <DjWaveformSegment>[];
-              final beatGrid = identityMatches ? profile.beatGrid : null;
-              final sections = identityMatches
-                  ? profile.sections
-                  : const <DjSection>[];
+              final verifiedProfile = profile != null &&
+                      expectedSongId != null &&
+                      profile.songId == expectedSongId
+                  ? profile
+                  : null;
+              final segments = verifiedProfile?.waveformSegments ??
+                  const <DjWaveformSegment>[];
+              final beatGrid = verifiedProfile?.beatGrid;
+              final sections = verifiedProfile?.sections ?? const <DjSection>[];
               final label = snapshot.connectionState == ConnectionState.waiting
                   ? 'LOADING CACHED PCM PROFILE'
-                  : profile != null && !identityMatches
+                  : profile != null && verifiedProfile == null
                       ? 'PROFILE IDENTITY MISMATCH · HIDDEN'
                       : segments.isEmpty
                           ? 'NO SAMPLED PCM · PREVIEW UNAVAILABLE'
