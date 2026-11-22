@@ -198,7 +198,7 @@ class _ConsoleDeck extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('DECK $deck', style: theme.textTheme.labelLarge?.copyWith(
+            Text(deck, style: theme.textTheme.labelLarge?.copyWith(
               color: accent, letterSpacing: 1.8, fontWeight: FontWeight.w800)),
             const Spacer(),
             _ConsoleStatus(label: status, active: active),
