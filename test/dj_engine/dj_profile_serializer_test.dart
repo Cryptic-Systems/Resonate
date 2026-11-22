@@ -105,6 +105,51 @@ void main() {
     expect(decoded.transitions.riskyPoints.single.timeMs, 60000);
   });
 
+  test('waveform segments round-trip with their sparse time coverage', () {
+    const original = DjTrackProfile(
+      songId: 'waveform-round-trip',
+      durationMs: 90000,
+      waveformSegments: [
+        DjWaveformSegment(
+          startMs: 8000,
+          endMs: 16000,
+          peaks: [0.0, 0.25, 0.75, 1.0],
+        ),
+        DjWaveformSegment(
+          startMs: 70000,
+          endMs: 78000,
+          peaks: [0.1, 0.2, 0.3],
+        ),
+      ],
+    );
+    const serializer = DjProfileSerializer();
+    final decoded = serializer.decode(serializer.encode(original));
+    expect(decoded.waveformSegments, hasLength(2));
+    expect(decoded.waveformSegments.first.startMs, 8000);
+    expect(decoded.waveformSegments.first.endMs, 16000);
+    expect(decoded.waveformSegments.first.peaks, [0.0, 0.25, 0.75, 1.0]);
+    expect(decoded.waveformSegments.last.startMs, 70000);
+  });
+
+  test('waveform decoder rejects malformed peaks and invalid intervals', () {
+    const serializer = DjProfileSerializer();
+    final decoded = serializer.decode('''
+      {
+        "songId": "waveform-guard",
+        "durationMs": 60000,
+        "waveformSegments": [
+          {"startMs": 1000, "endMs": 2000, "peaks": [0.1, 0.5, 1.0]},
+          {"startMs": 3000, "endMs": 3000, "peaks": [0.4]},
+          {"startMs": 4000, "endMs": 5000, "peaks": [0.2, -0.1]},
+          {"startMs": 6000, "endMs": 7000, "peaks": [0.2, 1.1]},
+          {"startMs": 8000, "endMs": 9000, "peaks": []}
+        ]
+      }
+    ''');
+    expect(decoded.waveformSegments, hasLength(1));
+    expect(decoded.waveformSegments.single.startMs, 1000);
+  });
+
   test('older profiles decode without optional silence metadata', () {
     const serializer = DjProfileSerializer();
     final decoded = serializer.decode('{"songId":"legacy","durationMs":120000}');
