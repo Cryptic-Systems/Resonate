@@ -11,6 +11,7 @@ class DjWaveformChunk {
   final int actualEndMs;
   final String? sourceFingerprint;
   final int durationMs;
+  final int schemaVersion;
   final int sampleRate;
   final int channels;
   final List<double> peaks;
@@ -26,6 +27,7 @@ class DjWaveformChunk {
     required this.actualEndMs,
     required this.sourceFingerprint,
     required this.durationMs,
+    required this.schemaVersion,
     required this.sampleRate,
     required this.channels,
     required this.peaks,
