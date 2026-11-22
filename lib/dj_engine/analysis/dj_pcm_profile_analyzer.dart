@@ -73,7 +73,7 @@ class DjPcmProfileAnalyzer {
       bassEnergyDb: measured.bassEnergyDb,
       maxSafeBassDb: safeBass,
     );
-    final detectedSilence = _silenceDetector.detect(
+    final waveformSegments = _buildWaveformSegments(windows, durationMs);\n    final detectedSilence = _silenceDetector.detect(
       rmsSamples,
       durationMs: durationMs,
     ).map((region) => DjSilenceRegion(
@@ -172,6 +172,60 @@ class DjPcmProfileAnalyzer {
       analysisConfidence: confidence,
       analysisVersion: analysisVersion,
     );
+  }
+
+  /// Builds compact peak envelopes from real PCM16 windows only.
+  /// Each window remains a separate segment; unanalysed gaps are never filled.
+  List<DjWaveformSegment> _buildWaveformSegments(
+    List<DjDecodedPcmWindow> windows,
+    int durationMs,
+  ) {
+    const maxBins = 192;
+    final segments = <DjWaveformSegment>[];
+    for (final window in windows) {
+      if (window.sampleRate < 8000 ||
+          window.channels < 1 ||
+          window.channels > 8 ||
+          window.startMs < 0 ||
+          window.startMs >= durationMs) {
+        continue;
+      }
+      final bytesPerFrame = 2 * window.channels;
+      final frameCount = window.pcm.length ~/ bytesPerFrame;
+      if (frameCount < 2) continue;
+      final measuredDurationMs =
+          (frameCount * 1000 / window.sampleRate).floor();
+      final endMs = math.min(
+        durationMs,
+        window.startMs + measuredDurationMs,
+      ).toInt();
+      if (endMs <= window.startMs) continue;
+
+      final binCount = math.min(maxBins, frameCount).toInt();
+      final peaks = List<double>.filled(binCount, 0.0);
+      final data = ByteData.sublistView(window.pcm);
+      for (var frame = 0; frame < frameCount; frame++) {
+        final bin = math.min(
+          binCount - 1,
+          frame * binCount ~/ frameCount,
+        ).toInt();
+        for (var channel = 0; channel < window.channels; channel++) {
+          final sample = data.getInt16(
+            frame * bytesPerFrame + channel * 2,
+            Endian.little,
+          );
+          final magnitude = (sample / 32768.0).abs();
+          if (magnitude > peaks[bin]) peaks[bin] = magnitude;
+        }
+      }
+      segments.add(DjWaveformSegment(
+        startMs: window.startMs,
+        endMs: endMs,
+        peaks: peaks,
+      ));
+    }
+    segments.sort((a, b) => a.startMs.compareTo(b.startMs));
+    return segments;
   }
 
   /// Measures the DSP-ENGINE offline-analysis inputs from actual signed PCM16.
