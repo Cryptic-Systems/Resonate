@@ -4,6 +4,18 @@
 **Target branch:** `dj-workspace-development`  
 **Last reviewed:** 2026-11-22
 
+## DJ Console — progressive waveform Phase A
+
+**Status:** Foundations committed; CI validation pending. No decoder or playback integration has been enabled.
+
+- Added a bounded chunk metadata model and explicit source/song/duration/analysis/schema identity.
+- Added pure validation for measured intervals, sample format, peak count/range, manifest completeness, visible-range overscan and cache budgets.
+- Added additive database version 9 tables for independently persisted waveform chunks and per-track manifests, with a range index and composite chunk primary key.
+- Existing sparse profile JSON remains unchanged and readable.
+- Explicit song deletion now removes associated waveform chunks, manifests and DJ metadata before removing the song row.
+- Remaining Phase A gates: SQLite migration/idempotency/cleanup integration tests and native decoder cancellation audit. No Phase B decoder work until these gates pass.
+
+
 This register consolidates user-observed playback quality concerns and engineering observations. An observation is not promoted to a confirmed root cause without reproducible evidence. Items remain open until their exit criteria are met on CI and, where required, verified on a physical device.
 
 ## Severity and evidence policy
