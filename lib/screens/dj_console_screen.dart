@@ -361,18 +361,18 @@ class _ConsoleWavePainter extends CustomPainter {
     if (durationMs > 0) {
       for (final segment in segments) {
         if (segment.endMs <= segment.startMs || segment.peaks.isEmpty) continue;
-        final segmentStart = (segment.startMs / durationMs).clamp(0.0, 1.0);
-        final segmentEnd = (segment.endMs / durationMs).clamp(0.0, 1.0);
+        final segmentStart = (segment.startMs / durationMs).clamp(0.0, 1.0).toDouble();
+        final segmentEnd = (segment.endMs / durationMs).clamp(0.0, 1.0).toDouble();
         final segmentWidth = (segmentEnd - segmentStart) * size.width;
         if (segmentWidth <= 0) continue;
         final paint = Paint()
-          ..strokeWidth = math.max(1.0, segmentWidth / segment.peaks.length * .72)
+          ..strokeWidth = math.max(1.0, segmentWidth / segment.peaks.length * .72).toDouble()
           ..strokeCap = StrokeCap.round;
         for (var i = 0; i < segment.peaks.length; i++) {
           final x = (segmentStart * size.width) +
               ((i + .5) / segment.peaks.length) * segmentWidth;
-          final peak = segment.peaks[i].clamp(0.0, 1.0);
-          final halfHeight = math.max(1.0, peak * size.height * .43);
+          final peak = segment.peaks[i].clamp(0.0, 1.0).toDouble();
+          final halfHeight = math.max(1.0, peak * size.height * .43).toDouble();
           final played = x <= size.width * progress;
           paint.color = color.withValues(alpha: played ? .88 : .48);
           canvas.drawLine(
