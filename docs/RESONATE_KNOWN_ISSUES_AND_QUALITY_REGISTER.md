@@ -68,6 +68,12 @@ Reproducible transition tests show no processor lifecycle race; telemetry can id
 
 DSP intelligence can become overwhelmed, apply frequent or excessive ducking, and surprise the listener with audible changes or distortion risk.
 
+**Code-level finding to validate**
+
+The current native auto-DVC path targets a short-term RMS level (default target -18 dB, default analysis window 400 ms) and permits up to 12 dB of cut by default. That can make a dense or temporarily loud passage pull gain down noticeably. This is a concrete candidate for the reported frequent ducking, but we still need to confirm the active Resonate settings and whether other gain controllers are contributing.
+
+The silence-hygiene block also decays the applied auto-gain during sustained low RMS, but the auto-DVC target calculation runs immediately afterward in the same processing block. Since silence produces a very low RMS reading, the controller can request positive gain again. This weakens the intended silence-hygiene behavior and may leave gain elevated when signal returns. Add a regression test before changing the policy.
+
 **Desired behavior**
 
 DSP should look ahead, assess confidence and intervene proportionally. It must distinguish a genuine clipping/distortion risk from a short transient, a dense musical passage, a quiet breakdown or an intentional mix decision. Protective gain reduction must be bounded, smoothed and reversible; low-confidence analysis should not trigger aggressive changes.
@@ -77,6 +83,7 @@ DSP should look ahead, assess confidence and intervene proportionally. It must d
 - Audit auto-gain, auto-preamp, auto-bass, DVC, limiter and analysis-hint interactions as a single gain-staging system.
 - Identify overlapping controllers that may each reduce gain for the same event.
 - Define look-ahead windows, confidence thresholds, maximum correction, attack/release smoothing and hysteresis.
+- Ensure sustained silence suppresses positive auto-gain accumulation until a stable signal has returned; validate the resume ramp against transient material.
 - Ensure the limiter is the final safety boundary and upstream intelligence does not create gain oscillation.
 - Add telemetry for decision reason, confidence, requested/applied gain and limiter activity.
 - Test dense transients, sustained bass, quiet passages, clipping-prone material and rapid track changes.
