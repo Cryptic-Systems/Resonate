@@ -1,10 +1,13 @@
-import 'dart:math' as math;\nimport 'dart:ui' show FontFeature;
+import 'dart:math' as math;
+import 'dart:ui' show FontFeature;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../providers/music_provider.dart';\nimport '../providers/dj_mode_provider.dart';\nimport '../dj_engine/core/dj_types.dart';
+import '../providers/music_provider.dart';
+import '../providers/dj_mode_provider.dart';
+import '../dj_engine/core/dj_types.dart';
 import '../ui/resonate_glass.dart';
 
 /// Landscape-first visual foundation for the future performance console.
@@ -19,7 +22,17 @@ class DjConsoleScreen extends StatefulWidget {
   State<DjConsoleScreen> createState() => _DjConsoleScreenState();
 }
 
-class _DjConsoleScreenState extends State<DjConsoleScreen> {\n  String? _profileSongId;\n  Future<DjTrackProfile?>? _profileFuture;\n\n  void _ensureProfileFuture(BuildContext context, String? songId) {\n    if (_profileSongId == songId) return;\n    _profileSongId = songId;\n    _profileFuture = songId == null\n        ? null\n        : context.read<DjModeProvider>().analysis.getProfile(songId);\n  }
+class _DjConsoleScreenState extends State<DjConsoleScreen> {
+  String? _profileSongId;
+  Future<DjTrackProfile?>? _profileFuture;
+
+  void _ensureProfileFuture(BuildContext context, String? songId) {
+    if (_profileSongId == songId) return;
+    _profileSongId = songId;
+    _profileFuture = songId == null
+        ? null
+        : context.read<DjModeProvider>().analysis.getProfile(songId);
+  }
   static const _landscape = <DeviceOrientation>[
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
@@ -153,7 +166,8 @@ class _ConsoleDeck extends StatelessWidget {
   final String deck, status, title, artist;
   final bool active, compact;
   final double progress;
-  final Duration position, duration;\n  final Future<DjTrackProfile?>? profileFuture;
+  final Duration position, duration;
+  final Future<DjTrackProfile?>? profileFuture;
 
   String _time(Duration value) {
     final seconds = value.inSeconds.clamp(0, 1 << 30);
