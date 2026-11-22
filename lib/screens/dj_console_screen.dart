@@ -269,7 +269,10 @@ class _ConsoleDeck extends StatelessWidget {
                       : segments.isEmpty
                           ? 'NO SAMPLED PCM · PREVIEW UNAVAILABLE'
                           : 'MEASURED PCM · ${segments.length} WINDOWS · GAPS UNANALYSED';
-              return Container(
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
                 height: compact ? 42 : 58,
                 decoration: BoxDecoration(
                   color: const Color(0xFF080E15),
@@ -291,6 +294,14 @@ class _ConsoleDeck extends StatelessWidget {
                     style: const TextStyle(fontSize: 7, letterSpacing: .5, color: Colors.white70),
                   )),
                 ]),
+                  ),
+                  const SizedBox(height: 7),
+                  _ConsoleAnalysisStrip(
+                    profile: verifiedProfile,
+                    positionMs: position.inMilliseconds,
+                    compact: compact,
+                  ),
+                ],
               );
             },
           ),
