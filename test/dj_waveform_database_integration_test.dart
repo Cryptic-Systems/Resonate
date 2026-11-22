@@ -25,7 +25,7 @@ void main() {
   test('version 8 database migrates additively to waveform tables', () async {
     final legacy = await databaseFactoryFfi.openDatabase(
       inMemoryDatabasePath,
-      options: const OpenDatabaseOptions(singleInstance: false),
+      options: OpenDatabaseOptions(singleInstance: false),
     );
     await legacy.execute(
       'CREATE TABLE songs (id TEXT PRIMARY KEY, title TEXT NOT NULL, '
