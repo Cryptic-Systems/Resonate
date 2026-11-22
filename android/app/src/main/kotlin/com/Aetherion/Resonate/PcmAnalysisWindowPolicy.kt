@@ -5,9 +5,11 @@ package com.Aetherion.Resonate
  * A requested PCM window is bounded by its absolute end, not by its duration
  * measured from zero. Negative/invalid inputs fail closed.
  *
- * Earlier timestamps are accepted because SEEK_TO_CLOSEST_SYNC may begin at
- * the preceding sync sample; callers retain the actual first output timestamp.
+ * A bounded preroll is accepted because SEEK_TO_CLOSEST_SYNC may begin at the
+ * preceding sync sample; callers retain the actual first output timestamp.
  */
+internal const val MAX_PCM_SEEK_PREROLL_US = 10_000_000L
+
 internal fun isPcmTimestampWithinWindowEnd(
     presentationTimeUs: Long,
     requestedStartMs: Long,
@@ -26,5 +28,6 @@ internal fun isPcmTimestampWithinWindowEnd(
     } else {
         startUs + maxDurationUs
     }
-    return presentationTimeUs <= endUs
+    val earliestUs = (startUs - MAX_PCM_SEEK_PREROLL_US).coerceAtLeast(0L)
+    return presentationTimeUs in earliestUs..endUs
 }
