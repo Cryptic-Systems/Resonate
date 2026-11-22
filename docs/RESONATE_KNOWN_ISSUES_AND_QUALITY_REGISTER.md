@@ -197,7 +197,7 @@ A test proves the telemetry compares the same physical player across promotion a
 **Status:** Targeted fix implemented; awaiting CI  
 **Evidence:** Code inspection and timestamp-boundary regression tests.
 
-The native PCM decoder bounded output timestamps against the window duration alone, even though `MediaCodec.BufferInfo.presentationTimeUs` is on the track timeline. Consequently, decoded buffers from windows beginning after that relative duration could be discarded. The decoder now compares against `requestedStartMs + maxDuration`, returns the first decoded output timestamp, and the Dart profile builder uses that measured timestamp instead of assuming the requested seek position was the actual decode start. This preserves codec seek-to-sync behavior without mislabelling the returned PCM timeline.
+The native PCM decoder bounded output timestamps against the window duration alone, even though `MediaCodec.BufferInfo.presentationTimeUs` is on the track timeline. Consequently, decoded buffers from windows beginning after that relative duration could be discarded. The decoder now checks the requested absolute window, allows at most 10 seconds of seek preroll for `SEEK_TO_CLOSEST_SYNC`, returns the first included output timestamp, and the Dart profile builder uses that measured timestamp instead of assuming the requested seek position was the actual decode start. The preroll bound also prevents a failed seek from silently returning audio from the beginning of the track.
 
 **Validation:** Pure Kotlin tests cover non-zero offsets, inclusive window end, out-of-window timestamps and invalid inputs. Device codec coverage remains required.
 
