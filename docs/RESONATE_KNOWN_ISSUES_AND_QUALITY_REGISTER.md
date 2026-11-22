@@ -191,6 +191,18 @@ A test proves the telemetry compares the same physical player across promotion a
 
 ---
 
+## RQ-007 — PCM analysis drops non-zero-offset decoder output
+
+**Priority:** P1 analysis correctness  
+**Status:** Targeted fix implemented; awaiting CI  
+**Evidence:** Code inspection and timestamp-boundary regression tests.
+
+The native PCM decoder bounded output timestamps against the window duration alone, even though `MediaCodec.BufferInfo.presentationTimeUs` is on the track timeline. Consequently, decoded buffers from windows beginning after that relative duration could be discarded. The decoder now compares against `requestedStartMs + maxDuration`, returns the first decoded output timestamp, and the Dart profile builder uses that measured timestamp instead of assuming the requested seek position was the actual decode start. This preserves codec seek-to-sync behavior without mislabelling the returned PCM timeline.
+
+**Validation:** Pure Kotlin tests cover non-zero offsets, inclusive window end, out-of-window timestamps and invalid inputs. Device codec coverage remains required.
+
+---
+
 ## DJ Console — gated parallel workstream
 
 The landscape DJ Console visual foundation may proceed in parallel with playback hardening. It must not create another player or output path. The initial visual shell is observational and must label any placeholder visualization honestly. Manual deck preparation, cueing, jog/scratch, channel gain and crossfader actions remain unavailable until their Media3/DSP command contracts, lease behavior, cancellation rules and regression tests are implemented.
