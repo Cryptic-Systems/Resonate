@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -114,6 +115,16 @@ class DatabaseHelper {
     await _createDjWaveformTables(db);
     for (final sql in ['CREATE INDEX idx_songs_title ON $tableSongs($columnSongTitle)', 'CREATE INDEX idx_songs_artist ON $tableSongs($columnSongArtist)', 'CREATE INDEX idx_playlists_name ON $tablePlaylists($columnPlaylistName)', 'CREATE INDEX idx_favorites_date_added ON $tableFavorites($columnFavoriteDateAdded)', 'CREATE INDEX idx_events_song ON $tableListeningEvents($columnEventSongId)', 'CREATE INDEX idx_events_previous_song ON $tableListeningEvents($columnEventPreviousSongId)', 'CREATE INDEX idx_events_started_at ON $tableListeningEvents($columnEventStartedAt)']) { await db.execute(sql); }
   }
+  @visibleForTesting
+  static set databaseForTesting(Database database) => _database = database;
+
+  @visibleForTesting
+  Future<void> upgradeForTesting(Database db, int oldVersion, int newVersion) =>
+      _onUpgrade(db, oldVersion, newVersion);
+
+  @visibleForTesting
+  Future<void> createForTesting(Database db) => _onCreate(db, _databaseVersion);
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await db.execute('CREATE TABLE $tableListeningEvents ($columnEventId TEXT PRIMARY KEY, $columnEventSongId TEXT NOT NULL, $columnEventPreviousSongId TEXT, $columnEventStartedAt TEXT NOT NULL, $columnEventEndedAt TEXT, $columnEventDurationPlayedMs INTEGER NOT NULL DEFAULT 0, $columnEventSongDurationMs INTEGER NOT NULL DEFAULT 0, $columnEventCompletionRatio REAL NOT NULL DEFAULT 0, $columnEventCompleted INTEGER NOT NULL DEFAULT 0, $columnEventSkipped INTEGER NOT NULL DEFAULT 0, $columnEventSkipPositionMs INTEGER, FOREIGN KEY ($columnEventSongId) REFERENCES $tableSongs($columnSongId))');
@@ -194,7 +205,36 @@ class DatabaseHelper {
       return await db.rawUpdate('UPDATE $tableSongs SET $columnSongPlayCount=COALESCE($columnSongPlayCount,0)+1,$columnSongLastPlayed=? WHERE $columnSongId=?',[DateTime.now().toIso8601String(),songId]);
     } catch(e){_markDatabaseFailure('database_operation',e);return -1;}
   }
-  Future<int> deleteSong(String songId) async { try{final db=await database;await db.delete(tableDjWaveformChunks,where:'song_id = ?',whereArgs:[songId]);await db.delete(tableDjWaveformManifests,where:'song_id = ?',whereArgs:[songId]);await db.delete(tableListeningEvents,where:'$columnEventSongId = ? OR $columnEventPreviousSongId = ?',whereArgs:[songId,songId]);await db.delete(tablePlaylistSongs,where:'$columnPlaylistSongSongId = ?',whereArgs:[songId]);await db.delete(tableFavorites,where:'$columnFavoriteSongId = ?',whereArgs:[songId]);await db.delete(tableSongDjProfiles,where:'$columnDjProfileSongId = ?',whereArgs:[songId]);await db.delete(tableSongDjAnalysis,where:'$columnDjSongId = ?',whereArgs:[songId]);return await db.delete(tableSongs,where:'$columnSongId = ?',whereArgs:[songId]);}catch(e){_markDatabaseFailure('database_operation',e);return -1;} }
+  Future<int> deleteSong(String songId) async {
+    try {
+      final db = await database;
+      return await db.transaction((txn) async {
+        await txn.delete(tableDjWaveformChunks, where: 'song_id = ?', whereArgs: [songId]);
+        await txn.delete(tableDjWaveformManifests, where: 'song_id = ?', whereArgs: [songId]);
+        await txn.delete(
+          tableListeningEvents,
+          where: '$columnEventSongId = ? OR $columnEventPreviousSongId = ?',
+          whereArgs: [songId, songId],
+        );
+        await txn.delete(
+          tablePlaylistSongs,
+          where: '$columnPlaylistSongSongId = ?',
+          whereArgs: [songId],
+        );
+        await txn.delete(tableFavorites, where: '$columnFavoriteSongId = ?', whereArgs: [songId]);
+        await txn.delete(
+          tableSongDjProfiles,
+          where: '$columnDjProfileSongId = ?',
+          whereArgs: [songId],
+        );
+        await txn.delete(tableSongDjAnalysis, where: '$columnDjSongId = ?', whereArgs: [songId]);
+        return txn.delete(tableSongs, where: '$columnSongId = ?', whereArgs: [songId]);
+      });
+    } catch (e) {
+      _markDatabaseFailure('database_operation', e);
+      return -1;
+    }
+  }
   Future<int> insertPlaylist(Playlist playlist) async { try{return await (await database).insert(tablePlaylists,{columnPlaylistId:playlist.id,columnPlaylistName:playlist.name,columnPlaylistCreatedAt:playlist.createdAt.toIso8601String(),columnPlaylistDescription:playlist.description},conflictAlgorithm:ConflictAlgorithm.replace);}catch(e){_markDatabaseFailure('database_operation',e);return -1;} }
   Future<List<Playlist>> getAllPlaylists() async { try{return (await (await database).query(tablePlaylists,orderBy:'$columnPlaylistName ASC')).map(_playlistFromMap).toList();}catch(e){_markDatabaseFailure('database_operation',e);return [];} }
   Future<int> addSongToPlaylist(String playlistId,String songId,int position) async { try{return await (await database).insert(tablePlaylistSongs,{columnPlaylistSongPlaylistId:playlistId,columnPlaylistSongSongId:songId,columnPlaylistSongPosition:position},conflictAlgorithm:ConflictAlgorithm.ignore);}catch(e){_markDatabaseFailure('database_operation',e);return -1;} }
