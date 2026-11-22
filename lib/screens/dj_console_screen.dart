@@ -73,7 +73,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                         const SizedBox(width: 8),
                         const _ConsoleStatus(label: 'PERFORMANCE CONTROLS LOCKED', active: false),
                         const Spacer(),
-                        Text('RES0NATE  /  TWO-DECK SYSTEM',
+                        Text('RESONATE  /  TWO-DECK SYSTEM',
                             style: theme.textTheme.labelSmall?.copyWith(
                               letterSpacing: 1.3, color: theme.colorScheme.onSurfaceVariant)),
                       ],
@@ -96,7 +96,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                           SizedBox(width: compact ? 8 : 12),
                           SizedBox(
                             width: compact ? 132 : 190,
-                            child: _ConsoleMixer(progress: progress, compact: compact),
+                            child: _ConsoleMixer(compact: compact),
                           ),
                           SizedBox(width: compact ? 8 : 12),
                           Expanded(child: _ConsoleDeck(
@@ -256,8 +256,7 @@ class _ConsoleDeck extends StatelessWidget {
 }
 
 class _ConsoleMixer extends StatelessWidget {
-  const _ConsoleMixer({required this.progress, required this.compact});
-  final double progress;
+  const _ConsoleMixer({required this.compact});
   final bool compact;
 
   @override
@@ -275,9 +274,14 @@ class _ConsoleMixer extends StatelessWidget {
           Text('MIXER', style: theme.textTheme.labelLarge?.copyWith(
             letterSpacing: 2, fontWeight: FontWeight.w800)),
           const SizedBox(height: 12),
-          const _Meter(label: 'A', level: .68),
           const SizedBox(height: 8),
-          const _Meter(label: 'B', level: 0),
+          Text('A  —', style: theme.textTheme.labelMedium?.copyWith(color: Colors.white54)),
+          const SizedBox(height: 4),
+          Text('B  —', style: theme.textTheme.labelMedium?.copyWith(color: Colors.white54)),
+          const SizedBox(height: 4),
+          Text('LEVEL TELEMETRY NOT CONNECTED',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.labelSmall?.copyWith(fontSize: 8, color: Colors.white38)),
           const Spacer(),
           Icon(Icons.tune_rounded, size: compact ? 25 : 32,
               color: theme.colorScheme.primary),
@@ -296,22 +300,6 @@ class _ConsoleMixer extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Meter extends StatelessWidget {
-  const _Meter({required this.label, required this.level});
-  final String label;
-  final double level;
-  @override
-  Widget build(BuildContext context) => Row(children: [
-    Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-    const SizedBox(width: 5),
-    Expanded(child: ClipRRect(
-      borderRadius: BorderRadius.circular(4),
-      child: LinearProgressIndicator(value: level, minHeight: 7,
-        backgroundColor: Colors.white10, color: const Color(0xFF55D6BE)),
-    )),
-  ]);
 }
 
 class _ConsoleStatus extends StatelessWidget {
