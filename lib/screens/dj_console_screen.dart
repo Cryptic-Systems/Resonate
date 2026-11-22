@@ -9,6 +9,7 @@ import '../providers/music_provider.dart';
 import '../providers/dj_mode_provider.dart';
 import '../dj_engine/core/dj_types.dart';
 import '../ui/resonate_glass.dart';
+import 'dj_console_overlay_policy.dart';
 
 /// Landscape-first visual foundation for the future performance console.
 ///
@@ -62,6 +63,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
       body: Consumer<MusicProvider>(
         builder: (context, music, _) {
           final song = music.currentSong;
+          _ensureProfileFuture(context, song?.id);
           final deckState = music.media3ShadowState;
           final reportedDeckId = deckState?.activeDeckId;
           final activeDeckId = reportedDeckId == 'A' || reportedDeckId == 'B'
@@ -106,6 +108,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                             position: activeDeckId == 'B' ? Duration.zero : position,
                             duration: activeDeckId == 'B' ? Duration.zero : duration,
                             profileFuture: activeDeckId == 'A' ? _profileFuture : null,
+                            expectedSongId: activeDeckId == 'A' ? song?.id : null,
                           )),
                           SizedBox(width: compact ? 8 : 12),
                           SizedBox(
@@ -123,6 +126,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                             position: activeDeckId == 'B' ? position : Duration.zero,
                             duration: activeDeckId == 'B' ? duration : Duration.zero,
                             profileFuture: activeDeckId == 'B' ? _profileFuture : null,
+                            expectedSongId: activeDeckId == 'B' ? song?.id : null,
                           )),
                         ],
                       ),
@@ -163,6 +167,7 @@ class _ConsoleDeck extends StatelessWidget {
     required this.deck, required this.active, required this.compact,
     required this.status, required this.title, required this.artist, required this.progress,
     required this.position, required this.duration, required this.profileFuture,
+    required this.expectedSongId,
   });
 
   final String deck, status, title, artist;
@@ -170,6 +175,7 @@ class _ConsoleDeck extends StatelessWidget {
   final double progress;
   final Duration position, duration;
   final Future<DjTrackProfile?>? profileFuture;
+  final String? expectedSongId;
 
   String _time(Duration value) {
     final seconds = value.inSeconds.clamp(0, 1 << 30);
@@ -246,12 +252,23 @@ class _ConsoleDeck extends StatelessWidget {
           FutureBuilder<DjTrackProfile?>(
             future: profileFuture,
             builder: (context, snapshot) {
-              final segments = snapshot.data?.waveformSegments ?? const <DjWaveformSegment>[];
+              final profile = snapshot.data;
+              final identityMatches = profile != null &&
+                  expectedSongId != null && profile.songId == expectedSongId;
+              final segments = identityMatches
+                  ? profile.waveformSegments
+                  : const <DjWaveformSegment>[];
+              final beatGrid = identityMatches ? profile.beatGrid : null;
+              final sections = identityMatches
+                  ? profile.sections
+                  : const <DjSection>[];
               final label = snapshot.connectionState == ConnectionState.waiting
                   ? 'LOADING CACHED PCM PROFILE'
-                  : segments.isEmpty
-                      ? 'NO SAMPLED PCM · PREVIEW UNAVAILABLE'
-                      : 'MEASURED PCM · ${segments.length} WINDOWS · GAPS UNANALYSED';
+                  : profile != null && !identityMatches
+                      ? 'PROFILE IDENTITY MISMATCH · HIDDEN'
+                      : segments.isEmpty
+                          ? 'NO SAMPLED PCM · PREVIEW UNAVAILABLE'
+                          : 'MEASURED PCM · ${segments.length} WINDOWS · GAPS UNANALYSED';
               return Container(
                 height: compact ? 42 : 58,
                 decoration: BoxDecoration(
@@ -264,6 +281,8 @@ class _ConsoleDeck extends StatelessWidget {
                       progress: progress,
                       color: accent,
                       segments: segments,
+                      beatGrid: beatGrid,
+                      sections: sections,
                       durationMs: duration.inMilliseconds,
                     ),
                   ),
@@ -359,11 +378,15 @@ class _ConsoleWavePainter extends CustomPainter {
     required this.progress,
     required this.color,
     required this.segments,
+    required this.beatGrid,
+    required this.sections,
     required this.durationMs,
   });
   final double progress;
   final Color color;
   final List<DjWaveformSegment> segments;
+  final DjBeatGrid? beatGrid;
+  final List<DjSection> sections;
   final int durationMs;
 
   @override
@@ -399,6 +422,41 @@ class _ConsoleWavePainter extends CustomPainter {
         }
       }
     }
+    if (durationMs > 0) {
+      for (final section in DjConsoleOverlayPolicy.trustedSections(sections)) {
+        final left = (section.startMs / durationMs).clamp(0.0, 1.0) * size.width;
+        final right = (section.endMs / durationMs).clamp(0.0, 1.0) * size.width;
+        if (right <= left) continue;
+        canvas.drawRect(
+          Rect.fromLTRB(left, 0, right, size.height),
+          Paint()..color = color.withValues(alpha: .055),
+        );
+      }
+
+      final grid = beatGrid;
+      if (grid != null) {
+        final beats = DjConsoleOverlayPolicy.beatTicks(grid);
+        final bars = DjConsoleOverlayPolicy.barTicks(grid).toSet();
+        final phrases = DjConsoleOverlayPolicy.phraseTicks(grid).toSet();
+        for (final beat in beats) {
+          if (beat < 0 || beat > durationMs) continue;
+          final x = beat / durationMs * size.width;
+          final isPhrase = phrases.contains(beat);
+          final isBar = bars.contains(beat);
+          final tickPaint = Paint()
+            ..color = color.withValues(
+              alpha: isPhrase ? .78 : isBar ? .48 : .19,
+            )
+            ..strokeWidth = isPhrase ? 2.0 : isBar ? 1.3 : .7;
+          canvas.drawLine(
+            Offset(x, isPhrase ? 0 : size.height * .16),
+            Offset(x, isPhrase ? size.height : size.height * .84),
+            tickPaint,
+          );
+        }
+      }
+    }
+
     final playheadX = size.width * progress.clamp(0.0, 1.0);
     canvas.drawLine(
       Offset(playheadX, 0),
@@ -412,5 +470,7 @@ class _ConsoleWavePainter extends CustomPainter {
       old.progress != progress ||
       old.color != color ||
       old.durationMs != durationMs ||
+      old.beatGrid != beatGrid ||
+      !identical(old.sections, sections) ||
       !identical(old.segments, segments);
 }
