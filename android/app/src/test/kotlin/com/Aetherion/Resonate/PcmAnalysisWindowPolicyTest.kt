@@ -8,7 +8,7 @@ class PcmAnalysisWindowPolicyTest {
     @Test
     fun acceptsOutputFromAWindowWithANonZeroTrackOffset() {
         assertTrue(
-            isPcmTimestampWithinWindowEnd(
+            isPcmTimestampWithinRequestedWindow(
                 presentationTimeUs = 60_000_000L,
                 requestedStartMs = 60_000L,
                 maxDurationUs = 8_000_000L,
@@ -19,14 +19,14 @@ class PcmAnalysisWindowPolicyTest {
     @Test
     fun acceptsSeekPrerollAndTheInclusiveWindowEnd() {
         assertTrue(
-            isPcmTimestampWithinWindowEnd(
+            isPcmTimestampWithinRequestedWindow(
                 presentationTimeUs = 58_000_000L,
                 requestedStartMs = 60_000L,
                 maxDurationUs = 8_000_000L,
             ),
         )
         assertTrue(
-            isPcmTimestampWithinWindowEnd(
+            isPcmTimestampWithinRequestedWindow(
                 presentationTimeUs = 68_000_000L,
                 requestedStartMs = 60_000L,
                 maxDurationUs = 8_000_000L,
@@ -37,7 +37,7 @@ class PcmAnalysisWindowPolicyTest {
     @Test
     fun rejectsOutputFarBeforeTheRequestedWindowStart() {
         assertFalse(
-            isPcmTimestampWithinWindowEnd(
+            isPcmTimestampWithinRequestedWindow(
                 presentationTimeUs = 0L,
                 requestedStartMs = 60_000L,
                 maxDurationUs = 8_000_000L,
@@ -48,7 +48,7 @@ class PcmAnalysisWindowPolicyTest {
     @Test
     fun rejectsOutputAfterTheRequestedWindowEnd() {
         assertFalse(
-            isPcmTimestampWithinWindowEnd(
+            isPcmTimestampWithinRequestedWindow(
                 presentationTimeUs = 68_000_001L,
                 requestedStartMs = 60_000L,
                 maxDurationUs = 8_000_000L,
@@ -58,11 +58,11 @@ class PcmAnalysisWindowPolicyTest {
 
     @Test
     fun rejectsInvalidInputsAndSaturatesOverflowingEndTime() {
-        assertFalse(isPcmTimestampWithinWindowEnd(-1L, 0L, 8_000_000L))
-        assertFalse(isPcmTimestampWithinWindowEnd(1L, -1L, 8_000_000L))
-        assertFalse(isPcmTimestampWithinWindowEnd(1L, 0L, -1L))
+        assertFalse(isPcmTimestampWithinRequestedWindow(-1L, 0L, 8_000_000L))
+        assertFalse(isPcmTimestampWithinRequestedWindow(1L, -1L, 8_000_000L))
+        assertFalse(isPcmTimestampWithinRequestedWindow(1L, 0L, -1L))
         assertTrue(
-            isPcmTimestampWithinWindowEnd(
+            isPcmTimestampWithinRequestedWindow(
                 presentationTimeUs = Long.MAX_VALUE,
                 requestedStartMs = Long.MAX_VALUE,
                 maxDurationUs = Long.MAX_VALUE,
