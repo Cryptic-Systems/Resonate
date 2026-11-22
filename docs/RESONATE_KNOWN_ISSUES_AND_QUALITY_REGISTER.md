@@ -194,3 +194,18 @@ The landscape DJ Console visual foundation may proceed in parallel with playback
 - Keep PR #221 open; do not merge without explicit user approval.
 - Keep `Resonate-True-Apk` untouched.
 - CI success is not a substitute for physical-device listening and interaction tests.
+
+## Today's scope boundary — 2026-11-22
+
+**Authorized workstreams for this session:**
+1. DSP intelligence/audio-quality work, with conservative changes and regression coverage.
+2. DJ Console visual foundation and safe architecture preparation.
+
+**Documented but explicitly deferred today:**
+- RQ-003 stale pause display after library selection.
+- RQ-004 silence-aware automatic transition trigger.
+- Any unrelated playback refactor, player migration, transport-state rewrite or broad cleanup.
+
+These deferred items remain in the register and must not be opportunistically changed during today's work. If DSP investigation touches a shared path, make only the minimum isolated change required for the DSP objective, preserve existing Media3 ownership and playback-arbiter behavior, and stop rather than broaden scope if a safe boundary cannot be established.
+
+**Risk policy:** no speculative real-time threading/lock-free changes, no second playback path, no standby audio-focus changes, no changes to production branch, and no merging PR #221. Every implementation change requires focused tests and CI; device-only behavior must remain explicitly unverified until tested on hardware.
