@@ -169,6 +169,7 @@ class DjPcmProfileAnalyzer {
       dspAnalysis: dspAnalysis,
       transitions: markers,
       silenceRegions: detectedSilence,
+      waveformSegments: waveformSegments,
       analysisConfidence: confidence,
       analysisVersion: analysisVersion,
     );
