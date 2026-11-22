@@ -35,6 +35,17 @@ class PcmAnalysisWindowPolicyTest {
     }
 
     @Test
+    fun rejectsOutputFarBeforeTheRequestedWindowStart() {
+        assertFalse(
+            isPcmTimestampWithinWindowEnd(
+                presentationTimeUs = 0L,
+                requestedStartMs = 60_000L,
+                maxDurationUs = 8_000_000L,
+            ),
+        )
+    }
+
+    @Test
     fun rejectsOutputAfterTheRequestedWindowEnd() {
         assertFalse(
             isPcmTimestampWithinWindowEnd(
