@@ -17,6 +17,7 @@ class DjWaveformStoragePolicy {
         chunk.chunkIndex < 0 ||
         chunk.chunkIndex >= maxChunksPerTrack ||
         chunk.durationMs <= 0 ||
+        chunk.schemaVersion != schemaVersion ||
         chunk.requestedStartMs < 0 ||
         chunk.requestedEndMs <= chunk.requestedStartMs ||
         chunk.requestedEndMs > chunk.durationMs ||
@@ -64,6 +65,7 @@ class DjWaveformStoragePolicy {
     required int incomingPayloadBytes,
   }) {
     if (incomingPayloadBytes < 0) return payloadByteSizes.length;
+    if (incomingPayloadBytes > maxCacheBytes) return 0;
     var count = 1;
     var bytes = incomingPayloadBytes;
     for (final size in payloadByteSizes.reversed) {
