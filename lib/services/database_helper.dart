@@ -8,7 +8,7 @@ import '../models/dj_analysis.dart';
 
 class DatabaseHelper {
   static const _databaseName = 'resonate.db';
-  static const _databaseVersion = 8;
+  static const _databaseVersion = 9;
   static const String tableSongs = 'songs';
   static const String tablePlaylists = 'playlists';
   static const String tablePlaylistSongs = 'playlist_songs';
@@ -16,6 +16,8 @@ class DatabaseHelper {
   static const String tableListeningEvents = 'listening_events';
   static const String tableSongDjAnalysis = 'song_dj_analysis';
   static const String tableSongDjProfiles = 'song_dj_profiles';
+  static const String tableDjWaveformChunks = 'dj_waveform_chunks';
+  static const String tableDjWaveformManifests = 'dj_waveform_manifests';
   static const String columnDjSongId = 'song_id';
   static const String columnDjBpm = 'bpm';
   static const String columnDjBpmConfidence = 'bpm_confidence';
@@ -109,6 +111,7 @@ class DatabaseHelper {
     await db.execute('CREATE TABLE $tableListeningEvents ($columnEventId TEXT PRIMARY KEY, $columnEventSongId TEXT NOT NULL, $columnEventPreviousSongId TEXT, $columnEventStartedAt TEXT NOT NULL, $columnEventEndedAt TEXT, $columnEventDurationPlayedMs INTEGER NOT NULL DEFAULT 0, $columnEventSongDurationMs INTEGER NOT NULL DEFAULT 0, $columnEventCompletionRatio REAL NOT NULL DEFAULT 0, $columnEventCompleted INTEGER NOT NULL DEFAULT 0, $columnEventSkipped INTEGER NOT NULL DEFAULT 0, $columnEventSkipPositionMs INTEGER, FOREIGN KEY ($columnEventSongId) REFERENCES $tableSongs($columnSongId))');
     await db.execute('CREATE TABLE $tableSongDjAnalysis ($columnDjSongId TEXT PRIMARY KEY, $columnDjBpm REAL, $columnDjBpmConfidence REAL NOT NULL DEFAULT 0, $columnDjBeatOffsetMs INTEGER, $columnDjKeyRoot INTEGER, $columnDjKeyMode TEXT, $columnDjAnalyzedAt TEXT, $columnDjAnalysisVersion INTEGER NOT NULL DEFAULT 0, $columnDjBpmSource TEXT, $columnDjFileSizeBytes INTEGER, $columnDjDurationMs INTEGER, $columnDjEnergy REAL, $columnDjLoudness REAL, $columnDjIntroHintMs INTEGER, $columnDjOutroHintMs INTEGER, $columnDjSectionHint TEXT, FOREIGN KEY ($columnDjSongId) REFERENCES $tableSongs($columnSongId))');
     await db.execute('CREATE TABLE $tableSongDjProfiles ($columnDjProfileSongId TEXT PRIMARY KEY, $columnDjProfileFingerprint TEXT, $columnDjProfileDurationMs INTEGER, $columnDjProfileAnalyzedAt TEXT, $columnDjProfileAnalysisVersion INTEGER NOT NULL DEFAULT 0, $columnDjProfileJson TEXT NOT NULL, FOREIGN KEY ($columnDjProfileSongId) REFERENCES $tableSongs($columnSongId))');
+    await _createDjWaveformTables(db);
     for (final sql in ['CREATE INDEX idx_songs_title ON $tableSongs($columnSongTitle)', 'CREATE INDEX idx_songs_artist ON $tableSongs($columnSongArtist)', 'CREATE INDEX idx_playlists_name ON $tablePlaylists($columnPlaylistName)', 'CREATE INDEX idx_favorites_date_added ON $tableFavorites($columnFavoriteDateAdded)', 'CREATE INDEX idx_events_song ON $tableListeningEvents($columnEventSongId)', 'CREATE INDEX idx_events_previous_song ON $tableListeningEvents($columnEventPreviousSongId)', 'CREATE INDEX idx_events_started_at ON $tableListeningEvents($columnEventStartedAt)']) { await db.execute(sql); }
   }
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -141,7 +144,17 @@ class DatabaseHelper {
     if (oldVersion < 8) {
       await db.execute('CREATE TABLE IF NOT EXISTS $tableSongDjProfiles ($columnDjProfileSongId TEXT PRIMARY KEY, $columnDjProfileFingerprint TEXT, $columnDjProfileDurationMs INTEGER, $columnDjProfileAnalyzedAt TEXT, $columnDjProfileAnalysisVersion INTEGER NOT NULL DEFAULT 0, $columnDjProfileJson TEXT NOT NULL, FOREIGN KEY ($columnDjProfileSongId) REFERENCES $tableSongs($columnSongId))');
     }
+    if (oldVersion < 9) {
+      await _createDjWaveformTables(db);
+    }
   }
+
+  Future<void> _createDjWaveformTables(Database db) async {
+    await db.execute('CREATE TABLE IF NOT EXISTS $tableDjWaveformChunks (song_id TEXT NOT NULL, analysis_version INTEGER NOT NULL, chunk_index INTEGER NOT NULL CHECK(chunk_index >= 0), requested_start_ms INTEGER NOT NULL CHECK(requested_start_ms >= 0), requested_end_ms INTEGER NOT NULL CHECK(requested_end_ms > requested_start_ms), actual_start_ms INTEGER NOT NULL CHECK(actual_start_ms >= 0), actual_end_ms INTEGER NOT NULL CHECK(actual_end_ms > actual_start_ms), source_fingerprint TEXT, duration_ms INTEGER NOT NULL CHECK(duration_ms > 0), sample_rate INTEGER NOT NULL CHECK(sample_rate > 0), channels INTEGER NOT NULL CHECK(channels BETWEEN 1 AND 8), peaks_json TEXT NOT NULL, completed_at TEXT NOT NULL, schema_version INTEGER NOT NULL, PRIMARY KEY(song_id, analysis_version, chunk_index), FOREIGN KEY(song_id) REFERENCES $tableSongs($columnSongId))');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_dj_waveform_chunks_range ON $tableDjWaveformChunks(song_id, analysis_version, actual_start_ms, actual_end_ms)');
+    await db.execute('CREATE TABLE IF NOT EXISTS $tableDjWaveformManifests (song_id TEXT NOT NULL, analysis_version INTEGER NOT NULL, source_fingerprint TEXT, duration_ms INTEGER NOT NULL CHECK(duration_ms > 0), schema_version INTEGER NOT NULL, expected_chunk_count INTEGER NOT NULL CHECK(expected_chunk_count > 0), completed_indices_json TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(song_id, analysis_version), FOREIGN KEY(song_id) REFERENCES $tableSongs($columnSongId))');
+  }
+
   Future<int> insertListeningEvent(ListeningEvent event) async {
     try {
       final db = await database;
@@ -181,7 +194,7 @@ class DatabaseHelper {
       return await db.rawUpdate('UPDATE $tableSongs SET $columnSongPlayCount=COALESCE($columnSongPlayCount,0)+1,$columnSongLastPlayed=? WHERE $columnSongId=?',[DateTime.now().toIso8601String(),songId]);
     } catch(e){_markDatabaseFailure('database_operation',e);return -1;}
   }
-  Future<int> deleteSong(String songId) async { try{final db=await database;await db.delete(tableListeningEvents,where:'$columnEventSongId = ? OR $columnEventPreviousSongId = ?',whereArgs:[songId,songId]);await db.delete(tablePlaylistSongs,where:'$columnPlaylistSongSongId = ?',whereArgs:[songId]);await db.delete(tableFavorites,where:'$columnFavoriteSongId = ?',whereArgs:[songId]);return await db.delete(tableSongs,where:'$columnSongId = ?',whereArgs:[songId]);}catch(e){_markDatabaseFailure('database_operation',e);return -1;} }
+  Future<int> deleteSong(String songId) async { try{final db=await database;await db.delete(tableDjWaveformChunks,where:'song_id = ?',whereArgs:[songId]);await db.delete(tableDjWaveformManifests,where:'song_id = ?',whereArgs:[songId]);await db.delete(tableListeningEvents,where:'$columnEventSongId = ? OR $columnEventPreviousSongId = ?',whereArgs:[songId,songId]);await db.delete(tablePlaylistSongs,where:'$columnPlaylistSongSongId = ?',whereArgs:[songId]);await db.delete(tableFavorites,where:'$columnFavoriteSongId = ?',whereArgs:[songId]);await db.delete(tableSongDjProfiles,where:'$columnDjProfileSongId = ?',whereArgs:[songId]);await db.delete(tableSongDjAnalysis,where:'$columnDjSongId = ?',whereArgs:[songId]);return await db.delete(tableSongs,where:'$columnSongId = ?',whereArgs:[songId]);}catch(e){_markDatabaseFailure('database_operation',e);return -1;} }
   Future<int> insertPlaylist(Playlist playlist) async { try{return await (await database).insert(tablePlaylists,{columnPlaylistId:playlist.id,columnPlaylistName:playlist.name,columnPlaylistCreatedAt:playlist.createdAt.toIso8601String(),columnPlaylistDescription:playlist.description},conflictAlgorithm:ConflictAlgorithm.replace);}catch(e){_markDatabaseFailure('database_operation',e);return -1;} }
   Future<List<Playlist>> getAllPlaylists() async { try{return (await (await database).query(tablePlaylists,orderBy:'$columnPlaylistName ASC')).map(_playlistFromMap).toList();}catch(e){_markDatabaseFailure('database_operation',e);return [];} }
   Future<int> addSongToPlaylist(String playlistId,String songId,int position) async { try{return await (await database).insert(tablePlaylistSongs,{columnPlaylistSongPlaylistId:playlistId,columnPlaylistSongSongId:songId,columnPlaylistSongPosition:position},conflictAlgorithm:ConflictAlgorithm.ignore);}catch(e){_markDatabaseFailure('database_operation',e);return -1;} }
