@@ -1,10 +1,10 @@
-import 'dart:ui' show FontFeature;
+import 'dart:math' as math;\nimport 'dart:ui' show FontFeature;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../providers/music_provider.dart';
+import '../providers/music_provider.dart';\nimport '../providers/dj_mode_provider.dart';\nimport '../dj_engine/core/dj_types.dart';
 import '../ui/resonate_glass.dart';
 
 /// Landscape-first visual foundation for the future performance console.
@@ -19,7 +19,7 @@ class DjConsoleScreen extends StatefulWidget {
   State<DjConsoleScreen> createState() => _DjConsoleScreenState();
 }
 
-class _DjConsoleScreenState extends State<DjConsoleScreen> {
+class _DjConsoleScreenState extends State<DjConsoleScreen> {\n  String? _profileSongId;\n  Future<DjTrackProfile?>? _profileFuture;\n\n  void _ensureProfileFuture(BuildContext context, String? songId) {\n    if (_profileSongId == songId) return;\n    _profileSongId = songId;\n    _profileFuture = songId == null\n        ? null\n        : context.read<DjModeProvider>().analysis.getProfile(songId);\n  }
   static const _landscape = <DeviceOrientation>[
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
@@ -153,7 +153,7 @@ class _ConsoleDeck extends StatelessWidget {
   final String deck, status, title, artist;
   final bool active, compact;
   final double progress;
-  final Duration position, duration;
+  final Duration position, duration;\n  final Future<DjTrackProfile?>? profileFuture;
 
   String _time(Duration value) {
     final seconds = value.inSeconds.clamp(0, 1 << 30);
@@ -227,19 +227,37 @@ class _ConsoleDeck extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Container(
-            height: compact ? 42 : 58,
-            decoration: BoxDecoration(color: const Color(0xFF080E15),
-              borderRadius: BorderRadius.circular(9)),
-            child: Stack(fit: StackFit.expand, children: [
-              CustomPaint(
-                painter: _ConsoleWavePainter(progress: progress, color: accent),
-              ),
-              const Positioned(left: 7, top: 4, child: Text(
-                'VISUAL PLACEHOLDER · NOT TRACK ANALYSIS',
-                style: TextStyle(fontSize: 7, letterSpacing: .5, color: Colors.white54),
-              )),
-            ]),
+          FutureBuilder<DjTrackProfile?>(
+            future: profileFuture,
+            builder: (context, snapshot) {
+              final segments = snapshot.data?.waveformSegments ?? const <DjWaveformSegment>[];
+              final label = snapshot.connectionState == ConnectionState.waiting
+                  ? 'LOADING CACHED PCM PROFILE'
+                  : segments.isEmpty
+                      ? 'NO SAMPLED PCM · PREVIEW UNAVAILABLE'
+                      : 'MEASURED PCM · ${segments.length} WINDOWS · GAPS UNANALYSED';
+              return Container(
+                height: compact ? 42 : 58,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF080E15),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Stack(fit: StackFit.expand, children: [
+                  CustomPaint(
+                    painter: _ConsoleWavePainter(
+                      progress: progress,
+                      color: accent,
+                      segments: segments,
+                      durationMs: duration.inMilliseconds,
+                    ),
+                  ),
+                  Positioned(left: 7, top: 4, child: Text(
+                    label,
+                    style: const TextStyle(fontSize: 7, letterSpacing: .5, color: Colors.white70),
+                  )),
+                ]),
+              );
+            },
           ),
           const SizedBox(height: 5),
           Row(children: [
@@ -321,25 +339,62 @@ class _ConsoleStatus extends StatelessWidget {
 }
 
 class _ConsoleWavePainter extends CustomPainter {
-  const _ConsoleWavePainter({required this.progress, required this.color});
+  const _ConsoleWavePainter({
+    required this.progress,
+    required this.color,
+    required this.segments,
+    required this.durationMs,
+  });
   final double progress;
   final Color color;
+  final List<DjWaveformSegment> segments;
+  final int durationMs;
+
   @override
   void paint(Canvas canvas, Size size) {
     final mid = size.height / 2;
-    final paint = Paint()..strokeWidth = 2..strokeCap = StrokeCap.round;
-    for (var i = 0; i < 90; i++) {
-      final x = size.width * i / 90;
-      final envelope = .12 + .72 * ((i * 37 % 61) / 61);
-      final h = size.height * envelope;
-      paint.color = color.withValues(alpha: i / 90 <= progress ? .82 : .24);
-      canvas.drawLine(Offset(x, mid - h / 2), Offset(x, mid + h / 2), paint);
+    final baseline = Paint()
+      ..color = Colors.white.withValues(alpha: .14)
+      ..strokeWidth = 1;
+    canvas.drawLine(Offset(0, mid), Offset(size.width, mid), baseline);
+
+    if (durationMs > 0) {
+      for (final segment in segments) {
+        if (segment.endMs <= segment.startMs || segment.peaks.isEmpty) continue;
+        final segmentStart = (segment.startMs / durationMs).clamp(0.0, 1.0);
+        final segmentEnd = (segment.endMs / durationMs).clamp(0.0, 1.0);
+        final segmentWidth = (segmentEnd - segmentStart) * size.width;
+        if (segmentWidth <= 0) continue;
+        final paint = Paint()
+          ..strokeWidth = math.max(1.0, segmentWidth / segment.peaks.length * .72)
+          ..strokeCap = StrokeCap.round;
+        for (var i = 0; i < segment.peaks.length; i++) {
+          final x = (segmentStart * size.width) +
+              ((i + .5) / segment.peaks.length) * segmentWidth;
+          final peak = segment.peaks[i].clamp(0.0, 1.0);
+          final halfHeight = math.max(1.0, peak * size.height * .43);
+          final played = x <= size.width * progress;
+          paint.color = color.withValues(alpha: played ? .88 : .48);
+          canvas.drawLine(
+            Offset(x, mid - halfHeight),
+            Offset(x, mid + halfHeight),
+            paint,
+          );
+        }
+      }
     }
-    final x = size.width * progress.clamp(0, 1);
-    canvas.drawLine(Offset(x, 0), Offset(x, size.height),
-      Paint()..color = Colors.white..strokeWidth = 1.5);
+    final playheadX = size.width * progress.clamp(0.0, 1.0);
+    canvas.drawLine(
+      Offset(playheadX, 0),
+      Offset(playheadX, size.height),
+      Paint()..color = Colors.white..strokeWidth = 1.5,
+    );
   }
+
   @override
   bool shouldRepaint(covariant _ConsoleWavePainter old) =>
-      old.progress != progress || old.color != color;
+      old.progress != progress ||
+      old.color != color ||
+      old.durationMs != durationMs ||
+      !identical(old.segments, segments);
 }
