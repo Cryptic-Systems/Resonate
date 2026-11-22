@@ -162,6 +162,7 @@ struct DspEngine {
     float silence_thresh_db = -60.f;
     float silence_hold_ms = 300.f;
     float silence_hold_acc_ms = 0.f;
+    bool  silence_gain_gate_active = false;
 
     sample_t lim_env[kMaxChannels]{};
     sample_t lim_gain[kMaxChannels]{};
@@ -838,20 +839,27 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
         if (eng->meter_short_term_rms_db < eng->silence_thresh_db) {
             eng->silence_hold_acc_ms += block_ms_f;
             if (eng->silence_hold_acc_ms >= eng->silence_hold_ms) {
+                eng->silence_gain_gate_active = true;
                 eng->auto_bass_applied_db *= 0.9f;
                 eng->auto_preamp_applied_db *= 0.9f;
-                eng->auto_gain_applied_db *= 0.9f;
                 eng->lim_gr_peak_db *= 0.85f;
             }
         } else {
             eng->silence_hold_acc_ms = 0.f;
+            /* Add 3 dB hysteresis so low-level noise cannot chatter the gate. */
+            if (eng->meter_short_term_rms_db > eng->silence_thresh_db + 3.f)
+                eng->silence_gain_gate_active = false;
         }
     }
 
-    /* Auto-DVC: short-term RMS → target, capped by gain budget share. */
+    /* Auto-DVC: short-term RMS → target, capped by gain budget share.
+       After sustained silence, ramp toward unity instead of learning silence
+       as a request for positive gain. The normal smoother controls recovery. */
     if (eng->auto_gain_enabled) {
-        float err = (eng->auto_gain_target_rms_db + eng->auto_gain_bias_db)
-                    - eng->meter_short_term_rms_db;
+        float err = eng->silence_gain_gate_active
+            ? -eng->auto_gain_applied_db
+            : (eng->auto_gain_target_rms_db + eng->auto_gain_bias_db)
+                - eng->meter_short_term_rms_db;
         if (err > eng->auto_gain_max_boost_db) err = eng->auto_gain_max_boost_db;
         if (err < -eng->auto_gain_max_cut_db) err = -eng->auto_gain_max_cut_db;
         if (err > gain_share) err = gain_share;
@@ -1004,6 +1012,7 @@ DspError dsp_reset(DspEngine* eng) {
     eng->auto_gain_applied_db = 0.f;
     eng->auto_preamp_applied_db = 0.f;
     eng->silence_hold_acc_ms = 0.f;
+    eng->silence_gain_gate_active = false;
     eng->rebuild_auto_bass();
     eng->update_auto_gain_smooth();
     return DSP_OK;
