@@ -174,7 +174,7 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
                         }
                         val outIndex = codec.dequeueOutputBuffer(info, 100)
                         if (outIndex >= 0) {
-                            if (info.size > 0 && isPcmTimestampWithinWindowEnd(
+                            if (info.size > 0 && isPcmTimestampWithinRequestedWindow(
                                     info.presentationTimeUs, startMs, maxUs,
                                 )) {
                                 val outBuf = codec.getOutputBuffer(outIndex)
