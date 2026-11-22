@@ -1,6 +1,6 @@
 # Resonate DJ Console — Progressive Full-Track Waveform Design
 
-**Status:** Design baseline; implementation not yet enabled  
+**Status:** Phase A foundations implemented; validation pending  
 **Target branch:** `dj-workspace-development`  
 **Scope:** Offline DJ analysis and Console presentation only
 
@@ -105,12 +105,15 @@ A blank region means unknown/unmeasured, not silence. Zero-height measured peaks
 ## 7. Delivery phases and gates
 
 ### Phase A — storage and policy primitives
-- Define chunk model, manifest and schema migration.
-- Add pure validation/identity/cache-budget policies.
-- Add tests for duplicate writes, invalid ranges, mismatched identity, partial manifests, deletion cleanup and storage caps.
-- Audit native cancellation semantics before enabling long jobs.
+- [x] Define chunk model, manifest and schema migration.
+- [x] Add pure validation/identity/cache-budget policies.
+- [x] Add focused tests for invalid ranges, mismatched identity, partial manifests and cache bounds.
+- [x] Add additive database v9 chunk/manifest tables and range index; preserve the existing profile JSON untouched.
+- [x] Delete waveform rows/manifests and existing DJ metadata when a song is explicitly deleted.
+- [ ] Add database migration/duplicate-write integration coverage and verify deletion cleanup in SQLite tests.
+- [ ] Audit native cancellation semantics before enabling long jobs.
 
-**Gate:** no decoder integration until migration and policy tests pass.
+**Gate:** no decoder integration until migration and policy tests pass. Phase A remains incomplete until database-level migration and idempotent-write behavior are tested.
 
 ### Phase B — chunk extraction and resumability
 - Extract one chunk at a time using the existing PCM decoder.
