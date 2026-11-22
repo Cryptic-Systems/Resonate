@@ -10,7 +10,7 @@ package com.Aetherion.Resonate
  */
 internal const val MAX_PCM_SEEK_PREROLL_US = 10_000_000L
 
-internal fun isPcmTimestampWithinWindowEnd(
+internal fun isPcmTimestampWithinRequestedWindow(
     presentationTimeUs: Long,
     requestedStartMs: Long,
     maxDurationUs: Long,
