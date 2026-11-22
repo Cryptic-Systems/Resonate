@@ -233,6 +233,14 @@ Focused policy tests cover low-confidence suppression, minimum beat coverage, se
 
 **Validation:** CI build #2510 passed all Flutter analysis/tests, native DSP compile/unit/integration smoke, Android DSP tests, release APK integrity/size checks and artifact upload. The new overlay milestone is a subsequent change and requires its own CI run before it is considered validated.
  
+### DJ Console deck-information and timing strip
+
+The active, identity-verified profile now supplies a compact deck metadata strip: tempo, musical key, current section and time to the next beat. Tempo and next-beat timing use the same conservative beat-grid confidence and coverage gate as the waveform overlay. Key is shown only when the profile key is valid and key confidence is at least 0.65. Current section is shown only when the playhead falls inside a known section with confidence at least 0.70. Missing, stale, ambiguous or insufficiently confident analysis remains displayed as unavailable.
+
+Next-beat timing is taken from the first existing beat timestamp at or after the canonical playback position and is shown only when that timestamp is within two seconds. It is informational only and does not schedule or trigger playback operations. The standby deck remains unpopulated until its physical identity and incoming media occurrence can be verified.
+
+Focused policy tests cover nearby beat timing, low-confidence suppression, invalid playhead values and confidence-qualified current-section lookup. This milestone adds no transport, DSP, audio-thread, deck ownership or audio-focus changes. CI validation is pending for this change set.
+
 ## DJ Console — gated parallel workstream
 
 The landscape DJ Console visual foundation may proceed in parallel with playback hardening. It must not create another player or output path. The initial visual shell is observational. Sampled PCM peak envelopes are now derived from the existing distributed decode windows, persisted as optional sparse segments, and rendered only against the verified active physical deck. Unanalysed gaps remain visibly empty; no full-track waveform is implied. Existing cached profiles without waveform segments are backfilled by the idle analysis scan, subject to its retry cooldown. Manual deck preparation, cueing, jog/scratch, channel gain and crossfader actions remain unavailable until their Media3/DSP command contracts, lease behavior, cancellation rules and regression tests are implemented.
