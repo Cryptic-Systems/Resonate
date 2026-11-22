@@ -316,7 +316,7 @@ class DjAnalysisService {
           pcm: decoded.pcm,
           sampleRate: decoded.sampleRate,
           channels: decoded.channels,
-          startMs: startMs,
+          startMs: decoded.startMs,
           role: role,
         ),
       );
