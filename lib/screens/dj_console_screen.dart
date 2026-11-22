@@ -105,6 +105,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                             progress: activeDeckId == 'B' ? 0 : progress,
                             position: activeDeckId == 'B' ? Duration.zero : position,
                             duration: activeDeckId == 'B' ? Duration.zero : duration,
+                            profileFuture: activeDeckId == 'A' ? _profileFuture : null,
                           )),
                           SizedBox(width: compact ? 8 : 12),
                           SizedBox(
@@ -121,6 +122,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                             progress: activeDeckId == 'B' ? progress : 0,
                             position: activeDeckId == 'B' ? position : Duration.zero,
                             duration: activeDeckId == 'B' ? duration : Duration.zero,
+                            profileFuture: activeDeckId == 'B' ? _profileFuture : null,
                           )),
                         ],
                       ),
