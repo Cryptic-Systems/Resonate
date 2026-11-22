@@ -194,7 +194,7 @@ A test proves the telemetry compares the same physical player across promotion a
 ## RQ-007 — PCM analysis drops non-zero-offset decoder output
 
 **Priority:** P1 analysis correctness  
-**Status:** Targeted fix implemented; awaiting CI  
+**Status:** Targeted fix implemented; CI passed in build #2497; device codec coverage pending  
 **Evidence:** Code inspection and timestamp-boundary regression tests.
 
 The native PCM decoder bounded output timestamps against the window duration alone, even though `MediaCodec.BufferInfo.presentationTimeUs` is on the track timeline. Consequently, decoded buffers from windows beginning after that relative duration could be discarded. The decoder now checks the requested absolute window, allows at most 10 seconds of seek preroll for `SEEK_TO_CLOSEST_SYNC`, returns the first included output timestamp, and the Dart profile builder uses that measured timestamp instead of assuming the requested seek position was the actual decode start. The preroll bound also prevents a failed seek from silently returning audio from the beginning of the track.
@@ -203,9 +203,29 @@ The native PCM decoder bounded output timestamps against the window duration alo
 
 ---
 
+
+
+## RQ-008 — DJ Console waveform coverage is sparse by design
+
+**Priority:** P2 product capability  
+**Status:** First measured-window implementation complete; full-track streaming waveform deferred  
+**Evidence:** Analyzer and serializer implementation with focused tests.
+
+The current PCM profile analyzer decodes up to four distributed short windows per track. The Console now renders bounded peak envelopes derived from those actual PCM16 samples. Each segment retains its measured track-relative start/end time, and gaps are not interpolated or represented as audio. The profile serializer treats waveform segments as optional so older cached profiles remain readable. Idle analysis detects profiles without waveform data and can refresh them when playback is idle, with a retry cooldown.
+
+**Known limitation**
+
+This is a sampled waveform preview, not a continuous full-track waveform. Full-track coverage requires a separate streaming decoder with bounded memory, cancellation, cache persistence and CPU policy. It must not run synchronously on Console entry or compete with active playback.
+
+**Exit criteria for the next waveform milestone**
+
+- Keep sparse-window rendering honest and identity-scoped.
+- Add measured beat/phrase overlays only where beat-grid confidence supports them.
+- Design and benchmark a bounded-memory streaming decode/cache path before claiming full-track coverage.
+
 ## DJ Console — gated parallel workstream
 
-The landscape DJ Console visual foundation may proceed in parallel with playback hardening. It must not create another player or output path. The initial visual shell is observational and must label any placeholder visualization honestly. Manual deck preparation, cueing, jog/scratch, channel gain and crossfader actions remain unavailable until their Media3/DSP command contracts, lease behavior, cancellation rules and regression tests are implemented.
+The landscape DJ Console visual foundation may proceed in parallel with playback hardening. It must not create another player or output path. The initial visual shell is observational. Sampled PCM peak envelopes are now derived from the existing distributed decode windows, persisted as optional sparse segments, and rendered only against the verified active physical deck. Unanalysed gaps remain visibly empty; no full-track waveform is implied. Existing cached profiles without waveform segments are backfilled by the idle analysis scan, subject to its retry cooldown. Manual deck preparation, cueing, jog/scratch, channel gain and crossfader actions remain unavailable until their Media3/DSP command contracts, lease behavior, cancellation rules and regression tests are implemented.
 
 ## Release discipline
 
