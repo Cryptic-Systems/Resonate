@@ -98,6 +98,13 @@ A documented gain budget and decision policy, deterministic tests for each contr
 
 ---
 
+
+### DSP work started — sustained-silence auto-gain gate
+
+A targeted native DSP change is now on the development branch: after the configured silence threshold and hold duration are met, auto-DVC targets unity gain instead of interpreting sustained silence as a request for positive gain. The gate releases only after the running RMS clears the silence threshold with 3 dB hysteresis. Disabling silence hygiene clears the gate state. A native regression test covers sustained silence and signal recovery.
+
+**Status:** Implemented; awaiting CI validation. This is a narrow correction to the existing silence-hygiene/auto-gain interaction. It is not the full look-ahead redesign and does not resolve the user's separate request for track-silence-aware crossfades.
+
 ## RQ-003 — Pause control briefly becomes stale after library track selection
 
 **Priority:** P2  
