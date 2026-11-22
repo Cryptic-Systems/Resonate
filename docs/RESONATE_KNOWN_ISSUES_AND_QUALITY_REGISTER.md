@@ -13,7 +13,8 @@
 - Added additive database version 9 tables for independently persisted waveform chunks and per-track manifests, with a range index and composite chunk primary key.
 - Existing sparse profile JSON remains unchanged and readable.
 - Explicit song deletion now removes associated waveform chunks, manifests and DJ metadata before removing the song row.
-- Remaining Phase A gates: SQLite migration/idempotency/cleanup integration tests and native decoder cancellation audit. No Phase B decoder work until these gates pass.
+- Native cancellation audit completed: the current single-thread PCM executor uses a cooperative generation token, checks between MediaCodec dequeue calls and releases codec/extractor in `finally`; it does not directly interrupt an in-flight codec call. Future chunk jobs must await settlement and discard stale output.
+- Remaining Phase A gate: SQLite migration/idempotency/cleanup integration tests. Current policy tests are pure Dart and do not prove database behavior. No Phase B decoder work until this gate passes.
 
 
 This register consolidates user-observed playback quality concerns and engineering observations. An observation is not promoted to a confirmed root cause without reproducible evidence. Items remain open until their exit criteria are met on CI and, where required, verified on a physical device.
