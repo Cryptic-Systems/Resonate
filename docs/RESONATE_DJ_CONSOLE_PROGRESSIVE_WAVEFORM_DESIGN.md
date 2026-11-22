@@ -111,7 +111,11 @@ A blank region means unknown/unmeasured, not silence. Zero-height measured peaks
 - [x] Add additive database v9 chunk/manifest tables and range index; preserve the existing profile JSON untouched.
 - [x] Delete waveform rows/manifests and existing DJ metadata when a song is explicitly deleted.
 - [ ] Add database migration/duplicate-write integration coverage and verify deletion cleanup in SQLite tests.
-- [ ] Audit native cancellation semantics before enabling long jobs.
+- [x] Audit current native cancellation semantics before enabling long jobs.
+
+**Cancellation audit:** `PcmAnalysisHandler` uses a single-thread executor and a generation token. `cancel()` increments the token; the decoder loop checks it between MediaCodec dequeue operations and checks again before returning PCM. The codec and extractor are released in `finally`. Cancellation does not directly interrupt/stop the currently executing codec call; it is cooperative/best-effort and queued work is invalidated when it starts. Future chunk streaming must await the active window's settlement, discard its result when stale, and never start the next chunk after cancellation. No `Future.timeout` should be used as a substitute.
+
+**Remaining Phase A gate:** SQLite-level migration, duplicate-key replacement/idempotency and song-deletion cleanup tests are still required. The current policy tests are pure Dart tests and do not prove database behavior.
 
 **Gate:** no decoder integration until migration and policy tests pass. Phase A remains incomplete until database-level migration and idempotent-write behavior are tested.
 
