@@ -355,14 +355,17 @@ class _ConsoleAnalysisStrip extends StatelessWidget {
     final grid = profile?.beatGrid;
     final trustedTempo = grid != null &&
         DjConsoleOverlayPolicy.hasTrustedTempo(grid);
-    final bpm = trustedTempo && grid.bpm != null
-        ? grid.bpm!.toStringAsFixed(1)
+    final tempoValue = grid?.bpm;
+    final bpm = trustedTempo && tempoValue != null
+        ? tempoValue.toStringAsFixed(1)
         : '—';
     final trustedKey = profile != null &&
         profile.hasKey &&
         profile.keyConfidence >= 0.65;
-    final key = trustedKey
-        ? '${_pitchClasses[profile.keyRoot!] } ${profile.keyMode!.toUpperCase()}'
+    final keyRoot = trustedKey ? profile?.keyRoot : null;
+    final keyMode = trustedKey ? profile?.keyMode : null;
+    final key = keyRoot != null && keyMode != null
+        ? '${_pitchClasses[keyRoot]} ${keyMode.toUpperCase()}'
         : '—';
     final section = profile == null
         ? null
