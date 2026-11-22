@@ -34,6 +34,9 @@ class DjWaveformChunk {
     required this.completedAt,
   });
 
+  /// Stable idempotency key mirrored by the SQLite composite primary key.
+  String get storageKey => '$songId:$analysisVersion:$chunkIndex';
+
   int get estimatedPayloadBytes => peaks.length * 8;
 }
 
