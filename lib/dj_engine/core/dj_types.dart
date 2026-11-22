@@ -202,6 +202,7 @@ class DjTrackProfile {
   final DspAnalysisMetrics dspAnalysis;
   final DjTransitionMarkers transitions;
   final List<DjSilenceRegion> silenceRegions;
+  final List<DjWaveformSegment> waveformSegments;
   final double analysisConfidence;
   final int analysisVersion;
 
@@ -220,6 +221,7 @@ class DjTrackProfile {
     this.dspAnalysis = const DspAnalysisMetrics(),
     this.transitions = const DjTransitionMarkers(),
     this.silenceRegions = const [],
+    this.waveformSegments = const [],
     this.analysisConfidence = 0,
     this.analysisVersion = 1,
   });
