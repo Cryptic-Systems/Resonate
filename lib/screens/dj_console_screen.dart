@@ -319,6 +319,121 @@ class _ConsoleDeck extends StatelessWidget {
   }
 }
 
+class _ConsoleAnalysisStrip extends StatelessWidget {
+  const _ConsoleAnalysisStrip({
+    required this.profile,
+    required this.positionMs,
+    required this.compact,
+  });
+
+  final DjTrackProfile? profile;
+  final int positionMs;
+  final bool compact;
+
+  static const _pitchClasses = <String>[
+    'C', 'C♯', 'D', 'D♯', 'E', 'F',
+    'F♯', 'G', 'G♯', 'A', 'A♯', 'B',
+  ];
+
+  String _sectionName(DjSectionType type) {
+    switch (type) {
+      case DjSectionType.preChorus:
+        return 'PRE-CHORUS';
+      case DjSectionType.unknown:
+        return 'UNKNOWN';
+      default:
+        return type.name.replaceAllMapped(
+          RegExp(r'[A-Z]'),
+          (match) => '-${match.group(0)}',
+        ).toUpperCase().replaceFirst('-', '');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final grid = profile?.beatGrid;
+    final trustedTempo = grid != null &&
+        DjConsoleOverlayPolicy.hasTrustedTempo(grid);
+    final bpm = trustedTempo && grid.bpm != null
+        ? grid.bpm!.toStringAsFixed(1)
+        : '—';
+    final trustedKey = profile != null &&
+        profile.hasKey &&
+        profile.keyConfidence >= 0.65;
+    final key = trustedKey
+        ? '${_pitchClasses[profile.keyRoot!] } ${profile.keyMode!.toUpperCase()}'
+        : '—';
+    final section = profile == null
+        ? null
+        : DjConsoleOverlayPolicy.trustedSectionAt(
+            profile.sections,
+            positionMs,
+          );
+    final nextBeat = grid == null
+        ? null
+        : DjConsoleOverlayPolicy.nextBeatInMs(grid, positionMs);
+    final metrics = <(String, String)>[
+      ('TEMPO', trustedTempo ? '$bpm BPM' : '—'),
+      ('KEY', key),
+      ('SECTION', section == null ? '—' : _sectionName(section.type)),
+      ('NEXT BEAT', nextBeat == null
+          ? '—'
+          : nextBeat == 0
+              ? 'NOW'
+              : '${(nextBeat / 1000).toStringAsFixed(2)}s'),
+    ];
+
+    return Row(
+      children: [
+        for (var i = 0; i < metrics.length; i++) ...[
+          if (i > 0) SizedBox(width: compact ? 4 : 7),
+          Expanded(
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? 5 : 8,
+                vertical: compact ? 5 : 7,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0B121B),
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(color: Colors.white.withValues(alpha: .07)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    metrics[i].$1,
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
+                    style: TextStyle(
+                      fontSize: compact ? 6 : 7,
+                      letterSpacing: .8,
+                      color: Colors.white38,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    metrics[i].$2,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontSize: compact ? 8 : 10,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFFB9D9D3),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _ConsoleMixer extends StatelessWidget {
   const _ConsoleMixer({required this.compact});
   final bool compact;
