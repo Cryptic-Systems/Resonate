@@ -147,6 +147,7 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
                     val info = MediaCodec.BufferInfo()
                     var inputDone = false
                     var outputDone = false
+                    var firstOutputPresentationTimeUs: Long? = null
                     var safety = 0
                     while (!outputDone &&
                         safety < 800 &&
@@ -173,13 +174,18 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
                         }
                         val outIndex = codec.dequeueOutputBuffer(info, 100)
                         if (outIndex >= 0) {
-                            if (info.size > 0 && info.presentationTimeUs <= maxUs) {
+                            if (info.size > 0 && isPcmTimestampWithinWindowEnd(
+                                    info.presentationTimeUs, startMs, maxUs,
+                                )) {
                                 val outBuf = codec.getOutputBuffer(outIndex)
                                 if (outBuf != null) {
                                     outBuf.position(info.offset)
                                     outBuf.limit(info.offset + info.size)
                                     val chunk = ByteArray(info.size)
                                     outBuf.get(chunk)
+                                    if (chunk.isNotEmpty() && firstOutputPresentationTimeUs == null) {
+                                        firstOutputPresentationTimeUs = info.presentationTimeUs
+                                    }
                                     val room = maxPcmBytes - outBytes.size()
                                     if (room > 0) outBytes.write(chunk, 0, minOf(chunk.size, room))
                                 }
@@ -196,7 +202,12 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
                     val pcm = outBytes.toByteArray()
                     if (pcm.size < sampleRate) { activity.runOnUiThread { result.success(null) }; return@execute }
                     activity.runOnUiThread {
-                        result.success(hashMapOf("sampleRate" to sampleRate, "channels" to channelCount, "pcm" to pcm))
+                        result.success(hashMapOf(
+                            "sampleRate" to sampleRate,
+                            "channels" to channelCount,
+                            "startMs" to (firstOutputPresentationTimeUs?.div(1000L) ?: startMs),
+                            "pcm" to pcm,
+                        ))
                     }
                 } catch (e: Exception) {
                     activity.runOnUiThread { result.success(null) }
