@@ -631,6 +631,39 @@ TEST(auto_gain_rms) {
 }
 
 
+TEST(auto_gain_does_not_learn_sustained_silence) {
+    DspEngine* eng = create_engine();
+    EXPECT_EQ(dsp_auto_gain_set_target_rms_db(eng, -18.f), DSP_OK);
+    EXPECT_EQ(dsp_auto_gain_set_max_boost_db(eng, 12.f), DSP_OK);
+    EXPECT_EQ(dsp_auto_gain_set_max_cut_db(eng, 12.f), DSP_OK);
+    EXPECT_EQ(dsp_auto_gain_set_window_ms(eng, 200.f), DSP_OK);
+    EXPECT_EQ(dsp_silence_hygiene_enable(eng, 1), DSP_OK);
+    EXPECT_EQ(dsp_auto_gain_enable(eng, 1), DSP_OK);
+
+    constexpr int frames = 512;
+    std::vector<float> silence(frames * 2, 0.f), loud(frames * 2, 0.25f);
+    std::vector<float> out(frames * 2, 0.f);
+
+    /* Sustained silence must not accumulate a large positive DVC correction. */
+    for (int n = 0; n < 320; ++n)
+        EXPECT_EQ(dsp_process(eng, silence.data(), out.data(), frames), DSP_OK);
+    const float silence_gain = dsp_auto_gain_get_applied_db(eng);
+    EXPECT_TRUE(std::isfinite(silence_gain));
+    EXPECT_LT(silence_gain, 1.0f);
+
+    /* On signal return, the gate releases only after stable signal is present;
+       gain must not jump to a silence-derived positive boost. */
+    for (int n = 0; n < 80; ++n)
+        EXPECT_EQ(dsp_process(eng, loud.data(), out.data(), frames), DSP_OK);
+    const float resumed_gain = dsp_auto_gain_get_applied_db(eng);
+    EXPECT_TRUE(std::isfinite(resumed_gain));
+    EXPECT_LT(resumed_gain, 1.0f);
+    for (float sample : out) EXPECT_TRUE(std::isfinite(sample));
+
+    dsp_destroy(eng);
+}
+
+
 TEST(headroom_budget_and_hints) {
     DspEngine* eng = create_engine();
     EXPECT_EQ(dsp_headroom_budget_set(eng, 0.6f, 0.2f, 0.2f), DSP_OK);
