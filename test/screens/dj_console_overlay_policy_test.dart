@@ -63,6 +63,40 @@ void main() {
       expect(DjConsoleOverlayPolicy.phraseTicks(phraseTrusted), <int>[0, 8000]);
     });
 
+    test('exposes only a nearby upcoming beat from a trusted grid', () {
+      const trusted = DjBeatGrid(
+        bpm: 120,
+        confidence: 0.9,
+        beatMs: beats,
+      );
+      const uncertain = DjBeatGrid(
+        bpm: 120,
+        confidence: 0.64,
+        beatMs: beats,
+      );
+
+      expect(DjConsoleOverlayPolicy.nextBeatInMs(trusted, 1250), 250);
+      expect(DjConsoleOverlayPolicy.nextBeatInMs(trusted, 1500), 0);
+      expect(DjConsoleOverlayPolicy.nextBeatInMs(trusted, 0), 0);
+      expect(DjConsoleOverlayPolicy.nextBeatInMs(trusted, 10000), 0);
+      expect(DjConsoleOverlayPolicy.nextBeatInMs(uncertain, 1250), isNull);
+      expect(DjConsoleOverlayPolicy.nextBeatInMs(trusted, -1), isNull);
+    });
+
+    test('returns only a confidence-qualified section containing playhead', () {
+      const sections = <DjSection>[
+        DjSection(type: DjSectionType.intro, startMs: 0, endMs: 8000, confidence: 0.8),
+        DjSection(type: DjSectionType.drop, startMs: 8000, endMs: 12000, confidence: 0.69),
+      ];
+
+      expect(
+        DjConsoleOverlayPolicy.trustedSectionAt(sections, 4000)?.type,
+        DjSectionType.intro,
+      );
+      expect(DjConsoleOverlayPolicy.trustedSectionAt(sections, 9000), isNull);
+      expect(DjConsoleOverlayPolicy.trustedSectionAt(sections, 12000), isNull);
+    });
+
     test('filters unknown, low-confidence and invalid sections', () {
       const sections = <DjSection>[
         DjSection(type: DjSectionType.intro, startMs: 0, endMs: 8000, confidence: 0.8),
