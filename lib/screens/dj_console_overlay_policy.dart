@@ -12,10 +12,37 @@ class DjConsoleOverlayPolicy {
   static const double phraseConfidenceThreshold = 0.72;
   static const double sectionConfidenceThreshold = 0.70;
 
+  static bool hasTrustedTempo(DjBeatGrid grid) =>
+      grid.usable &&
+      grid.confidence >= beatConfidenceThreshold &&
+      grid.beatMs.length >= 8;
+
+  static int? nextBeatInMs(DjBeatGrid grid, int positionMs) {
+    if (!hasTrustedTempo(grid) || positionMs < 0) return null;
+    for (final beat in grid.beatMs) {
+      if (beat >= positionMs) {
+        final delta = beat - positionMs;
+        return delta <= 2000 ? delta : null;
+      }
+    }
+    return null;
+  }
+
+  static DjSection? trustedSectionAt(
+    List<DjSection> sections,
+    int positionMs,
+  ) {
+    if (positionMs < 0) return null;
+    for (final section in trustedSections(sections)) {
+      if (positionMs >= section.startMs && positionMs < section.endMs) {
+        return section;
+      }
+    }
+    return null;
+  }
+
   static List<int> beatTicks(DjBeatGrid grid) {
-    if (!grid.usable ||
-        grid.confidence < beatConfidenceThreshold ||
-        grid.beatMs.length < 8) {
+    if (!hasTrustedTempo(grid)) {
       return const [];
     }
     return grid.beatMs;
