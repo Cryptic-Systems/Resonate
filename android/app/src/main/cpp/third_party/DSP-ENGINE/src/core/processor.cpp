@@ -857,7 +857,7 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
        as a request for positive gain. The normal smoother controls recovery. */
     if (eng->auto_gain_enabled) {
         float err = eng->silence_gain_gate_active
-            ? -eng->auto_gain_applied_db
+            ? 0.f
             : (eng->auto_gain_target_rms_db + eng->auto_gain_bias_db)
                 - eng->meter_short_term_rms_db;
         if (err > eng->auto_gain_max_boost_db) err = eng->auto_gain_max_boost_db;
@@ -1912,6 +1912,10 @@ DspError dsp_apply_analysis_hint(DspEngine* eng, const DspAnalysisResult* analys
 DspError dsp_silence_hygiene_enable(DspEngine* eng, int enable) {
     if (!eng) return DSP_ERR_INVALID_ARG;
     eng->silence_hygiene = enable != 0;
+    if (!eng->silence_hygiene) {
+        eng->silence_hold_acc_ms = 0.f;
+        eng->silence_gain_gate_active = false;
+    }
     return DSP_OK;
 }
 
