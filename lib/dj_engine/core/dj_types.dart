@@ -170,6 +170,23 @@ class DspAnalysisMetrics {
           (maxSafeBassDb!.isFinite && maxSafeBassDb! >= 0 && maxSafeBassDb! <= 18));
 }
 
+/// A measured peak-envelope slice from one decoded PCM window.
+/// The interval is track-relative and does not imply coverage outside it.
+class DjWaveformSegment {
+  final int startMs;
+  final int endMs;
+  /// Normalized absolute peak per time bin, in the inclusive range [0, 1].
+  final List<double> peaks;
+
+  const DjWaveformSegment({
+    required this.startMs,
+    required this.endMs,
+    required this.peaks,
+  });
+
+  int get durationMs => (endMs - startMs).clamp(0, 1 << 30);
+}
+
 class DjTrackProfile {
   final String songId;
   final int? durationMs;
