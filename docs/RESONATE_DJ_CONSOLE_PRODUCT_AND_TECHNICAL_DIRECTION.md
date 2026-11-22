@@ -1,6 +1,6 @@
 # Resonate DJ Console — Product & Technical Direction
 
-**Status:** Product direction documented; DJ Workspace watch-only refactor underway; Console implementation not started  
+**Status:** Product direction documented; DJ Workspace is watch-only; Phase 1 landscape visual foundation implemented, with all performance controls gated  
 **Target branch:** `dj-workspace-development`  
 **Parent experience:** Existing DJ Workspace  
 **Primary form factor:** Landscape, with a deliberate portrait entry/rotation experience  
@@ -170,6 +170,8 @@ Work incrementally, with architecture and playback safety preceding visual compl
 **Exit criteria:** no unresolved ownership ambiguity for any control included in the first interactive milestone.
 
 ### Phase 1 — visual Console foundation
+
+**Current implementation:** landscape route and two-deck visual shell are present. Track title and timing follow the canonical provider session. Platter/mixer artwork is presentation-only; waveform preview is explicitly labelled as placeholder data. No manual transport or mixer actions are enabled yet.
 
 - Add navigation from DJ Workspace into a dedicated Console route/mode.
 - Implement orientation lifecycle handling and landscape-responsive layout.
