@@ -359,18 +359,21 @@ class _ConsoleAnalysisStrip extends StatelessWidget {
     final bpm = trustedTempo && tempoValue != null
         ? tempoValue.toStringAsFixed(1)
         : '—';
-    final trustedKey = profile != null &&
-        profile.hasKey &&
-        profile.keyConfidence >= 0.65;
-    final keyRoot = trustedKey ? profile?.keyRoot : null;
-    final keyMode = trustedKey ? profile?.keyMode : null;
+    // Capture the nullable widget field in a local final so Dart can
+    // promote it safely for all metadata reads below.
+    final currentProfile = profile;
+    final trustedKey = currentProfile != null &&
+        currentProfile.hasKey &&
+        currentProfile.keyConfidence >= 0.65;
+    final keyRoot = trustedKey ? currentProfile.keyRoot : null;
+    final keyMode = trustedKey ? currentProfile.keyMode : null;
     final key = keyRoot != null && keyMode != null
         ? '${_pitchClasses[keyRoot]} ${keyMode.toUpperCase()}'
         : '—';
-    final section = profile == null
+    final section = currentProfile == null
         ? null
         : DjConsoleOverlayPolicy.trustedSectionAt(
-            profile.sections,
+            currentProfile.sections,
             positionMs,
           );
     final nextBeat = grid == null
