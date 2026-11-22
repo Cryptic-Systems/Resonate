@@ -67,6 +67,13 @@ class DjProfileSerializer {
           'spectralFlux': profile.spectrum.spectralFlux,
           'confidence': profile.spectrum.confidence,
         },
+        'waveformSegments': profile.waveformSegments
+            .map((segment) => {
+                  'startMs': segment.startMs,
+                  'endMs': segment.endMs,
+                  'peaks': segment.peaks,
+                })
+            .toList(),
         'silenceRegions': profile.silenceRegions
             .map((region) => {
                   'startMs': region.startMs,
@@ -129,6 +136,7 @@ class DjProfileSerializer {
         confidence: _unit(spectrum['confidence'], fallback: 0),
       ),
       silenceRegions: _silenceRegions(map['silenceRegions'], durationMs),
+      waveformSegments: _waveformSegments(map['waveformSegments'], durationMs),
       transitions: DjTransitionMarkers(
         bestIntroMs: _time(transition['bestIntroMs'], durationMs),
         bestOutroMs: _time(transition['bestOutroMs'], durationMs),
