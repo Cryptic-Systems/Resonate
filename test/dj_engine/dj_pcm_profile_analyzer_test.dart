@@ -172,6 +172,67 @@ void main() {
     expect(profile.dspAnalysis.bassEnergyDb, -160);
   });
 
+  test('waveform envelopes retain real sampled windows and leave gaps unfilled', () {
+    const sampleRate = 8000;
+    Uint8List pcmWithAmplitude(double amplitude) {
+      final bytes = ByteData(sampleRate * 2);
+      final sample = (32767 * amplitude).round();
+      for (var i = 0; i < sampleRate; i++) {
+        bytes.setInt16(i * 2, sample, Endian.little);
+      }
+      return bytes.buffer.asUint8List();
+    }
+
+    final profile = const DjPcmProfileAnalyzer().analyze(
+      songId: 'waveform-slices',
+      durationMs: 60000,
+      windows: [
+        DjDecodedPcmWindow(
+          pcm: pcmWithAmplitude(0.25),
+          sampleRate: sampleRate,
+          channels: 1,
+          startMs: 5000,
+        ),
+        DjDecodedPcmWindow(
+          pcm: pcmWithAmplitude(0.75),
+          sampleRate: sampleRate,
+          channels: 1,
+          startMs: 40000,
+        ),
+      ],
+    );
+
+    expect(profile.waveformSegments, hasLength(2));
+    expect(profile.waveformSegments[0].startMs, 5000);
+    expect(profile.waveformSegments[0].endMs, 6000);
+    expect(profile.waveformSegments[1].startMs, 40000);
+    expect(profile.waveformSegments[1].endMs, 41000);
+    expect(profile.waveformSegments[0].peaks, hasLength(192));
+    expect(profile.waveformSegments[0].peaks.first, closeTo(0.25, 0.001));
+    expect(profile.waveformSegments[1].peaks.first, closeTo(0.75, 0.001));
+    expect(profile.waveformSegments.every((segment) =>
+        segment.peaks.every((peak) => peak >= 0 && peak <= 1)), isTrue);
+  });
+
+  test('waveform analysis clamps the final segment to track duration', () {
+    const sampleRate = 8000;
+    final pcm = Uint8List(sampleRate * 2);
+    final profile = const DjPcmProfileAnalyzer().analyze(
+      songId: 'waveform-end',
+      durationMs: 10500,
+      windows: [
+        DjDecodedPcmWindow(
+          pcm: pcm,
+          sampleRate: sampleRate,
+          channels: 1,
+          startMs: 10000,
+        ),
+      ],
+    );
+    expect(profile.waveformSegments.single.startMs, 10000);
+    expect(profile.waveformSegments.single.endMs, 10500);
+  });
+
   test('decoded PCM contributes real spectral profile data', () {
     const sampleRate = 11025;
     final pcm = ByteData(sampleRate * 2);
