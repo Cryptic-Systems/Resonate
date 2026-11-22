@@ -81,6 +81,13 @@ class DjAnalysisService {
     }
   }
 
+  /// Whether the persisted profile contains measured waveform coverage.
+  /// Missing segments are a cache capability gap, not evidence of silence.
+  Future<bool> hasWaveformProfile(String songId) async {
+    final profile = await getProfile(songId);
+    return profile != null && profile.waveformSegments.isNotEmpty;
+  }
+
   bool _profileIsValid(DjTrackProfile profile, DjAnalysis? analysis) {
     if (profile.analysisVersion < DjAnalysis.currentVersion) return false;
     if (analysis != null) {
