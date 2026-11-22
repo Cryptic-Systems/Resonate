@@ -10,7 +10,6 @@ void main() {
 
   setUpAll(() {
     sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
   });
 
   setUp(() async {
@@ -24,7 +23,10 @@ void main() {
   });
 
   test('version 8 database migrates additively to waveform tables', () async {
-    final legacy = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    final legacy = await databaseFactoryFfi.openDatabase(
+      inMemoryDatabasePath,
+      options: const OpenDatabaseOptions(singleInstance: false),
+    );
     await legacy.execute(
       'CREATE TABLE songs (id TEXT PRIMARY KEY, title TEXT NOT NULL, '
       'artist TEXT, album TEXT, file_path TEXT NOT NULL UNIQUE, duration INTEGER, '
