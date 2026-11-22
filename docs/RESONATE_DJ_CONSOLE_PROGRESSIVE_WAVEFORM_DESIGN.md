@@ -1,6 +1,6 @@
 # Resonate DJ Console — Progressive Full-Track Waveform Design
 
-**Status:** Phase A foundations implemented; validation pending  
+**Status:** Phase A storage foundations and SQLite integration coverage implemented; CI validation pending  
 **Target branch:** `dj-workspace-development`  
 **Scope:** Offline DJ analysis and Console presentation only
 
@@ -110,14 +110,14 @@ A blank region means unknown/unmeasured, not silence. Zero-height measured peaks
 - [x] Add focused tests for invalid ranges, mismatched identity, partial manifests and cache bounds.
 - [x] Add additive database v9 chunk/manifest tables and range index; preserve the existing profile JSON untouched.
 - [x] Delete waveform rows/manifests and existing DJ metadata when a song is explicitly deleted.
-- [ ] Add database migration/duplicate-write integration coverage and verify deletion cleanup in SQLite tests.
+- [x] Add database migration/duplicate-write integration coverage and verify deletion cleanup in SQLite tests.
 - [x] Audit current native cancellation semantics before enabling long jobs.
 
 **Cancellation audit:** `PcmAnalysisHandler` uses a single-thread executor and a generation token. `cancel()` increments the token; the decoder loop checks it between MediaCodec dequeue operations and checks again before returning PCM. The codec and extractor are released in `finally`. Cancellation does not directly interrupt/stop the currently executing codec call; it is cooperative/best-effort and queued work is invalidated when it starts. Future chunk streaming must await the active window's settlement, discard its result when stale, and never start the next chunk after cancellation. No `Future.timeout` should be used as a substitute.
 
-**Remaining Phase A gate:** SQLite-level migration, duplicate-key replacement/idempotency and song-deletion cleanup tests are still required. The current policy tests are pure Dart tests and do not prove database behavior.
+**SQLite integration coverage:** `test/dj_waveform_database_integration_test.dart` exercises the v8-to-v9 additive migration while preserving legacy song rows, duplicate chunk-key replacement (including changed source fingerprint), SQLite range constraints, and song deletion cleanup. `deleteSong` now performs all dependent-row cleanup and the parent-row deletion in one SQLite transaction, so a failed child cleanup rolls the operation back.
 
-**Gate:** no decoder integration until migration and policy tests pass. Phase A remains incomplete until database-level migration and idempotent-write behavior are tested.
+**Gate:** no decoder integration until the focused integration suite and the full CI workflow pass. Device validation is not part of this database-only phase.
 
 ### Phase B — chunk extraction and resumability
 - Extract one chunk at a time using the existing PCM decoder.
