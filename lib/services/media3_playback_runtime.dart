@@ -449,7 +449,8 @@ class Media3PlaybackRuntime {
         'The active playback backend does not support independent deck parameters.',
       );
     }
-    return _run(() => backend.setDeckPlaybackParameters(
+    final parametersBackend = backend as PlaybackDeckParametersBackend;
+    return _run(() => parametersBackend.setDeckPlaybackParameters(
       activeSpeed: activeSpeed,
       activePitch: activePitch,
       standbySpeed: standbySpeed,
