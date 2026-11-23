@@ -336,8 +336,8 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   @override
   void initState() {
     super.initState();
-    // A 1.8-second revolution approximates a 33⅓ RPM record. This is
-    // presentation-only and never sends jog, seek or transport commands.
+    // A 1.8-second revolution approximates a 33⅓ RPM record. Rotation is
+    // decorative during playback; touch-drag is a separate one-shot seek.
     _platterRotation = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
@@ -351,7 +351,9 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     super.didUpdateWidget(oldWidget);
     if (_jogStartPosition != null &&
         (!widget.jogSeekEnabled || !widget.active ||
-            oldWidget.expectedSongId != widget.expectedSongId)) {
+            oldWidget.expectedSongId != widget.expectedSongId ||
+            oldWidget.waveformSourceKey != widget.waveformSourceKey ||
+            oldWidget.duration != widget.duration)) {
       _clearJog();
     }
     if (oldWidget.expectedSongId != widget.expectedSongId) {
