@@ -9,7 +9,10 @@ import 'dj_workspace_screen.dart';
 
 /// Settings surface for optional DJ Mode (Intelligence-style master switch).
 class DjModeSettingsScreen extends StatelessWidget {
-  const DjModeSettingsScreen({super.key});
+  const DjModeSettingsScreen({super.key, this.playerFacing = false});
+
+  /// Player exposes automatic-mix preferences, never DJ Workspace or Console routes.
+  final bool playerFacing;
 
   @override
   Widget build(BuildContext context) {
@@ -17,7 +20,7 @@ class DjModeSettingsScreen extends StatelessWidget {
     final text = Theme.of(context).textTheme;
 
     return ResonateGlassScaffold(
-      title: const Text('DJ Mode'),
+      title: Text(playerFacing ? 'Automatic mixing' : 'DJ Mode'),
       body: Consumer<DjModeProvider>(
         builder: (context, dj, _) {
           final on = dj.isEnabled;
@@ -25,13 +28,15 @@ class DjModeSettingsScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
             children: [
               Text(
-                'DJ transitions',
+                playerFacing ? 'Automatic transitions' : 'DJ transitions',
                 style: text.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 6),
               Text(
-                'Optional beat-aware handoffs, harmonic leans, and transition colour '
-                'on top of crossfade. When off, Resonate is a normal offline player — nothing blocked.',
+                playerFacing
+                    ? 'Optional beat-aware handoffs and harmonic blending on top of your normal crossfade. Resonate Player keeps control of playback; these settings only shape its automatic transitions.'
+                    : 'Optional beat-aware handoffs, harmonic leans, and transition colour '
+                        'on top of crossfade. When off, Resonate is a normal offline player — nothing blocked.',
                 style: text.bodyMedium,
               ),
               const SizedBox(height: 20),
@@ -45,7 +50,7 @@ class DjModeSettingsScreen extends StatelessWidget {
                     color: on ? scheme.primary : null,
                   ),
                   title: const Text(
-                    'DJ Mode',
+                    playerFacing ? 'Automatic mixing' : 'DJ Mode',
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                   subtitle: Text(
@@ -58,6 +63,7 @@ class DjModeSettingsScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
+              if (!playerFacing) ...[
               ResonateGlassCard(
                 margin: EdgeInsets.zero,
                 padding: EdgeInsets.zero,
@@ -85,6 +91,7 @@ class DjModeSettingsScreen extends StatelessWidget {
                   ),
                 ),
               ),
+              ],
               const SizedBox(height: 18),
               Text(
                 'Features',
