@@ -750,13 +750,15 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeProbeMaxBassGainDb(
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_aetherion_resonate_dsp_DspEngineJni_nativeGetMeters(
         JNIEnv* env, jclass, jlong value) {
-    jfloatArray arr = env->NewFloatArray(12);
+    jfloatArray arr = env->NewFloatArray(20);
     if (!arr) return nullptr;
-    float vals[12] = {-160.f, -160.f, -160.f, -160.f, 0.f, -160.f,
-                      0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+    float vals[20] = {-160.f, -160.f, -160.f, -160.f, 0.f, -160.f,
+                      0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+                      -120.f, -18.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
     if (auto* h = fromHandle(value); h && h->engine) {
         DspLevelMeter levels{};
         DspLimiterMeter limiter{};
+        DspAutoGainMeter autoGain{};
         if (dsp_get_level_meter(h->engine, &levels) == DSP_OK) {
             vals[0] = levels.in_peak_db;
             vals[1] = levels.in_true_peak_db;
@@ -773,8 +775,18 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeGetMeters(
         vals[9] = dsp_auto_gain_get_applied_db(h->engine);
         vals[10] = dsp_auto_preamp_get_applied_db(h->engine);
         vals[11] = dsp_auto_vb_get_applied(h->engine);
+        if (dsp_auto_gain_get_meter(h->engine, &autoGain) == DSP_OK) {
+            vals[12] = autoGain.pre_dvc_peak_db;
+            vals[13] = autoGain.target_rms_db;
+            vals[14] = autoGain.rms_error_db;
+            vals[15] = autoGain.constrained_target_db;
+            vals[16] = autoGain.peak_gain_cap_db;
+            vals[17] = autoGain.applied_gain_db;
+            vals[18] = static_cast<float>(autoGain.peak_limited);
+            vals[19] = static_cast<float>(autoGain.silence_gate_active);
+        }
     }
-    env->SetFloatArrayRegion(arr, 0, 12, vals);
+    env->SetFloatArrayRegion(arr, 0, 20, vals);
     return arr;
 }
 
