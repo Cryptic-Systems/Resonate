@@ -44,7 +44,7 @@ class DjWaveformChunkAnalysisService {
     int maxChunks = 2,
     required bool Function() isStillIdle,
   }) async {
-    if (_running || song.filePath.trim().isEmpty) return 0;
+    if (_running || maxChunks <= 0 || song.filePath.trim().isEmpty) return 0;
     final durationMs = song.duration.inMilliseconds;
     if (durationMs <= 0) return 0;
 
@@ -83,7 +83,7 @@ class DjWaveformChunkAnalysisService {
         expectedChunkCount: expected,
       );
 
-      final budget = maxChunks.clamp(1, _maxChunksPerRun);
+      final budget = maxChunks.clamp(1, _maxChunksPerRun).toInt();
       var processed = 0;
       for (var index = 0; index < expected && processed < budget; index++) {
         if (cancelled()) break;
