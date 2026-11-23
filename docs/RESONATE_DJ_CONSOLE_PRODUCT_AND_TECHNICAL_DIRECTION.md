@@ -171,7 +171,7 @@ Work incrementally, with architecture and playback safety preceding visual compl
 
 ### Phase 1 — visual Console foundation
 
-**Current implementation:** landscape route and two-deck visual shell are present. Track title and timing follow the canonical provider session. Platter/mixer artwork is presentation-only; waveform preview is explicitly labelled as placeholder data. No manual transport or mixer actions are enabled yet.
+**Current implementation:** landscape route, two-deck shell, measured progressive waveform pipeline and live deck identity are present. The Console supports lease-protected manual Deck B preparation/cue/equal-power handoff and one-shot active-deck jog seeking. Scratch, pitch/time-stretch, continuous crossfader, per-deck EQ and filter controls remain gated until their native/DSP contracts are implemented and validated.
 
 - Add navigation from DJ Workspace into a dedicated Console route/mode.
 - Implement orientation lifecycle handling and landscape-responsive layout.
