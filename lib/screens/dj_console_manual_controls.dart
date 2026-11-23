@@ -18,6 +18,7 @@ class _DjConsoleManualControlsState extends State<DjConsoleManualControls> {
   bool _busy = false;
   double? _cuePreviewMs;
   String? _cuePreviewSongId;
+  int? _cuePreviewQueueIndex;
   int _crossfadeSeconds = 4;
 
   Future<void> _run(
@@ -76,8 +77,15 @@ class _DjConsoleManualControlsState extends State<DjConsoleManualControls> {
       ),
     );
     if (selected == null || !context.mounted) return;
-    await _run(context, (provider) =>
-        provider.prepareManualDjDeck(incomingQueueIndex: selected));
+    await _run(context, (provider) async {
+      await provider.prepareManualDjDeck(incomingQueueIndex: selected);
+      if (!mounted) return;
+      setState(() {
+        _cuePreviewMs = null;
+        _cuePreviewSongId = null;
+        _cuePreviewQueueIndex = null;
+      });
+    });
   }
 
   Future<void> _setCue(BuildContext context, Duration position) async {
@@ -89,6 +97,7 @@ class _DjConsoleManualControlsState extends State<DjConsoleManualControls> {
         setState(() {
           _cuePreviewMs = null;
           _cuePreviewSongId = null;
+          _cuePreviewQueueIndex = null;
         });
       }
     });
@@ -103,13 +112,20 @@ class _DjConsoleManualControlsState extends State<DjConsoleManualControls> {
         final prepared = music.manualDjPreparedDeck;
         final durationMs = prepared?.incomingSong.duration.inMilliseconds ?? 0;
         final cueMs = prepared?.cuePosition.inMilliseconds ?? 0;
-        final preview = prepared != null && _cuePreviewSongId == prepared.incomingSong.id
+        final preview = prepared != null &&
+                _cuePreviewSongId == prepared.incomingSong.id &&
+                _cuePreviewQueueIndex == prepared.incomingQueueIndex
             ? _cuePreviewMs
             : null;
         final sliderValue = (preview ?? cueMs.toDouble())
             .clamp(0.0, durationMs > 0 ? durationMs.toDouble() : 1.0).toDouble();
         final canPrepare = music.media3ProviderSessionActive &&
-            music.isPlaying && music.queue.length > 1 && prepared == null && !_busy;
+            music.isPlaying &&
+            music.queue.asMap().entries.any((entry) =>
+                entry.key != music.queueIndex &&
+                entry.value.filePath.trim().isNotEmpty) &&
+            prepared == null &&
+            !_busy;
         final canPerform = prepared != null &&
             music.hasPreparedManualDjDeck && music.isPlaying && !_busy;
         final textStyle = theme.textTheme.labelSmall?.copyWith(
@@ -176,6 +192,7 @@ class _DjConsoleManualControlsState extends State<DjConsoleManualControls> {
                   onChanged: durationMs > 0 && !_busy
                       ? (value) => setState(() {
                             _cuePreviewSongId = prepared.incomingSong.id;
+                            _cuePreviewQueueIndex = prepared.incomingQueueIndex;
                             _cuePreviewMs = value;
                           })
                       : null,
