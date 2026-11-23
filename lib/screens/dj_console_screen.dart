@@ -30,10 +30,6 @@ class DjConsoleScreen extends StatefulWidget {
 class _DjConsoleScreenState extends State<DjConsoleScreen> {
   String? _profileSongId;
   Future<DjTrackProfile?>? _profileFuture;
-  String? _waveformSongId;
-  int? _waveformDurationMs;
-  String? _waveformFilePath;
-  Future<List<DjWaveformChunk>>? _waveformFuture;
   final DjWaveformRangeReader _waveformReader = DjWaveformRangeReader();
 
   void _ensureProfileFuture(BuildContext context, String? songId) {
@@ -42,23 +38,6 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
     _profileFuture = songId == null
         ? null
         : context.read<DjModeProvider>().analysis.getProfile(songId);
-  }
-  void _ensureWaveformFuture(Song? song) {
-    final durationMs = song?.duration.inMilliseconds ?? 0;
-    if (_waveformSongId == song?.id &&
-        _waveformDurationMs == durationMs &&
-        _waveformFilePath == song?.filePath) return;
-    _waveformSongId = song?.id;
-    _waveformDurationMs = durationMs;
-    _waveformFilePath = song?.filePath;
-    _waveformFuture = song == null || durationMs <= 0
-        ? null
-        : _waveformReader.loadVisibleRange(
-            song,
-            startMs: 0,
-            endMs: durationMs,
-            overscanChunks: 0,
-          );
   }
   static const _landscape = <DeviceOrientation>[
     DeviceOrientation.landscapeLeft,
@@ -90,7 +69,6 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
         builder: (context, music, _) {
           final song = music.currentSong;
           _ensureProfileFuture(context, song?.id);
-          _ensureWaveformFuture(song);
           final deckState = music.media3ShadowState;
           final reportedDeckId = deckState?.activeDeckId;
           final activeDeckId = reportedDeckId == 'A' || reportedDeckId == 'B'
@@ -137,7 +115,10 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                             duration: activeDeckId == 'B' ? Duration.zero : duration,
                             profileFuture: activeDeckId == 'A' ? _profileFuture : null,
                             expectedSongId: activeDeckId == 'A' ? song?.id : null,
-                            waveformFuture: activeDeckId == 'A' ? _waveformFuture : null,
+                            waveformLoader: activeDeckId == 'A' && song != null
+                                ? (startMs, endMs) => _waveformReader.loadVisibleRange(
+                                    song, startMs: startMs, endMs: endMs)
+                                : null,
                           )),
                           SizedBox(width: compact ? 8 : 12),
                           SizedBox(
@@ -157,7 +138,10 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                             duration: activeDeckId == 'B' ? duration : Duration.zero,
                             profileFuture: activeDeckId == 'B' ? _profileFuture : null,
                             expectedSongId: activeDeckId == 'B' ? song?.id : null,
-                            waveformFuture: activeDeckId == 'B' ? _waveformFuture : null,
+                            waveformLoader: activeDeckId == 'B' && song != null
+                                ? (startMs, endMs) => _waveformReader.loadVisibleRange(
+                                    song, startMs: startMs, endMs: endMs)
+                                : null,
                           )),
                         ],
                       ),
@@ -200,7 +184,7 @@ class _ConsoleDeck extends StatefulWidget {
     required this.status, required this.title, required this.artist, required this.progress,
     required this.position, required this.duration, required this.profileFuture,
     required this.expectedSongId,
-    required this.waveformFuture,
+    required this.waveformLoader,
   });
 
   final String deck, status, title, artist;
@@ -209,7 +193,7 @@ class _ConsoleDeck extends StatefulWidget {
   final Duration position, duration;
   final Future<DjTrackProfile?>? profileFuture;
   final String? expectedSongId;
-  final Future<List<DjWaveformChunk>>? waveformFuture;
+  final Future<List<DjWaveformChunk>> Function(int startMs, int endMs)? waveformLoader;
 
   @override
   State<_ConsoleDeck> createState() => _ConsoleDeckState();
@@ -218,6 +202,13 @@ class _ConsoleDeck extends StatefulWidget {
 class _ConsoleDeckState extends State<_ConsoleDeck>
     with SingleTickerProviderStateMixin {
   late final AnimationController _platterRotation;
+  final ScrollController _waveformScroll = ScrollController();
+  Future<List<DjWaveformChunk>>? _waveformFuture;
+  int? _requestedStartMs;
+  int? _requestedEndMs;
+  double _viewportWidth = 0;
+  static const int _chunkDurationMs = 8000;
+  static const double _pixelsPerSecond = 3.0;
 
   @override
   void initState() {
@@ -229,6 +220,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
       duration: const Duration(milliseconds: 1800),
     );
     _syncPlatterMotion();
+    _waveformScroll.addListener(_onWaveformScroll);
   }
 
   @override
@@ -236,11 +228,44 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.expectedSongId != widget.expectedSongId) {
       _platterRotation.value = 0;
+      _requestedStartMs = null;
+      _requestedEndMs = null;
+      _waveformFuture = null;
+      if (_waveformScroll.hasClients) _waveformScroll.jumpTo(0);
     }
     if (oldWidget.isPlaying != widget.isPlaying ||
         oldWidget.expectedSongId != widget.expectedSongId) {
       _syncPlatterMotion();
     }
+    if (oldWidget.waveformLoader != widget.waveformLoader ||
+        oldWidget.duration != widget.duration) {
+      _requestedStartMs = null;
+      _requestedEndMs = null;
+      _waveformFuture = null;
+    }
+  }
+
+  void _onWaveformScroll() => _requestVisibleWaveform();
+
+  void _requestVisibleWaveform() {
+    final loader = widget.waveformLoader;
+    final durationMs = widget.duration.inMilliseconds;
+    if (loader == null || durationMs <= 0 || _viewportWidth <= 0) return;
+    final contentWidth = math.max(_viewportWidth, durationMs / 1000 * _pixelsPerSecond);
+    final offset = _waveformScroll.hasClients ? _waveformScroll.offset : 0.0;
+    final rawStart = (offset / contentWidth * durationMs).floor().clamp(0, durationMs);
+    final rawEnd = ((offset + _viewportWidth) / contentWidth * durationMs)
+        .ceil().clamp(0, durationMs);
+    final startMs = ((rawStart ~/ _chunkDurationMs) * _chunkDurationMs)
+        .clamp(0, durationMs);
+    final endMs = (((rawEnd + _chunkDurationMs - 1) ~/ _chunkDurationMs) *
+            _chunkDurationMs)
+        .clamp(0, durationMs);
+    if (startMs == _requestedStartMs && endMs == _requestedEndMs) return;
+    _requestedStartMs = startMs;
+    _requestedEndMs = endMs;
+    final next = loader(startMs, endMs);
+    if (mounted) setState(() => _waveformFuture = next);
   }
 
   void _syncPlatterMotion() {
@@ -253,6 +278,8 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
 
   @override
   void dispose() {
+    _waveformScroll.removeListener(_onWaveformScroll);
+    _waveformScroll.dispose();
     _platterRotation.dispose();
     super.dispose();
   }
@@ -277,7 +304,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     final duration = widget.duration;
     final profileFuture = widget.profileFuture;
     final expectedSongId = widget.expectedSongId;
-    final waveformFuture = widget.waveformFuture;
+    final waveformFuture = _waveformFuture;
     return Container(
       padding: EdgeInsets.all(compact ? 10 : 16),
       decoration: BoxDecoration(
@@ -365,7 +392,19 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                   const <DjWaveformSegment>[];
               final beatGrid = verifiedProfile?.beatGrid;
               final sections = verifiedProfile?.sections ?? const <DjSection>[];
-              return FutureBuilder<List<DjWaveformChunk>>(
+              return LayoutBuilder(
+                builder: (context, waveformConstraints) {
+                  _viewportWidth = waveformConstraints.maxWidth;
+                  if (_requestedStartMs == null) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) _requestVisibleWaveform();
+                    });
+                  }
+                  final contentWidth = math.max(
+                    waveformConstraints.maxWidth,
+                    duration.inMilliseconds / 1000 * _pixelsPerSecond,
+                  );
+                  return FutureBuilder<List<DjWaveformChunk>>(
                 key: ObjectKey(waveformFuture),
                 future: waveformFuture,
                 builder: (context, waveformSnapshot) {
@@ -402,14 +441,22 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                           borderRadius: BorderRadius.circular(9),
                         ),
                         child: Stack(fit: StackFit.expand, children: [
-                          CustomPaint(
-                            painter: _ConsoleWavePainter(
-                              progress: progress,
-                              color: accent,
-                              segments: segments,
-                              beatGrid: beatGrid,
-                              sections: sections,
-                              durationMs: duration.inMilliseconds,
+                          SingleChildScrollView(
+                            controller: _waveformScroll,
+                            scrollDirection: Axis.horizontal,
+                            child: SizedBox(
+                              width: contentWidth,
+                              height: compact ? 42 : 58,
+                              child: CustomPaint(
+                                painter: _ConsoleWavePainter(
+                                  progress: progress,
+                                  color: accent,
+                                  segments: segments,
+                                  beatGrid: beatGrid,
+                                  sections: sections,
+                                  durationMs: duration.inMilliseconds,
+                                ),
+                              ),
                             ),
                           ),
                           Positioned(
@@ -430,6 +477,8 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                       ),
                     ],
                   );
+                },
+              );
                 },
               );
             },
