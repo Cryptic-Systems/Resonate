@@ -452,7 +452,7 @@ object DspEngineRegistry {
             .mapNotNull { (deckId, engines) ->
                 val snapshot = engines.firstNotNullOfOrNull { engine ->
                     runCatching { nativeApi.getMeters(engine.handle) }.getOrNull()
-                }?.takeIf { it.size >= 12 } ?: return@mapNotNull null
+                }?.takeIf { it.size >= 20 } ?: return@mapNotNull null
                 deckId to mapOf(
                     "inputPeakDb" to snapshot[0],
                     "inputTruePeakDb" to snapshot[1],
@@ -466,6 +466,14 @@ object DspEngineRegistry {
                     "autoGainAppliedDb" to snapshot[9],
                     "autoPreampAppliedDb" to snapshot[10],
                     "autoVirtualBassApplied" to snapshot[11],
+                    "autoGainPreDvcPeakDb" to snapshot[12],
+                    "autoGainTargetRmsDb" to snapshot[13],
+                    "autoGainRmsErrorDb" to snapshot[14],
+                    "autoGainConstrainedTargetDb" to snapshot[15],
+                    "autoGainPeakGainCapDb" to snapshot[16],
+                    "autoGainAppliedTelemetryDb" to snapshot[17],
+                    "autoGainPeakLimited" to (snapshot[18] >= 0.5f),
+                    "autoGainSilenceGateActive" to (snapshot[19] >= 0.5f),
                     "analysisHintActive" to deckAnalysisHints.containsKey(deckId),
                     "songId" to (deckTracks[deckId] ?: ""),
                 )
