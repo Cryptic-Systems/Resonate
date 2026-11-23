@@ -60,7 +60,7 @@ class DjIdleAnalysisService {
       );
       final songs = await _db.getAllSongs();
       for (final song in songs) {
-        if (_stopRequested) break;
+        if (_stopRequested || (isStillIdle != null && !isStillIdle())) break;
         if (_scanned >= maxSongs) break;
         if (song.filePath.trim().isEmpty) continue;
         try {
@@ -119,7 +119,7 @@ class DjIdleAnalysisService {
           // Cancellation is not a completed analysis attempt. The analyzer may
           // return an empty placeholder when its generation is invalidated;
           // do not mislabel that as missing tags or suppress a later retry.
-          if (_stopRequested) {
+          if (_stopRequested || (isStillIdle != null && !isStillIdle())) {
             await ResonateDiagnostics.recordDj(
               stage: 'idle_scan_song',
               songId: song.id,
@@ -144,7 +144,7 @@ class DjIdleAnalysisService {
             );
           }
         } catch (e) {
-          if (_stopRequested) {
+          if (_stopRequested || (isStillIdle != null && !isStillIdle())) {
             // A stop racing with a thrown platform error is still a
             // cancellation, not a failed analysis and not a retry cooldown.
             await ResonateDiagnostics.recordDj(
@@ -171,6 +171,7 @@ class DjIdleAnalysisService {
       // analysis. A single idle opportunity may decode only a tiny bounded
       // number of chunks across the entire library, never per track.
       var waveformChunksRemaining = maxWaveformChunks.clamp(0, 4).toInt();
+      var waveformChunksProcessed = 0;
       if (!_stopRequested && waveformChunksRemaining > 0) {
         for (final song in songs) {
           if (_stopRequested ||
@@ -189,6 +190,7 @@ class DjIdleAnalysisService {
                 !_stopRequested && (isStillIdle?.call() ?? true),
           );
           waveformChunksRemaining -= processed;
+          waveformChunksProcessed += processed;
         }
       }
       await ResonateDiagnostics.recordDj(
@@ -198,6 +200,9 @@ class DjIdleAnalysisService {
           'scanned': _scanned,
           'updated': _updated,
           'failed': _failed,
+          'waveformChunksProcessed': waveformChunksProcessed,
+          'waveformChunkBudgetRemaining': waveformChunksRemaining,
+          'idlePredicateStillTrue': isStillIdle?.call() ?? true,
         },
       );
     } catch (e) {
