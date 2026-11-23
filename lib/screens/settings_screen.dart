@@ -38,7 +38,7 @@ class SettingsScreen extends StatelessWidget {
               _item(context, 'Audio automation', 'Audio focus, interruption response and EQ headroom', Icons.settings_suggest_rounded, const AudioAutomationSettingsScreen()),
               _item(context, 'Audio leveling', 'Analyze track loudness and review a conservative gain recommendation', Icons.graphic_eq_rounded, const AudioLevelingSettingsScreen()),
               _item(context, 'Modes', 'Listening context — Driving, Podcast, Running, Work', Icons.tune_rounded, ModesScreen(folderPicker: const ResonateModeFolderPickerPort())),
-              _item(context, 'DJ Mode', 'Optional beat, tempo and harmonic blending', Icons.headphones_rounded, const DjModeSettingsScreen()),
+              _item(context, 'Automatic mixing', 'Optional beat-aware transitions and harmonic blending', Icons.auto_awesome_rounded, const DjModeSettingsScreen(playerFacing: true)),
               // Effects remain grouped under Equalizer; track analysis has its own entry above.
             ], initiallyExpanded: true),
             _section(context, 'Audio', Icons.equalizer_rounded, [
