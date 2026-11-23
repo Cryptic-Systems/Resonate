@@ -1,6 +1,6 @@
 # Resonate DJ Console — Progressive Full-Track Waveform Design
 
-**Status:** Phases A and B implemented and CI-green (CI #2566); Phase C range-query and initial Console rendering foundation implemented, awaiting CI and expanded widget coverage  
+**Status:** Phases A and B CI-green (CI #2566); Phase C range-query, identity-fenced rendering and coverage-state widget tests implemented, awaiting CI  
 **Target branch:** `dj-workspace-development`  
 **Scope:** Offline DJ analysis and Console presentation only
 
@@ -133,9 +133,9 @@ A blank region means unknown/unmeasured, not silence. Zero-height measured peaks
 - [x] Add visible-range chunk queries with bounded overscan (hard cap: 96 returned chunks / 256 KiB cache budget).
 - [x] Render persisted measured chunk intervals in the active verified deck; preserve blank gaps and retain legacy sparse-profile fallback.
 - [x] Fence async waveform snapshots by song ID, duration, source path and active physical-deck mapping.
-- [ ] Add widget tests for loading, partial, complete, stale and unsupported states.
+- [x] Add widget tests and coverage classification for loading, partial, complete, stale and unsupported states.
 
-**Current UI scope:** the existing full-track overview requests the track timeline as its visible range; the DB query returns no more than 96 chunks and does not decode or schedule analysis. Tracks exceeding that query window may show blank later regions until a true scroll/zoom viewport is introduced. The 96-chunk query cap bounds returned peak data to the existing cache budget. Phase C remains open until widget-state coverage and CI are green.
+**Current UI scope:** the existing full-track overview requests the track timeline as its visible range; the DB query returns no more than 96 chunks and does not decode or schedule analysis. Tracks exceeding that query window may show blank later regions until a true scroll/zoom viewport is introduced. The 96-chunk query cap bounds returned peak data to the existing cache budget. Phase C widget coverage now exercises pending, partial, contiguous-complete, stale-song and decoder/storage-error states. The UI reports full coverage only when measured intervals cover the entire timeline without a gap; stale chunks are hidden. Phase C remains open until the full CI gate is green.
 
 **Gate:** UI never displays a chunk for the wrong song/deck and does not cause analysis to start.
 
