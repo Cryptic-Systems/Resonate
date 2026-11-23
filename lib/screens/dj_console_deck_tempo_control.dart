@@ -37,10 +37,16 @@ class _DjConsoleDeckTempoControlState
     if (_busy) return;
     final state = music.media3ShadowState;
     if (state == null ||
-        (state.activeDeckId != 'A' && state.activeDeckId != 'B')) {
+        DjConsoleTempoPolicy.roleForPhysicalDeck(
+              physicalDeckId: widget.physicalDeckId,
+              activeDeckId: state.activeDeckId,
+            ) == DjConsoleTempoDeckRole.unavailable) {
       return;
     }
-    final isActive = widget.physicalDeckId == state.activeDeckId;
+    final isActive = DjConsoleTempoPolicy.roleForPhysicalDeck(
+          physicalDeckId: widget.physicalDeckId,
+          activeDeckId: state.activeDeckId,
+        ) == DjConsoleTempoDeckRole.active;
     final activeSpeed = state.activeDeckSpeed;
     final activePitch = state.activeDeckPitch;
     final standbySpeed = state.standbyDeckSpeed;
@@ -90,8 +96,12 @@ class _DjConsoleDeckTempoControlState
       builder: (context, music, _) {
         final state = music.media3ShadowState;
         final activeDeckId = state?.activeDeckId;
-        final roleKnown = activeDeckId == 'A' || activeDeckId == 'B';
-        final isActive = roleKnown && activeDeckId == widget.physicalDeckId;
+        final role = DjConsoleTempoPolicy.roleForPhysicalDeck(
+          physicalDeckId: widget.physicalDeckId,
+          activeDeckId: activeDeckId,
+        );
+        final roleKnown = role != DjConsoleTempoDeckRole.unavailable;
+        final isActive = role == DjConsoleTempoDeckRole.active;
         final speed = isActive
             ? state?.activeDeckSpeed
             : state?.standbyDeckSpeed;
