@@ -364,6 +364,8 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
       _resetWaveformScrollPending = true;
     }
     if (oldWidget.isPlaying != widget.isPlaying ||
+        oldWidget.active != widget.active ||
+        oldWidget.jogSeekEnabled != widget.jogSeekEnabled ||
         oldWidget.expectedSongId != widget.expectedSongId) {
       _syncPlatterMotion();
     }
@@ -477,7 +479,11 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   }
 
   void _syncPlatterMotion() {
-    if (widget.isPlaying && widget.active) {
+    // Eligibility includes the no-transition guard. If a transition starts
+    // during a drag, didUpdateWidget clears the gesture and this stops the
+    // decorative platter; it resumes automatically when the active deck is
+    // eligible again.
+    if (widget.jogSeekEnabled && widget.isPlaying && widget.active) {
       _platterRotation.repeat();
     } else {
       _platterRotation.stop();
