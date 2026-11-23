@@ -357,10 +357,22 @@ class DatabaseHelper {
     if (shouldCommit != null && !shouldCommit()) return;
     if (chunk.chunkIndex < 0 ||
         chunk.chunkIndex >= expectedChunkCount ||
+        chunk.requestedStartMs < 0 ||
+        chunk.requestedEndMs <= chunk.requestedStartMs ||
+        chunk.requestedEndMs > chunk.durationMs ||
+        chunk.actualStartMs < 0 ||
+        chunk.actualEndMs <= chunk.actualStartMs ||
+        chunk.actualEndMs > chunk.durationMs ||
+        chunk.actualStartMs > chunk.requestedStartMs ||
+        chunk.actualEndMs < chunk.requestedEndMs ||
+        chunk.sampleRate < 8000 ||
+        chunk.sampleRate > 192000 ||
+        chunk.channels < 1 ||
+        chunk.channels > 8 ||
         chunk.peaks.isEmpty ||
         chunk.peaks.length > DjWaveformChunk.maxPeakCount ||
         chunk.peaks.any((peak) => !peak.isFinite || peak < 0 || peak > 1)) {
-      throw ArgumentError('Invalid DJ waveform chunk payload');
+      throw ArgumentError('Invalid or incomplete DJ waveform chunk payload');
     }
     try {
       final db = await database;
