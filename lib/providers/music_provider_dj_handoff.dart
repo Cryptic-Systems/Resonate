@@ -381,9 +381,13 @@ extension MusicProviderDjHandoff on MusicProvider {
     }
 
     final lease = _manualDjPreparedLease;
+    final pendingTempoWrite = _manualDjParameterWriteSettled;
+    if (pendingTempoWrite != null) {
+      await pendingTempoWrite.future;
+    }
+    if (lease == null || !identical(_manualDjPreparedLease, lease)) return;
     _manualDjPreparedDeck = null;
     _manualDjPreparedLease = null;
-    if (lease == null) return;
     if (lease.isCurrent && session != null) {
       try { await session.cancelCrossfade(); } catch (_) {}
       try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
@@ -535,6 +539,9 @@ extension MusicProviderDjHandoff on MusicProvider {
   }
 
   Future<void> cuePreparedManualDjDeck(Duration position) async {
+    if (_manualDjParameterWriteInFlight) {
+      throw StateError('Wait for the tempo update to settle before cueing Deck B.');
+    }
     if (position < Duration.zero) {
       throw ArgumentError.value(position, 'position', 'Must not be negative.');
     }
@@ -595,6 +602,9 @@ extension MusicProviderDjHandoff on MusicProvider {
   Future<void> crossfadePreparedManualDjDeck({
     required Duration duration,
   }) async {
+    if (_manualDjParameterWriteInFlight) {
+      throw StateError('Wait for the tempo update to settle before performing the handoff.');
+    }
     if (duration < const Duration(milliseconds: 250) ||
         duration > const Duration(seconds: 15)) {
       throw ArgumentError.value(duration, 'duration', 'Must be 250 ms–15 s.');
