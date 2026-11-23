@@ -370,10 +370,7 @@ extension MusicProviderDjHandoff on MusicProvider {
       try { await session.cancelCrossfade(); } catch (_) {}
       try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
       try {
-        await session.setDeckPlaybackSpeeds(
-          activeSpeed: 1.0,
-          standbySpeed: 1.0,
-        );
+        await _resetManualStandbyTempo(session);
       } catch (_) {}
     }
     await lease.release();
