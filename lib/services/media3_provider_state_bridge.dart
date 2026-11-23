@@ -59,6 +59,10 @@ class Media3ProviderStateBridge {
       crossfadeProgress: snapshot?.crossfadeProgress ?? 0.0,
       activeDeckVolume: snapshot?.activeDeckVolume ?? 1.0,
       standbyDeckVolume: snapshot?.standbyDeckVolume ?? 0.0,
+      activeDeckSpeed: snapshot?.activeDeckSpeed,
+      activeDeckPitch: snapshot?.activeDeckPitch,
+      standbyDeckSpeed: snapshot?.standbyDeckSpeed,
+      standbyDeckPitch: snapshot?.standbyDeckPitch,
       incomingMediaId: snapshot?.incomingMediaId,
       incomingReady: snapshot?.incomingReady ?? false,
       incomingPosition: snapshot?.incomingPosition ?? Duration.zero,
@@ -111,6 +115,10 @@ class Media3ProviderState {
     this.crossfadeProgress = 0.0,
     this.activeDeckVolume = 1.0,
     this.standbyDeckVolume = 0.0,
+    this.activeDeckSpeed,
+    this.activeDeckPitch,
+    this.standbyDeckSpeed,
+    this.standbyDeckPitch,
     this.incomingMediaId,
     this.incomingReady = false,
     this.incomingPosition = Duration.zero,
@@ -149,6 +157,10 @@ class Media3ProviderState {
         crossfadeProgress = 0.0,
         activeDeckVolume = 1.0,
         standbyDeckVolume = 0.0,
+        activeDeckSpeed = null,
+        activeDeckPitch = null,
+        standbyDeckSpeed = null,
+        standbyDeckPitch = null,
         incomingMediaId = null,
         incomingReady = false,
         incomingPosition = Duration.zero,
@@ -192,6 +204,11 @@ class Media3ProviderState {
   final double crossfadeProgress;
   final double activeDeckVolume;
   final double standbyDeckVolume;
+  /// Native Media3 parameters; null means not reported by the service.
+  final double? activeDeckSpeed;
+  final double? activeDeckPitch;
+  final double? standbyDeckSpeed;
+  final double? standbyDeckPitch;
   final String? incomingMediaId;
   final bool incomingReady;
   final Duration incomingPosition;
