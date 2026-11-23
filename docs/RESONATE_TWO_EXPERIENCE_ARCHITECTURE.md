@@ -14,6 +14,8 @@ Resonate will provide two mutually exclusive user experiences over one shared au
 1. **Resonate Player** — everyday listening, the existing player/library experience, current automatic DJ behavior, DSP, Intelligence, Ask Resonate, voice and feedback. It does not expose manual DJ Console controls.
 2. **Resonatix DJ** — a dedicated DJ performance environment with its own workspace, Console and integrated library browser. It uses the same shared library records and playback foundation. A fresh DJ session starts with both deck slots empty.
 
+**Deck-count boundary:** Resonate Player is strictly single-deck in every Player mode, including automatic DJ. Automatic DJ must not load, prepare, render or use Deck B as a hidden/standby channel while the Player policy is active. Any existing automatic-DJ transition path that depends on the second physical player must be audited and adapted to a genuinely single-deck strategy (or its incompatible crossfade behavior removed from Player); preserving behavior never overrides the one-deck invariant. Only Resonatix DJ may activate the dual-deck topology.
+
 Locked behavior:
 
 - The app remembers the last selected experience and opens it on subsequent launches.
@@ -166,6 +168,7 @@ The policy owner is a single source of truth for the permitted deck topology and
 
 1. Grant exactly one policy (`PLAYER_SINGLE_DECK` or `DJ_DUAL_DECK`) and bind it to a monotonically increasing generation/token so stale commands from an earlier policy are rejected.
 2. Reject Deck B load, prepare, start, parameter, gain and crossfader commands while `PLAYER_SINGLE_DECK` is active, including commands originating from hidden/background DJ controllers.
+   - This prohibition includes automatic-DJ preload/standby use. A muted or inaudible second player still violates the Player single-deck policy; it is not exempt merely because it is not heard.
 3. Permit Deck A/Deck B operation only under `DJ_DUAL_DECK`; both decks may be audible simultaneously only through the validated shared mix/output path.
 4. Keep the DJ crossfader manual and operator-owned. Automation may analyze, warn, recommend and perform only separately authorized preparation/execution actions; it must never write crossfader position or override a manual crossfade gesture.
 5. Enforce the same policy at the native Media3 command boundary as well as the Flutter/Dart boundary. UI visibility is not a security or correctness boundary.
@@ -284,7 +287,7 @@ Acceptance:
 ### Phase 2 — Resonate Player isolation
 Retain current HomeScreen behavior and remove manual DJ performance entry points from the Player shell. Preserve automatic DJ and all existing Player functionality.
 
-Acceptance: Player regression suite and existing playback/Media3/DSP tests remain green; DJ Console is not reachable from Player navigation.
+Acceptance: Player regression suite and existing playback/Media3/DSP tests remain green; DJ Console is not reachable from Player navigation; automatic DJ remains within the one-deck boundary and cannot preload/use Deck B.
 
 ### Phase 3 — Resonatix DJ shell and integrated browser
 Create dedicated DJ navigation and connect existing library/playlist/analysis providers. Preserve Workspace and Console rather than recreating them.
