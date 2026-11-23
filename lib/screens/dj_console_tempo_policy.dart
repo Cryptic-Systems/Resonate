@@ -16,6 +16,20 @@ class DjConsoleTempoParameters {
 
 enum DjConsoleTempoDeckRole { active, standby, unavailable }
 
+class DjConsoleDeckParameterCommand {
+  const DjConsoleDeckParameterCommand({
+    required this.activeSpeed,
+    required this.activePitch,
+    required this.standbySpeed,
+    required this.standbyPitch,
+  });
+
+  final double activeSpeed;
+  final double activePitch;
+  final double standbySpeed;
+  final double standbyPitch;
+}
+
 abstract final class DjConsoleTempoPolicy {
   /// Resolve physical A/B identity against the latest native promotion state.
   /// Unknown IDs stay unavailable; callers must not infer a role.
@@ -30,6 +44,42 @@ abstract final class DjConsoleTempoPolicy {
     return physicalDeckId == activeDeckId
         ? DjConsoleTempoDeckRole.active
         : DjConsoleTempoDeckRole.standby;
+  }
+
+  /// Build a complete atomic native command while preserving the other deck.
+  /// Null indicates an unknown role, invalid readback or invalid fader value.
+  static DjConsoleDeckParameterCommand? commandForPhysicalDeck({
+    required String physicalDeckId,
+    required String? activeDeckId,
+    required double activeSpeed,
+    required double activePitch,
+    required double standbySpeed,
+    required double standbyPitch,
+    required double percent,
+    required bool keyLockEnabled,
+  }) {
+    final role = roleForPhysicalDeck(
+      physicalDeckId: physicalDeckId,
+      activeDeckId: activeDeckId,
+    );
+    final current = [activeSpeed, activePitch, standbySpeed, standbyPitch];
+    if (role == DjConsoleTempoDeckRole.unavailable ||
+        current.any((value) =>
+            !value.isFinite || value < 0.5 || value > 2.0)) {
+      return null;
+    }
+    final next = parametersFor(
+      percent: percent,
+      keyLockEnabled: keyLockEnabled,
+    );
+    if (next == null) return null;
+    final updateActive = role == DjConsoleTempoDeckRole.active;
+    return DjConsoleDeckParameterCommand(
+      activeSpeed: updateActive ? next.speed : activeSpeed,
+      activePitch: updateActive ? next.pitch : activePitch,
+      standbySpeed: updateActive ? standbySpeed : next.speed,
+      standbyPitch: updateActive ? standbyPitch : next.pitch,
+    );
   }
 
   static const double minPercent = -6.0;
