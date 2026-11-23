@@ -80,6 +80,7 @@ class _DjConsoleDeckTempoControlState
       });
     } catch (error) {
       if (!mounted) return;
+      setState(() => _previewPercent = null);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Tempo update was not applied: $error')),
       );
