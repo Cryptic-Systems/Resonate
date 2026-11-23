@@ -48,7 +48,7 @@ void main() {
     expect(
       DjWaveformChunkPeakAnalyzer.measuredEndMs(
         startMs: 0,
-        pcmByteLength: 4,
+        pcmByteLength: 8,
         sampleRate: 44100,
         channels: 2,
         durationMs: 1000,
