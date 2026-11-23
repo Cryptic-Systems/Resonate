@@ -21,6 +21,11 @@ void main() {
     expect(policy.isValidChunk(chunk(actualStart: 9000, actualEnd: 10000)), isFalse);
   });
 
+  test('rejects chunks that only partially cover their requested interval', () {
+    expect(policy.isValidChunk(chunk(actualStart: 1)), isFalse);
+    expect(policy.isValidChunk(chunk(actualEnd: 7999)), isFalse);
+  });
+
   test('rejects malformed identity, intervals and peak values', () {
     expect(policy.isValidChunk(chunk(songId: ' ')), isFalse);
     expect(policy.isValidChunk(chunk(actualStart: -1)), isFalse);
