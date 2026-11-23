@@ -12,10 +12,12 @@ class DjModeStatusChip extends StatelessWidget {
     super.key,
     this.dense = false,
     this.showWhenOff = false,
+    this.interactive = true,
   });
 
   final bool dense;
   final bool showWhenOff;
+  final bool interactive;
 
   @override
   Widget build(BuildContext context) {
@@ -60,13 +62,13 @@ class DjModeStatusChip extends StatelessWidget {
           padding: const EdgeInsets.only(right: 6),
           child: InkWell(
             borderRadius: BorderRadius.circular(20),
-            onTap: () {
+            onTap: interactive ? () {
               Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => const DjModeSettingsScreen(),
                 ),
               );
-            },
+            } : null,
             child: chip,
           ),
         );
@@ -78,7 +80,9 @@ class DjModeStatusChip extends StatelessWidget {
 /// Shows why the last DJ handoff chose its strategy (kind + confidence).
 /// Visible for a short window after a transition while DJ Mode is on.
 class DjTransitionReasonChip extends StatelessWidget {
-  const DjTransitionReasonChip({super.key});
+  const DjTransitionReasonChip({super.key, this.interactive = true});
+
+  final bool interactive;
 
   static String labelForStrategy(String? raw) {
     switch (raw) {
@@ -150,13 +154,13 @@ class DjTransitionReasonChip extends StatelessWidget {
               borderRadius: BorderRadius.circular(22),
               child: InkWell(
                 borderRadius: BorderRadius.circular(22),
-                onTap: () {
+                onTap: interactive ? () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => const DjModeSettingsScreen(),
                     ),
                   );
-                },
+                } : null,
                 child: Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
