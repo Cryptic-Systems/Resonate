@@ -1,6 +1,6 @@
 # Resonate DJ Console — Product & Technical Direction
 
-**Status:** Product direction documented; DJ Workspace is watch-only; Phase 1 landscape visual foundation implemented, with all performance controls gated  
+**Status:** DJ Workspace is watch-only; landscape Console implemented; manual Deck B preparation/cue/equal-power handoff and bounded active-deck jog seeking are enabled; scratch and continuous mixer controls remain gated  
 **Target branch:** `dj-workspace-development`  
 **Parent experience:** Existing DJ Workspace  
 **Primary form factor:** Landscape, with a deliberate portrait entry/rotation experience  
@@ -255,3 +255,12 @@ The standard player remains familiar. DJ Workspace remains valuable as the overv
 
 The Console platters now rotate at an approximately 33⅓ RPM presentation rate only when the canonical player state reports playback and the corresponding physical deck is verified as active. They stop when playback pauses or the deck is no longer active, and reset their visual phase when the verified song identity changes. This is a visual status cue only: it does not expose touch/jog input, alter playback speed, seek, cue, or write transport state. Standby and identity-unknown decks remain stationary. Physical-device review is still required for visual smoothness and compact landscape sizing.
 
+
+
+## 2026-11-23 — manual Deck B controls and bounded jog seeking
+
+The Console now exposes the existing Media3-backed operator workflow for selecting and preparing a standby queue occurrence, setting its cue position, cancelling preparation, and performing a native equal-power handoff. The provider retains an interactive playback-control lease while the incoming deck is reviewed; user transport can preempt it. The UI reads lease-validated prepared-deck state and does not create a second player or write deck gain directly.
+
+The active physical deck's platter now accepts a touch-and-drag seek gesture. Rotation is translated into a preview only while the verified active deck is playing in an active Media3 session and no transition is underway. One full platter revolution represents eight seconds. A single existing MusicProvider.seek command is issued on release, using user-transport priority and the existing arbiter; there are no per-frame seek writes. The gesture is discarded on cancellation, track identity change, loss of active-deck eligibility or transition state. This is bounded seeking, not scratch emulation, pitch control, nudging or time-stretching.
+
+Jog seek policy tests cover forward/reverse movement, angle wrap, track-boundary clamping and non-finite input. CI and physical-device interaction/audio review remain required; CI does not establish tactile latency or hardware behaviour.
