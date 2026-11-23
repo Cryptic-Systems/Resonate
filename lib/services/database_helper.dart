@@ -9,6 +9,7 @@ import '../models/playlist.dart';
 import '../models/listening_event.dart';
 import '../models/dj_analysis.dart';
 import '../dj_engine/analysis/dj_waveform_chunk.dart';
+import '../dj_engine/analysis/dj_waveform_storage_policy.dart';
 
 class DatabaseHelper {
   static const _databaseName = 'resonate.db';
@@ -439,6 +440,82 @@ class DatabaseHelper {
       });
     } catch (e) {
       _markDatabaseFailure('upsert_dj_waveform_chunk', e);
+      rethrow;
+    }
+  }
+
+  /// Loads only waveform chunks intersecting the requested timeline range,
+  /// with a hard-bounded chunk overscan. Rows from stale identities are hidden.
+  Future<List<DjWaveformChunk>> getDjWaveformChunksInRange({
+    required DjWaveformIdentity identity,
+    required int startMs,
+    required int endMs,
+    int overscanChunks = 2,
+  }) async {
+    if (identity.songId.trim().isEmpty ||
+        identity.durationMs <= 0 ||
+        startMs < 0 ||
+        endMs <= startMs ||
+        startMs >= identity.durationMs ||
+        identity.schemaVersion != 1) {
+      return const <DjWaveformChunk>[];
+    }
+    final boundedStart = startMs.clamp(0, identity.durationMs).toInt();
+    final boundedEnd = endMs.clamp(0, identity.durationMs).toInt();
+    if (boundedEnd <= boundedStart) return const <DjWaveformChunk>[];
+    final overscan = overscanChunks.clamp(0, 2).toInt();
+    const chunkDurationMs = 8000;
+    final firstIndex = (boundedStart ~/ chunkDurationMs - overscan).clamp(0, 2249);
+    final lastIndex = (((boundedEnd - 1) ~/ chunkDurationMs) + overscan)
+        .clamp(firstIndex, 2249);
+    try {
+      final rows = await (await database).query(
+        tableDjWaveformChunks,
+        where: 'song_id = ? AND analysis_version = ? AND chunk_index BETWEEN ? AND ?',
+        whereArgs: [identity.songId, identity.analysisVersion, firstIndex, lastIndex],
+        orderBy: 'chunk_index ASC',
+      );
+      final chunks = <DjWaveformChunk>[];
+      for (final row in rows) {
+        if (row['source_fingerprint'] != identity.sourceFingerprint ||
+            row['duration_ms'] != identity.durationMs ||
+            row['schema_version'] != identity.schemaVersion) {
+          continue;
+        }
+        try {
+          final decodedPeaks = jsonDecode(row['peaks_json']?.toString() ?? '[]');
+          if (decodedPeaks is! List) continue;
+          final peaks = decodedPeaks.whereType<num>().map((value) => value.toDouble()).toList(growable: false);
+          final chunk = DjWaveformChunk(
+            songId: row['song_id']?.toString() ?? '',
+            analysisVersion: (row['analysis_version'] as num).toInt(),
+            chunkIndex: (row['chunk_index'] as num).toInt(),
+            requestedStartMs: (row['requested_start_ms'] as num).toInt(),
+            requestedEndMs: (row['requested_end_ms'] as num).toInt(),
+            actualStartMs: (row['actual_start_ms'] as num).toInt(),
+            actualEndMs: (row['actual_end_ms'] as num).toInt(),
+            sourceFingerprint: row['source_fingerprint']?.toString(),
+            durationMs: (row['duration_ms'] as num).toInt(),
+            schemaVersion: (row['schema_version'] as num).toInt(),
+            sampleRate: (row['sample_rate'] as num).toInt(),
+            channels: (row['channels'] as num).toInt(),
+            peaks: peaks,
+            completedAt: DateTime.tryParse(row['completed_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
+          );
+          if (identity.matches(chunk, expectedSchemaVersion: identity.schemaVersion) &&
+              chunk.requestedEndMs > boundedStart &&
+              chunk.requestedStartMs < boundedEnd &&
+              const DjWaveformStoragePolicy().isValidChunk(chunk)) {
+            chunks.add(chunk);
+          }
+        } catch (_) {
+          // A malformed row is treated as an uncovered interval, never data.
+          continue;
+        }
+      }
+      return List<DjWaveformChunk>.unmodifiable(chunks);
+    } catch (e) {
+      _markDatabaseFailure('get_dj_waveform_chunks_in_range', e);
       rethrow;
     }
   }
