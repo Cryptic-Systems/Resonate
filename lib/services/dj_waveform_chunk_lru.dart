@@ -8,8 +8,8 @@ class DjWaveformChunkLru {
   DjWaveformChunkLru({
     int maxChunks = DjWaveformStoragePolicy.maxCacheChunks,
     int maxBytes = DjWaveformStoragePolicy.maxCacheBytes,
-  })  : _maxChunks = maxChunks.clamp(1, DjWaveformStoragePolicy.maxCacheChunks),
-        _maxBytes = maxBytes.clamp(1, DjWaveformStoragePolicy.maxCacheBytes);
+  })  : _maxChunks = maxChunks.clamp(1, DjWaveformStoragePolicy.maxCacheChunks).toInt(),
+        _maxBytes = maxBytes.clamp(1, DjWaveformStoragePolicy.maxCacheBytes).toInt();
 
   final int _maxChunks;
   final int _maxBytes;
