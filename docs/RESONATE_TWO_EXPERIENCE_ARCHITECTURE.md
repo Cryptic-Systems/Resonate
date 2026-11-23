@@ -1,0 +1,278 @@
+# Resonate Two-Experience Architecture and Migration Blueprint
+
+**Status:** Phase 0 repository audit completed; architecture blueprint for review  
+**Audited branch:** `dj-workspace-development`  
+**Audited commit:** `dad53206153a5f537a4e40c66b91d9099c6c9df8`  
+**Production branch:** `Resonate-True-Apk` (out of scope; do not modify)  
+**PR #221:** remains open and unmerged  
+**Implementation status:** No runtime implementation is part of this document.
+
+## 1. Product decisions
+
+Resonate will provide two mutually exclusive user experiences over one shared audio platform.
+
+1. **Resonate Player** — everyday listening, the existing player/library experience, current automatic DJ behavior, DSP, Intelligence, Ask Resonate, voice and feedback. It does not expose manual DJ Console controls.
+2. **Resonatix DJ** — a dedicated DJ performance environment with its own workspace, Console and integrated library browser. It uses the same shared library records and playback foundation. A fresh DJ session starts with both deck slots empty.
+
+Locked behavior:
+
+- The app remembers the last selected experience and opens it on subsequent launches.
+- Switching experiences stops playback and opens the destination cleanly.
+- DJ automation has three levels: Intelligence Only, Assisted Performance and Automatic Performance.
+- A fresh DJ session defaults to Intelligence Only (manual-first). Higher automation is an explicit operator choice.
+- The DJ library is an integrated browser over the existing Resonate library; it is not a second media database.
+- Settings are shared at the app level, with experience-specific sections where appropriate.
+
+## 2. Repository audit: existing capabilities to reuse
+
+The audit was performed against the development branch at the commit above. The following are existing systems, not proposed new features.
+
+### 2.1 Production playback and audio
+
+| Existing component | Current responsibility | Migration decision |
+|---|---|---|
+| `MusicProvider` | Public playback facade, queue/transport policy, state reconciliation and DJ handoff entry points | Retain as the single Flutter playback facade |
+| `PlaybackControlArbiter` | Serialized exclusive controller leases, priorities, revocation and fail-closed write authorization | Reuse; do not create another arbiter |
+| `Media3ProviderSession` | Provider-owned canonical session and state projection | Reuse |
+| `Media3PlaybackRuntime` | One backend, serialized commands, queue and reconciled state | Reuse; do not instantiate a second runtime for DJ |
+| `Media3MusicProviderAdapter` / `Media3PlaybackClient` | Song-to-native mapping and platform command/state boundary | Reuse |
+| `Media3PlaybackBridge` | Flutter-to-native Media3 session bridge | Reuse |
+| `Media3PlaybackService` | Native MediaSession and ExoPlayer lifecycle | Reuse |
+| `DspEngineSinkHook`, `DspEngineRegistry`, `AudioEffectsProvider` | Native DSP processing and active/standby deck routing | Reuse; do not duplicate DSP |
+| Existing audio focus and MediaSession integration | System focus, notification, Bluetooth and external transport behavior | Preserve and validate |
+
+The application composition root constructs one `PlaybackControlArbiter` and injects it into `MusicProvider`. It constructs one `Media3ProviderSession` for that provider. The startup lifecycle restores saved audio settings before preparing the Media3 session and committing the provider handoff.
+
+The native service creates a canonical active ExoPlayer (initial physical deck A) and creates the second physical player as a muted standby when a preload is requested. The service also contains auxiliary sound and isolated transition-preview players for their bounded, non-canonical purposes. These are not reasons to add another production playback engine or another MediaSession.
+
+The `just_audio` compatibility/fallback code remains in the repository, but the injected Media3 session prevents lazy legacy-engine construction while Media3 owns or is preparing playback. The handoff retires the legacy EnginePair after Media3 has been configured and verified. Do not remove the dependency or fallback wholesale as part of this architecture split; only retire a specifically proven reachable competing path in a separately scoped change.
+
+**Documentation discrepancy to reconcile later:** some older comments and migration documents still describe the Media3 runtime/bridge as an isolated prototype or describe the pre-cutover migration state. The current app composition and provider handoff show that the Media3 session is wired into the application startup path. Update stale documentation only after verifying the current runtime path and release configuration; do not infer production status from an old comment alone.
+
+### 2.2 Playback ownership
+
+The existing arbiter priorities are:
+
+- background
+- automatic
+- interactive
+- safety override
+- user transport
+
+A lease is generation-bound. Revocation invalidates the lease before asynchronous cleanup, and stale leases cannot authorize subsequent writes. Manual DJ handoff already uses an interactive lease, with user transport able to preempt it. Pending preload and tempo operations are settled before cleanup completes.
+
+**Decision:** retain this arbiter as the sole playback-controller arbitration mechanism. The new top-level experience coordinator is a lifecycle/router coordinator, not a second playback authority. It must use existing provider operations and lease cleanup; it must not own ExoPlayer, DSP, focus or a second arbiter.
+
+### 2.3 DJ features already present
+
+| Existing component | Current capability | Reuse boundary |
+|---|---|---|
+| `DjModeProvider` / `DjModeSettingsStore` | DJ feature settings, beat alignment, tempo match, harmonic mix, confidence/aggressiveness, SFX and idle analysis | Extend only where the three-level automation setting is genuinely missing |
+| `DjAnalysisService` | Cached BPM/key/profile analysis, SQLite persistence, waveform profile access | Reuse |
+| `DjEngine` | Transition candidate generation, scoring, risk analysis and execution planning | Reuse |
+| `DjAutopilotPlanner` | Candidate ranking with transition memory | Reuse |
+| `DjSessionCoordinator` | Reviewable suggestion mixes without directly mutating playback | Reuse |
+| `DjWorkspaceScreen` | Watch-only monitoring of Media3 deck and transition state | Retain inside Resonatix DJ |
+| `DjConsoleScreen` | Landscape performance surface, measured waveforms, deck status, active-deck jog seek and manual controls | Retain and evolve |
+| Manual DJ handoff in `MusicProvider` | Deck B preparation, cue, tempo parameters, crossfade, cancellation and lease cleanup | Reuse; extend only for the empty-session workflow |
+
+The existing Console is intentionally honest about implemented controls. Jog interaction is a one-shot seek on the verified active deck; it is not scratching or continuous platter-speed control. Tempo writes are per physical deck and require a valid manual lease and prepared standby state.
+
+### 2.4 Existing Intelligence Autopilot is not the DJ automation selector
+
+`IntelligenceProvider` and `AutopilotController` already implement a separate listening/recommendation autonomy model, including Suggestions only, Assist me and Autopilot, explicit consent, recommendation selection and queue/track mutation.
+
+That system must not be duplicated or casually renamed as the DJ's three-level performance control. The Resonatix DJ automation selector governs DJ transition behavior:
+
+- **Intelligence Only:** analysis, risk feedback, recommendations and voice feedback; no transport writes by the DJ automation layer.
+- **Assisted Performance:** prepare and recommend; operator confirmation is required before performance execution.
+- **Automatic Performance:** eligible DJ transitions may execute only while explicitly enabled and authorized. Manual operator input preempts automatic execution.
+
+The existing transition planner, risk engine, Media3 transition operations and arbiter should be reused. The automation-level policy/state is the actual gap to design and test.
+
+### 2.5 Library and persistence
+
+- `LibraryProvider` exposes the existing library and filtering.
+- `DatabaseHelper` owns the existing SQLite database (schema version 9 in the audited branch), including songs, playlists, favorites, DJ analysis/profiles and progressive waveform chunks/manifests.
+- `PlaylistProvider` and existing playlist persistence remain shared.
+- `DjAnalysisService` reads/writes the existing DJ analysis tables.
+
+The DJ browser must query these existing providers/stores. Do not create a second song catalog, scanner, media permission flow, analysis database or waveform store.
+
+A DJ performance queue/session is not a second library. If required to keep the Player's queue intact while DJ decks are selected independently, it should be a lightweight session-level collection of stable song references and occurrence identities, not a duplicated library or a second authoritative playback queue.
+
+## 3. Current product/navigation gap
+
+The audited app currently creates a single `HomeScreen` from `_LifecycleHome`. That shell has For You, Library, Player and Settings tabs. DJ Workspace and DJ Mode settings are currently reached from the shared Settings area; DJ Workspace opens DJ Console as a nested route.
+
+There is no top-level persisted choice between Resonate Player and Resonatix DJ in the app root.
+
+The existing `ModeProvider` is not that selector. Its `ResonateMode` values (Normal, Running, Workout, Driving, Work, Podcast, Motivation, Audiobook and Sleep) are listening-context policies. Keep that feature intact and separate from the new product-experience selection.
+
+The existing `DjModeProvider` is also not the top-level selector. It is an optional DJ feature/configuration layer and analysis coordinator. Keep it as shared DJ capability state, with experience-specific UI access.
+
+## 4. Critical deck-lifecycle finding
+
+The current native Media3 implementation has a canonical active player and a muted standby player. The current manual DJ provider API is specifically an incoming-deck handoff API:
+
+- it requires an active Media3 provider session;
+- it requires the outgoing deck to be playing;
+- it maps the selected incoming item to an occurrence in the current provider/native queue;
+- it prepares the standby player, waits for native readiness, retains an interactive lease, and supports cue, tempo, cancellation and equal-power crossfade promotion.
+
+The native service can load a new canonical queue and can prepare a standby queue, but the current Dart manual-DJ entry point does not expose a clean empty-session workflow. The current UI's empty state also tells the user to start playback from the normal library.
+
+Therefore, independent DJ startup is a real gap. It is not evidence that another audio engine is needed.
+
+### Required design before deck implementation
+
+1. Start Resonatix DJ with no selected tracks and no audible output.
+2. Select Deck A from the existing library and prepare the existing canonical Media3 active player without requiring the Player experience to start playback first.
+3. Select Deck B from the same library and prepare the existing native standby player, muted and without audio focus.
+4. Preserve stable song identity and queue-occurrence mapping even when tracks repeat.
+5. Define what promotion means for the session queue and how the next standby is selected.
+6. Keep MediaSession, MusicProvider state, physical deck identity and DSP routing synchronized through promotion.
+7. Ensure a fresh DJ session cannot overwrite the saved Resonate Player queue. Use a session-level DJ set/queue snapshot or a carefully designed queue-context boundary; do not create a second playback engine or library database.
+8. Do not expose independent Play, channel gain or scratch controls unless the native semantics are explicitly implemented and validated. The existing standby is not an independently audible channel outside the native crossfade envelope.
+
+A focused native/API spike should establish whether the current service's standby preparation can safely accept an independently selected MediaItem/queue occurrence without changing the active Player queue. Prefer a narrow extension of the existing Media3 service and bridge. Do not add another ExoPlayer service, MediaSession, audio focus owner or DSP chain.
+
+## 5. Target application architecture
+
+### 5.1 Shared application services
+
+Create/retain one app-lifetime provider graph:
+
+- one `MusicProvider`;
+- one `PlaybackControlArbiter`;
+- one `Media3ProviderSession` and its existing runtime/backend/client/bridge;
+- one `LibraryProvider`, `PlaylistProvider` and shared database;
+- existing Intelligence, DJ analysis, DSP/effects, visualization, Bluetooth and diagnostics providers.
+
+These services must not be re-created when switching the visible experience. A mode switch changes the active product shell, not the audio engine or the app's shared provider graph.
+
+### 5.2 Experience selection and routing
+
+Add only the missing product-level concept: a persisted experience selection with two values, Player and Resonatix DJ.
+
+- Load the saved value before choosing the initial shell.
+- If no value exists, show a first-run experience chooser.
+- Persist the user's selection and remember it.
+- Settings in either shell must provide a way to switch experiences.
+- A switch must stop playback and perform the safe outgoing-controller cleanup before replacing the shell.
+- Keep the selected experience distinct from `ResonateMode` listening-context profiles.
+
+A small experience preference/store and lifecycle coordinator are acceptable new app-level components because this concept does not currently exist. They must not create playback objects or duplicate authority.
+
+### 5.3 Resonate Player shell
+
+Reuse the current HomeScreen and its tabs as the starting point. Remove DJ Console/manual performance entry points from this shell. Keep existing automatic DJ, Intelligence, DSP, voice and normal playback behavior. Shared Settings remains reachable.
+
+### 5.4 Resonatix DJ shell
+
+Build a dedicated shell around existing DJ screens and providers:
+
+- DJ Workspace remains the monitoring/overview surface.
+- DJ Console remains the hands-on performance surface.
+- Integrated DJ browser uses `LibraryProvider`, `PlaylistProvider` and existing database/analysis services.
+- Track selection can target Deck A or Deck B directly.
+- The shell starts with empty deck slots and Intelligence Only automation.
+- DJ-specific settings are presented within the shared Settings destination or its Resonatix-specific section.
+
+Do not simply add another skin to the Player shell. The navigation and deck-loading workflow must be independent of the normal Player screen.
+
+### 5.5 Settings
+
+Keep one shared Settings system and one copy of global preferences. Organize settings into global, Resonate Player and Resonatix DJ sections. Existing DSP, audio focus, library scanning, voice, theme and diagnostics settings must not be duplicated.
+
+## 6. Safe experience-switch contract
+
+The initial implementation intentionally stops playback; seamless cross-experience handoff is out of scope.
+
+Proposed serialized transition:
+
+1. Mark the outgoing experience as switching so its UI rejects new performance commands.
+2. Cancel or settle automatic transition/preload work through existing MusicProvider mechanisms.
+3. If leaving Resonatix DJ, cancel manual prepared-deck work and await pending preload/tempo operations using the existing cleanup path.
+4. Stop canonical Media3 playback through the existing MusicProvider/session path; do not dispose/recreate the Media3 service.
+5. Normalize temporary DJ-only playback parameters/overlays where the existing cleanup contract requires it.
+6. Verify the outgoing experience has no outstanding command capable of mutating the new session.
+7. Change the persisted selected experience only after successful cleanup.
+8. Mount the destination shell and restore its own UI/session preferences.
+9. If cleanup fails, do not mount the destination as an active controller. Keep the current experience in a safe, stopped/error state and report the failure.
+
+Use the existing PlaybackControlArbiter for individual transport/DJ mutations. The experience coordinator must not become another arbiter. Do not release the shared Media3 session or recreate shared providers on a normal mode switch.
+
+## 7. Migration phases and acceptance gates
+
+### Phase 0 — repository inventory and architecture blueprint
+**Status: completed in this audit.**
+
+Deliverables: component inventory, ownership map, existing-vs-gap matrix, target architecture and staged migration plan.
+
+### Phase 1 — product experience state and root routing
+Add the persisted Player/Resonatix DJ selection, first-run chooser and root shell routing. Reuse the existing provider graph. Do not change playback engine/session construction.
+
+Acceptance:
+- Existing installs with no experience key receive a safe first-run selection.
+- Selection persists across restart.
+- Existing listening-context Modes remain unchanged.
+- Shared providers are constructed once and remain alive across shell changes.
+- No new player, MediaSession, DSP, audio focus owner or arbiter is introduced.
+
+### Phase 2 — Resonate Player isolation
+Retain current HomeScreen behavior and remove manual DJ performance entry points from the Player shell. Preserve automatic DJ and all existing Player functionality.
+
+Acceptance: Player regression suite and existing playback/Media3/DSP tests remain green; DJ Console is not reachable from Player navigation.
+
+### Phase 3 — Resonatix DJ shell and integrated browser
+Create dedicated DJ navigation and connect existing library/playlist/analysis providers. Preserve Workspace and Console rather than recreating them.
+
+Acceptance: DJ shell can browse the existing library and choose a target deck without entering the Player experience. No duplicate library database/scanner/permission flow.
+
+### Phase 4 — independent empty-session deck lifecycle
+Extend the existing Media3 service/bridge/provider contract to support initial Deck A and standby Deck B preparation from an empty DJ session. Resolve session queue isolation and occurrence mapping before implementation.
+
+Acceptance: empty launch; load A without autoplay; load B without normal Player playback; standby muted/no focus; explicit start; promotion; cancellation; replacement; repeat occurrences; state/DSP routing; no Player queue corruption; all cleanup paths tested.
+
+### Phase 5 — three-level DJ automation
+Add the missing automation-level policy to existing DJ state/orchestration. Reuse DJ planner, risk engine, analysis and Media3 transition APIs. Keep Intelligence Autopilot separate.
+
+Acceptance:
+- Intelligence Only never writes transport.
+- Assisted Performance never executes without an explicit operator confirmation.
+- Automatic Performance requires explicit enablement and valid authority.
+- Manual input preempts automatic execution.
+- Risk rejection, stale plan, lease revocation and missing analysis all fail safely.
+
+### Phase 6 — shared settings and safe switching
+Expose experience switching and shared/global plus mode-specific settings. Implement the safe-switch contract above.
+
+Acceptance: switch while playing, paused, transitioning, DJ standby-ready, manual tempo-write pending and automatic work pending. No overlapping controller authority, stale callback writes or audio-engine recreation.
+
+### Phase 7 — UI refinement and regression
+Polish both shells, responsive layouts, Console, waveforms, orientation lifecycle, empty/error/loading states and accessibility.
+
+### Phase 8 — release readiness
+Run Flutter analysis/tests, native Media3 tests, DSP tests, Android build and artifact integrity checks. Complete real-device validation for both experiences. CI green is not a substitute for device testing.
+
+## 8. Explicit non-goals and prohibited duplication
+
+This migration must not:
+
+- create another audio engine, Media3 service, MediaSession or canonical player;
+- create another DSP engine, processor chain or gain/crossfade implementation;
+- create a second library database, media scanner, playlist store or waveform store;
+- create another audio-focus owner;
+- create a second PlaybackControlArbiter;
+- repurpose `ResonateMode` as the Player/Resonatix selector;
+- duplicate Intelligence Autopilot as DJ automation;
+- remove `just_audio` wholesale without a separate production-reference audit;
+- claim independent audible deck controls that the native service does not actually implement;
+- merge PR #221 or modify `Resonate-True-Apk`.
+
+## 9. Phase 0 exit decision
+
+The repository already contains the shared audio foundation, DJ intelligence, analysis, library, Workspace, Console and manual handoff mechanisms. The architecture split should be implemented by adding the missing top-level experience lifecycle and the missing empty-session DJ deck workflow, then adapting existing screens and settings.
+
+**The next implementation gate is Phase 1.** Before coding, review this blueprint—especially the distinction between the current muted-standby crossfade model and a fully independent DJ mixer, and the strategy for preserving the Player queue while a DJ performance session is active.
