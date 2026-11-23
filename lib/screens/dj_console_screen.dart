@@ -14,6 +14,7 @@ import '../dj_engine/core/dj_types.dart';
 import '../ui/resonate_glass.dart';
 import 'dj_console_overlay_policy.dart';
 import 'dj_console_waveform_status.dart';
+import 'dj_waveform_viewport_policy.dart';
 
 /// Landscape-first visual foundation for the future performance console.
 ///
@@ -207,8 +208,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   int? _requestedStartMs;
   int? _requestedEndMs;
   double _viewportWidth = 0;
-  static const int _chunkDurationMs = 8000;
-  static const double _pixelsPerSecond = 3.0;
+  static const _viewportPolicy = DjWaveformViewportPolicy();
 
   @override
   void initState() {
@@ -251,16 +251,14 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     final loader = widget.waveformLoader;
     final durationMs = widget.duration.inMilliseconds;
     if (loader == null || durationMs <= 0 || _viewportWidth <= 0) return;
-    final contentWidth = math.max(_viewportWidth, durationMs / 1000 * _pixelsPerSecond);
-    final offset = _waveformScroll.hasClients ? _waveformScroll.offset : 0.0;
-    final rawStart = (offset / contentWidth * durationMs).floor().clamp(0, durationMs);
-    final rawEnd = ((offset + _viewportWidth) / contentWidth * durationMs)
-        .ceil().clamp(0, durationMs);
-    final startMs = ((rawStart ~/ _chunkDurationMs) * _chunkDurationMs)
-        .clamp(0, durationMs);
-    final endMs = (((rawEnd + _chunkDurationMs - 1) ~/ _chunkDurationMs) *
-            _chunkDurationMs)
-        .clamp(0, durationMs);
+    final range = _viewportPolicy.visibleRange(
+      durationMs: durationMs,
+      viewportWidth: _viewportWidth,
+      scrollOffset: _waveformScroll.hasClients ? _waveformScroll.offset : 0,
+    );
+    if (range == null) return;
+    final startMs = range.startMs;
+    final endMs = range.endMs;
     if (startMs == _requestedStartMs && endMs == _requestedEndMs) return;
     _requestedStartMs = startMs;
     _requestedEndMs = endMs;
@@ -400,10 +398,11 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                       if (mounted) _requestVisibleWaveform();
                     });
                   }
-                  final contentWidth = math.max(
-                    waveformConstraints.maxWidth,
-                    duration.inMilliseconds / 1000 * _pixelsPerSecond,
-                  );
+                  final contentWidth = _viewportPolicy.visibleRange(
+                    durationMs: duration.inMilliseconds,
+                    viewportWidth: waveformConstraints.maxWidth,
+                    scrollOffset: 0,
+                  )?.contentWidth ?? waveformConstraints.maxWidth;
                   return FutureBuilder<List<DjWaveformChunk>>(
                 key: ObjectKey(waveformFuture),
                 future: waveformFuture,
