@@ -12,6 +12,9 @@ import kotlin.test.assertTrue
 class DspEngineRegistryTest {
     private open class FakeApi : DspEngineRegistry.NativeDspApi {
         val calls = mutableListOf<String>()
+        var meterValues = FloatArray(20) { 0f }
+
+        override fun getMeters(handle: Long): FloatArray = meterValues.copyOf()
 
         override fun setEnabled(handle: Long, enabled: Boolean) {
             calls += "eq-enabled:" + handle + ":" + enabled
@@ -119,6 +122,32 @@ class DspEngineRegistryTest {
     @After
     fun tearDown() {
         DspEngineRegistry.resetForTests()
+    }
+
+    @Test
+    fun live_status_exposes_auto_gain_decision_metrics_per_physical_deck() {
+        fake.meterValues = FloatArray(20).apply {
+            this[12] = -1.25f
+            this[13] = -18f
+            this[14] = -4.5f
+            this[15] = -3.0f
+            this[16] = -2.75f
+            this[17] = -2.9f
+            this[18] = 1f
+            this[19] = 0f
+        }
+        assertTrue(DspEngineRegistry.register(7, 7007L, "B"))
+        val status = DspEngineRegistry.statusMap()
+        val byDeck = status["liveMetersByDeck"] as Map<*, *>
+        val deckB = byDeck["B"] as Map<*, *>
+        assertEquals(-1.25f, deckB["autoGainPreDvcPeakDb"])
+        assertEquals(-18f, deckB["autoGainTargetRmsDb"])
+        assertEquals(-4.5f, deckB["autoGainRmsErrorDb"])
+        assertEquals(-3.0f, deckB["autoGainConstrainedTargetDb"])
+        assertEquals(-2.75f, deckB["autoGainPeakGainCapDb"])
+        assertEquals(-2.9f, deckB["autoGainAppliedTelemetryDb"])
+        assertEquals(true, deckB["autoGainPeakLimited"])
+        assertEquals(false, deckB["autoGainSilenceGateActive"])
     }
 
     @Test
