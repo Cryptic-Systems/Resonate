@@ -43,10 +43,10 @@ class DjWaveformRangeReader {
     final boundedOverscan =
         DjWaveformStoragePolicy().boundedOverscan(overscanChunks);
     final firstIndex =
-        (startMs ~/ chunkDurationMs - boundedOverscan).clamp(0, DjWaveformStoragePolicy.maxChunksPerTrack - 1);
+        (startMs ~/ chunkDurationMs - boundedOverscan).clamp(0, DjWaveformStoragePolicy.maxChunksPerTrack - 1).toInt();
     final lastIndex =
         (((endMs - 1) ~/ chunkDurationMs) + boundedOverscan)
-            .clamp(firstIndex, DjWaveformStoragePolicy.maxChunksPerTrack - 1);
+            .clamp(firstIndex, DjWaveformStoragePolicy.maxChunksPerTrack - 1).toInt();
     final cached = <DjWaveformChunk>[];
     var fullyCached = true;
     for (var index = firstIndex; index <= lastIndex; index++) {
