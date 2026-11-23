@@ -41,12 +41,15 @@ void main() {
         duplicate,
       ];
 
+      // When the middle occurrence is active, both the earlier queue item
+      // and the later duplicate remain valid choices. Only the active index
+      // is excluded; candidate order and occurrence identity are preserved.
       expect(
         DjConsoleManualControlsPolicy.incomingCandidates(
           queue,
           currentQueueIndex: 1,
         ),
-        [2],
+        [0, 2],
       );
       expect(
         DjConsoleManualControlsPolicy.incomingCandidates(
