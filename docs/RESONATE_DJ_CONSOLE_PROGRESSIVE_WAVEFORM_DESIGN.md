@@ -1,6 +1,6 @@
 # Resonate DJ Console — Progressive Full-Track Waveform Design
 
-**Status:** Phases A and B CI-green (CI #2566); Phase C range-query, identity-fenced rendering and coverage-state widget tests implemented, awaiting CI  
+**Status:** Phases A and B CI-green (CI #2566); Phase C viewport-bounded range loading, identity-fenced rendering and coverage-state tests implemented, awaiting CI  
 **Target branch:** `dj-workspace-development`  
 **Scope:** Offline DJ analysis and Console presentation only
 
@@ -134,8 +134,10 @@ A blank region means unknown/unmeasured, not silence. Zero-height measured peaks
 - [x] Render persisted measured chunk intervals in the active verified deck; preserve blank gaps and retain legacy sparse-profile fallback.
 - [x] Fence async waveform snapshots by song ID, duration, source path and active physical-deck mapping.
 - [x] Add widget tests and coverage classification for loading, partial, complete, stale and unsupported states.
+- [x] Add horizontal waveform viewport with chunk-aligned visible-range requests; query only the visible interval plus bounded DB overscan.
+- [x] Add pure viewport geometry tests for initial view, scrolled view, short tracks, overscroll and invalid geometry.
 
-**Current UI scope:** the existing full-track overview requests the track timeline as its visible range; the DB query returns no more than 96 chunks and does not decode or schedule analysis. Tracks exceeding that query window may show blank later regions until a true scroll/zoom viewport is introduced. The 96-chunk query cap bounds returned peak data to the existing cache budget. Phase C widget coverage now exercises pending, partial, contiguous-complete, stale-song and decoder/storage-error states. The UI reports full coverage only when measured intervals cover the entire timeline without a gap; stale chunks are hidden. Phase C remains open until the full CI gate is green.
+**Current UI scope:** the Console waveform is horizontally scrollable at a bounded 3 px/second scale. It requests only the visible time interval, rounded to the 8-second chunk grid; the database adds no more than two chunks of overscan on either side and retains the 96-chunk / 256 KiB hard result bounds. Short tracks fit the viewport and load their full interval. Playback position updates do not invalidate the waveform query; song, source path or duration changes do. The viewport is presentation-only and does not seek or alter playback. Coverage labels describe the visible interval only, never imply whole-track completion. It does not decode or schedule analysis. Widget tests cover pending, partial, complete visible range, stale-song and decoder/storage-error states; viewport policy tests cover initial/scrolled ranges, short tracks, overscroll and invalid geometry.
 
 **Gate:** UI never displays a chunk for the wrong song/deck and does not cause analysis to start.
 
