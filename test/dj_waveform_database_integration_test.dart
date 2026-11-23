@@ -331,4 +331,63 @@ void main() {
     );
   });
 
+  test('waveform retention evicts oldest chunks and repairs manifests only', () async {
+    for (final id in ['song-old', 'song-new']) {
+      await db.insert('songs', {
+        'id': id,
+        'title': id,
+        'file_path': '/$id.mp3',
+      });
+      await db.insert('song_dj_profiles', {
+        'song_id': id,
+        'profile_json': '{"bpm":120}',
+        'analysis_version': 3,
+      });
+      await helper.prepareDjWaveformManifest(
+        identity: DjWaveformIdentity(
+          songId: id,
+          analysisVersion: 3,
+          sourceFingerprint: 'fingerprint-$id',
+          durationMs: 8000,
+          schemaVersion: 1,
+        ),
+        expectedChunkCount: 1,
+      );
+      await helper.upsertDjWaveformChunk(
+        chunk: DjWaveformChunk(
+          songId: id,
+          analysisVersion: 3,
+          chunkIndex: 0,
+          requestedStartMs: 0,
+          requestedEndMs: 8000,
+          actualStartMs: 0,
+          actualEndMs: 8000,
+          sourceFingerprint: 'fingerprint-$id',
+          durationMs: 8000,
+          schemaVersion: 1,
+          sampleRate: 44100,
+          channels: 2,
+          peaks: const [0.2, 0.4],
+          completedAt: id == 'song-old'
+              ? DateTime.utc(2026, 1, 1)
+              : DateTime.utc(2026, 2, 1),
+        ),
+        expectedChunkCount: 1,
+      );
+    }
+
+    expect(await helper.pruneDjWaveformChunks(maxChunks: 1), 1);
+    final chunks = await db.query('dj_waveform_chunks');
+    expect(chunks, hasLength(1));
+    expect(chunks.single['song_id'], 'song-new');
+    final oldManifest = (await db.query(
+      'dj_waveform_manifests',
+      where: 'song_id = ?',
+      whereArgs: ['song-old'],
+    )).single;
+    expect(oldManifest['completed_indices_json'], '[]');
+    expect(await db.query('song_dj_profiles'), hasLength(2));
+    expect(await db.query('song_dj_analysis'), isEmpty);
+  });
+
 }
