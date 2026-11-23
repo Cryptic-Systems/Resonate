@@ -27,6 +27,8 @@ class DjConsoleWaveformStatus extends StatelessWidget {
     required AsyncSnapshot<List<DjWaveformChunk>> snapshot,
     required String? expectedSongId,
     required int durationMs,
+    int visibleStartMs = 0,
+    int? visibleEndMs,
     required bool legacyAvailable,
     required bool profileLoading,
     required bool profileIdentityMismatch,
@@ -44,15 +46,17 @@ class DjConsoleWaveformStatus extends StatelessWidget {
       ..sort((a, b) => a.actualStartMs.compareTo(b.actualStartMs));
 
     if (raw.isNotEmpty && valid.isEmpty) return DjConsoleWaveformState.stale;
-    if (valid.isNotEmpty && durationMs > 0) {
-      var coveredUntil = 0;
+    final rangeStart = visibleStartMs.clamp(0, durationMs).toInt();
+    final rangeEnd = (visibleEndMs ?? durationMs).clamp(rangeStart, durationMs).toInt();
+    if (valid.isNotEmpty && rangeEnd > rangeStart) {
+      var coveredUntil = rangeStart;
       for (final chunk in valid) {
         if (chunk.actualStartMs > coveredUntil) break;
         if (chunk.actualEndMs > coveredUntil) {
           coveredUntil = chunk.actualEndMs;
         }
       }
-      if (coveredUntil >= durationMs) return DjConsoleWaveformState.complete;
+      if (coveredUntil >= rangeEnd) return DjConsoleWaveformState.complete;
       return DjConsoleWaveformState.partial;
     }
     if (legacyAvailable) return DjConsoleWaveformState.legacy;
@@ -64,9 +68,9 @@ class DjConsoleWaveformStatus extends StatelessWidget {
   String get label => switch (state) {
         DjConsoleWaveformState.loading => 'LOADING MEASURED PCM CHUNKS',
         DjConsoleWaveformState.partial =>
-          'MEASURED PCM · $chunkCount CHUNKS · GAPS UNANALYSED',
+          'VISIBLE RANGE · $chunkCount CHUNKS · GAPS UNANALYSED',
         DjConsoleWaveformState.complete =>
-          'MEASURED PCM · $chunkCount CHUNKS · FULL COVERAGE',
+          'VISIBLE RANGE · $chunkCount CHUNKS · COMPLETE',
         DjConsoleWaveformState.stale => 'WAVEFORM IDENTITY MISMATCH · HIDDEN',
         DjConsoleWaveformState.unsupported => 'WAVEFORM DATA UNAVAILABLE',
         DjConsoleWaveformState.legacy => 'LEGACY SAMPLED PCM · GAPS UNANALYSED',
