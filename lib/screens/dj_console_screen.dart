@@ -146,7 +146,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                       children: [
                         _ConsoleStatus(label: song == null ? 'NO ACTIVE TRACK' : 'MEDIA3 SESSION', active: song != null),
                         const SizedBox(width: 8),
-                        const _ConsoleStatus(label: 'MANUAL DECK B ENABLED · JOG / FADER LOCKED', active: true),
+                        const _ConsoleStatus(label: 'MANUAL DECK B ENABLED · ACTIVE-DECK JOG SEEK', active: true),
                         const Spacer(),
                         Text('RESONATE  /  TWO-DECK SYSTEM',
                             style: theme.textTheme.labelSmall?.copyWith(
