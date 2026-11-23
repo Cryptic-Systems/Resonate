@@ -175,6 +175,21 @@ typedef struct {
     float short_term_rms_db;
 } DspLevelMeter;
 
+/**
+ * Snapshot of the auto-DVC controller decision for the most recently processed
+ * block. Values are best-effort telemetry, not control inputs.
+ */
+typedef struct {
+    float pre_dvc_peak_db;
+    float target_rms_db;
+    float rms_error_db;
+    float constrained_target_db;
+    float peak_gain_cap_db;
+    float applied_gain_db;
+    int peak_limited;
+    int silence_gate_active;
+} DspAutoGainMeter;
+
 DSP_API const char* dsp_version(void);
 DSP_API DspEngine* dsp_create(const DspConfig* cfg);
 DSP_API void       dsp_destroy(DspEngine* eng);
@@ -345,6 +360,7 @@ DSP_API DspError dsp_auto_gain_set_window_ms(DspEngine* eng, float window_ms);
 DSP_API float    dsp_auto_gain_get_window_ms(const DspEngine* eng);
 DSP_API float    dsp_auto_gain_get_applied_db(const DspEngine* eng);
 DSP_API float    dsp_get_short_term_rms_db(const DspEngine* eng);
+DSP_API DspError dsp_auto_gain_get_meter(const DspEngine* eng, DspAutoGainMeter* out);
 
 /* ---------- Extended intelligence (v0.6) ---------- */
 
