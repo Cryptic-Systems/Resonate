@@ -3,6 +3,14 @@ import 'package:resonate/screens/dj_console_tempo_policy.dart';
 
 void main() {
   group('DjConsoleTempoPolicy', () {
+    test('maps physical decks through native role promotion', () {
+      expect(DjConsoleTempoPolicy.roleForPhysicalDeck(physicalDeckId: 'A', activeDeckId: 'A'), DjConsoleTempoDeckRole.active);
+      expect(DjConsoleTempoPolicy.roleForPhysicalDeck(physicalDeckId: 'B', activeDeckId: 'A'), DjConsoleTempoDeckRole.standby);
+      expect(DjConsoleTempoPolicy.roleForPhysicalDeck(physicalDeckId: 'A', activeDeckId: 'B'), DjConsoleTempoDeckRole.standby);
+      expect(DjConsoleTempoPolicy.roleForPhysicalDeck(physicalDeckId: 'B', activeDeckId: 'B'), DjConsoleTempoDeckRole.active);
+      expect(DjConsoleTempoPolicy.roleForPhysicalDeck(physicalDeckId: 'A', activeDeckId: null), DjConsoleTempoDeckRole.unavailable);
+    });
+
     test('maps the fader percentage to playback speed', () {
       final slower = DjConsoleTempoPolicy.parametersFor(percent: -6, keyLockEnabled: true);
       final faster = DjConsoleTempoPolicy.parametersFor(percent: 6, keyLockEnabled: true);
