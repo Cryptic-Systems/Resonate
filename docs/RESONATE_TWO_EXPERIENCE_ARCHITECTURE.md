@@ -9,7 +9,7 @@
 
 ## 1. Product decisions
 
-Resonate will provide two mutually exclusive user experiences over one shared audio platform.
+Resonate will provide two mutually exclusive user experiences over one shared audio platform and one strictly exclusive deck-usage policy. Exactly one deck policy may be active at a time: single-deck Player policy or dual-deck DJ policy. A policy transition temporarily authorizes neither experience to issue deck commands.
 
 1. **Resonate Player** — everyday listening, the existing player/library experience, current automatic DJ behavior, DSP, Intelligence, Ask Resonate, voice and feedback. It does not expose manual DJ Console controls.
 2. **Resonatix DJ** — a dedicated DJ performance environment with its own workspace, Console and integrated library browser. It uses the same shared library records and playback foundation. A fresh DJ session starts with both deck slots empty.
@@ -43,7 +43,7 @@ The audit was performed against the development branch at the commit above. The 
 
 The application composition root constructs one `PlaybackControlArbiter` and injects it into `MusicProvider`. It constructs one `Media3ProviderSession` for that provider. The startup lifecycle restores saved audio settings before preparing the Media3 session and committing the provider handoff.
 
-The native service creates a canonical active ExoPlayer (initial physical deck A) and creates the second physical player as a muted standby when a preload is requested. The service also contains auxiliary sound and isolated transition-preview players for their bounded, non-canonical purposes. These are not reasons to add another production playback engine or another MediaSession.
+The native service creates a canonical active ExoPlayer (initial physical deck A) and creates the second physical player as a muted standby when a preload is requested. The service also contains auxiliary sound and isolated transition-preview players for their bounded, non-canonical purposes. These are not reasons to add another production playback engine or another MediaSession. Auxiliary/preview players are not user-facing deck capacity and must never be treated as a way around the active deck-usage policy.
 
 The `just_audio` compatibility/fallback code remains in the repository, but the injected Media3 session prevents lazy legacy-engine construction while Media3 owns or is preparing playback. The handoff retires the legacy EnginePair after Media3 has been configured and verified. Do not remove the dependency or fallback wholesale as part of this architecture split; only retire a specifically proven reachable competing path in a separately scoped change.
 
@@ -61,7 +61,7 @@ The existing arbiter priorities are:
 
 A lease is generation-bound. Revocation invalidates the lease before asynchronous cleanup, and stale leases cannot authorize subsequent writes. Manual DJ handoff already uses an interactive lease, with user transport able to preempt it. Pending preload and tempo operations are settled before cleanup completes.
 
-**Decision:** retain this arbiter as the sole playback-controller arbitration mechanism. The new top-level experience coordinator is a lifecycle/router coordinator, not a second playback authority. It must use existing provider operations and lease cleanup; it must not own ExoPlayer, DSP, focus or a second arbiter.
+**Decision:** retain this arbiter as the sole playback-controller arbitration mechanism. Separately, introduce one authoritative `DeckUsagePolicyCoordinator` (or equivalent policy owner) for the mutually exclusive deck configuration: `PLAYER_SINGLE_DECK` or `DJ_DUAL_DECK`. This is a policy gate/configuration owner, not a command arbiter: it must not schedule/prioritize competing controllers, issue playback commands, or replace `PlaybackControlArbiter`. Every deck command must satisfy both the active deck policy and the existing arbiter's valid lease/authorization rules. The top-level experience coordinator remains a lifecycle/router coordinator, not a playback authority. None of these coordinators may own ExoPlayer, DSP or audio focus.
 
 ### 2.3 DJ features already present
 
@@ -147,10 +147,34 @@ The intended operator capabilities are:
 - Start, pause, seek/cue and prepare each deck independently.
 - Keep both decks running simultaneously when the operator chooses.
 - Control each deck's tempo/playback parameters independently within validated limits.
-- Apply independent channel/deck gain and a shared crossfader/master mix.
+- Apply independent channel/deck gain and a shared crossfader/master mix. The DJ crossfader is operator-controlled/manual; DJ automation must not move it or silently blend channels on the operator's behalf.
 - Prelisten/cue only if a safe, explicitly designed monitoring route is available; do not silently route cue audio to the master output.
 - Keep track identity, position, readiness, buffering, errors and physical deck roles independently observable.
 - Preserve one shared output/audio platform, system audio focus ownership and app-level master output policy.
+
+### 4.2 Strict, mutually exclusive deck-usage policy
+
+**Locked invariant: exactly one deck-usage policy exists as active at any instant.** This is enforced by the shared audio architecture, not merely by hiding UI controls.
+
+| Active policy | Permitted deck configuration | Prohibited behavior |
+|---|---|---|
+| `PLAYER_SINGLE_DECK` | One canonical audible deck for Resonate Player | No second audible/prepared DJ channel, no DJ crossfader, no Deck B performance commands |
+| `DJ_DUAL_DECK` | Two independently loaded/operable DJ decks with operator-controlled manual crossfade and one shared master output | No Player single-deck policy or Player shell deck commands; no automatic crossfader movement |
+| `SWITCHING` / no policy | No experience may issue deck commands while outgoing work is quiesced and the policy is being replaced | No overlap, no early destination commands, no stale outgoing writes |
+
+The policy owner is a single source of truth for the permitted deck topology and active experience binding. It must:
+
+1. Grant exactly one policy (`PLAYER_SINGLE_DECK` or `DJ_DUAL_DECK`) and bind it to a monotonically increasing generation/token so stale commands from an earlier policy are rejected.
+2. Reject Deck B load, prepare, start, parameter, gain and crossfader commands while `PLAYER_SINGLE_DECK` is active, including commands originating from hidden/background DJ controllers.
+3. Permit Deck A/Deck B operation only under `DJ_DUAL_DECK`; both decks may be audible simultaneously only through the validated shared mix/output path.
+4. Keep the DJ crossfader manual and operator-owned. Automation may analyze, warn, recommend and perform only separately authorized preparation/execution actions; it must never write crossfader position or override a manual crossfade gesture.
+5. Enforce the same policy at the native Media3 command boundary as well as the Flutter/Dart boundary. UI visibility is not a security or correctness boundary.
+6. Require every mutating deck command to pass both the active policy-generation check and the existing `PlaybackControlArbiter` lease authorization. The policy coordinator must not become a second arbiter.
+7. On policy switch, enter a no-policy/quiescing state, reject new commands, settle/cancel outgoing work, stop all outgoing audible decks, clear temporary deck state, verify old-generation commands can no longer mutate audio, then grant the destination policy. Never grant the destination before outgoing cleanup succeeds.
+8. If cleanup or native acknowledgement fails, remain fail-closed with no active deck policy and no audible playback; surface a recoverable error rather than activating both or guessing.
+9. Treat auxiliary sound/preview paths as bounded non-deck facilities; they cannot be used to bypass the single-deck Player rule or create an additional DJ channel.
+
+A policy switch is not an engine/service restart. It reconfigures the permitted use of the same Media3 service, two existing physical deck players, DSP path, MediaSession, audio-focus owner and shared provider graph.
 
 ### Reuse-first implementation constraint
 
@@ -181,6 +205,7 @@ Create/retain one app-lifetime provider graph:
 
 - one `MusicProvider`;
 - one `PlaybackControlArbiter`;
+- one exclusive deck-usage policy owner, enforcing exactly one active policy (single-deck Player or dual-deck DJ) without acting as a second command arbiter;
 - one `Media3ProviderSession` and its existing runtime/backend/client/bridge;
 - one `LibraryProvider`, `PlaylistProvider` and shared database;
 - existing Intelligence, DJ analysis, DSP/effects, visualization, Bluetooth and diagnostics providers.
@@ -267,7 +292,7 @@ Create dedicated DJ navigation and connect existing library/playlist/analysis pr
 Acceptance: DJ shell can browse the existing library and choose a target deck without entering the Player experience. No duplicate library database/scanner/permission flow.
 
 ### Phase 4 — independent dual-deck lifecycle and mix path
-First complete the native/API design spike. Then evolve the existing two physical Media3 deck players and existing DSP/output path to support independent deck loading, transport and concurrent audibility, with one shared crossfader/master mix policy. Resolve session queue isolation and occurrence mapping before implementation. Do not create a new player or audio engine.
+First complete the native/API design spike and implement/test the strict deck-usage policy gate at both Dart and native boundaries. Then evolve the existing two physical Media3 deck players and existing DSP/output path to support independent DJ deck loading, transport and concurrent audibility, with one shared master mix path and a manually operated crossfader. Player policy must remain strictly single-deck. Resolve session queue isolation and occurrence mapping before implementation. Do not create a new player or audio engine.
 
 Acceptance: empty launch; independently load/replace/unload A and B; independent start/pause/seek/cue/tempo; verified simultaneous playback; independent channel gains; tested crossfader curve and master output; correct focus/session/effects behavior; safe single-deck and dual-deck recovery; state/DSP routing for both physical decks; no Player queue corruption; stale-command and lease tests; all cleanup paths tested. Standby mute remains enforced whenever a deck is in a prepared-but-not-playing state.
 
@@ -282,7 +307,7 @@ Acceptance:
 - Risk rejection, stale plan, lease revocation and missing analysis all fail safely.
 
 ### Phase 6 — shared settings and safe switching
-Expose experience switching and shared/global plus mode-specific settings. Implement the safe-switch contract above.
+Expose experience switching and shared/global plus mode-specific settings. Implement the safe-switch contract above, including atomic release/regrant of the mutually exclusive deck policy and fail-closed no-policy state during switching.
 
 Acceptance: switch while playing, paused, transitioning, DJ standby-ready, manual tempo-write pending and automatic work pending. No overlapping controller authority, stale callback writes or audio-engine recreation.
 
@@ -301,6 +326,9 @@ This migration must not:
 - create a second library database, media scanner, playlist store or waveform store;
 - create another audio-focus owner;
 - create a second PlaybackControlArbiter;
+- allow Player and DJ deck policies to be active simultaneously;
+- allow Deck B or crossfader commands under the Player single-deck policy;
+- let DJ automation write or override the manual crossfader;
 - repurpose `ResonateMode` as the Player/Resonatix selector;
 - duplicate Intelligence Autopilot as DJ automation;
 - remove `just_audio` wholesale without a separate production-reference audit;
