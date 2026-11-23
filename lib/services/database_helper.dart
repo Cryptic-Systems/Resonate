@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -6,6 +8,7 @@ import '../models/song.dart';
 import '../models/playlist.dart';
 import '../models/listening_event.dart';
 import '../models/dj_analysis.dart';
+import '../dj_engine/analysis/dj_waveform_chunk.dart';
 
 class DatabaseHelper {
   static const _databaseName = 'resonate.db';
@@ -248,6 +251,177 @@ class DatabaseHelper {
   Future<Map<String,dynamic>> getStatistics() async { try{final db=await database;final totalSongs=Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM $tableSongs'))??0;final totalPlaylists=Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM $tablePlaylists'))??0;final favoriteCount=Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM $tableFavorites'))??0;final totalPlayCount=Sqflite.firstIntValue(await db.rawQuery('SELECT COALESCE(SUM($columnSongPlayCount),0) FROM $tableSongs'))??0;return {'totalSongs':totalSongs,'totalPlaylists':totalPlaylists,'favoriteCount':favoriteCount,'totalPlayCount':totalPlayCount};}catch(e){_markDatabaseFailure('database_operation',e);return {'totalSongs':0,'totalPlaylists':0,'favoriteCount':0,'totalPlayCount':0};} }
   Song _songFromMap(Map<String,dynamic> map) => Song(id:map[columnSongId] as String,title:map[columnSongTitle] as String,artist:map[columnSongArtist]?.toString() ?? 'Unknown Artist',album:map[columnSongAlbum]?.toString() ?? 'Unknown Album',filePath:map[columnSongFilePath] as String,duration:Duration(milliseconds:(map[columnSongDuration] as num?)?.toInt()??0),dateAdded:DateTime.tryParse(map[columnSongDateAdded]?.toString()??'')??DateTime.now(),albumArt:map[columnSongAlbumArt]?.toString());
   Playlist _playlistFromMap(Map<String,dynamic> map) => Playlist(id:map[columnPlaylistId] as String,name:map[columnPlaylistName] as String,songIds:const [],createdAt:DateTime.tryParse(map[columnPlaylistCreatedAt]?.toString()??'')??DateTime.now(),description:map[columnPlaylistDescription]?.toString());
+
+
+  /// Starts or resumes one waveform manifest. A changed source identity
+  /// invalidates only waveform rows for this song/version, never DJ metadata.
+  Future<void> prepareDjWaveformManifest({
+    required DjWaveformIdentity identity,
+    required int expectedChunkCount,
+  }) async {
+    if (identity.songId.trim().isEmpty ||
+        identity.analysisVersion <= 0 ||
+        identity.durationMs <= 0 ||
+        expectedChunkCount <= 0 ||
+        expectedChunkCount > 2250 ||
+        identity.schemaVersion != 1) {
+      throw ArgumentError('Invalid DJ waveform manifest identity');
+    }
+    try {
+      final db = await database;
+      await db.transaction((txn) async {
+        final rows = await txn.query(
+          tableDjWaveformManifests,
+          where: 'song_id = ? AND analysis_version = ?',
+          whereArgs: [identity.songId, identity.analysisVersion],
+          limit: 1,
+        );
+        var reusable = false;
+        if (rows.isNotEmpty) {
+          final row = rows.first;
+          reusable = row['source_fingerprint'] == identity.sourceFingerprint &&
+              row['duration_ms'] == identity.durationMs &&
+              row['schema_version'] == identity.schemaVersion &&
+              row['expected_chunk_count'] == expectedChunkCount;
+        }
+        if (!reusable) {
+          await txn.delete(
+            tableDjWaveformChunks,
+            where: 'song_id = ? AND analysis_version = ?',
+            whereArgs: [identity.songId, identity.analysisVersion],
+          );
+          await txn.delete(
+            tableDjWaveformManifests,
+            where: 'song_id = ? AND analysis_version = ?',
+            whereArgs: [identity.songId, identity.analysisVersion],
+          );
+          await txn.insert(tableDjWaveformManifests, {
+            'song_id': identity.songId,
+            'analysis_version': identity.analysisVersion,
+            'source_fingerprint': identity.sourceFingerprint,
+            'duration_ms': identity.durationMs,
+            'schema_version': identity.schemaVersion,
+            'expected_chunk_count': expectedChunkCount,
+            'completed_indices_json': jsonEncode(const <int>[]),
+            'updated_at': DateTime.now().toIso8601String(),
+          });
+        }
+      });
+    } catch (e) {
+      _markDatabaseFailure('prepare_dj_waveform_manifest', e);
+      rethrow;
+    }
+  }
+
+  /// Returns only completed indices for the exact active source identity.
+  Future<Set<int>> getDjWaveformCompletedIndices({
+    required DjWaveformIdentity identity,
+    required int expectedChunkCount,
+  }) async {
+    try {
+      final rows = await (await database).query(
+        tableDjWaveformManifests,
+        where: 'song_id = ? AND analysis_version = ?',
+        whereArgs: [identity.songId, identity.analysisVersion],
+        limit: 1,
+      );
+      if (rows.isEmpty) return <int>{};
+      final row = rows.first;
+      if (row['source_fingerprint'] != identity.sourceFingerprint ||
+          row['duration_ms'] != identity.durationMs ||
+          row['schema_version'] != identity.schemaVersion ||
+          row['expected_chunk_count'] != expectedChunkCount) {
+        return <int>{};
+      }
+      final decoded = jsonDecode(
+        row['completed_indices_json']?.toString() ?? '[]',
+      );
+      if (decoded is! List) return <int>{};
+      return decoded
+          .whereType<num>()
+          .map((value) => value.toInt())
+          .where((index) => index >= 0 && index < expectedChunkCount)
+          .toSet();
+    } catch (e) {
+      _markDatabaseFailure('get_dj_waveform_completed_indices', e);
+      rethrow;
+    }
+  }
+
+  /// Persists one bounded chunk and its manifest completion atomically.
+  Future<void> upsertDjWaveformChunk({
+    required DjWaveformChunk chunk,
+    required int expectedChunkCount,
+  }) async {
+    if (chunk.chunkIndex < 0 ||
+        chunk.chunkIndex >= expectedChunkCount ||
+        chunk.peaks.isEmpty ||
+        chunk.peaks.length > DjWaveformChunk.maxPeakCount ||
+        chunk.peaks.any((peak) => !peak.isFinite || peak < 0 || peak > 1)) {
+      throw ArgumentError('Invalid DJ waveform chunk payload');
+    }
+    try {
+      final db = await database;
+      await db.transaction((txn) async {
+        final manifests = await txn.query(
+          tableDjWaveformManifests,
+          where: 'song_id = ? AND analysis_version = ?',
+          whereArgs: [chunk.songId, chunk.analysisVersion],
+          limit: 1,
+        );
+        if (manifests.isEmpty) {
+          throw StateError('Waveform manifest must be prepared before chunk writes');
+        }
+        final manifest = manifests.first;
+        if (manifest['source_fingerprint'] != chunk.sourceFingerprint ||
+            manifest['duration_ms'] != chunk.durationMs ||
+            manifest['schema_version'] != chunk.schemaVersion ||
+            manifest['expected_chunk_count'] != expectedChunkCount) {
+          throw StateError('Waveform chunk identity no longer matches manifest');
+        }
+
+        await txn.insert(tableDjWaveformChunks, {
+          'song_id': chunk.songId,
+          'analysis_version': chunk.analysisVersion,
+          'chunk_index': chunk.chunkIndex,
+          'requested_start_ms': chunk.requestedStartMs,
+          'requested_end_ms': chunk.requestedEndMs,
+          'actual_start_ms': chunk.actualStartMs,
+          'actual_end_ms': chunk.actualEndMs,
+          'source_fingerprint': chunk.sourceFingerprint,
+          'duration_ms': chunk.durationMs,
+          'sample_rate': chunk.sampleRate,
+          'channels': chunk.channels,
+          'peaks_json': jsonEncode(chunk.peaks),
+          'completed_at': chunk.completedAt.toIso8601String(),
+          'schema_version': chunk.schemaVersion,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+        final decoded = jsonDecode(
+          manifest['completed_indices_json']?.toString() ?? '[]',
+        );
+        final completed = decoded is List
+            ? decoded.whereType<num>().map((value) => value.toInt()).toSet()
+            : <int>{};
+        completed
+          ..removeWhere((index) => index < 0 || index >= expectedChunkCount)
+          ..add(chunk.chunkIndex);
+        final ordered = completed.toList()..sort();
+        await txn.update(
+          tableDjWaveformManifests,
+          {
+            'completed_indices_json': jsonEncode(ordered),
+            'updated_at': DateTime.now().toIso8601String(),
+          },
+          where: 'song_id = ? AND analysis_version = ?',
+          whereArgs: [chunk.songId, chunk.analysisVersion],
+        );
+      });
+    } catch (e) {
+      _markDatabaseFailure('upsert_dj_waveform_chunk', e);
+      rethrow;
+    }
+  }
 
   Future<String?> getDjProfileJson(String songId) async {
     try {
