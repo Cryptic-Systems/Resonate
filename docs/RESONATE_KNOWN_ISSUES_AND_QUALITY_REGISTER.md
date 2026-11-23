@@ -290,3 +290,12 @@ The report does not include per-block auto-gain applied dB, pre-DVC peak, short-
 The same report records 37 accepted playback commands, five provider play commits, five canonical-only pause events and no crashes. The pause-button synchronization delay after library selection remains a separate UI-state issue; it is not folded into DSP or Console work.
 
 The DJ Console platter presentation is being enlarged and given more visual priority. This remains a visual-only change: jog/scratch transport behavior, cueing, pitch and mixer writes remain locked until their native Media3/DSP contracts are ready.
+
+## 2026-11-23 DSP decision telemetry phase
+
+- CI #2536 passed on the peak-headroom guard and enlarged DJ Console platter changes. The successful workflow included Flutter analysis/tests, native DSP compilation/unit/integration smoke, Android DSP tests, release APK build, size verification and artifact upload.
+- The field observations discussed on 2026-11-23 were made with the peak limiter disabled. They are not evidence of a peak-limiter failure. Keep limiter state separate from auto-DVC/auto-gain behaviour in subsequent diagnosis.
+- Added a lock-free, best-effort per-block auto-gain snapshot: pre-DVC peak, target RMS, raw RMS error, constrained gain target, peak-derived gain cap, applied gain, whether the peak guard constrained the block, and sustained-silence gate state.
+- Exposed those values through the existing native DSP status map. Diagnostics now samples that map on its existing four-second heartbeat and records the per-physical-deck values; no PCM, audio-thread logging, blocking queue, or new player path is introduced.
+- The telemetry describes the latest processed block, not a historical peak window or a detector-confidence score. It is intended to show whether aggressive reductions come from the RMS target, configured max cut/gain budget, peak guard, or silence gate. It does not yet prove the audible cause.
+- Do not tune ducking or alter limiter behaviour until a new device report contains these fields and can be correlated with the reported passage.
