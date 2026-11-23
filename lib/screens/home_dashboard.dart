@@ -182,7 +182,7 @@ class HomeDashboard extends StatelessWidget {
             children: [
               Text(currentSong.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
               const SizedBox(height: 4),
-              const DjModeStatusChip(dense: true),
+              const DjModeStatusChip(dense: true, interactive: false),
             ],
           ),
           trailing: FilledButton.tonalIcon(
