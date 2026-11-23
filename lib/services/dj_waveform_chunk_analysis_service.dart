@@ -165,7 +165,9 @@ class DjWaveformChunkAnalysisService {
         await _db.upsertDjWaveformChunk(
           chunk: chunk,
           expectedChunkCount: expected,
+          shouldCommit: () => !cancelled(),
         );
+        if (cancelled()) break;
         processed++;
         await ResonateDiagnostics.recordDj(
           stage: 'waveform_chunk',
