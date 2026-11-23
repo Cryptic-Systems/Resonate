@@ -42,7 +42,7 @@ class DjWaveformChunkAnalysisService {
   Future<int> processMissingChunks(
     Song song, {
     int maxChunks = 2,
-    bool Function()? isStillIdle,
+    required bool Function() isStillIdle,
   }) async {
     if (_running || song.filePath.trim().isEmpty) return 0;
     final durationMs = song.duration.inMilliseconds;
@@ -55,8 +55,7 @@ class DjWaveformChunkAnalysisService {
 
     _running = true;
     final generation = _generation;
-    bool cancelled() =>
-        generation != _generation || (isStillIdle != null && !isStillIdle());
+    bool cancelled() => generation != _generation || !isStillIdle();
 
     try {
       final analysis = await _db.getDjAnalysis(song.id);
@@ -205,16 +204,15 @@ class DjWaveformChunkAnalysisService {
     String path,
     DjAnalysis? analysis,
   ) async {
-    if (analysis?.fileSizeBytes != null) {
-      return 'bytes:${analysis!.fileSizeBytes}';
+    if (!path.startsWith('content://') && !path.startsWith('file://')) {
+      try {
+        final file = File(path);
+        if (await file.exists()) return 'bytes:${await file.length()}';
+      } catch (_) {}
     }
-    if (path.startsWith('content://') || path.startsWith('file://')) {
-      return null;
-    }
-    try {
-      final file = File(path);
-      if (await file.exists()) return 'bytes:${await file.length()}';
-    } catch (_) {}
-    return null;
+    // Content URIs may not expose a filesystem stat. Use the last verified
+    // MediaStore size when available; null remains a conservative identity.
+    final size = analysis?.fileSizeBytes;
+    return size == null ? null : 'bytes:$size';
   }
 }
