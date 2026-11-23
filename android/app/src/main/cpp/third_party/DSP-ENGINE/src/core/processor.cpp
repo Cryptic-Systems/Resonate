@@ -133,6 +133,15 @@ struct DspEngine {
     float auto_gain_window_ms = 400.f;
     float auto_gain_applied_db = 0.f;
     float auto_gain_smooth = 0.05f;
+    /* Lock-free snapshots read by diagnostics/UI; never used to control audio. */
+    std::atomic<float> meter_auto_gain_pre_dvc_peak_db{-120.f};
+    std::atomic<float> meter_auto_gain_target_rms_db{-18.f};
+    std::atomic<float> meter_auto_gain_rms_error_db{0.f};
+    std::atomic<float> meter_auto_gain_constrained_target_db{0.f};
+    std::atomic<float> meter_auto_gain_peak_cap_db{0.f};
+    std::atomic<float> meter_auto_gain_applied_db{0.f};
+    std::atomic<int> meter_auto_gain_peak_limited{0};
+    std::atomic<int> meter_auto_gain_silence_gate{0};
 
     /* Shared headroom budget (normalized in process). */
     float budget_bass = 0.50f;
@@ -864,10 +873,11 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
        After sustained silence, ramp toward unity instead of learning silence
        as a request for positive gain. The normal smoother controls recovery. */
     if (eng->auto_gain_enabled) {
-        float err = eng->silence_gain_gate_active
-            ? 0.f
-            : (eng->auto_gain_target_rms_db + eng->auto_gain_bias_db)
-                - eng->meter_short_term_rms_db;
+        const float target_rms_db =
+            eng->auto_gain_target_rms_db + eng->auto_gain_bias_db;
+        const float raw_rms_error_db =
+            target_rms_db - eng->meter_short_term_rms_db;
+        float err = eng->silence_gain_gate_active ? 0.f : raw_rms_error_db;
         if (err > eng->auto_gain_max_boost_db) err = eng->auto_gain_max_boost_db;
         if (err < -eng->auto_gain_max_cut_db) err = -eng->auto_gain_max_cut_db;
         if (err > gain_share) err = gain_share;
@@ -878,13 +888,31 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
            remove. Keep the DVC's own smoothing for the resulting gain change. */
         const float peak_headroom_db = eng->limiter_ceiling_db
             - 3.f - pre_dvc_peak_db;
-        if (err > peak_headroom_db) err = peak_headroom_db;
-        if (eng->auto_gain_applied_db > peak_headroom_db)
+        bool peak_limited = false;
+        if (err > peak_headroom_db) {
+            err = peak_headroom_db;
+            peak_limited = true;
+        }
+        if (eng->auto_gain_applied_db > peak_headroom_db) {
             eng->auto_gain_applied_db = peak_headroom_db;
+            peak_limited = true;
+        }
         if (err > 24.f) err = 24.f;
         if (err < -24.f) err = -24.f;
+
+        eng->meter_auto_gain_pre_dvc_peak_db.store(pre_dvc_peak_db, std::memory_order_relaxed);
+        eng->meter_auto_gain_target_rms_db.store(target_rms_db, std::memory_order_relaxed);
+        eng->meter_auto_gain_rms_error_db.store(raw_rms_error_db, std::memory_order_relaxed);
+        eng->meter_auto_gain_constrained_target_db.store(err, std::memory_order_relaxed);
+        eng->meter_auto_gain_peak_cap_db.store(peak_headroom_db, std::memory_order_relaxed);
+        eng->meter_auto_gain_peak_limited.store(peak_limited ? 1 : 0, std::memory_order_relaxed);
+        eng->meter_auto_gain_silence_gate.store(
+            eng->silence_gain_gate_active ? 1 : 0, std::memory_order_relaxed);
+
         eng->auto_gain_applied_db += eng->auto_gain_smooth
             * (err - eng->auto_gain_applied_db);
+        eng->meter_auto_gain_applied_db.store(
+            eng->auto_gain_applied_db, std::memory_order_relaxed);
         eng->dvc.set_enabled(true);
         eng->dvc.set_gain_db(eng->auto_gain_applied_db);
     }
@@ -1807,6 +1835,19 @@ float dsp_auto_gain_get_window_ms(const DspEngine* eng) {
 
 float dsp_auto_gain_get_applied_db(const DspEngine* eng) {
     return eng ? eng->auto_gain_applied_db : 0.f;
+}
+
+DspError dsp_auto_gain_get_meter(const DspEngine* eng, DspAutoGainMeter* out) {
+    if (!eng || !out) return DSP_ERR_INVALID_ARG;
+    out->pre_dvc_peak_db = eng->meter_auto_gain_pre_dvc_peak_db.load(std::memory_order_relaxed);
+    out->target_rms_db = eng->meter_auto_gain_target_rms_db.load(std::memory_order_relaxed);
+    out->rms_error_db = eng->meter_auto_gain_rms_error_db.load(std::memory_order_relaxed);
+    out->constrained_target_db = eng->meter_auto_gain_constrained_target_db.load(std::memory_order_relaxed);
+    out->peak_gain_cap_db = eng->meter_auto_gain_peak_cap_db.load(std::memory_order_relaxed);
+    out->applied_gain_db = eng->meter_auto_gain_applied_db.load(std::memory_order_relaxed);
+    out->peak_limited = eng->meter_auto_gain_peak_limited.load(std::memory_order_relaxed);
+    out->silence_gate_active = eng->meter_auto_gain_silence_gate.load(std::memory_order_relaxed);
+    return DSP_OK;
 }
 
 float dsp_get_short_term_rms_db(const DspEngine* eng) {
