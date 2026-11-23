@@ -31,6 +31,10 @@ class Media3PlaybackState {
     this.crossfadeProgress = 0.0,
     this.activeDeckVolume = 1.0,
     this.standbyDeckVolume = 0.0,
+    this.activeDeckSpeed,
+    this.activeDeckPitch,
+    this.standbyDeckSpeed,
+    this.standbyDeckPitch,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     this.audioUnderrunCountA = 0,
@@ -82,6 +86,11 @@ class Media3PlaybackState {
   final double crossfadeProgress;
   final double activeDeckVolume;
   final double standbyDeckVolume;
+  /// Native Media3 parameters; null means the service did not report them.
+  final double? activeDeckSpeed;
+  final double? activeDeckPitch;
+  final double? standbyDeckSpeed;
+  final double? standbyDeckPitch;
   final String repeatMode;
   final bool shuffleModeEnabled;
   final int audioUnderrunCountA;
@@ -110,6 +119,8 @@ class Media3PlaybackState {
         value is num && value.isFinite ? value.toInt() : fallback;
     double doubleValue(Object? value, [double fallback = 1.0]) =>
         value is num && value.isFinite ? value.toDouble() : fallback;
+    double? nullableDoubleValue(Object? value) =>
+        value is num && value.isFinite ? value.toDouble() : null;
     bool boolValue(Object? value) => value == true;
     String? stringValue(Object? value) => value is String ? value : null;
 
@@ -164,6 +175,10 @@ class Media3PlaybackState {
           .clamp(0.0, 1.0).toDouble(),
       standbyDeckVolume: doubleValue(map['standbyDeckVolume'], 0.0)
           .clamp(0.0, 1.0).toDouble(),
+      activeDeckSpeed: nullableDoubleValue(map['activeSpeed']),
+      activeDeckPitch: nullableDoubleValue(map['activePitch']),
+      standbyDeckSpeed: nullableDoubleValue(map['standbySpeed']),
+      standbyDeckPitch: nullableDoubleValue(map['standbyPitch']),
       repeatMode: const {'off', 'one', 'all'}.contains(map['repeatMode'])
           ? map['repeatMode'] as String
           : 'off',
