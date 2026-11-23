@@ -478,9 +478,16 @@ class _LifecycleHomeState extends State<_LifecycleHome>
     }));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _startForegroundAnalysisOpportunities();
+      final foreground = WidgetsBinding.instance.lifecycleState ==
+          AppLifecycleState.resumed;
       try {
-        context.read<DjModeProvider>().onAnalysisOpportunity('app_started');
+        context.read<DjModeProvider>().setAppForeground(foreground);
+      } catch (_) {}
+      if (foreground) _startForegroundAnalysisOpportunities();
+      try {
+        if (foreground) {
+          context.read<DjModeProvider>().onAnalysisOpportunity('app_started');
+        }
       } catch (_) {}
     });
   }
@@ -585,6 +592,8 @@ class _LifecycleHomeState extends State<_LifecycleHome>
       'crossfadeEnabled': music.crossfadeEnabled,
       'transitionInProgress': music.transitionInProgress,
     }));
+    final djMode = context.read<DjModeProvider>();
+    djMode.setAppForeground(state == AppLifecycleState.resumed);
     if (state == AppLifecycleState.resumed) {
       unawaited(context.read<MusicProvider>().onAppForegrounded());
       _startForegroundAnalysisOpportunities();
