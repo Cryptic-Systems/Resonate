@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/music_provider.dart';
+import 'dj_console_manual_controls_policy.dart';
 
 /// Operator-facing Deck B controls backed by MusicProvider's Media3 handoff
 /// contract. This widget never creates a player or writes deck gain directly.
@@ -40,10 +41,10 @@ class _DjConsoleManualControlsState extends State<DjConsoleManualControls> {
   }
 
   Future<void> _chooseAndPrepare(BuildContext context, MusicProvider music) async {
-    final candidates = <int>[
-      for (var i = 0; i < music.queue.length; i++)
-        if (i != music.queueIndex && music.queue[i].filePath.trim().isNotEmpty) i,
-    ];
+    final candidates = DjConsoleManualControlsPolicy.incomingCandidates(
+      music.queue,
+      currentQueueIndex: music.queueIndex,
+    );
     if (candidates.isEmpty) return;
 
     final selected = await showDialog<int>(
@@ -113,17 +114,22 @@ class _DjConsoleManualControlsState extends State<DjConsoleManualControls> {
         final durationMs = prepared?.incomingSong.duration.inMilliseconds ?? 0;
         final cueMs = prepared?.cuePosition.inMilliseconds ?? 0;
         final preview = prepared != null &&
-                _cuePreviewSongId == prepared.incomingSong.id &&
-                _cuePreviewQueueIndex == prepared.incomingQueueIndex
+                DjConsoleManualControlsPolicy.matchesCuePreview(
+                  previewSongId: _cuePreviewSongId,
+                  previewQueueIndex: _cuePreviewQueueIndex,
+                  preparedSongId: prepared.incomingSong.id,
+                  preparedQueueIndex: prepared.incomingQueueIndex,
+                )
             ? _cuePreviewMs
             : null;
         final sliderValue = (preview ?? cueMs.toDouble())
             .clamp(0.0, durationMs > 0 ? durationMs.toDouble() : 1.0).toDouble();
         final canPrepare = music.media3ProviderSessionActive &&
             music.isPlaying &&
-            music.queue.asMap().entries.any((entry) =>
-                entry.key != music.queueIndex &&
-                entry.value.filePath.trim().isNotEmpty) &&
+            DjConsoleManualControlsPolicy.incomingCandidates(
+              music.queue,
+              currentQueueIndex: music.queueIndex,
+            ).isNotEmpty &&
             prepared == null &&
             !_busy;
         final canPerform = prepared != null &&
