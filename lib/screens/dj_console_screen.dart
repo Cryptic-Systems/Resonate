@@ -426,6 +426,8 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                     snapshot: waveformSnapshot,
                     expectedSongId: expectedSongId,
                     durationMs: duration.inMilliseconds,
+                    visibleStartMs: _requestedStartMs ?? 0,
+                    visibleEndMs: _requestedEndMs ?? duration.inMilliseconds,
                     legacyAvailable: legacySegments.isNotEmpty,
                     profileLoading: profileSnapshot.connectionState == ConnectionState.waiting,
                     profileIdentityMismatch: profile != null && verifiedProfile == null,
