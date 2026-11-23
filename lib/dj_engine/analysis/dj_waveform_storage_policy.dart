@@ -5,6 +5,7 @@ class DjWaveformStoragePolicy {
   static const int schemaVersion = 1;
   static const int maxPeaksPerChunk = 256;
   static const int maxChunksPerTrack = 2250;
+  static const int maxChunksLibrary = 12000;
   static const int maxCacheChunks = 96;
   static const int maxCacheBytes = 256 * 1024;
   static const int maxOverscanChunks = 2;
