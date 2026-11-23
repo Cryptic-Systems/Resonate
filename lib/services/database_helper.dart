@@ -352,7 +352,9 @@ class DatabaseHelper {
   Future<void> upsertDjWaveformChunk({
     required DjWaveformChunk chunk,
     required int expectedChunkCount,
+    bool Function()? shouldCommit,
   }) async {
+    if (shouldCommit != null && !shouldCommit()) return;
     if (chunk.chunkIndex < 0 ||
         chunk.chunkIndex >= expectedChunkCount ||
         chunk.peaks.isEmpty ||
@@ -373,6 +375,9 @@ class DatabaseHelper {
           throw StateError('Waveform manifest must be prepared before chunk writes');
         }
         final manifest = manifests.first;
+        if (shouldCommit != null && !shouldCommit()) {
+          throw StateError('Waveform chunk job was cancelled before commit');
+        }
         if (manifest['source_fingerprint'] != chunk.sourceFingerprint ||
             manifest['duration_ms'] != chunk.durationMs ||
             manifest['schema_version'] != chunk.schemaVersion ||
@@ -397,6 +402,9 @@ class DatabaseHelper {
           'schema_version': chunk.schemaVersion,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
 
+        if (shouldCommit != null && !shouldCommit()) {
+          throw StateError('Waveform chunk job was cancelled during commit');
+        }
         final decoded = jsonDecode(
           manifest['completed_indices_json']?.toString() ?? '[]',
         );
