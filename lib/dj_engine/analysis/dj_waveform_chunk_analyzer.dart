@@ -21,7 +21,7 @@ class DjWaveformChunkPeakAnalyzer {
       return null;
     }
     final bytesPerFrame = channels * 2;
-    if (pcm.length < bytesPerFrame * 2 || pcm.length % 2 != 0) {
+    if (pcm.length < bytesPerFrame * 2 || pcm.length % bytesPerFrame != 0) {
       return null;
     }
     final frameCount = pcm.length ~/ bytesPerFrame;
