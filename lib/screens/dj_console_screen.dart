@@ -116,6 +116,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                             duration: activeDeckId == 'B' ? Duration.zero : duration,
                             profileFuture: activeDeckId == 'A' ? _profileFuture : null,
                             expectedSongId: activeDeckId == 'A' ? song?.id : null,
+                            waveformSourceKey: activeDeckId == 'A' ? song?.filePath : null,
                             waveformLoader: activeDeckId == 'A' && song != null
                                 ? (startMs, endMs) => _waveformReader.loadVisibleRange(
                                     song, startMs: startMs, endMs: endMs)
@@ -139,6 +140,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                             duration: activeDeckId == 'B' ? duration : Duration.zero,
                             profileFuture: activeDeckId == 'B' ? _profileFuture : null,
                             expectedSongId: activeDeckId == 'B' ? song?.id : null,
+                            waveformSourceKey: activeDeckId == 'B' ? song?.filePath : null,
                             waveformLoader: activeDeckId == 'B' && song != null
                                 ? (startMs, endMs) => _waveformReader.loadVisibleRange(
                                     song, startMs: startMs, endMs: endMs)
@@ -185,6 +187,7 @@ class _ConsoleDeck extends StatefulWidget {
     required this.status, required this.title, required this.artist, required this.progress,
     required this.position, required this.duration, required this.profileFuture,
     required this.expectedSongId,
+    required this.waveformSourceKey,
     required this.waveformLoader,
   });
 
@@ -194,6 +197,7 @@ class _ConsoleDeck extends StatefulWidget {
   final Duration position, duration;
   final Future<DjTrackProfile?>? profileFuture;
   final String? expectedSongId;
+  final String? waveformSourceKey;
   final Future<List<DjWaveformChunk>> Function(int startMs, int endMs)? waveformLoader;
 
   @override
@@ -237,7 +241,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
         oldWidget.expectedSongId != widget.expectedSongId) {
       _syncPlatterMotion();
     }
-    if (oldWidget.waveformLoader != widget.waveformLoader ||
+    if (oldWidget.waveformSourceKey != widget.waveformSourceKey ||
         oldWidget.duration != widget.duration) {
       _requestedStartMs = null;
       _requestedEndMs = null;
