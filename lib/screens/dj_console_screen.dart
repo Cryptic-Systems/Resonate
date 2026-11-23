@@ -212,6 +212,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   int? _requestedStartMs;
   int? _requestedEndMs;
   double _viewportWidth = 0;
+  bool _resetWaveformScrollPending = false;
   static const _viewportPolicy = DjWaveformViewportPolicy();
 
   @override
@@ -235,7 +236,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
       _requestedStartMs = null;
       _requestedEndMs = null;
       _waveformFuture = null;
-      if (_waveformScroll.hasClients) _waveformScroll.jumpTo(0);
+      _resetWaveformScrollPending = true;
     }
     if (oldWidget.isPlaying != widget.isPlaying ||
         oldWidget.expectedSongId != widget.expectedSongId) {
@@ -249,7 +250,9 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     }
   }
 
-  void _onWaveformScroll() => _requestVisibleWaveform();
+  void _onWaveformScroll() {
+    if (!_resetWaveformScrollPending) _requestVisibleWaveform();
+  }
 
   void _requestVisibleWaveform() {
     final loader = widget.waveformLoader;
@@ -399,7 +402,15 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                   _viewportWidth = waveformConstraints.maxWidth;
                   if (_requestedStartMs == null) {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) _requestVisibleWaveform();
+                      if (!mounted) return;
+                      if (_resetWaveformScrollPending) {
+                        _resetWaveformScrollPending = false;
+                        if (_waveformScroll.hasClients &&
+                            _waveformScroll.offset != 0) {
+                          _waveformScroll.jumpTo(0);
+                        }
+                      }
+                      _requestVisibleWaveform();
                     });
                   }
                   final contentWidth = _viewportPolicy.visibleRange(
