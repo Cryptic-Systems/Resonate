@@ -27,6 +27,10 @@ class PlaybackSnapshot {
     this.crossfadeProgress = 0.0,
     this.activeDeckVolume = 1.0,
     this.standbyDeckVolume = 0.0,
+    this.activeDeckSpeed,
+    this.activeDeckPitch,
+    this.standbyDeckSpeed,
+    this.standbyDeckPitch,
     this.incomingMediaId,
     this.incomingReady = false,
     this.incomingPosition = Duration.zero,
@@ -68,6 +72,11 @@ class PlaybackSnapshot {
   final double crossfadeProgress;
   final double activeDeckVolume;
   final double standbyDeckVolume;
+  /// Native per-deck speed/pitch; null means unavailable.
+  final double? activeDeckSpeed;
+  final double? activeDeckPitch;
+  final double? standbyDeckSpeed;
+  final double? standbyDeckPitch;
   /// Incoming standby identity and readiness, independent of physical A/B role.
   final String? incomingMediaId;
   final bool incomingReady;
