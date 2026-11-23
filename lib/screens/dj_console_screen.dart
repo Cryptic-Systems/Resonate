@@ -268,7 +268,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                         const SizedBox(width: 7),
                         Expanded(child: Text(
                           'Manual Deck B preparation, cueing and equal-power handoff are enabled. '
-                          'Jog drag seeks the active deck once on release. Scratch, pitch and continuous mixer controls remain locked.',
+                          'Jog drag seeks once on release. Tempo is limited to ±6% with key lock; scratch, pitch-bend and continuous mixer controls remain locked.',
                           maxLines: 2, overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant),
