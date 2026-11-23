@@ -13,15 +13,16 @@ import '../providers/dj_mode_provider.dart';
 import '../dj_engine/core/dj_types.dart';
 import '../ui/resonate_glass.dart';
 import 'dj_console_manual_controls.dart';
+import 'dj_console_jog_seek_policy.dart';
 import 'dj_console_overlay_policy.dart';
 import 'dj_console_waveform_status.dart';
 import 'dj_waveform_viewport_policy.dart';
 
 /// Landscape-first visual foundation for the future performance console.
 ///
-/// This first milestone is intentionally observational: no deck preparation,
-/// seeking, gain writes, cueing or crossfader commands are exposed until their
-/// native Media3 contracts and ownership tests are complete.
+/// The Console exposes only controls backed by the existing Media3 authority.
+/// Jog input is a one-shot active-deck seek on gesture completion; it is not
+/// scratching, rate control, or a stream of high-frequency transport writes.
 class DjConsoleScreen extends StatefulWidget {
   const DjConsoleScreen({super.key});
 
@@ -161,6 +162,12 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                             deck: 'DECK A',
                             active: activeDeckId == 'A', compact: compact,
                             isPlaying: music.isPlaying && activeDeckId == 'A',
+                            jogSeekEnabled: activeDeckId == 'A' && song != null &&
+                                music.media3ProviderSessionActive && music.isPlaying &&
+                                !music.transitionInProgress,
+                            onJogSeek: (target) => music.seek(
+                              target, source: 'dj_console_jog_seek',
+                            ),
                             status: activeDeckId == null
                                 ? 'UNMAPPED'
                                 : activeDeckId == 'A' ? 'ON AIR' : standbyStatus(),
@@ -207,6 +214,12 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                             deck: 'DECK B',
                             active: activeDeckId == 'B', compact: compact,
                             isPlaying: music.isPlaying && activeDeckId == 'B',
+                            jogSeekEnabled: activeDeckId == 'B' && song != null &&
+                                music.media3ProviderSessionActive && music.isPlaying &&
+                                !music.transitionInProgress,
+                            onJogSeek: (target) => music.seek(
+                              target, source: 'dj_console_jog_seek',
+                            ),
                             status: activeDeckId == null
                                 ? 'UNMAPPED'
                                 : activeDeckId == 'B' ? 'ON AIR' : standbyStatus(),
@@ -254,7 +267,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                         const SizedBox(width: 7),
                         Expanded(child: Text(
                           'Manual Deck B preparation, cueing and equal-power handoff are enabled. '
-                          'Jog/scratch and continuous mixer controls remain locked pending native support.',
+                          'Jog drag seeks the active deck once on release. Scratch, pitch and continuous mixer controls remain locked.',
                           maxLines: 2, overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant),
@@ -281,6 +294,8 @@ class _ConsoleDeck extends StatefulWidget {
   const _ConsoleDeck({
     required this.deck, required this.active, required this.compact,
     required this.isPlaying,
+    required this.jogSeekEnabled,
+    required this.onJogSeek,
     required this.status, required this.title, required this.artist, required this.progress,
     required this.position, required this.duration, required this.profileFuture,
     required this.expectedSongId,
@@ -289,7 +304,8 @@ class _ConsoleDeck extends StatefulWidget {
   });
 
   final String deck, status, title, artist;
-  final bool active, compact, isPlaying;
+  final bool active, compact, isPlaying, jogSeekEnabled;
+  final Future<void> Function(Duration position) onJogSeek;
   final double progress;
   final Duration position, duration;
   final Future<DjTrackProfile?>? profileFuture;
@@ -310,6 +326,11 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   int? _requestedEndMs;
   double _viewportWidth = 0;
   bool _resetWaveformScrollPending = false;
+  double? _jogLastAngle;
+  double _jogAccumulatedRadians = 0;
+  Duration? _jogStartPosition;
+  Duration? _jogPreviewPosition;
+  String? _jogSongId;
   static const _viewportPolicy = DjWaveformViewportPolicy();
 
   @override
@@ -368,6 +389,84 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     _requestedEndMs = endMs;
     final next = loader(startMs, endMs);
     if (mounted) setState(() => _waveformFuture = next);
+  }
+
+  void _beginJog(Offset localPosition, Offset center) {
+    if (!widget.jogSeekEnabled || !widget.active ||
+        widget.expectedSongId == null || widget.duration <= Duration.zero) {
+      return;
+    }
+    _jogLastAngle = math.atan2(
+      localPosition.dy - center.dy,
+      localPosition.dx - center.dx,
+    );
+    _jogAccumulatedRadians = 0;
+    _jogStartPosition = widget.position;
+    _jogPreviewPosition = widget.position;
+    _jogSongId = widget.expectedSongId;
+    _platterRotation.stop();
+    setState(() {});
+  }
+
+  void _updateJog(Offset localPosition, Offset center) {
+    final previous = _jogLastAngle;
+    final start = _jogStartPosition;
+    if (previous == null || start == null || _jogSongId != widget.expectedSongId) {
+      return;
+    }
+    final angle = math.atan2(
+      localPosition.dy - center.dy,
+      localPosition.dx - center.dx,
+    );
+    _jogAccumulatedRadians += DjConsoleJogSeekPolicy.normalizedAngleDelta(
+      angle - previous,
+    );
+    _jogLastAngle = angle;
+    final next = DjConsoleJogSeekPolicy.targetPosition(
+      start: start,
+      deltaRadians: _jogAccumulatedRadians,
+      duration: widget.duration,
+    );
+    setState(() => _jogPreviewPosition = next);
+  }
+
+  void _cancelJog() {
+    if (_jogStartPosition == null) return;
+    _clearJog();
+    _syncPlatterMotion();
+    setState(() {});
+  }
+
+  void _clearJog() {
+    _jogLastAngle = null;
+    _jogAccumulatedRadians = 0;
+    _jogStartPosition = null;
+    _jogPreviewPosition = null;
+    _jogSongId = null;
+  }
+
+  Future<void> _finishJog() async {
+    final target = _jogPreviewPosition;
+    final songId = _jogSongId;
+    final shouldCommit = target != null &&
+        _jogStartPosition != null &&
+        widget.jogSeekEnabled &&
+        widget.active &&
+        songId != null &&
+        songId == widget.expectedSongId &&
+        target != _jogStartPosition;
+    _clearJog();
+    _syncPlatterMotion();
+    if (mounted) setState(() {});
+    if (!shouldCommit || target == null) return;
+    try {
+      await widget.onJogSeek(target);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Jog seek was not applied: $error')),
+      );
+    }
   }
 
   void _syncPlatterMotion() {
@@ -445,7 +544,23 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                       angle: _platterRotation.value * math.pi * 2,
                       child: child,
                     ),
-                    child: Stack(
+                    child: LayoutBuilder(
+                      builder: (context, platterConstraints) {
+                        final center = Offset(
+                          platterConstraints.maxWidth / 2,
+                          platterConstraints.maxHeight / 2,
+                        );
+                        return GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onPanStart: widget.jogSeekEnabled
+                              ? (details) => _beginJog(details.localPosition, center)
+                              : null,
+                          onPanUpdate: widget.jogSeekEnabled
+                              ? (details) => _updateJog(details.localPosition, center)
+                              : null,
+                          onPanEnd: widget.jogSeekEnabled ? (_) => _finishJog() : null,
+                          onPanCancel: _cancelJog,
+                          child: Stack(
                       alignment: Alignment.center,
                       children: [
                         Container(decoration: BoxDecoration(
@@ -468,10 +583,20 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                             border: Border.all(color: accent.withValues(alpha: .7), width: 2)),
                           child: Icon(Icons.album, color: accent, size: 44),
                         ),
-                        Positioned(bottom: 18, child: Text('PLATTER',
+                        Positioned(bottom: 18, child: Text(
+                          _jogPreviewPosition == null
+                              ? (widget.jogSeekEnabled ? 'TOUCH · DRAG TO SEEK' : 'PLATTER')
+                              : 'SEEK ${_time(_jogPreviewPosition!)}',
                           style: theme.textTheme.labelSmall?.copyWith(
-                            color: Colors.white38, letterSpacing: 2))),
-                      ],
+                            color: _jogPreviewPosition == null
+                                ? Colors.white38 : accent,
+                            letterSpacing: 1.4,
+                          ),
+                        )),
+                          ],
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),
