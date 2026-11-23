@@ -92,10 +92,12 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                   .toList(growable: false);
           // A media ID can occur more than once in a queue. Never guess which
           // occurrence Media3 prepared; only expose uniquely matched metadata.
-          final standbySong = incomingMatches.length == 1
+          final standbySong = activeDeckId != null &&
+                  incomingMatches.length == 1
               ? incomingMatches.single
               : null;
-          final standbyIdentityAmbiguous = incomingMatches.length > 1;
+          final standbyIdentityAmbiguous =
+              activeDeckId != null && incomingMatches.length > 1;
           final standbyReady = activeDeckId != null &&
               standbySong != null &&
               deckState?.incomingReady == true &&
