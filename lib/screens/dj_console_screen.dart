@@ -101,6 +101,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                           Expanded(child: _ConsoleDeck(
                             deck: activeDeckId == null ? 'PROGRAM · ID UNKNOWN' : 'DECK A',
                             active: activeDeckId == 'A', compact: compact,
+                            isPlaying: music.isPlaying && activeDeckId == 'A',
                             status: activeDeckId == null ? 'IDENTITY UNKNOWN' : activeDeckId == 'A' ? 'ON AIR' : 'STANDBY',
                             title: activeDeckId == 'B' ? 'Standby deck' : song?.title ?? 'Waiting for track',
                             artist: activeDeckId == 'B' ? 'Awaiting verified standby metadata' : song?.artist ?? 'Select music in the library',
@@ -119,6 +120,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                           Expanded(child: _ConsoleDeck(
                             deck: activeDeckId == null ? 'STANDBY · UNMAPPED' : 'DECK B',
                             active: activeDeckId == 'B', compact: compact,
+                            isPlaying: music.isPlaying && activeDeckId == 'B',
                             status: activeDeckId == null ? 'UNMAPPED' : activeDeckId == 'B' ? 'ON AIR' : 'STANDBY',
                             title: activeDeckId == 'B' ? song?.title ?? 'Waiting for track' : 'Standby deck',
                             artist: activeDeckId == 'B' ? song?.artist ?? 'Select music in the library' : 'Incoming track identity will appear here',
@@ -162,20 +164,67 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
   }
 }
 
-class _ConsoleDeck extends StatelessWidget {
+class _ConsoleDeck extends StatefulWidget {
   const _ConsoleDeck({
     required this.deck, required this.active, required this.compact,
+    required this.isPlaying,
     required this.status, required this.title, required this.artist, required this.progress,
     required this.position, required this.duration, required this.profileFuture,
     required this.expectedSongId,
   });
 
   final String deck, status, title, artist;
-  final bool active, compact;
+  final bool active, compact, isPlaying;
   final double progress;
   final Duration position, duration;
   final Future<DjTrackProfile?>? profileFuture;
   final String? expectedSongId;
+
+  @override
+  State<_ConsoleDeck> createState() => _ConsoleDeckState();
+}
+
+class _ConsoleDeckState extends State<_ConsoleDeck>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _platterRotation;
+
+  @override
+  void initState() {
+    super.initState();
+    // A 1.8-second revolution approximates a 33⅓ RPM record. This is
+    // presentation-only and never sends jog, seek or transport commands.
+    _platterRotation = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _syncPlatterMotion();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ConsoleDeck oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.expectedSongId != widget.expectedSongId) {
+      _platterRotation.value = 0;
+    }
+    if (oldWidget.isPlaying != widget.isPlaying ||
+        oldWidget.expectedSongId != widget.expectedSongId) {
+      _syncPlatterMotion();
+    }
+  }
+
+  void _syncPlatterMotion() {
+    if (widget.isPlaying && widget.active) {
+      _platterRotation.repeat();
+    } else {
+      _platterRotation.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _platterRotation.dispose();
+    super.dispose();
+  }
 
   String _time(Duration value) {
     final seconds = value.inSeconds.clamp(0, 1 << 30);
@@ -185,7 +234,18 @@ class _ConsoleDeck extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accent = active ? const Color(0xFF55D6BE) : const Color(0xFF8290A8);
+    final accent = widget.active ? const Color(0xFF55D6BE) : const Color(0xFF8290A8);
+    final compact = widget.compact;
+    final active = widget.active;
+    final deck = widget.deck;
+    final status = widget.status;
+    final title = widget.title;
+    final artist = widget.artist;
+    final progress = widget.progress;
+    final position = widget.position;
+    final duration = widget.duration;
+    final profileFuture = widget.profileFuture;
+    final expectedSongId = widget.expectedSongId;
     return Container(
       padding: EdgeInsets.all(compact ? 10 : 16),
       decoration: BoxDecoration(
@@ -218,35 +278,42 @@ class _ConsoleDeck extends StatelessWidget {
                     maxWidth: compact ? 250 : 290,
                     maxHeight: compact ? 250 : 290,
                   ),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Container(decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(colors: [
-                          const Color(0xFF344353), const Color(0xFF111923), const Color(0xFF080D13),
-                        ]),
-                        border: Border.all(color: accent.withValues(alpha: .35), width: 2),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .4), blurRadius: 18)],
-                      )),
-                      for (var i = 0; i < 3; i++)
+                  child: AnimatedBuilder(
+                    animation: _platterRotation,
+                    builder: (context, child) => Transform.rotate(
+                      angle: _platterRotation.value * math.pi * 2,
+                      child: child,
+                    ),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const RadialGradient(colors: [
+                            Color(0xFF344353), Color(0xFF111923), Color(0xFF080D13),
+                          ]),
+                          border: Border.all(color: accent.withValues(alpha: .35), width: 2),
+                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .4), blurRadius: 18)],
+                        )),
+                        for (var i = 0; i < 3; i++)
+                          Container(
+                            width: (compact ? 184.0 : 210.0) - i * (compact ? 32.0 : 36.0),
+                            height: (compact ? 184.0 : 210.0) - i * (compact ? 32.0 : 36.0),
+                            decoration: BoxDecoration(shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white.withValues(alpha: .07))),
+                          ),
                         Container(
-                          width: (compact ? 184.0 : 210.0) - i * (compact ? 32.0 : 36.0),
-                          height: (compact ? 184.0 : 210.0) - i * (compact ? 32.0 : 36.0),
+                          width: 76, height: 76,
                           decoration: BoxDecoration(shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white.withValues(alpha: .07))),
+                            color: const Color(0xFF182431),
+                            border: Border.all(color: accent.withValues(alpha: .7), width: 2)),
+                          child: Icon(Icons.album, color: accent, size: 38),
                         ),
-                      Container(
-                        width: 76, height: 76,
-                        decoration: BoxDecoration(shape: BoxShape.circle,
-                          color: const Color(0xFF182431),
-                          border: Border.all(color: accent.withValues(alpha: .7), width: 2)),
-                        child: Icon(Icons.album, color: accent, size: 38),
-                      ),
-                      Positioned(bottom: 15, child: Text('PLATTER',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: Colors.white38, letterSpacing: 2))),
-                    ],
+                        Positioned(bottom: 15, child: Text('PLATTER',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: Colors.white38, letterSpacing: 2))),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -322,7 +389,6 @@ class _ConsoleDeck extends StatelessWidget {
     );
   }
 }
-
 class _ConsoleAnalysisStrip extends StatelessWidget {
   const _ConsoleAnalysisStrip({
     required this.profile,
