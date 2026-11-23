@@ -6,6 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/music_provider.dart';
+import '../dj_engine/analysis/dj_waveform_chunk.dart';
+import '../models/song.dart';
+import '../services/dj_waveform_range_reader.dart';
 import '../providers/dj_mode_provider.dart';
 import '../dj_engine/core/dj_types.dart';
 import '../ui/resonate_glass.dart';
@@ -26,6 +29,10 @@ class DjConsoleScreen extends StatefulWidget {
 class _DjConsoleScreenState extends State<DjConsoleScreen> {
   String? _profileSongId;
   Future<DjTrackProfile?>? _profileFuture;
+  String? _waveformSongId;
+  int? _waveformDurationMs;
+  Future<List<DjWaveformChunk>>? _waveformFuture;
+  final DjWaveformRangeReader _waveformReader = DjWaveformRangeReader();
 
   void _ensureProfileFuture(BuildContext context, String? songId) {
     if (_profileSongId == songId) return;
@@ -33,6 +40,20 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
     _profileFuture = songId == null
         ? null
         : context.read<DjModeProvider>().analysis.getProfile(songId);
+  }
+  void _ensureWaveformFuture(Song? song) {
+    final durationMs = song?.duration.inMilliseconds ?? 0;
+    if (_waveformSongId == song?.id && _waveformDurationMs == durationMs) return;
+    _waveformSongId = song?.id;
+    _waveformDurationMs = durationMs;
+    _waveformFuture = song == null || durationMs <= 0
+        ? null
+        : _waveformReader.loadVisibleRange(
+            song,
+            startMs: 0,
+            endMs: durationMs,
+            overscanChunks: 0,
+          );
   }
   static const _landscape = <DeviceOrientation>[
     DeviceOrientation.landscapeLeft,
@@ -64,6 +85,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
         builder: (context, music, _) {
           final song = music.currentSong;
           _ensureProfileFuture(context, song?.id);
+          _ensureWaveformFuture(song);
           final deckState = music.media3ShadowState;
           final reportedDeckId = deckState?.activeDeckId;
           final activeDeckId = reportedDeckId == 'A' || reportedDeckId == 'B'
@@ -110,6 +132,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                             duration: activeDeckId == 'B' ? Duration.zero : duration,
                             profileFuture: activeDeckId == 'A' ? _profileFuture : null,
                             expectedSongId: activeDeckId == 'A' ? song?.id : null,
+                            waveformFuture: activeDeckId == 'A' ? _waveformFuture : null,
                           )),
                           SizedBox(width: compact ? 8 : 12),
                           SizedBox(
@@ -129,6 +152,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                             duration: activeDeckId == 'B' ? duration : Duration.zero,
                             profileFuture: activeDeckId == 'B' ? _profileFuture : null,
                             expectedSongId: activeDeckId == 'B' ? song?.id : null,
+                            waveformFuture: activeDeckId == 'B' ? _waveformFuture : null,
                           )),
                         ],
                       ),
@@ -171,6 +195,7 @@ class _ConsoleDeck extends StatefulWidget {
     required this.status, required this.title, required this.artist, required this.progress,
     required this.position, required this.duration, required this.profileFuture,
     required this.expectedSongId,
+    required this.waveformFuture,
   });
 
   final String deck, status, title, artist;
@@ -179,6 +204,7 @@ class _ConsoleDeck extends StatefulWidget {
   final Duration position, duration;
   final Future<DjTrackProfile?>? profileFuture;
   final String? expectedSongId;
+  final Future<List<DjWaveformChunk>>? waveformFuture;
 
   @override
   State<_ConsoleDeck> createState() => _ConsoleDeckState();
@@ -246,6 +272,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     final duration = widget.duration;
     final profileFuture = widget.profileFuture;
     final expectedSongId = widget.expectedSongId;
+    final waveformFuture = widget.waveformFuture;
     return Container(
       padding: EdgeInsets.all(compact ? 10 : 16),
       decoration: BoxDecoration(
@@ -322,57 +349,87 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
           const SizedBox(height: 8),
           FutureBuilder<DjTrackProfile?>(
             future: profileFuture,
-            builder: (context, snapshot) {
-              final profile = snapshot.data;
+            builder: (context, profileSnapshot) {
+              final profile = profileSnapshot.data;
               final verifiedProfile = profile != null &&
                       expectedSongId != null &&
                       profile.songId == expectedSongId
                   ? profile
                   : null;
-              final segments = verifiedProfile?.waveformSegments ??
+              final legacySegments = verifiedProfile?.waveformSegments ??
                   const <DjWaveformSegment>[];
               final beatGrid = verifiedProfile?.beatGrid;
               final sections = verifiedProfile?.sections ?? const <DjSection>[];
-              final label = snapshot.connectionState == ConnectionState.waiting
-                  ? 'LOADING CACHED PCM PROFILE'
-                  : profile != null && verifiedProfile == null
-                      ? 'PROFILE IDENTITY MISMATCH · HIDDEN'
-                      : segments.isEmpty
-                          ? 'NO SAMPLED PCM · PREVIEW UNAVAILABLE'
-                          : 'MEASURED PCM · ${segments.length} WINDOWS · GAPS UNANALYSED';
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(
-                height: compact ? 42 : 58,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF080E15),
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: Stack(fit: StackFit.expand, children: [
-                  CustomPaint(
-                    painter: _ConsoleWavePainter(
-                      progress: progress,
-                      color: accent,
-                      segments: segments,
-                      beatGrid: beatGrid,
-                      sections: sections,
-                      durationMs: duration.inMilliseconds,
-                    ),
-                  ),
-                  Positioned(left: 7, top: 4, child: Text(
-                    label,
-                    style: const TextStyle(fontSize: 7, letterSpacing: .5, color: Colors.white70),
-                  )),
-                ]),
-                  ),
-                  const SizedBox(height: 7),
-                  _ConsoleAnalysisStrip(
-                    profile: verifiedProfile,
-                    positionMs: position.inMilliseconds,
-                    compact: compact,
-                  ),
-                ],
+              return FutureBuilder<List<DjWaveformChunk>>(
+                future: waveformFuture,
+                builder: (context, waveformSnapshot) {
+                  final chunks = waveformSnapshot.data ?? const <DjWaveformChunk>[];
+                  final measuredSegments = chunks
+                      .map((chunk) => DjWaveformSegment(
+                            startMs: chunk.actualStartMs,
+                            endMs: chunk.actualEndMs,
+                            peaks: chunk.peaks,
+                          ))
+                      .toList(growable: false);
+                  final segments = measuredSegments.isNotEmpty
+                      ? measuredSegments
+                      : legacySegments;
+                  final label = waveformSnapshot.connectionState == ConnectionState.waiting
+                      ? 'LOADING MEASURED PCM CHUNKS'
+                      : waveformSnapshot.hasError
+                          ? 'WAVEFORM DATA UNAVAILABLE'
+                          : measuredSegments.isNotEmpty
+                              ? 'MEASURED PCM · ${measuredSegments.length} CHUNKS · GAPS UNANALYSED'
+                              : legacySegments.isNotEmpty
+                                  ? 'LEGACY SAMPLED PCM · GAPS UNANALYSED'
+                                  : profileSnapshot.connectionState == ConnectionState.waiting
+                                      ? 'LOADING CACHED DJ PROFILE'
+                                      : profile != null && verifiedProfile == null
+                                          ? 'PROFILE IDENTITY MISMATCH · HIDDEN'
+                                          : 'NO MEASURED PCM AVAILABLE';
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        height: compact ? 42 : 58,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF080E15),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Stack(fit: StackFit.expand, children: [
+                          CustomPaint(
+                            painter: _ConsoleWavePainter(
+                              progress: progress,
+                              color: accent,
+                              segments: segments,
+                              beatGrid: beatGrid,
+                              sections: sections,
+                              durationMs: duration.inMilliseconds,
+                            ),
+                          ),
+                          Positioned(
+                            left: 7,
+                            top: 4,
+                            child: Text(
+                              label,
+                              style: const TextStyle(
+                                fontSize: 7,
+                                letterSpacing: .5,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ),
+                        ]),
+                      ),
+                      const SizedBox(height: 7),
+                      _ConsoleAnalysisStrip(
+                        profile: verifiedProfile,
+                        positionMs: position.inMilliseconds,
+                        compact: compact,
+                      ),
+                    ],
+                  );
+                },
               );
             },
           ),
