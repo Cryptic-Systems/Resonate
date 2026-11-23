@@ -43,10 +43,6 @@ class _DjConsoleDeckTempoControlState
             ) == DjConsoleTempoDeckRole.unavailable) {
       return;
     }
-    final isActive = DjConsoleTempoPolicy.roleForPhysicalDeck(
-          physicalDeckId: widget.physicalDeckId,
-          activeDeckId: state.activeDeckId,
-        ) == DjConsoleTempoDeckRole.active;
     final activeSpeed = state.activeDeckSpeed;
     final activePitch = state.activeDeckPitch;
     final standbySpeed = state.standbyDeckSpeed;
@@ -57,19 +53,25 @@ class _DjConsoleDeckTempoControlState
         standbyPitch == null) {
       return;
     }
-    final parameters = DjConsoleTempoPolicy.parametersFor(
+    final command = DjConsoleTempoPolicy.commandForPhysicalDeck(
+      physicalDeckId: widget.physicalDeckId,
+      activeDeckId: state.activeDeckId,
+      activeSpeed: activeSpeed,
+      activePitch: activePitch,
+      standbySpeed: standbySpeed,
+      standbyPitch: standbyPitch,
       percent: percent,
       keyLockEnabled: keyLock,
     );
-    if (parameters == null) return;
+    if (command == null) return;
 
     setState(() => _busy = true);
     try {
       await music.setPreparedManualDjDeckParameters(
-        activeSpeed: isActive ? parameters.speed : activeSpeed,
-        activePitch: isActive ? parameters.pitch : activePitch,
-        standbySpeed: isActive ? standbySpeed : parameters.speed,
-        standbyPitch: isActive ? standbyPitch : parameters.pitch,
+        activeSpeed: command.activeSpeed,
+        activePitch: command.activePitch,
+        standbySpeed: command.standbySpeed,
+        standbyPitch: command.standbyPitch,
       );
       if (!mounted) return;
       setState(() {
