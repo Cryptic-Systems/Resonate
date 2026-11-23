@@ -14,7 +14,7 @@ Resonate will provide two mutually exclusive user experiences over one shared au
 1. **Resonate Player** — everyday listening, the existing player/library experience, current automatic DJ behavior, DSP, Intelligence, Ask Resonate, voice and feedback. It does not expose manual DJ Console controls.
 2. **Resonatix DJ** — a dedicated DJ performance environment with its own workspace, Console and integrated library browser. It uses the same shared library records and playback foundation. A fresh DJ session starts with both deck slots empty.
 
-**Deck-count boundary:** Resonate Player is strictly single-deck in every Player mode, including automatic DJ. Automatic DJ must not load, prepare, render or use Deck B as a hidden/standby channel while the Player policy is active. Any existing automatic-DJ transition path that depends on the second physical player must be audited and adapted to a genuinely single-deck strategy (or its incompatible crossfade behavior removed from Player); preserving behavior never overrides the one-deck invariant. Only Resonatix DJ may activate the dual-deck topology.
+**User-facing deck boundary:** Resonate Player exposes exactly one logical/user-facing deck. The second physical Media3 player (Engine B) remains invisible and is not independently controllable from Player UI, but it may be used as a restricted, private transition resource for existing automatic crossfade and Autopilot preload behavior. Those operations remain owned by the existing `MusicProvider`/Autopilot path and are permitted only while `PLAYER_SINGLE_DECK` is active. This is a distinction between logical deck exposure and physical playback resources: Player may briefly render two sources during an automatic transition, but it never exposes a second independently operable deck. Only Resonatix DJ activates the user-facing `DJ_DUAL_DECK` topology.
 
 Locked behavior:
 
@@ -40,7 +40,7 @@ The audit was performed against the development branch at the commit above. The 
 | `Media3MusicProviderAdapter` / `Media3PlaybackClient` | Song-to-native mapping and platform command/state boundary | Reuse |
 | `Media3PlaybackBridge` | Flutter-to-native Media3 session bridge | Reuse |
 | `Media3PlaybackService` | Native MediaSession and ExoPlayer lifecycle | Reuse |
-| `DspEngineSinkHook`, `DspEngineRegistry`, `AudioEffectsProvider` | Native DSP processing and active/standby deck routing | Reuse; do not duplicate DSP |
+| `DspEngineSinkHook`, `DspEngineRegistry`, `AudioEffectsProvider` | Native DSP processing and active/standby deck routing | Reuse; do not duplicate DSP. Verify processing on every audible source and the final output/mix path in both experiences |
 | Existing audio focus and MediaSession integration | System focus, notification, Bluetooth and external transport behavior | Preserve and validate |
 
 The application composition root constructs one `PlaybackControlArbiter` and injects it into `MusicProvider`. It constructs one `Media3ProviderSession` for that provider. The startup lifecycle restores saved audio settings before preparing the Media3 session and committing the provider handoff.
@@ -160,15 +160,14 @@ The intended operator capabilities are:
 
 | Active policy | Permitted deck configuration | Prohibited behavior |
 |---|---|---|
-| `PLAYER_SINGLE_DECK` | One canonical audible deck for Resonate Player | No second audible/prepared DJ channel, no DJ crossfader, no Deck B performance commands |
+| `PLAYER_SINGLE_DECK` | One user-facing logical Player deck (Engine A); Engine B may serve only as a private, bounded MusicProvider/Autopilot transition/preload resource | No user-visible Deck B, no independent Deck B transport/gain/tempo controls, no DJ crossfader or DJ performance commands; no Engine B use outside the authorized Player transition/preload path |
 | `DJ_DUAL_DECK` | Two independently loaded/operable DJ decks with operator-controlled manual crossfade and one shared master output | No Player single-deck policy or Player shell deck commands; no automatic crossfader movement |
 | `SWITCHING` / no policy | No experience may issue deck commands while outgoing work is quiesced and the policy is being replaced | No overlap, no early destination commands, no stale outgoing writes |
 
-The policy owner is a single source of truth for the permitted deck topology and active experience binding. It must:
+The policy owner is a single source of truth for the permitted deck topology and active experience binding. It distinguishes logical deck exposure from physical engine use. It must:
 
 1. Grant exactly one policy (`PLAYER_SINGLE_DECK` or `DJ_DUAL_DECK`) and bind it to a monotonically increasing generation/token so stale commands from an earlier policy are rejected.
-2. Reject Deck B load, prepare, start, parameter, gain and crossfader commands while `PLAYER_SINGLE_DECK` is active, including commands originating from hidden/background DJ controllers.
-   - This prohibition includes automatic-DJ preload/standby use. A muted or inaudible second player still violates the Player single-deck policy; it is not exempt merely because it is not heard.
+2. Under `PLAYER_SINGLE_DECK`, reject all user-facing or independently controllable DJ Deck B commands. Permit Engine B only for bounded internal preload/standby/crossfade operations explicitly issued by the existing `MusicProvider`/Autopilot transition path and authorized by the Player policy generation plus the existing arbiter rules. Engine B must not become a second Player deck, accept arbitrary/background DJ commands, or remain assigned to a stale transition after cancellation. A muted standby is not automatically a policy violation; its ownership, permitted purpose and command source are what constrain it.
 3. Permit Deck A/Deck B operation only under `DJ_DUAL_DECK`; both decks may be audible simultaneously only through the validated shared mix/output path.
 4. Keep the DJ crossfader manual and operator-owned. Automation may analyze, warn, recommend and perform only separately authorized preparation/execution actions; it must never write crossfader position or override a manual crossfade gesture.
 5. Enforce the same policy at the native Media3 command boundary as well as the Flutter/Dart boundary. UI visibility is not a security or correctness boundary.
@@ -190,8 +189,8 @@ The fact that two ExoPlayer objects exist does not prove they are already indepe
 Before changing the current native deck lifecycle, document and test:
 
 1. Whether both existing ExoPlayer instances can render concurrently through the current Android output path without unexpected audio-focus, session or latency behavior.
-2. How the current DSP sink is attached and whether it processes both physical deck outputs. Do not claim per-deck DSP simply because two deck players exist.
-3. A single authoritative mix/gain path for per-deck gain, crossfader curve and master output. Avoid competing Flutter/native gain writers; native Media3/mixer policy remains authoritative.
+2. How the current DSP sink is attached and whether it processes Engine A, Engine B and the final mixed output in each mode. Player's existing automatic transition must not bypass required DSP on Engine B; DJ must not expose concurrent audible decks until both channel signals and the master/output path are correctly processed. Do not claim per-deck DSP simply because two deck players exist.
+3. A single authoritative mix/gain path for per-deck gain, crossfader curve and master output. Avoid competing Flutter/native gain writers; native Media3/mixer policy remains authoritative. In Player, preserve the current automatic crossfade behavior and ensure both transition sources receive the intended processing. In DJ, define whether processing is per-deck, post-mix master, or a validated combination; do not assume the current active-engine hook automatically covers both decks.
 4. Per-deck transport and playback-parameter commands, including serialization, stale-command fencing and lease authorization.
 5. Independent deck media-item/queue ownership and stable occurrence identity, without overwriting the Resonate Player queue.
 6. Audio-session IDs, effects routing, Bluetooth/device changes, focus loss, interruptions, notification/system transport semantics and recovery when one deck fails.
@@ -287,7 +286,7 @@ Acceptance:
 ### Phase 2 — Resonate Player isolation
 Retain current HomeScreen behavior and remove manual DJ performance entry points from the Player shell. Preserve automatic DJ and all existing Player functionality.
 
-Acceptance: Player regression suite and existing playback/Media3/DSP tests remain green; DJ Console is not reachable from Player navigation; automatic DJ remains within the one-deck boundary and cannot preload/use Deck B.
+Acceptance: Player regression suite and existing playback/Media3/DSP tests remain green; DJ Console is not reachable from Player navigation; Engine B remains invisible and independently uncontrollable in Player; existing automatic crossfade/Autopilot preload behavior is preserved under MusicProvider ownership and DSP is verified on every audible transition source.
 
 ### Phase 3 — Resonatix DJ shell and integrated browser
 Create dedicated DJ navigation and connect existing library/playlist/analysis providers. Preserve Workspace and Console rather than recreating them.
@@ -330,7 +329,7 @@ This migration must not:
 - create another audio-focus owner;
 - create a second PlaybackControlArbiter;
 - allow Player and DJ deck policies to be active simultaneously;
-- allow Deck B or crossfader commands under the Player single-deck policy;
+- expose Engine B as an independently controllable DJ deck in Player or allow arbitrary Deck B performance commands under the Player policy;
 - let DJ automation write or override the manual crossfader;
 - repurpose `ResonateMode` as the Player/Resonatix selector;
 - duplicate Intelligence Autopilot as DJ automation;
@@ -340,6 +339,6 @@ This migration must not:
 
 ## 9. Phase 0 exit decision
 
-The repository already contains the shared audio foundation, DJ intelligence, analysis, library, Workspace, Console and manual handoff mechanisms. The architecture split should be implemented by adding the missing top-level experience lifecycle and the missing empty-session DJ deck workflow, then adapting existing screens and settings.
+The repository already contains the shared audio foundation, DJ intelligence, analysis, library, Workspace, Console and manual handoff mechanisms. Resonate Player will retain one user-facing logical deck while Engine B remains a private transition/preload resource under MusicProvider/Autopilot control. Resonatix DJ will expose both physical engines as independently operable decks. The architecture split should be implemented by adding the missing top-level experience lifecycle and the missing empty-session DJ deck workflow, then adapting existing screens and settings.
 
 **The next implementation gate is Phase 1.** The traditional dual-deck performance target is approved. Before Phase 4 implementation, the native/API spike must prove how the existing two physical deck players, DSP signal path and output mixing can safely deliver that target. The queue-isolation strategy must also be settled so a DJ performance session cannot corrupt the saved Resonate Player queue.
