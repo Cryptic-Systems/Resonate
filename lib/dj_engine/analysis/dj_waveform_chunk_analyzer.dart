@@ -65,7 +65,10 @@ class DjWaveformChunkPeakAnalyzer {
       return startMs;
     }
     final frames = pcmByteLength ~/ (channels * 2);
-    final end = startMs + (frames * 1000 ~/ sampleRate);
+    // Round the exclusive end boundary upward: a partial final millisecond
+    // still contains real decoded PCM and must not leave a false 1 ms gap.
+    final durationMs = (frames * 1000 + sampleRate - 1) ~/ sampleRate;
+    final end = startMs + durationMs;
     return end.clamp(0, durationMs).toInt();
   }
 }
