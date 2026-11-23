@@ -22,6 +22,10 @@ void main() {
         'crossfadeProgress': 0.5,
         'activeDeckVolume': 0.7071,
         'standbyDeckVolume': 0.7071,
+        'activeSpeed': 1.04,
+        'activePitch': 1.0,
+        'standbySpeed': 0.97,
+        'standbyPitch': 0.97,
         'incomingMediaId': 'track-incoming',
         'incomingReady': true,
         'incomingPositionMs': 4567,
@@ -45,12 +49,29 @@ void main() {
       expect(state.crossfadeProgress, 0.5);
       expect(state.activeDeckVolume, 0.7071);
       expect(state.standbyDeckVolume, 0.7071);
+      expect(state.activeDeckSpeed, 1.04);
+      expect(state.activeDeckPitch, 1.0);
+      expect(state.standbyDeckSpeed, 0.97);
+      expect(state.standbyDeckPitch, 0.97);
       expect(state.incomingMediaId, 'track-incoming');
       expect(state.incomingReady, isTrue);
       expect(state.incomingPosition, const Duration(milliseconds: 4567));
       expect(state.repeatMode, 'all');
       expect(state.shuffleModeEnabled, isTrue);
       expect(state.hasError, isFalse);
+    });
+
+    test('leaves missing or malformed native deck parameters unavailable', () {
+      final state = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'activeSpeed': double.nan,
+        'activePitch': 'unknown',
+        'standbySpeed': double.infinity,
+      });
+
+      expect(state.activeDeckSpeed, isNull);
+      expect(state.activeDeckPitch, isNull);
+      expect(state.standbyDeckSpeed, isNull);
+      expect(state.standbyDeckPitch, isNull);
     });
 
     test('parses native underrun counters and timing context', () {
