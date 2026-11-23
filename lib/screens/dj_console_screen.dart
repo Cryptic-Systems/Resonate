@@ -12,6 +12,7 @@ import '../services/dj_waveform_range_reader.dart';
 import '../providers/dj_mode_provider.dart';
 import '../dj_engine/core/dj_types.dart';
 import '../ui/resonate_glass.dart';
+import 'dj_console_manual_controls.dart';
 import 'dj_console_overlay_policy.dart';
 import 'dj_console_waveform_status.dart';
 import 'dj_waveform_viewport_policy.dart';
@@ -199,7 +200,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                           SizedBox(width: compact ? 8 : 12),
                           SizedBox(
                             width: compact ? 112 : 190,
-                            child: _ConsoleMixer(compact: compact),
+                            child: DjConsoleManualControls(compact: compact),
                           ),
                           SizedBox(width: compact ? 8 : 12),
                           Expanded(child: _ConsoleDeck(
@@ -783,53 +784,6 @@ class _ConsoleAnalysisStrip extends StatelessWidget {
           ),
         ],
       ],
-    );
-  }
-}
-
-class _ConsoleMixer extends StatelessWidget {
-  const _ConsoleMixer({required this.compact});
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: EdgeInsets.all(compact ? 8 : 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF151D28),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: .09)),
-      ),
-      child: Column(
-        children: [
-          Text('MIXER', style: theme.textTheme.labelLarge?.copyWith(
-            letterSpacing: 2, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 12),
-          const SizedBox(height: 8),
-          Text('A  —', style: theme.textTheme.labelMedium?.copyWith(color: Colors.white54)),
-          const SizedBox(height: 4),
-          Text('B  —', style: theme.textTheme.labelMedium?.copyWith(color: Colors.white54)),
-          const SizedBox(height: 4),
-          Text('LEVEL TELEMETRY NOT CONNECTED',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.labelSmall?.copyWith(fontSize: 8, color: Colors.white38)),
-          const Spacer(),
-          Icon(Icons.tune_rounded, size: compact ? 25 : 32,
-              color: theme.colorScheme.primary),
-          const SizedBox(height: 5),
-          Text('CROSSFADER', style: theme.textTheme.labelSmall?.copyWith(
-            letterSpacing: 1, color: Colors.white70)),
-          const SizedBox(height: 8),
-          Container(height: 5, decoration: BoxDecoration(
-            color: Colors.white12, borderRadius: BorderRadius.circular(8))),
-          const SizedBox(height: 12),
-          Text('Controls unlock after native transition mapping and safety tests.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontSize: 9, color: theme.colorScheme.onSurfaceVariant)),
-        ],
-      ),
     );
   }
 }
