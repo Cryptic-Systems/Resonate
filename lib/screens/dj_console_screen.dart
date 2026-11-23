@@ -359,13 +359,11 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                           border: Border.all(color: accent.withValues(alpha: .35), width: 2),
                           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .4), blurRadius: 18)],
                         )),
-                        for (var i = 0; i < 3; i++)
-                          Container(
-                            width: (compact ? 218.0 : 260.0) - i * (compact ? 36.0 : 42.0),
-                            height: (compact ? 218.0 : 260.0) - i * (compact ? 36.0 : 42.0),
-                            decoration: BoxDecoration(shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white.withValues(alpha: .07))),
+                        Positioned.fill(
+                          child: CustomPaint(
+                            painter: _ConsoleRecordDetailPainter(accent: accent),
                           ),
+                        ),
                         Container(
                           width: 88, height: 88,
                           decoration: BoxDecoration(shape: BoxShape.circle,
@@ -512,6 +510,66 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     );
   }
 }
+class _ConsoleRecordDetailPainter extends CustomPainter {
+  const _ConsoleRecordDetailPainter({required this.accent});
+
+  final Color accent;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.width, size.height) / 2;
+    if (radius <= 0) return;
+
+    final groovePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.7;
+    for (var i = 0; i < 24; i++) {
+      final grooveRadius = radius * (0.39 + i * 0.0205);
+      groovePaint.color = Colors.white.withValues(
+        alpha: i.isEven ? 0.075 : 0.035,
+      );
+      canvas.drawCircle(center, grooveRadius, groovePaint);
+    }
+
+    final markerPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    for (var i = 0; i < 48; i++) {
+      final angle = i * math.pi / 24;
+      final inner = radius * (i % 4 == 0 ? 0.925 : 0.952);
+      final outer = radius * 0.978;
+      markerPaint
+        ..strokeWidth = i % 4 == 0 ? 1.8 : 1
+        ..color = i % 4 == 0
+            ? accent.withValues(alpha: 0.7)
+            : Colors.white.withValues(alpha: 0.24);
+      canvas.drawLine(
+        center + Offset(math.cos(angle) * inner, math.sin(angle) * inner),
+        center + Offset(math.cos(angle) * outer, math.sin(angle) * outer),
+        markerPaint,
+      );
+    }
+
+    final labelPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = const Color(0xFF182431);
+    canvas.drawCircle(center, radius * 0.345, labelPaint);
+    canvas.drawCircle(
+      center,
+      radius * 0.345,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4
+        ..color = accent.withValues(alpha: 0.42),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ConsoleRecordDetailPainter oldDelegate) =>
+      oldDelegate.accent != accent;
+}
+
 class _ConsoleAnalysisStrip extends StatelessWidget {
   const _ConsoleAnalysisStrip({
     required this.profile,
