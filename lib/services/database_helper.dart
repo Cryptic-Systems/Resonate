@@ -521,6 +521,82 @@ class DatabaseHelper {
     }
   }
 
+  /// Evicts oldest waveform peak rows only; compact DJ profiles are untouched.
+  /// Chunk deletion and manifest index repair commit atomically.
+  Future<int> pruneDjWaveformChunks({
+    int maxChunks = DjWaveformStoragePolicy.maxChunksLibrary,
+  }) async {
+    final boundedMaximum =
+        maxChunks.clamp(0, DjWaveformStoragePolicy.maxChunksLibrary);
+    try {
+      final db = await database;
+      return await db.transaction((txn) async {
+        final countRows = await txn.rawQuery(
+          'SELECT COUNT(*) AS chunk_count FROM $tableDjWaveformChunks',
+        );
+        final currentCount =
+            (countRows.first['chunk_count'] as num?)?.toInt() ?? 0;
+        final excess = currentCount - boundedMaximum;
+        if (excess <= 0) return 0;
+
+        final victims = await txn.query(
+          tableDjWaveformChunks,
+          columns: ['song_id', 'analysis_version', 'chunk_index'],
+          orderBy: 'completed_at ASC, song_id ASC, analysis_version ASC, chunk_index ASC',
+          limit: excess,
+        );
+        final removedByManifest = <String, Set<int>>{};
+        for (final row in victims) {
+          final songId = row['song_id']?.toString() ?? '';
+          final version = (row['analysis_version'] as num).toInt();
+          final index = (row['chunk_index'] as num).toInt();
+          await txn.delete(
+            tableDjWaveformChunks,
+            where: 'song_id = ? AND analysis_version = ? AND chunk_index = ?',
+            whereArgs: [songId, version, index],
+          );
+          removedByManifest.putIfAbsent('$songId:$version', () => <int>{})
+            ..add(index);
+        }
+
+        for (final entry in removedByManifest.entries) {
+          final split = entry.key.lastIndexOf(':');
+          final songId = entry.key.substring(0, split);
+          final version = int.parse(entry.key.substring(split + 1));
+          final manifests = await txn.query(
+            tableDjWaveformManifests,
+            columns: ['completed_indices_json'],
+            where: 'song_id = ? AND analysis_version = ?',
+            whereArgs: [songId, version],
+            limit: 1,
+          );
+          if (manifests.isEmpty) continue;
+          final decoded = jsonDecode(
+            manifests.first['completed_indices_json']?.toString() ?? '[]',
+          );
+          final completed = decoded is List
+              ? decoded.whereType<num>().map((value) => value.toInt()).toSet()
+              : <int>{};
+          completed.removeAll(entry.value);
+          final ordered = completed.toList()..sort();
+          await txn.update(
+            tableDjWaveformManifests,
+            {
+              'completed_indices_json': jsonEncode(ordered),
+              'updated_at': DateTime.now().toIso8601String(),
+            },
+            where: 'song_id = ? AND analysis_version = ?',
+            whereArgs: [songId, version],
+          );
+        }
+        return victims.length;
+      });
+    } catch (e) {
+      _markDatabaseFailure('prune_dj_waveform_chunks', e);
+      rethrow;
+    }
+  }
+
   Future<String?> getDjProfileJson(String songId) async {
     try {
       final rows = await (await database).query(
