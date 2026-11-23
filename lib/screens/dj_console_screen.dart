@@ -29,16 +29,26 @@ class DjConsoleScreen extends StatefulWidget {
 }
 
 class _DjConsoleScreenState extends State<DjConsoleScreen> {
-  String? _profileSongId;
-  Future<DjTrackProfile?>? _profileFuture;
+  final Map<String, Future<DjTrackProfile?>> _profileFutures = {};
   final DjWaveformRangeReader _waveformReader = DjWaveformRangeReader();
 
-  void _ensureProfileFuture(BuildContext context, String? songId) {
-    if (_profileSongId == songId) return;
-    _profileSongId = songId;
-    _profileFuture = songId == null
-        ? null
-        : context.read<DjModeProvider>().analysis.getProfile(songId);
+  Future<DjTrackProfile?>? _profileFutureFor(
+    BuildContext context,
+    String? songId,
+  ) {
+    if (songId == null) return null;
+    final cached = _profileFutures.putIfAbsent(
+      songId,
+      () => context.read<DjModeProvider>().analysis.getProfile(songId),
+    );
+    // The Console displays at most two decks. Keep a small rolling cache so
+    // repeated queue changes cannot retain an unbounded set of profile futures.
+    while (_profileFutures.length > 4) {
+      final oldest = _profileFutures.keys.first;
+      if (oldest == songId) break;
+      _profileFutures.remove(oldest);
+    }
+    return cached;
   }
   static const _landscape = <DeviceOrientation>[
     DeviceOrientation.landscapeLeft,
@@ -69,18 +79,58 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
       body: Consumer<MusicProvider>(
         builder: (context, music, _) {
           final song = music.currentSong;
-          _ensureProfileFuture(context, song?.id);
           final deckState = music.media3ShadowState;
           final reportedDeckId = deckState?.activeDeckId;
           final activeDeckId = reportedDeckId == 'A' || reportedDeckId == 'B'
               ? reportedDeckId
               : null;
+          final incomingMediaId = deckState?.incomingMediaId;
+          final incomingMatches = incomingMediaId == null
+              ? <Song>[]
+              : music.queue
+                  .where((candidate) => candidate.id == incomingMediaId)
+                  .toList(growable: false);
+          // A media ID can occur more than once in a queue. Never guess which
+          // occurrence Media3 prepared; only expose uniquely matched metadata.
+          final standbySong = incomingMatches.length == 1
+              ? incomingMatches.single
+              : null;
+          final standbyIdentityAmbiguous = incomingMatches.length > 1;
+          final standbyReady = activeDeckId != null &&
+              standbySong != null &&
+              deckState?.incomingReady == true &&
+              deckState?.crossfadeStatus == 'ready' &&
+              !music.transitionInProgress;
+          final standbyPosition = standbySong == null
+              ? Duration.zero
+              : deckState?.incomingPosition ?? Duration.zero;
           final duration = music.currentDuration ?? song?.duration ?? Duration.zero;
           final position = music.currentPosition;
           final progress = duration.inMilliseconds <= 0
               ? 0.0
               : (position.inMilliseconds / duration.inMilliseconds)
                   .clamp(0.0, 1.0).toDouble();
+          final standbyDuration = standbySong?.duration ?? Duration.zero;
+          final standbyProgress = standbyDuration.inMilliseconds <= 0
+              ? 0.0
+              : (standbyPosition.inMilliseconds /
+                      standbyDuration.inMilliseconds)
+                  .clamp(0.0, 1.0).toDouble();
+          final activeProfileFuture = _profileFutureFor(context, song?.id);
+          final standbyProfileFuture =
+              _profileFutureFor(context, standbySong?.id);
+          String standbyStatus() {
+            if (activeDeckId == null) return 'UNMAPPED';
+            if (standbyIdentityAmbiguous) return 'AMBIGUOUS';
+            if (incomingMediaId != null && standbySong == null) {
+              return 'UNVERIFIED';
+            }
+            if (deckState?.crossfadeStatus == 'preparing') {
+              return 'PREPARING';
+            }
+            if (standbyReady) return 'READY · MUTED';
+            return 'STANDBY';
+          }
           return LayoutBuilder(
             builder: (context, constraints) {
               final compact = constraints.maxWidth < 760;
@@ -105,22 +155,44 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Expanded(child: _ConsoleDeck(
-                            deck: activeDeckId == null ? 'PROGRAM · ID UNKNOWN' : 'DECK A',
+                            deck: 'DECK A',
                             active: activeDeckId == 'A', compact: compact,
                             isPlaying: music.isPlaying && activeDeckId == 'A',
-                            status: activeDeckId == null ? 'IDENTITY UNKNOWN' : activeDeckId == 'A' ? 'ON AIR' : 'STANDBY',
-                            title: activeDeckId == 'B' ? 'Standby deck' : song?.title ?? 'Waiting for track',
-                            artist: activeDeckId == 'B' ? 'Awaiting verified standby metadata' : song?.artist ?? 'Select music in the library',
-                            progress: activeDeckId == 'B' ? 0 : progress,
-                            position: activeDeckId == 'B' ? Duration.zero : position,
-                            duration: activeDeckId == 'B' ? Duration.zero : duration,
-                            profileFuture: activeDeckId == 'A' ? _profileFuture : null,
-                            expectedSongId: activeDeckId == 'A' ? song?.id : null,
-                            waveformSourceKey: activeDeckId == 'A' ? song?.filePath : null,
+                            status: activeDeckId == null
+                                ? 'UNMAPPED'
+                                : activeDeckId == 'A' ? 'ON AIR' : standbyStatus(),
+                            title: activeDeckId == 'A'
+                                ? song?.title ?? 'Waiting for track'
+                                : standbySong?.title ?? 'Standby deck',
+                            artist: activeDeckId == 'A'
+                                ? song?.artist ?? 'Select music in the library'
+                                : standbySong?.artist ??
+                                    (standbyIdentityAmbiguous
+                                        ? 'Incoming queue occurrence is ambiguous'
+                                        : 'No verified incoming track'),
+                            progress: activeDeckId == 'A' ? progress : standbyProgress,
+                            position: activeDeckId == 'A' ? position : standbyPosition,
+                            duration: activeDeckId == 'A' ? duration : standbyDuration,
+                            profileFuture: activeDeckId == 'A'
+                                ? activeProfileFuture
+                                : standbyProfileFuture,
+                            expectedSongId: activeDeckId == 'A'
+                                ? song?.id
+                                : standbySong?.id,
+                            waveformSourceKey: activeDeckId == 'A'
+                                ? song?.filePath
+                                : standbySong?.filePath,
                             waveformLoader: activeDeckId == 'A' && song != null
                                 ? (startMs, endMs) => _waveformReader.loadVisibleRange(
                                     song, startMs: startMs, endMs: endMs)
-                                : null,
+                                : activeDeckId != 'A' && standbySong != null
+                                    ? (startMs, endMs) =>
+                                        _waveformReader.loadVisibleRange(
+                                          standbySong,
+                                          startMs: startMs,
+                                          endMs: endMs,
+                                        )
+                                    : null,
                           )),
                           SizedBox(width: compact ? 8 : 12),
                           SizedBox(
@@ -129,22 +201,44 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                           ),
                           SizedBox(width: compact ? 8 : 12),
                           Expanded(child: _ConsoleDeck(
-                            deck: activeDeckId == null ? 'STANDBY · UNMAPPED' : 'DECK B',
+                            deck: 'DECK B',
                             active: activeDeckId == 'B', compact: compact,
                             isPlaying: music.isPlaying && activeDeckId == 'B',
-                            status: activeDeckId == null ? 'UNMAPPED' : activeDeckId == 'B' ? 'ON AIR' : 'STANDBY',
-                            title: activeDeckId == 'B' ? song?.title ?? 'Waiting for track' : 'Standby deck',
-                            artist: activeDeckId == 'B' ? song?.artist ?? 'Select music in the library' : 'Incoming track identity will appear here',
-                            progress: activeDeckId == 'B' ? progress : 0,
-                            position: activeDeckId == 'B' ? position : Duration.zero,
-                            duration: activeDeckId == 'B' ? duration : Duration.zero,
-                            profileFuture: activeDeckId == 'B' ? _profileFuture : null,
-                            expectedSongId: activeDeckId == 'B' ? song?.id : null,
-                            waveformSourceKey: activeDeckId == 'B' ? song?.filePath : null,
+                            status: activeDeckId == null
+                                ? 'UNMAPPED'
+                                : activeDeckId == 'B' ? 'ON AIR' : standbyStatus(),
+                            title: activeDeckId == 'B'
+                                ? song?.title ?? 'Waiting for track'
+                                : standbySong?.title ?? 'Standby deck',
+                            artist: activeDeckId == 'B'
+                                ? song?.artist ?? 'Select music in the library'
+                                : standbySong?.artist ??
+                                    (standbyIdentityAmbiguous
+                                        ? 'Incoming queue occurrence is ambiguous'
+                                        : 'No verified incoming track'),
+                            progress: activeDeckId == 'B' ? progress : standbyProgress,
+                            position: activeDeckId == 'B' ? position : standbyPosition,
+                            duration: activeDeckId == 'B' ? duration : standbyDuration,
+                            profileFuture: activeDeckId == 'B'
+                                ? activeProfileFuture
+                                : standbyProfileFuture,
+                            expectedSongId: activeDeckId == 'B'
+                                ? song?.id
+                                : standbySong?.id,
+                            waveformSourceKey: activeDeckId == 'B'
+                                ? song?.filePath
+                                : standbySong?.filePath,
                             waveformLoader: activeDeckId == 'B' && song != null
                                 ? (startMs, endMs) => _waveformReader.loadVisibleRange(
                                     song, startMs: startMs, endMs: endMs)
-                                : null,
+                                : activeDeckId != 'B' && standbySong != null
+                                    ? (startMs, endMs) =>
+                                        _waveformReader.loadVisibleRange(
+                                          standbySong,
+                                          startMs: startMs,
+                                          endMs: endMs,
+                                        )
+                                    : null,
                           )),
                         ],
                       ),
