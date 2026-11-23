@@ -22,7 +22,11 @@ class DjWaveformRangeReader {
     int overscanChunks = DjWaveformStoragePolicy.maxOverscanChunks,
   }) async {
     final durationMs = song.duration.inMilliseconds;
-    if (song.id.trim().isEmpty || durationMs <= 0) {
+    if (song.id.trim().isEmpty ||
+        durationMs <= 0 ||
+        startMs < 0 ||
+        endMs <= startMs ||
+        startMs >= durationMs) {
       return const <DjWaveformChunk>[];
     }
     // Use the same persisted analysis version and source fingerprint as the
@@ -39,13 +43,16 @@ class DjWaveformRangeReader {
       durationMs: durationMs,
       schemaVersion: DjWaveformStoragePolicy.schemaVersion,
     );
+    final boundedStartMs = startMs.clamp(0, durationMs).toInt();
+    final boundedEndMs = endMs.clamp(0, durationMs).toInt();
+    if (boundedEndMs <= boundedStartMs) return const <DjWaveformChunk>[];
     const chunkDurationMs = 8000;
     final boundedOverscan =
         DjWaveformStoragePolicy().boundedOverscan(overscanChunks);
     final firstIndex =
-        (startMs ~/ chunkDurationMs - boundedOverscan).clamp(0, DjWaveformStoragePolicy.maxChunksPerTrack - 1).toInt();
+        (boundedStartMs ~/ chunkDurationMs - boundedOverscan).clamp(0, DjWaveformStoragePolicy.maxChunksPerTrack - 1).toInt();
     final lastIndex =
-        (((endMs - 1) ~/ chunkDurationMs) + boundedOverscan)
+        (((boundedEndMs - 1) ~/ chunkDurationMs) + boundedOverscan)
             .clamp(firstIndex, DjWaveformStoragePolicy.maxChunksPerTrack - 1).toInt();
     final cached = <DjWaveformChunk>[];
     var fullyCached = true;
