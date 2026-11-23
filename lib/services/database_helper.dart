@@ -474,6 +474,7 @@ class DatabaseHelper {
         where: 'song_id = ? AND analysis_version = ? AND chunk_index BETWEEN ? AND ?',
         whereArgs: [identity.songId, identity.analysisVersion, firstIndex, lastIndex],
         orderBy: 'chunk_index ASC',
+        limit: DjWaveformStoragePolicy.maxCacheChunks,
       );
       final chunks = <DjWaveformChunk>[];
       for (final row in rows) {
