@@ -188,6 +188,53 @@ void main() {
     expect(manifest['completed_indices_json'], '[]');
   });
 
+
+  test('database refuses to complete a partially covered waveform chunk', () async {
+    await db.insert('songs', {
+      'id': 'song-partial',
+      'title': 'Partial coverage',
+      'file_path': '/partial.mp3',
+    });
+    await db.insert('dj_waveform_manifests', {
+      'song_id': 'song-partial',
+      'analysis_version': 3,
+      'source_fingerprint': 'fingerprint-partial',
+      'duration_ms': 8000,
+      'schema_version': 1,
+      'expected_chunk_count': 1,
+      'completed_indices_json': '[]',
+      'updated_at': '2026-11-23T00:00:00.000Z',
+    });
+    final chunk = DjWaveformChunk(
+      songId: 'song-partial',
+      analysisVersion: 3,
+      chunkIndex: 0,
+      requestedStartMs: 0,
+      requestedEndMs: 8000,
+      actualStartMs: 100,
+      actualEndMs: 8000,
+      sourceFingerprint: 'fingerprint-partial',
+      durationMs: 8000,
+      schemaVersion: 1,
+      sampleRate: 44100,
+      channels: 2,
+      peaks: const [0.2, 0.4],
+      completedAt: DateTime.utc(2026, 11, 23),
+    );
+
+    await expectLater(
+      helper.upsertDjWaveformChunk(chunk: chunk, expectedChunkCount: 1),
+      throwsA(isA<ArgumentError>()),
+    );
+    expect(await db.query('dj_waveform_chunks'), isEmpty);
+    final manifest = (await db.query(
+      'dj_waveform_manifests',
+      where: 'song_id = ?',
+      whereArgs: ['song-partial'],
+    )).single;
+    expect(manifest['completed_indices_json'], '[]');
+  });
+
   test('invalid chunk ranges are rejected by SQLite constraints', () async {
     await db.insert('songs', {
       'id': 'song-invalid',
