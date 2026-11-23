@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:resonate/dj_engine/analysis/dj_waveform_chunk.dart';
 import 'package:resonate/services/database_helper.dart';
 
 void main() {
@@ -135,6 +136,56 @@ void main() {
     expect(await db.query('dj_waveform_manifests'), isEmpty);
     expect(await db.query('song_dj_analysis'), isEmpty);
     expect(await db.query('song_dj_profiles'), isEmpty);
+  });
+
+
+  test('cancelled chunk transaction rolls back chunk and manifest completion', () async {
+    await db.insert('songs', {
+      'id': 'song-cancel',
+      'title': 'Cancel me',
+      'file_path': '/cancel.mp3',
+    });
+    await db.insert('dj_waveform_manifests', {
+      'song_id': 'song-cancel',
+      'analysis_version': 3,
+      'source_fingerprint': 'fingerprint-cancel',
+      'duration_ms': 8000,
+      'schema_version': 1,
+      'expected_chunk_count': 1,
+      'completed_indices_json': '[]',
+      'updated_at': '2026-11-23T00:00:00.000Z',
+    });
+
+    var commitChecks = 0;
+    final chunk = DjWaveformChunk(
+      songId: 'song-cancel',
+      analysisVersion: 3,
+      chunkIndex: 0,
+      requestedStartMs: 0,
+      requestedEndMs: 8000,
+      actualStartMs: 0,
+      actualEndMs: 8000,
+      sourceFingerprint: 'fingerprint-cancel',
+      durationMs: 8000,
+      schemaVersion: 1,
+      sampleRate: 44100,
+      channels: 2,
+      peaks: const [0.2, 0.4],
+      completedAt: DateTime.utc(2026, 11, 23),
+    );
+
+    await expectLater(
+      helper.upsertDjWaveformChunk(
+        chunk: chunk,
+        expectedChunkCount: 1,
+        shouldCommit: () => ++commitChecks < 3,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(await db.query('dj_waveform_chunks'), isEmpty);
+    final manifest = (await db.query('dj_waveform_manifests')).single;
+    expect(manifest['completed_indices_json'], '[]');
   });
 
   test('invalid chunk ranges are rejected by SQLite constraints', () async {
