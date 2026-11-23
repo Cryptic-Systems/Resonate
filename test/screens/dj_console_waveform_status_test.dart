@@ -99,7 +99,7 @@ void main() {
     test('classifies complete coverage only for the requested visible interval', () {
       final state = DjConsoleWaveformStatus.classify(
         snapshot: AsyncSnapshot.withData(ConnectionState.done, [
-          _chunk(index: 1, start: 8000, end: 16000),
+          _chunk(index: 1, start: 8000, end: 16000, duration: 32000),
         ]),
         expectedSongId: expectedSongId,
         durationMs: 32000,
