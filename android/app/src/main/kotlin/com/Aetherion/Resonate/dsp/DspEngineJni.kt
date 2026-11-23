@@ -100,6 +100,7 @@ object DspEngineJni {
     )
 
     /** [processCalls, avgUs, maxUs, overruns, lastFrames, sampleRate] */
+    /** 20-value snapshot: level/limiter/auto stages plus auto-gain decision and guard state. */
     external fun nativeGetMeters(handle: Long): FloatArray?
     external fun nativeGetStats(handle: Long): DoubleArray?
     external fun nativeProbeMaxBassGainDb(
