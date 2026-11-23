@@ -96,6 +96,22 @@ void main() {
       expect(state, DjConsoleWaveformState.complete);
     });
 
+    test('classifies complete coverage only for the requested visible interval', () {
+      final state = DjConsoleWaveformStatus.classify(
+        snapshot: AsyncSnapshot.withData(ConnectionState.done, [
+          _chunk(index: 1, start: 8000, end: 16000),
+        ]),
+        expectedSongId: expectedSongId,
+        durationMs: 32000,
+        visibleStartMs: 8000,
+        visibleEndMs: 16000,
+        legacyAvailable: false,
+        profileLoading: false,
+        profileIdentityMismatch: false,
+      );
+      expect(state, DjConsoleWaveformState.complete);
+    });
+
     test('classifies missing interval as partial', () {
       final state = DjConsoleWaveformStatus.classify(
         snapshot: AsyncSnapshot.withData(ConnectionState.done, [
