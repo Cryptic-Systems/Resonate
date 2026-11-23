@@ -23,10 +23,16 @@ class DjWaveformRangeReader {
     if (song.id.trim().isEmpty || durationMs <= 0) {
       return const <DjWaveformChunk>[];
     }
-    final fingerprint = await _sourceFingerprint(song, durationMs);
+    // Use the same persisted analysis version and source fingerprint as the
+    // chunk producer. A different identity must fail closed, not look empty.
+    final analysis = await _database.getDjAnalysis(song.id);
+    final fingerprint = await _sourceFingerprint(song.filePath, analysis);
+    if (fingerprint == null) return const <DjWaveformChunk>[];
     final identity = DjWaveformIdentity(
       songId: song.id,
-      analysisVersion: DjAnalysis.currentVersion,
+      analysisVersion: (analysis?.analysisVersion ?? 0) > 0
+          ? analysis!.analysisVersion
+          : DjAnalysis.currentVersion,
       sourceFingerprint: fingerprint,
       durationMs: durationMs,
       schemaVersion: DjWaveformStoragePolicy.schemaVersion,
@@ -39,25 +45,24 @@ class DjWaveformRangeReader {
     );
   }
 
-  Future<String> _sourceFingerprint(Song song, int durationMs) async {
-    int? size;
-    try {
-      final path = song.filePath;
-      if (!path.contains('://')) {
-        final file = File(path);
-        if (await file.exists()) size = await file.length();
-      } else if (path.startsWith('file://')) {
-        final file = File(Uri.parse(path).toFilePath());
-        if (await file.exists()) size = await file.length();
-      }
-    } catch (_) {
-      // Some content providers do not expose filesystem metadata.
+  Future<String?> _sourceFingerprint(
+    String path,
+    DjAnalysis? analysis,
+  ) async {
+    if (!path.startsWith('content://')) {
+      try {
+        final localPath =
+            path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
+        final file = File(localPath);
+        if (await file.exists()) {
+          final stat = await file.stat();
+          return 'local:${file.absolute.path}:${stat.size}:${stat.modified.microsecondsSinceEpoch}';
+        }
+      } catch (_) {}
     }
-    final source = '${song.filePath}|$size|$durationMs';
-    var hash = 0x811c9dc5;
-    for (final unit in source.codeUnits) {
-      hash = ((hash ^ unit) * 0x01000193) & 0xffffffff;
-    }
-    return hash.toRadixString(16).padLeft(8, '0');
+    // Match the producer's MediaStore identity exactly. Without indexed size,
+    // the stored chunk cannot be safely associated with this source.
+    final size = analysis?.fileSizeBytes;
+    return size == null || size <= 0 ? null : 'mediastore:$path:$size';
   }
 }
