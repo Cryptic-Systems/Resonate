@@ -176,8 +176,15 @@ class DjModeProvider extends ChangeNotifier {
     if (!_loaded || music.isPlaying) return;
     // One resumable pass covers the complete library. Each completed track is
     // persisted before advancing, so a process stop resumes by skipping it.
-    unawaited(_idle.startIfNeeded(maxSongs: 1 << 30));
+    unawaited(_idle.startIfNeeded(
+      maxSongs: 1 << 30,
+      maxWaveformChunks: 2,
+      isStillIdle: _isAnalysisStillIdle,
+    ));
   }
+
+  bool _isAnalysisStillIdle() =>
+      !music.isPlaying && !music.transitionInProgress;
 
   /// Called by app lifecycle and audio-route events. Work is intentionally
   /// small and rate-limited so unlock/BT event bursts do not start many scans.
@@ -194,7 +201,11 @@ class DjModeProvider extends ChangeNotifier {
         outcome: 'scheduled',
         reason: reason,
       ));
-      unawaited(_idle.startIfNeeded(maxSongs: 1 << 30));
+      unawaited(_idle.startIfNeeded(
+        maxSongs: 1 << 30,
+        maxWaveformChunks: 2,
+        isStillIdle: _isAnalysisStillIdle,
+      ));
     });
   }
 
@@ -220,6 +231,10 @@ class DjModeProvider extends ChangeNotifier {
 
   /// Manual trigger from settings / diagnostics.
   Future<void> runIdleScanNow({int maxSongs = 1 << 30}) async {
-    await _idle.startIfNeeded(maxSongs: maxSongs);
+    await _idle.startIfNeeded(
+      maxSongs: maxSongs,
+      maxWaveformChunks: 2,
+      isStillIdle: _isAnalysisStillIdle,
+    );
   }
 }
