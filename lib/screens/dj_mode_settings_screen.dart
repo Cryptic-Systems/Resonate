@@ -49,9 +49,9 @@ class DjModeSettingsScreen extends StatelessWidget {
                     Icons.headphones_rounded,
                     color: on ? scheme.primary : null,
                   ),
-                  title: const Text(
+                  title: Text(
                     playerFacing ? 'Automatic mixing' : 'DJ Mode',
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   subtitle: Text(
                     on
