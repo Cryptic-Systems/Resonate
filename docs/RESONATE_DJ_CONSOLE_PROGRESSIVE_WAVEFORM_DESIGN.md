@@ -1,6 +1,6 @@
 # Resonate DJ Console — Progressive Full-Track Waveform Design
 
-**Status:** Phases A–C CI-green (Phase C validated by CI #2590); Phase D idle producer integration implemented, CI validation pending; lifecycle gate, LRU and retention remain open  
+**Status:** Phases A–C CI-green (Phase C validated by CI #2590); Phase D idle producer integration, foreground lifecycle gate and bounded LRU implemented; retention remains open pending CI  
 **Target branch:** `dj-workspace-development`  
 **Scope:** Offline DJ analysis and Console presentation only
 
@@ -152,12 +152,12 @@ A blank region means unknown/unmeasured, not silence. Zero-height measured peaks
 
 **Implementation order and current progress:**
 1. [x] Integrate the chunk producer into the existing serial idle loop. The waveform pass runs only after the profile pass, shares the same idle invocation, and is globally capped at two chunks per opportunity (caller cap; producer hard cap remains four). Completed chunk indices are skipped on subsequent opportunities, so progress resumes without re-decoding committed chunks. Playback and transition state are re-checked between jobs; `stop()` invalidates both profile and chunk work.
-2. [ ] Add lifecycle foreground gating only after identifying the app's authoritative lifecycle owner; do not infer foreground state from Console visibility.
-3. [ ] Implement a small LRU for queried peak chunks, bounded by both count and bytes; persisted SQLite rows remain authoritative.
+2. [x] Add lifecycle foreground gating using `_LifecycleHome` in `lib/main.dart`, the existing `WidgetsBindingObserver`. `DjModeProvider` starts idle work only while the app is resumed; paused, inactive, hidden or detached states cancel pending opportunities and invalidate active analysis. Console visibility is not used as a foreground signal.
+3. [x] Implement a read-through LRU for queried peak chunks in `DjWaveformChunkLru`, keyed by song, analysis version, source fingerprint, duration, schema and chunk index. It is bounded by 96 chunks and 256 KiB; it serves a range from memory only when every chunk index in the bounded visible-plus-overscan interval is cached. SQLite remains authoritative whenever coverage is incomplete. Cache unit tests cover LRU ordering, both budgets, identity isolation and clear.
 4. [ ] Add transactional per-track/global retention with tests proving only waveform rows are evicted.
 5. [~] Record per-invocation processed chunk count, remaining budget and final idle-predicate state. More detailed eligibility, cancellation, budget-exhaustion and retention events remain to be added.
 
-**Current checkpoint:** implementation commits `2ecd115e11e3d22a3e35463e6aaafee5a7740fb3`, `b8a69379a74c618ecee4eb4cb71ee2908af3a4b0` and `57177e849eadbb8e48da02018e6554985909394f`. CI #2593 was triggered for the integrated code and is pending. The per-opportunity budget is two chunks across the whole library, not two chunks per track. If playback/transition begins during a decode, the live predicate rejects the result after the decoder settles; no subsequent chunk is started. Native cancellation remains cooperative and does not interrupt an in-flight codec call.
+**Current checkpoint:** idle integration commits `2ecd115e11e3d22a3e35463e6aaafee5a7740fb3`, `b8a69379a74c618ecee4eb4cb71ee2908af3a4b0` and `57177e849eadbb8e48da02018e6554985909394f`; foreground gate commits `48eec0a559446ae13afa59f3818fa1a87296e82a` and `64d8437ccc810d62c4c274fdd5a255e9eca2b063`; LRU commits `27d8f81520c21cbb606583d5f28b3724620a7c8d`, `238e3102f3445d368eac0d7004d49716308b2d1a` and `dd11dad4aad71cc9936d13b2db5527e7e3950bc3`. CI #2593 was cancelled before validation began; the latest combined lifecycle/cache code now requires a fresh complete run. The per-opportunity budget is two chunks across the whole library, not two chunks per track. If playback/transition begins during a decode, the live predicate rejects the result after the decoder settles; no subsequent chunk is started. Native cancellation remains cooperative and does not interrupt an in-flight codec call.
 
 **Gate:** CI must pass, diagnostics must prove serial idle work and bounded resource use, and user device testing must confirm no playback impact. No waveform analysis may start on Console open or while playback/transition is active.
 
