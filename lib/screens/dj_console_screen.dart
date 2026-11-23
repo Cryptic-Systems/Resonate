@@ -145,7 +145,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                       children: [
                         _ConsoleStatus(label: song == null ? 'NO ACTIVE TRACK' : 'MEDIA3 SESSION', active: song != null),
                         const SizedBox(width: 8),
-                        const _ConsoleStatus(label: 'PERFORMANCE CONTROLS LOCKED', active: false),
+                        const _ConsoleStatus(label: 'MANUAL DECK B ENABLED · JOG / FADER LOCKED', active: true),
                         const Spacer(),
                         Text('RESONATE  /  TWO-DECK SYSTEM',
                             style: theme.textTheme.labelSmall?.copyWith(
@@ -253,8 +253,8 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                             color: theme.colorScheme.onSurfaceVariant),
                         const SizedBox(width: 7),
                         Expanded(child: Text(
-                          'Visual foundation only. Deck B, track waveforms, cueing, jog and mixer actions '
-                          'will activate only when backed by verified Media3 capabilities.',
+                          'Manual Deck B preparation, cueing and equal-power handoff are enabled. '
+                          'Jog/scratch and continuous mixer controls remain locked pending native support.',
                           maxLines: 2, overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant),
