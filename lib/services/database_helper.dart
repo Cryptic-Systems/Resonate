@@ -503,9 +503,9 @@ class DatabaseHelper {
             peaks: peaks,
             completedAt: DateTime.tryParse(row['completed_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
           );
+          // Keep the selected overscan chunks. The SQL index window is
+          // already bounded to the requested range plus the policy cap.
           if (identity.matches(chunk, expectedSchemaVersion: identity.schemaVersion) &&
-              chunk.requestedEndMs > boundedStart &&
-              chunk.requestedStartMs < boundedEnd &&
               const DjWaveformStoragePolicy().isValidChunk(chunk)) {
             chunks.add(chunk);
           }
