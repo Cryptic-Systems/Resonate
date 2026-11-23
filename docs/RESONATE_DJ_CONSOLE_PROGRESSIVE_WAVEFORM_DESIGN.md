@@ -1,6 +1,6 @@
 # Resonate DJ Console — Progressive Full-Track Waveform Design
 
-**Status:** Phase A storage foundations and SQLite integration coverage implemented; CI #2535 passed  
+**Status:** Phases A and B implemented and CI-green (CI #2566); Phase C range-query and initial Console rendering foundation implemented, awaiting CI and expanded widget coverage  
 **Target branch:** `dj-workspace-development`  
 **Scope:** Offline DJ analysis and Console presentation only
 
@@ -120,18 +120,22 @@ A blank region means unknown/unmeasured, not silence. Zero-height measured peaks
 **Gate:** no decoder integration until the focused integration suite and the full CI workflow pass. Device validation is not part of this database-only phase.
 
 ### Phase B — chunk extraction and resumability
-- Extract one chunk at a time using the existing PCM decoder.
-- Convert and persist immediately; drop PCM before the next chunk.
-- Resume only missing chunks; stop cleanly between chunks.
-- Test non-zero offsets, decoder preroll, short final chunks, failed seeks, malformed PCM, cancellation and process interruption.
+- [x] Extract one chunk at a time using the existing PCM decoder.
+- [x] Convert and persist immediately; drop PCM before the next chunk.
+- [x] Resume only missing chunks; stop cleanly between chunks.
+- [x] Test non-zero offsets, decoder preroll, short final chunks, failed seeks, malformed PCM, cancellation and process interruption.
+
+**Implementation checkpoint:** `DjWaveformChunkService` is serial, budgeted and explicitly invoked with an eligibility predicate; it does not schedule itself or run when Console opens. The source identity is rechecked before persistence, cancellation is generation-fenced, and SQLite rolls back a chunk plus manifest update if cancellation occurs during the transaction. Decoder coverage must fully cover the requested interval before a manifest index is committed. CI #2566 passed on commit `b88db82936675f6835f240a2265dc1ab6cf9ad47`. Device codec coverage and real-device resource impact remain unverified.
 
 **Gate:** memory bound is demonstrable from code and tests; no concurrent decode; no playback code touched.
 
 ### Phase C — range query and progressive Console rendering
-- Add visible-range chunk queries with bounded overscan.
-- Render actual intervals progressively and preserve gaps.
-- Fence updates by song identity and physical active-deck identity.
-- Add widget tests for loading, partial, complete, stale and unsupported states.
+- [x] Add visible-range chunk queries with bounded overscan (hard cap: 96 returned chunks / 256 KiB cache budget).
+- [x] Render persisted measured chunk intervals in the active verified deck; preserve blank gaps and retain legacy sparse-profile fallback.
+- [x] Fence async waveform snapshots by song ID, duration, source path and active physical-deck mapping.
+- [ ] Add widget tests for loading, partial, complete, stale and unsupported states.
+
+**Current UI scope:** the existing full-track overview requests the track timeline as its visible range; the DB query returns no more than 96 chunks and does not decode or schedule analysis. Tracks exceeding that query window may show blank later regions until a true scroll/zoom viewport is introduced. The 96-chunk query cap bounds returned peak data to the existing cache budget. Phase C remains open until widget-state coverage and CI are green.
 
 **Gate:** UI never displays a chunk for the wrong song/deck and does not cause analysis to start.
 
