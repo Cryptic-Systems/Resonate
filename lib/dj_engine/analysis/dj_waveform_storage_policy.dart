@@ -31,8 +31,10 @@ class DjWaveformStoragePolicy {
         chunk.peaks.length > maxPeaksPerChunk) {
       return false;
     }
-    if (chunk.actualEndMs <= chunk.requestedStartMs ||
-        chunk.actualStartMs >= chunk.requestedEndMs) {
+    // A manifest completion index means the entire requested interval is
+    // represented. Mere overlap is insufficient and would make gaps permanent.
+    if (chunk.actualStartMs > chunk.requestedStartMs ||
+        chunk.actualEndMs < chunk.requestedEndMs) {
       return false;
     }
     return chunk.peaks.every(
