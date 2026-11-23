@@ -389,6 +389,71 @@ extension MusicProviderDjHandoff on MusicProvider {
     if (!_disposed) notifyListeners();
   }
 
+  /// Applies atomic active/standby speed and pitch only while the operator
+  /// still owns the prepared-deck lease. The UI must never call the session
+  /// capability directly; this is the single-writer gate for manual tempo.
+  ///
+  /// Logical active/standby factors are applied to the verified native player
+  /// roles. The method deliberately refuses transitions and stale queue maps.
+  Future<void> setPreparedManualDjDeckParameters({
+    required double activeSpeed,
+    required double activePitch,
+    required double standbySpeed,
+    required double standbyPitch,
+  }) async {
+    final session = _media3ProviderSession;
+    final prepared = _manualDjPreparedDeck;
+    final lease = _manualDjPreparedLease;
+    if (session == null ||
+        session is! PlaybackDeckParametersSession ||
+        !_media3ProviderSessionActive ||
+        prepared == null ||
+        lease == null ||
+        !lease.isCurrent ||
+        !_manualDjPreparedDeckIsCurrent(session, prepared) ||
+        !session.isPlaying ||
+        session.crossfadeStatus != 'ready' ||
+        _crossfadeInProgress ||
+        _automaticCrossfadeInFlight) {
+      throw StateError(
+        'Manual tempo is unavailable until Deck B is prepared and playback is idle between transitions.',
+      );
+    }
+    if (!lease.authorizeWrite('dj_manual_deck_playback_parameters')) {
+      throw StateError('Manual DJ lease expired before tempo update.');
+    }
+    await (session as PlaybackDeckParametersSession)
+        .setDeckPlaybackParameters(
+      activeSpeed: activeSpeed,
+      activePitch: activePitch,
+      standbySpeed: standbySpeed,
+      standbyPitch: standbyPitch,
+    );
+    // A user transport command may preempt this lease while the native
+    // MethodChannel call is in flight. Never report the write as committed
+    // after ownership or queue identity has changed.
+    if (!lease.isCurrent ||
+        !identical(_manualDjPreparedLease, lease) ||
+        !identical(_manualDjPreparedDeck, prepared) ||
+        !_manualDjPreparedDeckIsCurrent(session, prepared)) {
+      throw StateError('Manual tempo update was superseded by playback authority or queue change.');
+    }
+    await ResonateDiagnostics.recordDj(
+      stage: 'manual_deck_parameters',
+      outcome: 'applied',
+      reason: 'operator_requested',
+      songId: prepared.incomingSong.id,
+      extra: {
+        'outgoingQueueIndex': prepared.outgoingQueueIndex,
+        'incomingQueueIndex': prepared.incomingQueueIndex,
+        'activeSpeed': activeSpeed,
+        'activePitch': activePitch,
+        'standbySpeed': standbySpeed,
+        'standbyPitch': standbyPitch,
+      },
+    );
+  }
+
   Future<void> cuePreparedManualDjDeck(Duration position) async {
     if (position < Duration.zero) {
       throw ArgumentError.value(position, 'position', 'Must not be negative.');
