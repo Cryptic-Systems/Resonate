@@ -1,6 +1,6 @@
 # Resonate Two-Experience Architecture and Migration Blueprint
 
-**Status:** Phase 0 repository audit completed; architecture blueprint for review  
+**Status:** Phase 0 repository audit completed; dual-deck direction approved  
 **Audited branch:** `dj-workspace-development`  
 **Audited commit:** `dad53206153a5f537a4e40c66b91d9099c6c9df8`  
 **Production branch:** `Resonate-True-Apk` (out of scope; do not modify)  
@@ -113,7 +113,7 @@ The existing `DjModeProvider` is also not the top-level selector. It is an optio
 
 ## 4. Critical deck-lifecycle finding
 
-The current native Media3 implementation has a canonical active player and a muted standby player. The current manual DJ provider API is specifically an incoming-deck handoff API:
+The current native Media3 implementation has two physical ExoPlayer objects, but its production contract is currently a canonical active player plus a muted standby player. The current manual DJ provider API is specifically an incoming-deck handoff API:
 
 - it requires an active Media3 provider session;
 - it requires the outgoing deck to be playing;
@@ -133,9 +133,45 @@ Therefore, independent DJ startup is a real gap. It is not evidence that another
 5. Define what promotion means for the session queue and how the next standby is selected.
 6. Keep MediaSession, MusicProvider state, physical deck identity and DSP routing synchronized through promotion.
 7. Ensure a fresh DJ session cannot overwrite the saved Resonate Player queue. Use a session-level DJ set/queue snapshot or a carefully designed queue-context boundary; do not create a second playback engine or library database.
-8. Do not expose independent Play, channel gain or scratch controls unless the native semantics are explicitly implemented and validated. The existing standby is not an independently audible channel outside the native crossfade envelope.
+8. The approved product target is independent dual-deck performance, not just incoming-track handoff. Do not expose independent Play, pause, channel gain, crossfader, cue-monitoring or scratch controls until their native semantics are explicitly implemented and validated. The existing standby is not yet an independently audible channel outside the native crossfade envelope. Scratching remains a separate capability requiring its own validated low-latency control path.
 
-A focused native/API spike should establish whether the current service's standby preparation can safely accept an independently selected MediaItem/queue occurrence without changing the active Player queue. Prefer a narrow extension of the existing Media3 service and bridge. Do not add another ExoPlayer service, MediaSession, audio focus owner or DSP chain.
+A focused native/API spike must establish whether the existing two physical players can be evolved into independently controlled, concurrently audible deck channels while retaining a single app output policy and safe DSP routing. It must also establish whether independently selected MediaItems can be loaded without changing the Player queue. Prefer a narrow extension of the existing Media3 service and bridge. Do not add another ExoPlayer service, MediaSession, audio focus owner or DSP chain.
+
+## 4.1 Approved performance target: traditional dual-deck DJ operation
+
+**Decision: Resonatix DJ is designed toward a traditional, independently operable two-deck performance model.** The current active-plus-muted-standby handoff behavior is not the final product boundary.
+
+The intended operator capabilities are:
+
+- Load or replace either physical deck independently from the integrated library.
+- Start, pause, seek/cue and prepare each deck independently.
+- Keep both decks running simultaneously when the operator chooses.
+- Control each deck's tempo/playback parameters independently within validated limits.
+- Apply independent channel/deck gain and a shared crossfader/master mix.
+- Prelisten/cue only if a safe, explicitly designed monitoring route is available; do not silently route cue audio to the master output.
+- Keep track identity, position, readiness, buffering, errors and physical deck roles independently observable.
+- Preserve one shared output/audio platform, system audio focus ownership and app-level master output policy.
+
+### Reuse-first implementation constraint
+
+The repository already has two physical ExoPlayer deck objects in the existing Media3 service lifecycle: one canonical active player and a second player currently used as muted standby. The approved direction is to investigate and evolve those existing physical deck players and their service/bridge APIs. It is **not** approval to instantiate another ExoPlayer, MediaSession, Media3 service, DSP engine, audio-focus owner or playback arbiter.
+
+The fact that two ExoPlayer objects exist does not prove they are already independent DJ channels. Current standby semantics, queue ownership, audio-session routing, DSP sink attachment, gain handling and promotion logic must be audited before exposing dual-deck controls.
+
+### Required technical design spike
+
+Before changing the current native deck lifecycle, document and test:
+
+1. Whether both existing ExoPlayer instances can render concurrently through the current Android output path without unexpected audio-focus, session or latency behavior.
+2. How the current DSP sink is attached and whether it processes both physical deck outputs. Do not claim per-deck DSP simply because two deck players exist.
+3. A single authoritative mix/gain path for per-deck gain, crossfader curve and master output. Avoid competing Flutter/native gain writers; native Media3/mixer policy remains authoritative.
+4. Per-deck transport and playback-parameter commands, including serialization, stale-command fencing and lease authorization.
+5. Independent deck media-item/queue ownership and stable occurrence identity, without overwriting the Resonate Player queue.
+6. Audio-session IDs, effects routing, Bluetooth/device changes, focus loss, interruptions, notification/system transport semantics and recovery when one deck fails.
+7. Crossfader behavior when one deck is stopped, buffering, unprepared or revoked; no unexpected gain jumps or audible standby leakage.
+8. Whether the existing DSP architecture can safely support the desired two-channel signal path. If a genuine limitation is found, propose the smallest safe extension to the existing DSP/output path. Do not create a parallel DSP engine.
+
+Until this spike proves the required behavior, the current muted-standby crossfade remains the only validated behavior. The product target is traditional dual-deck operation, but UI controls must not claim capabilities before native behavior and DSP routing are implemented and tested.
 
 ## 5. Target application architecture
 
@@ -230,10 +266,10 @@ Create dedicated DJ navigation and connect existing library/playlist/analysis pr
 
 Acceptance: DJ shell can browse the existing library and choose a target deck without entering the Player experience. No duplicate library database/scanner/permission flow.
 
-### Phase 4 — independent empty-session deck lifecycle
-Extend the existing Media3 service/bridge/provider contract to support initial Deck A and standby Deck B preparation from an empty DJ session. Resolve session queue isolation and occurrence mapping before implementation.
+### Phase 4 — independent dual-deck lifecycle and mix path
+First complete the native/API design spike. Then evolve the existing two physical Media3 deck players and existing DSP/output path to support independent deck loading, transport and concurrent audibility, with one shared crossfader/master mix policy. Resolve session queue isolation and occurrence mapping before implementation. Do not create a new player or audio engine.
 
-Acceptance: empty launch; load A without autoplay; load B without normal Player playback; standby muted/no focus; explicit start; promotion; cancellation; replacement; repeat occurrences; state/DSP routing; no Player queue corruption; all cleanup paths tested.
+Acceptance: empty launch; independently load/replace/unload A and B; independent start/pause/seek/cue/tempo; verified simultaneous playback; independent channel gains; tested crossfader curve and master output; correct focus/session/effects behavior; safe single-deck and dual-deck recovery; state/DSP routing for both physical decks; no Player queue corruption; stale-command and lease tests; all cleanup paths tested. Standby mute remains enforced whenever a deck is in a prepared-but-not-playing state.
 
 ### Phase 5 — three-level DJ automation
 Add the missing automation-level policy to existing DJ state/orchestration. Reuse DJ planner, risk engine, analysis and Media3 transition APIs. Keep Intelligence Autopilot separate.
@@ -275,4 +311,4 @@ This migration must not:
 
 The repository already contains the shared audio foundation, DJ intelligence, analysis, library, Workspace, Console and manual handoff mechanisms. The architecture split should be implemented by adding the missing top-level experience lifecycle and the missing empty-session DJ deck workflow, then adapting existing screens and settings.
 
-**The next implementation gate is Phase 1.** Before coding, review this blueprint—especially the distinction between the current muted-standby crossfade model and a fully independent DJ mixer, and the strategy for preserving the Player queue while a DJ performance session is active.
+**The next implementation gate is Phase 1.** The traditional dual-deck performance target is approved. Before Phase 4 implementation, the native/API spike must prove how the existing two physical deck players, DSP signal path and output mixing can safely deliver that target. The queue-isolation strategy must also be settled so a DJ performance session cannot corrupt the saved Resonate Player queue.
