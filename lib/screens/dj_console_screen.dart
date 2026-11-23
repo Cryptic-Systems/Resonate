@@ -112,7 +112,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                           )),
                           SizedBox(width: compact ? 8 : 12),
                           SizedBox(
-                            width: compact ? 132 : 190,
+                            width: compact ? 112 : 190,
                             child: _ConsoleMixer(compact: compact),
                           ),
                           SizedBox(width: compact ? 8 : 12),
@@ -214,7 +214,10 @@ class _ConsoleDeck extends StatelessWidget {
               child: AspectRatio(
                 aspectRatio: 1,
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 210, maxHeight: 210),
+                  constraints: BoxConstraints(
+                    maxWidth: compact ? 250 : 290,
+                    maxHeight: compact ? 250 : 290,
+                  ),
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
@@ -228,18 +231,19 @@ class _ConsoleDeck extends StatelessWidget {
                       )),
                       for (var i = 0; i < 3; i++)
                         Container(
-                          width: 150.0 - i * 30, height: 150.0 - i * 30,
+                          width: (compact ? 184.0 : 210.0) - i * (compact ? 32.0 : 36.0),
+                          height: (compact ? 184.0 : 210.0) - i * (compact ? 32.0 : 36.0),
                           decoration: BoxDecoration(shape: BoxShape.circle,
                             border: Border.all(color: Colors.white.withValues(alpha: .07))),
                         ),
                       Container(
-                        width: 58, height: 58,
+                        width: 76, height: 76,
                         decoration: BoxDecoration(shape: BoxShape.circle,
                           color: const Color(0xFF182431),
                           border: Border.all(color: accent.withValues(alpha: .7), width: 2)),
-                        child: Icon(Icons.album, color: accent, size: 30),
+                        child: Icon(Icons.album, color: accent, size: 38),
                       ),
-                      Positioned(bottom: 12, child: Text('PLATTER',
+                      Positioned(bottom: 15, child: Text('PLATTER',
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: Colors.white38, letterSpacing: 2))),
                     ],

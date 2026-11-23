@@ -631,6 +631,42 @@ TEST(auto_gain_rms) {
 }
 
 
+TEST(auto_gain_peak_headroom_guard) {
+    DspEngine* eng = create_engine();
+    EXPECT_TRUE(eng != nullptr);
+    EXPECT_EQ(dsp_eq_enable(eng, 0), DSP_OK);
+    EXPECT_EQ(dsp_auto_gain_set_target_rms_db(eng, -18.f), DSP_OK);
+    EXPECT_EQ(dsp_auto_gain_set_max_boost_db(eng, 12.f), DSP_OK);
+    EXPECT_EQ(dsp_auto_gain_set_max_cut_db(eng, 12.f), DSP_OK);
+    EXPECT_EQ(dsp_auto_gain_set_window_ms(eng, 200.f), DSP_OK);
+    EXPECT_EQ(dsp_auto_gain_enable(eng, 1), DSP_OK);
+
+    constexpr int frames = 512;
+    std::vector<float> quiet(frames * 2), loud(frames * 2, 0.95f);
+    std::vector<float> out(frames * 2, 0.f);
+    for (int i = 0; i < frames; ++i) {
+        const float s = 0.05f * std::sin(2.f * 3.14159265f * 440.f * i / 48000.f);
+        quiet[i * 2] = s;
+        quiet[i * 2 + 1] = s;
+    }
+
+    for (int n = 0; n < 120; ++n)
+        EXPECT_EQ(dsp_process(eng, quiet.data(), out.data(), frames), DSP_OK);
+    const float learned_boost = dsp_auto_gain_get_applied_db(eng);
+    EXPECT_GT(learned_boost, 1.f);
+
+    /* A sudden near-full-scale block must clamp an already accumulated boost
+       against the current block's peak before the DVC stage. */
+    EXPECT_EQ(dsp_process(eng, loud.data(), out.data(), frames), DSP_OK);
+    const float guarded_gain = dsp_auto_gain_get_applied_db(eng);
+    EXPECT_TRUE(std::isfinite(guarded_gain));
+    EXPECT_LT(guarded_gain, 0.f);
+    for (float sample : out) EXPECT_TRUE(std::isfinite(sample));
+
+    dsp_destroy(eng);
+}
+
+
 TEST(auto_gain_does_not_learn_sustained_silence) {
     DspEngine* eng = create_engine();
     EXPECT_EQ(dsp_auto_gain_set_target_rms_db(eng, -18.f), DSP_OK);

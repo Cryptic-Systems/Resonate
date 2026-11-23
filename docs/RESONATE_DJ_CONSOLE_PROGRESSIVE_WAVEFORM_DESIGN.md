@@ -1,6 +1,6 @@
 # Resonate DJ Console — Progressive Full-Track Waveform Design
 
-**Status:** Phase A storage foundations and SQLite integration coverage implemented; CI validation pending  
+**Status:** Phase A storage foundations and SQLite integration coverage implemented; CI #2535 passed  
 **Target branch:** `dj-workspace-development`  
 **Scope:** Offline DJ analysis and Console presentation only
 

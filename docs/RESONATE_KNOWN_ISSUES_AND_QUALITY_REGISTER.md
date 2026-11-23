@@ -279,3 +279,14 @@ The landscape DJ Console visual foundation may proceed in parallel with playback
 These deferred items remain in the register and must not be opportunistically changed during today's work. If DSP investigation touches a shared path, make only the minimum isolated change required for the DSP objective, preserve existing Media3 ownership and playback-arbiter behavior, and stop rather than broaden scope if a safe boundary cannot be established.
 
 **Risk policy:** no speculative real-time threading/lock-free changes, no second playback path, no standby audio-focus changes, no changes to production branch, and no merging PR #221. Every implementation change requires focused tests and CI; device-only behavior must remain explicitly unverified until tested on hardware.
+
+
+## 2026-11-23 field diagnostics and follow-up
+
+The 2026-11-23 release diagnostics session recorded 2,474 events with no crashes and no dropped events. It contained 10 Media3 crossfade starts, 9 successful commits and one timeout fallback (the incoming deck was not promoted before timeout). One audio underrun was recorded on Deck A with a 750 ms buffer and 189 ms since last feed; crossfade status was idle and progress was zero, so this event does not explain the user's reported crackling during complex transitions. Eleven gain-discontinuity events were emitted: most coincide with completed deck-role promotion, while one was emitted during a fade at 65.5% progress. The monitor therefore needs physical-deck-stable correlation before any of these are treated as audible discontinuities.
+
+The report does not include per-block auto-gain applied dB, pre-DVC peak, short-term RMS trajectory or limiter gain-reduction values. It cannot identify the exact track passage or prove the cause of the user's brief distortion. The next DSP change adds a current-block post-EQ/effects/pre-DVC peak guard to auto-gain so the correction is constrained by actual current-block peak headroom rather than relying only on the prior block's headroom meter. A focused native regression test covers a quiet passage accumulating gain followed by a sudden near-full-scale block. This is a bounded safety measure, not a claim that the full crackling or ducking issue is resolved.
+
+The same report records 37 accepted playback commands, five provider play commits, five canonical-only pause events and no crashes. The pause-button synchronization delay after library selection remains a separate UI-state issue; it is not folded into DSP or Console work.
+
+The DJ Console platter presentation is being enlarged and given more visual priority. This remains a visual-only change: jog/scratch transport behavior, cueing, pitch and mixer writes remain locked until their native Media3/DSP contracts are ready.

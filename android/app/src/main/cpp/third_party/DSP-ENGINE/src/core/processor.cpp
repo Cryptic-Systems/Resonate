@@ -815,13 +815,18 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
     }
 
     /* Short-term RMS (mean-square one-pole) on pre-DVC signal. */
+    float pre_dvc_peak = 0.f;
     {
         double block_ms = 0.0;
         const int n = frames * ch;
         for (int c = 0; c < ch; ++c)
             for (int i = 0; i < frames; ++i) {
-                double x = static_cast<double>(eng->temp[c][i]);
-                block_ms += x * x;
+                const float x = static_cast<float>(eng->temp[c][i]);
+                block_ms += static_cast<double>(x) * x;
+                if (eng->auto_gain_enabled) {
+                    const float ax = std::fabs(x);
+                    if (ax > pre_dvc_peak) pre_dvc_peak = ax;
+                }
             }
         block_ms /= std::max(1, n);
         const double win_sec = std::max(0.05, eng->auto_gain_window_ms * 0.001);
@@ -831,6 +836,9 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
         const double rms = std::sqrt(std::max(1e-30, eng->rms_env_ms));
         eng->meter_short_term_rms_db = dsp::linear_to_db_f(static_cast<float>(rms));
     }
+    const float pre_dvc_peak_db = eng->auto_gain_enabled
+        ? dsp::linear_to_db_f(pre_dvc_peak)
+        : -120.f;
 
     /* Silence hygiene: decay applied boosts across gaps. */
     if (eng->silence_hygiene) {
@@ -863,6 +871,16 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
         if (err > eng->auto_gain_max_boost_db) err = eng->auto_gain_max_boost_db;
         if (err < -eng->auto_gain_max_cut_db) err = -eng->auto_gain_max_cut_db;
         if (err > gain_share) err = gain_share;
+        /* Feed-forward peak guard: use this block's post-EQ/effects/pre-DVC
+           peak, not the previous block's headroom meter. Reserve 3 dB for
+           inter-sample peaks and downstream tolerance so RMS recovery cannot
+           build gain that a dense transient immediately forces the limiter to
+           remove. Keep the DVC's own smoothing for the resulting gain change. */
+        const float peak_headroom_db = eng->limiter_ceiling_db
+            - 3.f - pre_dvc_peak_db;
+        if (err > peak_headroom_db) err = peak_headroom_db;
+        if (eng->auto_gain_applied_db > peak_headroom_db)
+            eng->auto_gain_applied_db = peak_headroom_db;
         if (err > 24.f) err = 24.f;
         if (err < -24.f) err = -24.f;
         eng->auto_gain_applied_db += eng->auto_gain_smooth
