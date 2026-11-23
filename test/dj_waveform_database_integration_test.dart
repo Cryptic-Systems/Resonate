@@ -260,4 +260,75 @@ void main() {
       throwsA(isA<DatabaseException>()),
     );
   });
+
+  test('visible-range query returns only intersecting chunks plus bounded overscan', () async {
+    await db.insert('songs', {
+      'id': 'song-range',
+      'title': 'Range query',
+      'file_path': '/range.mp3',
+    });
+    const identity = DjWaveformIdentity(
+      songId: 'song-range',
+      analysisVersion: 3,
+      sourceFingerprint: 'range-fingerprint',
+      durationMs: 24000,
+      schemaVersion: 1,
+    );
+    await helper.prepareDjWaveformManifest(identity: identity, expectedChunkCount: 3);
+    for (var index = 0; index < 3; index++) {
+      final start = index * 8000;
+      await helper.upsertDjWaveformChunk(
+        chunk: DjWaveformChunk(
+          songId: identity.songId,
+          analysisVersion: identity.analysisVersion,
+          chunkIndex: index,
+          requestedStartMs: start,
+          requestedEndMs: start + 8000,
+          actualStartMs: start,
+          actualEndMs: start + 8000,
+          sourceFingerprint: identity.sourceFingerprint,
+          durationMs: identity.durationMs,
+          schemaVersion: identity.schemaVersion,
+          sampleRate: 44100,
+          channels: 2,
+          peaks: [0.1 * (index + 1), 0.2],
+          completedAt: DateTime.utc(2026, 11, 23),
+        ),
+        expectedChunkCount: 3,
+      );
+    }
+
+    final exact = await helper.getDjWaveformChunksInRange(
+      identity: identity,
+      startMs: 8000,
+      endMs: 16000,
+      overscanChunks: 0,
+    );
+    expect(exact.map((chunk) => chunk.chunkIndex), [1]);
+
+    final overscanned = await helper.getDjWaveformChunksInRange(
+      identity: identity,
+      startMs: 8000,
+      endMs: 16000,
+      overscanChunks: 99,
+    );
+    expect(overscanned.map((chunk) => chunk.chunkIndex), [0, 1, 2]);
+
+    const staleIdentity = DjWaveformIdentity(
+      songId: 'song-range',
+      analysisVersion: 3,
+      sourceFingerprint: 'different-source',
+      durationMs: 24000,
+      schemaVersion: 1,
+    );
+    expect(
+      await helper.getDjWaveformChunksInRange(
+        identity: staleIdentity,
+        startMs: 8000,
+        endMs: 16000,
+      ),
+      isEmpty,
+    );
+  });
+
 }
