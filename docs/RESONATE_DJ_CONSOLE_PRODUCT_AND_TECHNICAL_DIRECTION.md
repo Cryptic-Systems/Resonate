@@ -250,3 +250,8 @@ The standard player remains familiar. DJ Workspace remains valuable as the overv
 ---
 
 **Implementation note:** This document records product direction and technical constraints. It does not claim that the proposed Console UI, waveform pipeline, jog behavior, mixer semantics or performance controls have already been implemented. Each capability must be validated against the current native and DSP contracts before being exposed.
+
+## 2026-11-23 — active platter motion (visual-only)
+
+The Console platters now rotate at an approximately 33⅓ RPM presentation rate only when the canonical player state reports playback and the corresponding physical deck is verified as active. They stop when playback pauses or the deck is no longer active, and reset their visual phase when the verified song identity changes. This is a visual status cue only: it does not expose touch/jog input, alter playback speed, seek, cue, or write transport state. Standby and identity-unknown decks remain stationary. Physical-device review is still required for visual smoothness and compact landscape sizing.
+
