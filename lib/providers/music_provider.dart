@@ -135,6 +135,9 @@ class MusicProvider extends ChangeNotifier {
       _manualDjPreparedDeck != null &&
       _manualDjPreparedLease != null &&
       _manualDjPreparedLease!.isCurrent;
+  /// Returns the prepared operator deck only while its interactive lease is current.
+  ManualDjPreparedDeck? get manualDjPreparedDeck =>
+      hasPreparedManualDjDeck ? _manualDjPreparedDeck : null;
   @visibleForTesting
   bool get debugLegacyEngineConstructed => _engines != null;
   /// The exact session that owns canonical playback after provider handoff.
