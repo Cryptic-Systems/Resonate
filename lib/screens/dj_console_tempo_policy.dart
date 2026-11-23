@@ -14,7 +14,24 @@ class DjConsoleTempoParameters {
   final double pitch;
 }
 
+enum DjConsoleTempoDeckRole { active, standby, unavailable }
+
 abstract final class DjConsoleTempoPolicy {
+  /// Resolve physical A/B identity against the latest native promotion state.
+  /// Unknown IDs stay unavailable; callers must not infer a role.
+  static DjConsoleTempoDeckRole roleForPhysicalDeck({
+    required String physicalDeckId,
+    required String? activeDeckId,
+  }) {
+    if ((physicalDeckId != 'A' && physicalDeckId != 'B') ||
+        (activeDeckId != 'A' && activeDeckId != 'B')) {
+      return DjConsoleTempoDeckRole.unavailable;
+    }
+    return physicalDeckId == activeDeckId
+        ? DjConsoleTempoDeckRole.active
+        : DjConsoleTempoDeckRole.standby;
+  }
+
   static const double minPercent = -6.0;
   static const double maxPercent = 6.0;
 
