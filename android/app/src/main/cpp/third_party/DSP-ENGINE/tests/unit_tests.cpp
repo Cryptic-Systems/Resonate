@@ -661,6 +661,19 @@ TEST(auto_gain_peak_headroom_guard) {
     const float guarded_gain = dsp_auto_gain_get_applied_db(eng);
     EXPECT_TRUE(std::isfinite(guarded_gain));
     EXPECT_LT(guarded_gain, 0.f);
+
+    DspAutoGainMeter meter{};
+    EXPECT_EQ(dsp_auto_gain_get_meter(eng, &meter), DSP_OK);
+    EXPECT_TRUE(std::isfinite(meter.pre_dvc_peak_db));
+    EXPECT_TRUE(std::isfinite(meter.target_rms_db));
+    EXPECT_TRUE(std::isfinite(meter.rms_error_db));
+    EXPECT_TRUE(std::isfinite(meter.constrained_target_db));
+    EXPECT_TRUE(std::isfinite(meter.peak_gain_cap_db));
+    EXPECT_TRUE(std::isfinite(meter.applied_gain_db));
+    EXPECT_GT(meter.pre_dvc_peak_db, -1.f);
+    EXPECT_LT(meter.peak_gain_cap_db, 0.f);
+    EXPECT_EQ(meter.peak_limited, 1);
+    EXPECT_NEAR(meter.applied_gain_db, guarded_gain, 1e-4f);
     for (float sample : out) EXPECT_TRUE(std::isfinite(sample));
 
     dsp_destroy(eng);
