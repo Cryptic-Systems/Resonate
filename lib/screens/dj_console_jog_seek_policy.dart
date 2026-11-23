@@ -25,15 +25,15 @@ class DjConsoleJogSeekPolicy {
     required double deltaRadians,
     required Duration duration,
   }) {
-    final maximumMs = math.max(0, duration.inMilliseconds);
-    final safeStartMs = start.inMilliseconds.clamp(0, maximumMs);
+    final maximumMs = math.max(0, duration.inMilliseconds).toInt();
+    final safeStartMs = start.inMilliseconds.clamp(0, maximumMs).toInt();
     if (!deltaRadians.isFinite) {
       return Duration(milliseconds: safeStartMs);
     }
     final deltaMs = (deltaRadians / (math.pi * 2) *
             millisecondsPerRevolution)
         .round();
-    final targetMs = (safeStartMs + deltaMs).clamp(0, maximumMs);
+    final targetMs = (safeStartMs + deltaMs).clamp(0, maximumMs).toInt();
     return Duration(milliseconds: targetMs);
   }
 }
