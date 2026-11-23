@@ -249,7 +249,7 @@ extension MusicProviderDjHandoff on MusicProvider {
           try { await session.cancelCrossfade(); } catch (_) {}
           try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
           try {
-            await _resetManualStandbyTempo(session);
+            await _resetManualDeckParametersToUnity(session);
           } catch (_) {}
         }
         await retireStandby();
@@ -397,6 +397,28 @@ extension MusicProviderDjHandoff on MusicProvider {
     }
     await lease.release();
     if (!_disposed) notifyListeners();
+  }
+
+  /// A higher-priority user transport takes the Console tempo state out
+  /// of scope. Restore both logical decks to neutral after the transition has
+  /// been cancelled so standard playback never inherits a DJ tempo setting.
+  Future<void> _resetManualDeckParametersToUnity(
+    PlaybackEngineSession session,
+  ) async {
+    if (session is PlaybackDeckParametersSession) {
+      await (session as PlaybackDeckParametersSession)
+          .setDeckPlaybackParameters(
+        activeSpeed: 1.0,
+        activePitch: 1.0,
+        standbySpeed: 1.0,
+        standbyPitch: 1.0,
+      );
+    } else {
+      await session.setDeckPlaybackSpeeds(
+        activeSpeed: 1.0,
+        standbySpeed: 1.0,
+      );
+    }
   }
 
   /// Restore only the muted standby deck to unity while preserving the
