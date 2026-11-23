@@ -32,6 +32,7 @@ class ExperienceProvider extends ChangeNotifier {
   ResonateExperience? _selected;
   bool _isReady = false;
   Object? _loadError;
+  late final Future<void> ready;
 
   ResonateExperience? get selected => _selected;
   bool get isReady => _isReady;
@@ -39,7 +40,7 @@ class ExperienceProvider extends ChangeNotifier {
   Object? get loadError => _loadError;
 
   ExperienceProvider() {
-    unawaited(_load());
+    ready = _load();
   }
 
   Future<void> _load() async {
