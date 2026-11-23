@@ -284,6 +284,14 @@ extension MusicProviderDjHandoff on MusicProvider {
       if (session.crossfadeStatus != 'ready') {
         throw StateError('Media3 standby deck did not reach its ready state.');
       }
+      // The newly prepared standby may be the outgoing physical player
+      // from a previous handoff. Normalize only that muted deck, preserving
+      // the current on-air deck's native speed and pitch.
+      await _resetManualStandbyTempo(session);
+      if (!lease.isCurrent ||
+          !_manualDjPreparedDeckIsCurrent(session, prepared)) {
+        throw StateError('Manual DJ preparation lost authority during tempo normalization.');
+      }
       // Keep the interactive lease while the operator reviews Deck B. This
       // prevents automatic DJ work from replacing the standby occurrence.
       // User transport remains able to preempt this lease.
