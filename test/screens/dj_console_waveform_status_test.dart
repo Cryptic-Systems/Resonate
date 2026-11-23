@@ -44,14 +44,14 @@ void main() {
     testWidgets('shows partial measured coverage without implying silence',
         (tester) async {
       await tester.pumpWidget(_status(DjConsoleWaveformState.partial, count: 1));
-      expect(find.text('MEASURED PCM · 1 CHUNKS · GAPS UNANALYSED'),
+      expect(find.text('VISIBLE RANGE · 1 CHUNKS · GAPS UNANALYSED'),
           findsOneWidget);
     });
 
     testWidgets('shows full coverage only for a complete measured timeline',
         (tester) async {
       await tester.pumpWidget(_status(DjConsoleWaveformState.complete, count: 2));
-      expect(find.text('MEASURED PCM · 2 CHUNKS · FULL COVERAGE'),
+      expect(find.text('VISIBLE RANGE · 2 CHUNKS · COMPLETE'),
           findsOneWidget);
     });
 
