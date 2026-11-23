@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/song.dart';
 import 'database_helper.dart';
 import 'dj_analysis_service.dart';
+import 'dj_waveform_chunk_analysis_service.dart';
 import 'resonate_diagnostics.dart';
 
 /// Background BPM/key tag scan when DJ Mode "Analyze library when idle" is on.
@@ -18,11 +19,14 @@ class DjIdleAnalysisService {
   DjIdleAnalysisService({
     DatabaseHelper? database,
     DjAnalysisService? analysis,
+    DjWaveformChunkAnalysisService? waveformChunks,
   })  : _db = database ?? DatabaseHelper(),
-        _analysis = analysis ?? DjAnalysisService();
+        _analysis = analysis ?? DjAnalysisService(),
+        _waveformChunks = waveformChunks ?? DjWaveformChunkAnalysisService();
 
   final DatabaseHelper _db;
   final DjAnalysisService _analysis;
+  final DjWaveformChunkAnalysisService _waveformChunks;
 
   bool _running = false;
   bool _stopRequested = false;
@@ -37,7 +41,11 @@ class DjIdleAnalysisService {
   int get updated => _updated;
   int get failed => _failed;
 
-  Future<void> startIfNeeded({int maxSongs = 40}) async {
+  Future<void> startIfNeeded({
+    int maxSongs = 40,
+    int maxWaveformChunks = 2,
+    bool Function()? isStillIdle,
+  }) async {
     if (_running) return;
     _running = true;
     _stopRequested = false;
@@ -159,6 +167,30 @@ class DjIdleAnalysisService {
         // Yield to the UI and re-check stop state before the next song.
         await Future<void>.delayed(const Duration(milliseconds: 120));
       }
+      // Waveform extraction is a separate serial pass after compact profile
+      // analysis. A single idle opportunity may decode only a tiny bounded
+      // number of chunks across the entire library, never per track.
+      var waveformChunksRemaining = maxWaveformChunks.clamp(0, 4).toInt();
+      if (!_stopRequested && waveformChunksRemaining > 0) {
+        for (final song in songs) {
+          if (_stopRequested ||
+              (isStillIdle != null && !isStillIdle()) ||
+              waveformChunksRemaining <= 0) {
+            break;
+          }
+          if (song.filePath.trim().isEmpty ||
+              song.duration.inMilliseconds <= 0) {
+            continue;
+          }
+          final processed = await _waveformChunks.processMissingChunks(
+            song,
+            maxChunks: waveformChunksRemaining,
+            isStillIdle: () =>
+                !_stopRequested && (isStillIdle?.call() ?? true),
+          );
+          waveformChunksRemaining -= processed;
+        }
+      }
       await ResonateDiagnostics.recordDj(
         stage: 'idle_scan_done',
         outcome: _stopRequested ? 'stopped' : 'completed',
@@ -186,5 +218,6 @@ class DjIdleAnalysisService {
   void stop() {
     _stopRequested = true;
     _analysis.cancelCurrentAnalysis();
+    _waveformChunks.cancel();
   }
 }
