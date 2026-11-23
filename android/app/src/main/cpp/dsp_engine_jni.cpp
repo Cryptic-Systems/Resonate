@@ -772,10 +772,10 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeGetMeters(
             vals[7] = limiter.gr_peak_db;
         }
         vals[8] = dsp_auto_bass_get_applied_db(h->engine);
-        vals[9] = dsp_auto_gain_get_applied_db(h->engine);
         vals[10] = dsp_auto_preamp_get_applied_db(h->engine);
         vals[11] = dsp_auto_vb_get_applied(h->engine);
         if (dsp_auto_gain_get_meter(h->engine, &autoGain) == DSP_OK) {
+            vals[9] = autoGain.applied_gain_db;
             vals[12] = autoGain.pre_dvc_peak_db;
             vals[13] = autoGain.target_rms_db;
             vals[14] = autoGain.rms_error_db;
