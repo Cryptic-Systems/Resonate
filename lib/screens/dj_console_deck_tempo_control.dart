@@ -137,7 +137,6 @@ class _DjConsoleDeckTempoControlState
             music.isPlaying &&
             !music.transitionInProgress &&
             state?.crossfadeStatus == 'ready';
-        final label = isActive ? 'ON AIR' : 'STANDBY';
         final textStyle = theme.textTheme.labelSmall?.copyWith(
           color: Colors.white70,
           fontSize: widget.compact ? 8 : 9,
