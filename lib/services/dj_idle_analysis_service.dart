@@ -194,7 +194,9 @@ class DjIdleAnalysisService {
           waveformChunksProcessed += processed;
         }
       }
-      if (waveformChunksProcessed > 0) {
+      if (waveformChunksProcessed > 0 &&
+          !_stopRequested &&
+          (isStillIdle?.call() ?? true)) {
         waveformChunksEvicted =
             await _db.pruneDjWaveformChunks();
       }
