@@ -65,7 +65,9 @@ class DjWaveformChunkAnalysisService {
 
       final identity = DjWaveformIdentity(
         songId: song.id,
-        analysisVersion: analysis?.analysisVersion ?? DjAnalysis.currentVersion,
+        analysisVersion: (analysis?.analysisVersion ?? 0) > 0
+            ? analysis!.analysisVersion
+            : DjAnalysis.currentVersion,
         sourceFingerprint: fingerprint,
         durationMs: durationMs,
         schemaVersion: DjWaveformStoragePolicy.schemaVersion,
