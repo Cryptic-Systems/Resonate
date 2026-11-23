@@ -13,6 +13,7 @@ import '../providers/dj_mode_provider.dart';
 import '../dj_engine/core/dj_types.dart';
 import '../ui/resonate_glass.dart';
 import 'dj_console_overlay_policy.dart';
+import 'dj_console_waveform_status.dart';
 
 /// Landscape-first visual foundation for the future performance console.
 ///
@@ -383,19 +384,14 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                   final segments = measuredSegments.isNotEmpty
                       ? measuredSegments
                       : legacySegments;
-                  final label = waveformSnapshot.connectionState == ConnectionState.waiting
-                      ? 'LOADING MEASURED PCM CHUNKS'
-                      : waveformSnapshot.hasError
-                          ? 'WAVEFORM DATA UNAVAILABLE'
-                          : measuredSegments.isNotEmpty
-                              ? 'MEASURED PCM · ${measuredSegments.length} CHUNKS · GAPS UNANALYSED'
-                              : legacySegments.isNotEmpty
-                                  ? 'LEGACY SAMPLED PCM · GAPS UNANALYSED'
-                                  : profileSnapshot.connectionState == ConnectionState.waiting
-                                      ? 'LOADING CACHED DJ PROFILE'
-                                      : profile != null && verifiedProfile == null
-                                          ? 'PROFILE IDENTITY MISMATCH · HIDDEN'
-                                          : 'NO MEASURED PCM AVAILABLE';
+                  final waveformState = DjConsoleWaveformStatus.classify(
+                    snapshot: waveformSnapshot,
+                    expectedSongId: expectedSongId,
+                    durationMs: duration.inMilliseconds,
+                    legacyAvailable: legacySegments.isNotEmpty,
+                    profileLoading: profileSnapshot.connectionState == ConnectionState.waiting,
+                    profileIdentityMismatch: profile != null && verifiedProfile == null,
+                  );
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -419,13 +415,9 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                           Positioned(
                             left: 7,
                             top: 4,
-                            child: Text(
-                              label,
-                              style: const TextStyle(
-                                fontSize: 7,
-                                letterSpacing: .5,
-                                color: Colors.white70,
-                              ),
+                            child: DjConsoleWaveformStatus(
+                              state: waveformState,
+                              chunkCount: measuredSegments.length,
                             ),
                           ),
                         ]),
