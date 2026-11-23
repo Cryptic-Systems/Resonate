@@ -527,7 +527,7 @@ class DatabaseHelper {
     int maxChunks = DjWaveformStoragePolicy.maxChunksLibrary,
   }) async {
     final boundedMaximum =
-        maxChunks.clamp(0, DjWaveformStoragePolicy.maxChunksLibrary);
+        maxChunks.clamp(0, DjWaveformStoragePolicy.maxChunksLibrary).toInt();
     try {
       final db = await database;
       return await db.transaction((txn) async {
