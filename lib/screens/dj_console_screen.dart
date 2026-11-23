@@ -339,8 +339,8 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                 aspectRatio: 1,
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    maxWidth: compact ? 250 : 290,
-                    maxHeight: compact ? 250 : 290,
+                    maxWidth: compact ? 290 : 350,
+                    maxHeight: compact ? 290 : 350,
                   ),
                   child: AnimatedBuilder(
                     animation: _platterRotation,
@@ -361,19 +361,19 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                         )),
                         for (var i = 0; i < 3; i++)
                           Container(
-                            width: (compact ? 184.0 : 210.0) - i * (compact ? 32.0 : 36.0),
-                            height: (compact ? 184.0 : 210.0) - i * (compact ? 32.0 : 36.0),
+                            width: (compact ? 218.0 : 260.0) - i * (compact ? 36.0 : 42.0),
+                            height: (compact ? 218.0 : 260.0) - i * (compact ? 36.0 : 42.0),
                             decoration: BoxDecoration(shape: BoxShape.circle,
                               border: Border.all(color: Colors.white.withValues(alpha: .07))),
                           ),
                         Container(
-                          width: 76, height: 76,
+                          width: 88, height: 88,
                           decoration: BoxDecoration(shape: BoxShape.circle,
                             color: const Color(0xFF182431),
                             border: Border.all(color: accent.withValues(alpha: .7), width: 2)),
-                          child: Icon(Icons.album, color: accent, size: 38),
+                          child: Icon(Icons.album, color: accent, size: 44),
                         ),
-                        Positioned(bottom: 15, child: Text('PLATTER',
+                        Positioned(bottom: 18, child: Text('PLATTER',
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: Colors.white38, letterSpacing: 2))),
                       ],
