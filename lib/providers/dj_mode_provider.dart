@@ -173,7 +173,7 @@ class DjModeProvider extends ChangeNotifier {
   }
 
   void _maybeStartIdleScan() {
-    if (!_loaded || music.isPlaying) return;
+    if (!_loaded || !_isAnalysisStillIdle()) return;
     // One resumable pass covers the complete library. Each completed track is
     // persisted before advancing, so a process stop resumes by skipping it.
     unawaited(_idle.startIfNeeded(
@@ -192,7 +192,7 @@ class DjModeProvider extends ChangeNotifier {
     if (!_loaded) return;
     _eventScanDebounce?.cancel();
     _eventScanDebounce = Timer(const Duration(seconds: 8), () {
-      if (music.isPlaying || _idle.isRunning) {
+      if (!_isAnalysisStillIdle() || _idle.isRunning) {
         return;
       }
 
