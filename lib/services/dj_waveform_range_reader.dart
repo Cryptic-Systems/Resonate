@@ -5,6 +5,7 @@ import '../dj_engine/analysis/dj_waveform_storage_policy.dart';
 import '../models/dj_analysis.dart';
 import '../models/song.dart';
 import 'database_helper.dart';
+import 'dj_waveform_chunk_lru.dart';
 
 /// Read-only Phase C adapter. It never schedules or starts PCM analysis.
 class DjWaveformRangeReader {
@@ -12,6 +13,7 @@ class DjWaveformRangeReader {
       : _database = database ?? DatabaseHelper();
 
   final DatabaseHelper _database;
+  final DjWaveformChunkLru _cache = DjWaveformChunkLru();
 
   Future<List<DjWaveformChunk>> loadVisibleRange(
     Song song, {
@@ -37,12 +39,36 @@ class DjWaveformRangeReader {
       durationMs: durationMs,
       schemaVersion: DjWaveformStoragePolicy.schemaVersion,
     );
-    return _database.getDjWaveformChunksInRange(
+    const chunkDurationMs = 8000;
+    final boundedOverscan =
+        DjWaveformStoragePolicy().boundedOverscan(overscanChunks);
+    final firstIndex =
+        (startMs ~/ chunkDurationMs - boundedOverscan).clamp(0, DjWaveformStoragePolicy.maxChunksPerTrack - 1);
+    final lastIndex =
+        (((endMs - 1) ~/ chunkDurationMs) + boundedOverscan)
+            .clamp(firstIndex, DjWaveformStoragePolicy.maxChunksPerTrack - 1);
+    final cached = <DjWaveformChunk>[];
+    var fullyCached = true;
+    for (var index = firstIndex; index <= lastIndex; index++) {
+      final chunk = _cache.get(identity, index);
+      if (chunk == null) {
+        fullyCached = false;
+        break;
+      }
+      cached.add(chunk);
+    }
+    if (fullyCached) return List<DjWaveformChunk>.unmodifiable(cached);
+
+    final loaded = await _database.getDjWaveformChunksInRange(
       identity: identity,
       startMs: startMs,
       endMs: endMs,
-      overscanChunks: overscanChunks,
+      overscanChunks: boundedOverscan,
     );
+    for (final chunk in loaded) {
+      _cache.put(identity, chunk);
+    }
+    return loaded;
   }
 
   Future<String?> _sourceFingerprint(
