@@ -44,6 +44,19 @@ void main() {
     );
   });
 
+  test('measured end rounds up a partially covered millisecond', () {
+    expect(
+      DjWaveformChunkPeakAnalyzer.measuredEndMs(
+        startMs: 0,
+        pcmByteLength: 4,
+        sampleRate: 44100,
+        channels: 2,
+        durationMs: 1000,
+      ),
+      1,
+    );
+  });
+
   test('measured end uses actual frame count and clamps to duration', () {
     expect(
       DjWaveformChunkPeakAnalyzer.measuredEndMs(
