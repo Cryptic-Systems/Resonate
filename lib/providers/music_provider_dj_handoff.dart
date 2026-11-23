@@ -227,11 +227,21 @@ extension MusicProviderDjHandoff on MusicProvider {
             _manualDjPreparingLease?.generation == revocation.generation
                 ? _manualDjPreparationSettled
                 : null;
+        final pendingTempoSettled = _manualDjPreparedLease?.generation ==
+                revocation.generation
+            ? _manualDjParameterWriteSettled
+            : null;
         if (pendingPreparationSettled != null) {
           _manualDjPreparationInvalidated = true;
         }
         _manualDjPreparedDeck = null;
         _manualDjPreparedLease = null;
+        // A native parameter command is atomic but asynchronous across the
+        // MethodChannel. Let it settle before cleanup and before the arbiter
+        // grants a higher-priority transport owner.
+        if (pendingTempoSettled != null) {
+          await pendingTempoSettled.future;
+        }
         // Invalidate the standby immediately, then wait for any dispatched
         // preload to settle before the arbiter grants the higher-priority
         // controller. A second cleanup fences a late native prepare result.
