@@ -61,7 +61,9 @@ class DjWaveformChunkAnalysisService {
       final analysis = await _db.getDjAnalysis(song.id);
       if (cancelled()) return 0;
       final fingerprint = await _sourceFingerprint(song.filePath, analysis);
-      if (cancelled()) return 0;
+      // Never persist resumable chunks without a usable source identity: a
+      // later file replacement must not silently reuse old waveform data.
+      if (fingerprint == null || cancelled()) return 0;
 
       final identity = DjWaveformIdentity(
         songId: song.id,
@@ -206,15 +208,20 @@ class DjWaveformChunkAnalysisService {
     String path,
     DjAnalysis? analysis,
   ) async {
-    if (!path.startsWith('content://') && !path.startsWith('file://')) {
+    if (!path.startsWith('content://')) {
       try {
-        final file = File(path);
-        if (await file.exists()) return 'bytes:${await file.length()}';
+        final localPath =
+            path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
+        final file = File(localPath);
+        if (await file.exists()) {
+          final stat = await file.stat();
+          return 'local:${stat.size}:${stat.modified.microsecondsSinceEpoch}';
+        }
       } catch (_) {}
     }
-    // Content URIs may not expose a filesystem stat. Use the last verified
-    // MediaStore size when available; null remains a conservative identity.
+    // MediaStore-backed sources use the last indexed byte length. If it is
+    // unavailable, fail closed rather than persist chunks with weak identity.
     final size = analysis?.fileSizeBytes;
-    return size == null ? null : 'bytes:$size';
+    return size == null || size <= 0 ? null : 'mediastore:$size';
   }
 }
