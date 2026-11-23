@@ -145,98 +145,79 @@ class _DjConsoleDeckTempoControlState
         );
 
         return Container(
-          margin: const EdgeInsets.only(top: 7),
-          padding: EdgeInsets.symmetric(
-            horizontal: widget.compact ? 5 : 9,
-            vertical: widget.compact ? 3 : 6,
-          ),
+          height: widget.compact ? 38 : 42,
+          margin: const EdgeInsets.only(top: 6),
+          padding: EdgeInsets.symmetric(horizontal: widget.compact ? 5 : 8),
           decoration: BoxDecoration(
             color: const Color(0xFF0A121B),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(9),
             border: Border.all(color: accent.withValues(alpha: .24)),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Text('TEMPO', style: textStyle?.copyWith(
-                    color: accent, fontWeight: FontWeight.w900)),
-                  const Spacer(),
-                  Text(
-                    telemetryValid
-                        ? '${shownPercent >= 0 ? '+' : ''}${shownPercent.toStringAsFixed(1)}%'
-                        : '—',
-                    style: textStyle?.copyWith(
-                      fontFeatures: const [],
-                      fontWeight: FontWeight.w900,
-                      color: telemetryValid ? Colors.white : Colors.white38,
-                    ),
+              Text('TEMPO', style: textStyle?.copyWith(
+                color: accent, fontWeight: FontWeight.w900)),
+              const SizedBox(width: 4),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 2,
+                    thumbShape: RoundSliderThumbShape(
+                      enabledThumbRadius: widget.compact ? 4 : 5),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
                   ),
-                  const SizedBox(width: 5),
-                  Text(roleKnown ? label : 'UNMAPPED',
-                    style: textStyle?.copyWith(color: Colors.white38)),
-                ],
-              ),
-              SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: 2,
-                  thumbShape: RoundSliderThumbShape(
-                    enabledThumbRadius: widget.compact ? 5 : 6),
-                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                  child: Slider(
+                    min: DjConsoleTempoPolicy.minPercent,
+                    max: DjConsoleTempoPolicy.maxPercent,
+                    divisions: 120,
+                    value: shownPercent,
+                    onChanged: canWrite
+                        ? (value) => setState(() => _previewPercent = value)
+                        : null,
+                    onChangeEnd: canWrite
+                        ? (value) => _apply(
+                              context,
+                              music: music,
+                              percent: value,
+                              keyLock: keyLock,
+                            )
+                        : null,
+                  ),
                 ),
-                child: Slider(
-                  min: DjConsoleTempoPolicy.minPercent,
-                  max: DjConsoleTempoPolicy.maxPercent,
-                  divisions: 120,
-                  value: shownPercent,
+              ),
+              SizedBox(
+                width: widget.compact ? 39 : 46,
+                child: Text(
+                  telemetryValid
+                      ? '${shownPercent >= 0 ? '+' : ''}${shownPercent.toStringAsFixed(1)}%'
+                      : '—',
+                  textAlign: TextAlign.end,
+                  style: textStyle?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: telemetryValid ? Colors.white : Colors.white38,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 2),
+              Icon(
+                keyLock ? Icons.lock_outline : Icons.lock_open_outlined,
+                size: widget.compact ? 12 : 14,
+                color: keyLock ? accent : Colors.white54,
+              ),
+              Transform.scale(
+                scale: widget.compact ? .62 : .70,
+                child: Switch.adaptive(
+                  value: keyLock,
                   onChanged: canWrite
-                      ? (value) => setState(() => _previewPercent = value)
-                      : null,
-                  onChangeEnd: canWrite
                       ? (value) => _apply(
                             context,
                             music: music,
-                            percent: value,
-                            keyLock: keyLock,
+                            percent: shownPercent,
+                            keyLock: value,
                           )
                       : null,
                 ),
               ),
-              Row(
-                children: [
-                  Text('KEY LOCK', style: textStyle),
-                  const Spacer(),
-                  Transform.scale(
-                    scale: widget.compact ? .72 : .82,
-                    child: Switch.adaptive(
-                      value: keyLock,
-                      onChanged: canWrite
-                          ? (value) => _apply(
-                                context,
-                                music: music,
-                                percent: shownPercent,
-                                keyLock: value,
-                              )
-                          : null,
-                    ),
-                  ),
-                ],
-              ),
-              if (!canWrite)
-                Text(
-                  !roleKnown
-                      ? 'DECK ID UNAVAILABLE'
-                      : !telemetryValid
-                          ? 'WAITING FOR NATIVE READBACK'
-                          : 'PREPARE DECK B TO UNLOCK',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: textStyle?.copyWith(
-                    color: Colors.white38,
-                    fontSize: widget.compact ? 7 : 8,
-                  ),
-                ),
             ],
           ),
         );
