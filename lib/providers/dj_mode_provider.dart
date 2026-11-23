@@ -38,6 +38,7 @@ class DjModeProvider extends ChangeNotifier {
   bool _loaded = false;
   late final Future<void> ready;
   bool _lastObservedPlaying = false;
+  bool _appForeground = false;
   Timer? _eventScanDebounce;
 
   bool get isLoaded => _loaded;
@@ -184,7 +185,21 @@ class DjModeProvider extends ChangeNotifier {
   }
 
   bool _isAnalysisStillIdle() =>
-      !music.isPlaying && !music.transitionInProgress;
+      _appForeground && !music.isPlaying && !music.transitionInProgress;
+
+  /// Foreground eligibility is supplied only by the app's lifecycle observer.
+  /// Console visibility and route changes are not treated as foreground proof.
+  void setAppForeground(bool foreground) {
+    if (_appForeground == foreground) return;
+    _appForeground = foreground;
+    if (!foreground) {
+      _eventScanDebounce?.cancel();
+      _eventScanDebounce = null;
+      _idle.stop();
+    } else {
+      _maybeStartIdleScan();
+    }
+  }
 
   /// Called by app lifecycle and audio-route events. Work is intentionally
   /// small and rate-limited so unlock/BT event bursts do not start many scans.
