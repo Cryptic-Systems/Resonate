@@ -78,6 +78,9 @@ class DjWaveformChunkAnalysisService {
         identity: identity,
         expectedChunkCount: expected,
       );
+      // Manifest preparation is asynchronous too: cancellation or a newly
+      // active playback session must stop the job before further DB/decode work.
+      if (cancelled()) return 0;
       final completed = await _db.getDjWaveformCompletedIndices(
         identity: identity,
         expectedChunkCount: expected,
@@ -93,13 +96,18 @@ class DjWaveformChunkAnalysisService {
         final requestedEnd = (requestedStart + chunkDurationMs)
             .clamp(0, durationMs)
             .toInt();
-        final seconds = (requestedEnd - requestedStart) / 1000.0;
+        // Decode a small preroll so codec seek rounding cannot leave a gap at
+        // the left edge of a chunk. Persist only when measured PCM covers the
+        // entire requested interval; overlap alone is not completion.
+        const seekPrerollMs = 250;
+        final decodeStart = (requestedStart - seekPrerollMs).clamp(0, durationMs);
+        final seconds = (requestedEnd - decodeStart) / 1000.0;
         if (seconds <= 0) continue;
 
         final decoded = await _estimator.extractDecodedPcmWindow(
           song.filePath,
           maxSeconds: seconds,
-          startMs: requestedStart,
+          startMs: decodeStart,
         );
         if (cancelled()) break;
         if (decoded == null) {
@@ -131,8 +139,8 @@ class DjWaveformChunkAnalysisService {
         if (peaks == null ||
             actualStart < 0 ||
             actualEnd <= actualStart ||
-            actualEnd <= requestedStart ||
-            actualStart >= requestedEnd) {
+            actualStart > requestedStart ||
+            actualEnd < requestedEnd) {
           await ResonateDiagnostics.recordDj(
             stage: 'waveform_chunk',
             songId: song.id,
@@ -217,13 +225,13 @@ class DjWaveformChunkAnalysisService {
         final file = File(localPath);
         if (await file.exists()) {
           final stat = await file.stat();
-          return 'local:${stat.size}:${stat.modified.microsecondsSinceEpoch}';
+          return 'local:${file.absolute.path}:${stat.size}:${stat.modified.microsecondsSinceEpoch}';
         }
       } catch (_) {}
     }
     // MediaStore-backed sources use the last indexed byte length. If it is
     // unavailable, fail closed rather than persist chunks with weak identity.
     final size = analysis?.fileSizeBytes;
-    return size == null || size <= 0 ? null : 'mediastore:$size';
+    return size == null || size <= 0 ? null : 'mediastore:$path:$size';
   }
 }
