@@ -349,6 +349,11 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   @override
   void didUpdateWidget(covariant _ConsoleDeck oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (_jogStartPosition != null &&
+        (!widget.jogSeekEnabled || !widget.active ||
+            oldWidget.expectedSongId != widget.expectedSongId)) {
+      _clearJog();
+    }
     if (oldWidget.expectedSongId != widget.expectedSongId) {
       _platterRotation.value = 0;
       _requestedStartMs = null;
