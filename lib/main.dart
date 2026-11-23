@@ -30,7 +30,7 @@ import 'navigation/shell_nav.dart';
 import 'widgets/ask_resonate/ask_resonate_controller.dart';
 import 'screens/home_screen.dart';
 import 'screens/experience_selector_screen.dart';
-import 'screens/dj_workspace_screen.dart';
+import 'screens/dj_experience_shell.dart';
 import 'services/media3_provider_session.dart';
 import 'playback/playback_control_arbiter.dart';
 import 'services/playback_diagnostics_observer.dart';
@@ -640,7 +640,7 @@ class _LifecycleHomeState extends State<_LifecycleHome>
         }
         return switch (experience.selected!) {
           ResonateExperience.player => const HomeScreen(),
-          ResonateExperience.resonatixDj => const DjWorkspaceScreen(),
+          ResonateExperience.resonatixDj => const DjExperienceShell(),
         };
       },
     );
