@@ -51,6 +51,16 @@ abstract interface class PlaybackDeckSpeedBackend {
   });
 }
 
+/// Optional atomic speed/pitch capability for independent logical DJ decks.
+abstract interface class PlaybackDeckParametersBackend {
+  Future<void> setDeckPlaybackParameters({
+    required double activeSpeed,
+    required double activePitch,
+    required double standbySpeed,
+    required double standbyPitch,
+  });
+}
+
 /// Optional capability for DJ transition filters that target one deck only.
 abstract interface class PlaybackDeckEqOverlayBackend {
   Future<void> setDeckEqOverlay({

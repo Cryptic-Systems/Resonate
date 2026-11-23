@@ -415,6 +415,33 @@ class Media3PlaybackBridge(
                         null,
                     )
                 }
+                "setDeckPlaybackParameters" -> {
+                    val activeSpeed = call.argument<Number>("activeSpeed")?.toFloat()
+                    val activePitch = call.argument<Number>("activePitch")?.toFloat()
+                    val standbySpeed = call.argument<Number>("standbySpeed")?.toFloat()
+                    val standbyPitch = call.argument<Number>("standbyPitch")?.toFloat()
+                    val activeValid = activeSpeed != null && activePitch != null &&
+                        Media3DeckPlaybackParametersPolicy.create(activeSpeed, activePitch) != null
+                    val standbyValid = standbySpeed != null && standbyPitch != null &&
+                        Media3DeckPlaybackParametersPolicy.create(standbySpeed, standbyPitch) != null
+                    if (!activeValid || !standbyValid) {
+                        result.error(
+                            "INVALID_DECK_PLAYBACK_PARAMETERS",
+                            "Active and standby speed/pitch values must be finite and between 0.5 and 2.0.",
+                            null,
+                        )
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDeckPlaybackParameters(
+                        activeSpeed!!, activePitch!!, standbySpeed!!, standbyPitch!!,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "MEDIA3_TRANSPORT_UNAVAILABLE",
+                        "Independent Media3 deck playback parameters are unavailable.",
+                        null,
+                    )
+                }
                 "setDeckEqOverlay" -> {
                     val deck = call.argument<String>("deck")
                     val centers = call.argument<List<Number>>("centersHz")?.map { it.toDouble() }

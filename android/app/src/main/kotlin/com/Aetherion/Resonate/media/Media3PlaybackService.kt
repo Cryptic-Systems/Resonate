@@ -391,6 +391,22 @@ class Media3PlaybackService : MediaSessionService() {
         return true
     }
 
+    /** Apply complete speed/pitch parameters to logical decks in one command. */
+    fun setDeckPlaybackParameters(
+        activeSpeed: Float,
+        activePitch: Float,
+        standbySpeed: Float,
+        standbyPitch: Float,
+    ): Boolean {
+        val activeParameters = Media3DeckPlaybackParametersPolicy.create(activeSpeed, activePitch)
+            ?: return false
+        val standbyParameters = Media3DeckPlaybackParametersPolicy.create(standbySpeed, standbyPitch)
+            ?: return false
+        activePlayer.playbackParameters = activeParameters
+        standbyPlayer?.playbackParameters = standbyParameters
+        return true
+    }
+
     fun setShuffleMode(enabled: Boolean): Boolean {
         activePlayer.shuffleModeEnabled = enabled
         standbyPlayer?.shuffleModeEnabled = enabled

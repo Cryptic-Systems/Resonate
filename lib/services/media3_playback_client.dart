@@ -424,6 +424,28 @@ class Media3PlaybackClient {
     await _invokeAccepted('setPlaybackPitch', <String, Object>{'pitch': pitch});
   }
 
+  Future<void> setDeckPlaybackParameters({
+    required double activeSpeed,
+    required double activePitch,
+    required double standbySpeed,
+    required double standbyPitch,
+  }) async {
+    final values = <String, double>{
+      'activeSpeed': activeSpeed,
+      'activePitch': activePitch,
+      'standbySpeed': standbySpeed,
+      'standbyPitch': standbyPitch,
+    };
+    for (final entry in values.entries) {
+      if (!entry.value.isFinite || entry.value < 0.5 || entry.value > 2.0) {
+        throw ArgumentError.value(
+          entry.value, entry.key, 'Must be finite and between 0.5 and 2.0.',
+        );
+      }
+    }
+    await _invokeAccepted('setDeckPlaybackParameters', values);
+  }
+
   Future<void> setDeckPlaybackSpeeds({
     required double activeSpeed,
     required double standbySpeed,

@@ -130,6 +130,15 @@ The current manual DJ preparation and automatic preload settlement audit remains
 
 EQ, filter and channel controls should reuse the established DSP integration where possible. Keep signal routing and deck analysis hints aligned with the promoted active deck. Avoid direct gain manipulation from Flutter, duplicate EQ stages, or a second DSP chain. Each new control needs an explicit mapping, range, smoothing policy, ownership rule and bypass/failure behavior.
 
+### 5.5 Playback speed, pitch and key lock
+
+- Media3 exposes `PlaybackParameters(speed, pitch)` through the existing ExoPlayer decks. Resonate's custom `DefaultAudioSink` retains the deck DSP processors and forwards Media3's audio-track playback-parameter capability flag.
+- Existing shared speed and pitch commands apply to both logical decks; automatic DJ handoff already has a separate active/standby speed command.
+- The Console requires an atomic per-deck speed/pitch command so changing one deck cannot silently alter the other. The native service applies complete parameters to the current logical active and standby players; parameters remain attached to the player instance through physical A/B promotion.
+- The initial manual tempo-fader policy is limited to ±6%, matching the existing automatic DJ stretch ceiling. With key lock enabled, tempo changes retain pitch at 1.0; with key lock disabled, pitch follows the speed multiplier. The native transport API retains its wider 0.5–2.0 validation envelope for compatibility, but the Console policy must not expose that full range.
+- Pitch preservation and sound quality remain device/codec dependent. CI can validate parameter routing and policy, but only physical-device listening can validate artifacts, transient quality and audible pitch stability.
+- Tempo/pitch controls must acquire the appropriate playback authority, distinguish active from standby identity, and coordinate with automatic DJ tempo matching before UI exposure. Do not ship them as active controls until that integration and its failure recovery are tested.
+
 ## 6. Interaction model and safety
 
 - Every visible control must have a defined and testable effect. If a capability is not implemented, show it as unavailable or omit it.

@@ -423,6 +423,40 @@ class Media3PlaybackRuntime {
     return _run(() => pitchBackend.setPlaybackPitch(pitch));
   }
 
+  Future<void> setDeckPlaybackParameters({
+    required double activeSpeed,
+    required double activePitch,
+    required double standbySpeed,
+    required double standbyPitch,
+  }) {
+    _ensureAlive();
+    final values = <String, double>{
+      'activeSpeed': activeSpeed,
+      'activePitch': activePitch,
+      'standbySpeed': standbySpeed,
+      'standbyPitch': standbyPitch,
+    };
+    for (final entry in values.entries) {
+      if (!entry.value.isFinite || entry.value < 0.5 || entry.value > 2.0) {
+        throw ArgumentError.value(
+          entry.value, entry.key, 'Must be finite and between 0.5 and 2.0.',
+        );
+      }
+    }
+    final backend = _backend;
+    if (backend is! PlaybackDeckParametersBackend) {
+      throw UnsupportedError(
+        'The active playback backend does not support independent deck parameters.',
+      );
+    }
+    return _run(() => backend.setDeckPlaybackParameters(
+      activeSpeed: activeSpeed,
+      activePitch: activePitch,
+      standbySpeed: standbySpeed,
+      standbyPitch: standbyPitch,
+    ));
+  }
+
   Future<void> setDeckPlaybackSpeeds({
     required double activeSpeed,
     required double standbySpeed,

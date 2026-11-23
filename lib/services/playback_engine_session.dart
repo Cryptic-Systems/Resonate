@@ -98,6 +98,16 @@ abstract interface class PlaybackPitchSession {
   Future<void> setPlaybackPitch(double pitch);
 }
 
+/// Optional atomic speed/pitch control for independent logical DJ decks.
+abstract interface class PlaybackDeckParametersSession {
+  Future<void> setDeckPlaybackParameters({
+    required double activeSpeed,
+    required double activePitch,
+    required double standbySpeed,
+    required double standbyPitch,
+  });
+}
+
 
 /// Capability adapter for consumers that hold the common session contract.
 /// This keeps pitch optional for non-Media3 sessions while avoiding reliance
