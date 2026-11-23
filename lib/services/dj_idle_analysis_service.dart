@@ -172,6 +172,7 @@ class DjIdleAnalysisService {
       // number of chunks across the entire library, never per track.
       var waveformChunksRemaining = maxWaveformChunks.clamp(0, 4).toInt();
       var waveformChunksProcessed = 0;
+      var waveformChunksEvicted = 0;
       if (!_stopRequested && waveformChunksRemaining > 0) {
         for (final song in songs) {
           if (_stopRequested ||
@@ -193,6 +194,10 @@ class DjIdleAnalysisService {
           waveformChunksProcessed += processed;
         }
       }
+      if (waveformChunksProcessed > 0) {
+        waveformChunksEvicted =
+            await _db.pruneDjWaveformChunks();
+      }
       await ResonateDiagnostics.recordDj(
         stage: 'idle_scan_done',
         outcome: _stopRequested ? 'stopped' : 'completed',
@@ -201,6 +206,7 @@ class DjIdleAnalysisService {
           'updated': _updated,
           'failed': _failed,
           'waveformChunksProcessed': waveformChunksProcessed,
+          'waveformChunksEvicted': waveformChunksEvicted,
           'waveformChunkBudgetRemaining': waveformChunksRemaining,
           'idlePredicateStillTrue': isStillIdle?.call() ?? true,
         },
