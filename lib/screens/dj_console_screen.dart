@@ -31,6 +31,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
   Future<DjTrackProfile?>? _profileFuture;
   String? _waveformSongId;
   int? _waveformDurationMs;
+  String? _waveformFilePath;
   Future<List<DjWaveformChunk>>? _waveformFuture;
   final DjWaveformRangeReader _waveformReader = DjWaveformRangeReader();
 
@@ -43,9 +44,12 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
   }
   void _ensureWaveformFuture(Song? song) {
     final durationMs = song?.duration.inMilliseconds ?? 0;
-    if (_waveformSongId == song?.id && _waveformDurationMs == durationMs) return;
+    if (_waveformSongId == song?.id &&
+        _waveformDurationMs == durationMs &&
+        _waveformFilePath == song?.filePath) return;
     _waveformSongId = song?.id;
     _waveformDurationMs = durationMs;
+    _waveformFilePath = song?.filePath;
     _waveformFuture = song == null || durationMs <= 0
         ? null
         : _waveformReader.loadVisibleRange(
@@ -361,9 +365,14 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
               final beatGrid = verifiedProfile?.beatGrid;
               final sections = verifiedProfile?.sections ?? const <DjSection>[];
               return FutureBuilder<List<DjWaveformChunk>>(
+                key: ObjectKey(waveformFuture),
                 future: waveformFuture,
                 builder: (context, waveformSnapshot) {
-                  final chunks = waveformSnapshot.data ?? const <DjWaveformChunk>[];
+                  final chunks = (waveformSnapshot.data ?? const <DjWaveformChunk>[])
+                      .where((chunk) =>
+                          chunk.songId == expectedSongId &&
+                          chunk.durationMs == duration.inMilliseconds)
+                      .toList(growable: false);
                   final measuredSegments = chunks
                       .map((chunk) => DjWaveformSegment(
                             startMs: chunk.actualStartMs,
