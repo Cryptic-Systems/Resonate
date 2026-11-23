@@ -239,10 +239,7 @@ extension MusicProviderDjHandoff on MusicProvider {
           try { await session.cancelCrossfade(); } catch (_) {}
           try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
           try {
-            await session.setDeckPlaybackSpeeds(
-              activeSpeed: 1.0,
-              standbySpeed: 1.0,
-            );
+            await _resetManualStandbyTempo(session);
           } catch (_) {}
         }
         await retireStandby();
@@ -328,10 +325,7 @@ extension MusicProviderDjHandoff on MusicProvider {
         try { await session.cancelCrossfade(); } catch (_) {}
         try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
         try {
-          await session.setDeckPlaybackSpeeds(
-            activeSpeed: 1.0,
-            standbySpeed: 1.0,
-          );
+          await _resetManualStandbyTempo(session);
         } catch (_) {}
       }
       await lease.release();
@@ -359,10 +353,7 @@ extension MusicProviderDjHandoff on MusicProvider {
         try { await session.cancelCrossfade(); } catch (_) {}
         try { await session.clearDeckEqOverlay(deck: 'standby'); } catch (_) {}
         try {
-          await session.setDeckPlaybackSpeeds(
-            activeSpeed: 1.0,
-            standbySpeed: 1.0,
-          );
+          await _resetManualStandbyTempo(session);
         } catch (_) {}
       }
       // Keep the lease until the in-flight preload acknowledges completion.
@@ -387,6 +378,33 @@ extension MusicProviderDjHandoff on MusicProvider {
     }
     await lease.release();
     if (!_disposed) notifyListeners();
+  }
+
+  /// Restore only the muted standby deck to unity while preserving the
+  /// active physical deck's authoritative speed and pitch. If native readback
+  /// is incomplete, fail closed and leave the muted deck untouched.
+  Future<void> _resetManualStandbyTempo(PlaybackEngineSession session) async {
+    if (session is! PlaybackDeckParametersSession) return;
+    final state = _media3ShadowState;
+    final activeSpeed = state?.activeDeckSpeed;
+    final activePitch = state?.activeDeckPitch;
+    if (activeSpeed == null ||
+        activePitch == null ||
+        !activeSpeed.isFinite ||
+        !activePitch.isFinite ||
+        activeSpeed < 0.5 ||
+        activeSpeed > 2.0 ||
+        activePitch < 0.5 ||
+        activePitch > 2.0) {
+      return;
+    }
+    await (session as PlaybackDeckParametersSession)
+        .setDeckPlaybackParameters(
+      activeSpeed: activeSpeed,
+      activePitch: activePitch,
+      standbySpeed: 1.0,
+      standbyPitch: 1.0,
+    );
   }
 
   /// Applies atomic active/standby speed and pitch only while the operator
@@ -570,12 +588,10 @@ extension MusicProviderDjHandoff on MusicProvider {
       if (!lease.isCurrent) {
         throw StateError('Manual DJ transition lost playback authority at promotion.');
       }
-      await session.setDeckPlaybackSpeeds(
-        activeSpeed: 1.0,
-        standbySpeed: 1.0,
-      );
+      // PlaybackParameters remain attached to their physical ExoPlayer.
+      // Do not normalize here: the incoming deck's tempo must survive promotion.
       if (!lease.isCurrent) {
-        throw StateError('Manual DJ transition was preempted during deck normalization.');
+        throw StateError('Manual DJ transition was preempted at promotion.');
       }
       _manualDjPreparedDeck = null;
       _manualDjPreparedLease = null;
@@ -609,10 +625,7 @@ extension MusicProviderDjHandoff on MusicProvider {
         }
         if (lease.isCurrent) {
           try {
-            await session.setDeckPlaybackSpeeds(
-              activeSpeed: 1.0,
-              standbySpeed: 1.0,
-            );
+            await _resetManualStandbyTempo(session);
           } catch (_) {}
         }
       }
