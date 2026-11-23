@@ -13,6 +13,7 @@ import 'providers/bluetooth_provider.dart';
 import 'providers/crossfade_provider.dart';
 import 'providers/dj_mode_provider.dart';
 import 'providers/equalizer_provider.dart';
+import 'experience/experience_provider.dart';
 import 'providers/intelligence_provider.dart';
 import 'providers/intelligence_mix_controller.dart';
 import 'providers/library_provider.dart';
@@ -28,6 +29,8 @@ import 'providers/theme_provider.dart';
 import 'navigation/shell_nav.dart';
 import 'widgets/ask_resonate/ask_resonate_controller.dart';
 import 'screens/home_screen.dart';
+import 'screens/experience_selector_screen.dart';
+import 'screens/dj_workspace_screen.dart';
 import 'services/media3_provider_session.dart';
 import 'playback/playback_control_arbiter.dart';
 import 'services/playback_diagnostics_observer.dart';
@@ -313,6 +316,7 @@ class ResonateApp extends StatelessWidget {
           dispose: (_, arbiter) => unawaited(arbiter.close()),
         ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => ExperienceProvider()),
         ChangeNotifierProvider(create: (_) => ShellNav()),
         ChangeNotifierProvider(create: (_) => AskResonateController()),
         ChangeNotifierProvider(
@@ -623,5 +627,22 @@ class _LifecycleHomeState extends State<_LifecycleHome>
   }
 
   @override
-  Widget build(BuildContext context) => const HomeScreen();
+  Widget build(BuildContext context) {
+    return Consumer<ExperienceProvider>(
+      builder: (context, experience, _) {
+        if (!experience.isReady) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (experience.needsInitialSelection) {
+          return const ExperienceSelectorScreen();
+        }
+        return switch (experience.selected!) {
+          ResonateExperience.player => const HomeScreen(),
+          ResonateExperience.resonatixDj => const DjWorkspaceScreen(),
+        };
+      },
+    );
+  }
 }
