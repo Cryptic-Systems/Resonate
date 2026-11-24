@@ -22,6 +22,7 @@ class Media3DjDeckSnapshot {
     this.mediaItemIndex = -1,
     this.mediaItemCount = 0,
     this.volume = 0,
+    this.channelGain = 1,
     this.speed = 1,
     this.pitch = 1,
     this.audioSessionId,
@@ -41,6 +42,7 @@ class Media3DjDeckSnapshot {
   final int mediaItemIndex;
   final int mediaItemCount;
   final double volume;
+  final double channelGain;
   final double speed;
   final double pitch;
   final int? audioSessionId;
@@ -73,6 +75,7 @@ class Media3DjDeckSnapshot {
       mediaItemIndex: integer(map['mediaItemIndex'], -1),
       mediaItemCount: integer(map['mediaItemCount']),
       volume: decimal(map['volume']).clamp(0.0, 1.0).toDouble(),
+      channelGain: decimal(map['channelGain'], 1.0).clamp(0.0, 1.0).toDouble(),
       speed: decimal(map['speed'], 1.0),
       pitch: decimal(map['pitch'], 1.0),
       audioSessionId: sessionId > 0 ? sessionId : null,
@@ -705,6 +708,21 @@ class Media3PlaybackClient {
       'setDjCrossfader',
       <String, Object>{'position': position},
     );
+  }
+
+  /// Sets one physical deck's channel gain independently of the crossfader.
+  Future<void> setDjDeckChannelGain({
+    required String deckId,
+    required double gain,
+  }) async {
+    _validatePhysicalDeck(deckId);
+    if (!gain.isFinite || gain < 0.0 || gain > 1.0) {
+      throw ArgumentError.value(gain, 'gain', 'Must be finite and between 0 and 1.');
+    }
+    await _invokeAccepted('setDjDeckChannelGain', <String, Object>{
+      'deckId': deckId,
+      'gain': gain,
+    });
   }
 
   /// Loads an isolated queue into one physical DJ deck without touching the other.
