@@ -231,7 +231,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                 onJogSeek: (target) => music.seekDjDeck(
                   deckId: id,
                   position: target,
-                  expectedMediaId: deck.mediaId as String,
+                  expectedMediaId: deck!.mediaId!,
                 ),
                 status: !loaded
                     ? 'EMPTY'
@@ -244,7 +244,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                 position: position,
                 duration: duration,
                 profileFuture: _profileFutureFor(context, song?.id),
-                expectedSongId: song?.id ?? deck?.mediaId as String?,
+                expectedSongId: song?.id ?? deck?.mediaId,
                 waveformSourceKey: song?.filePath,
                 waveformLoader: song == null
                     ? null
@@ -547,7 +547,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     _clearJog();
     _syncPlatterMotion();
     if (mounted) setState(() {});
-    if (!shouldCommit || target == null) return;
+    if (!shouldCommit) return;
     try {
       await widget.onJogSeek(target);
     } catch (error) {
