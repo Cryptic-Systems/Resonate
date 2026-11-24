@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -129,7 +128,22 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
               MusicProvider,
               ({
                 Song? song,
-                Object? deckState,
+                bool dualDeck,
+                Object? deckA,
+                Object? deckB,
+                Object? activeDeckId,
+                Object? incomingMediaId,
+                Object? crossfadeStatus,
+                Object? incomingReady,
+                Object? incomingPosition,
+                Object? underrunsA,
+                Object? underrunsB,
+                Object? lastUnderrunDeck,
+                Object? lastUnderrunBuffer,
+                Object? lastUnderrunElapsed,
+                Object? activeGain,
+                Object? standbyGain,
+                Object? crossfaderPosition,
                 Duration? duration,
                 Duration position,
                 bool playing,
@@ -137,16 +151,34 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                 String? strategy,
                 List<Song> queue,
               })>(
-            selector: (context, provider) => (
-              song: provider.currentSong,
-              deckState: provider.media3ShadowState,
-              duration: provider.currentDuration,
-              position: provider.currentPosition,
-              playing: provider.isPlaying,
-              transitioning: provider.transitionInProgress,
-              strategy: provider.lastDjStrategy,
-              queue: provider.queue,
-            ),
+            selector: (context, provider) {
+              final state = provider.media3ShadowState;
+              return (
+                song: provider.currentSong,
+                dualDeck: state?.djDualDeckMode == true,
+                deckA: state?.deckA,
+                deckB: state?.deckB,
+                activeDeckId: state?.activeDeckId,
+                incomingMediaId: state?.incomingMediaId,
+                crossfadeStatus: state?.crossfadeStatus,
+                incomingReady: state?.incomingReady,
+                incomingPosition: state?.incomingPosition,
+                underrunsA: state?.audioUnderrunCountA,
+                underrunsB: state?.audioUnderrunCountB,
+                lastUnderrunDeck: state?.lastUnderrunDeck,
+                lastUnderrunBuffer: state?.lastUnderrunBufferSizeMs,
+                lastUnderrunElapsed: state?.lastUnderrunElapsedSinceFeedMs,
+                activeGain: state?.activeDeckVolume,
+                standbyGain: state?.standbyDeckVolume,
+                crossfaderPosition: state?.djCrossfaderPosition,
+                duration: provider.currentDuration,
+                position: provider.currentPosition,
+                playing: provider.isPlaying,
+                transitioning: provider.transitionInProgress,
+                strategy: provider.lastDjStrategy,
+                queue: provider.queue,
+              );
+            },
             builder: (context, snapshot, _) {
           final music = context.read<MusicProvider>();
           final song = music.currentSong;
@@ -1350,83 +1382,86 @@ class _DeckWaveform extends StatelessWidget {
 }
 
 class _DeckWaveformPainter extends CustomPainter {
-  _DeckWaveformPainter({required this.seed, required this.progress,
-    required this.color, required this.phase, this.spectrum});
-  final String seed;
-  final double progress, phase;
-  final Color color;
-  final List<double>? spectrum;
+  _DeckWaveformPainter({
+    required this.seed,
+    required this.progress,
+    required this.color,
+  });
 
-  int get _seedValue => seed.codeUnits.fold<int>(17,
-    (value, unit) => (value * 31 + unit) & 0x7fffffff);
+  final String seed;
+  final double progress;
+  final Color color;
+
+  int get _seedValue => seed.codeUnits.fold<int>(
+        17,
+        (value, unit) => (value * 31 + unit) & 0x7fffffff,
+      );
 
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
     const count = 76;
     final center = size.height / 2;
-    // Keep the complete bar train inside narrow deck tiles instead of
-    // forcing a minimum bar width that can overflow small layouts.
     final gap = math.min(1.35, math.max(0.35, size.width / (count * 5)));
     final barWidth = (size.width - (count - 1) * gap) / count;
     final seedValue = _seedValue;
-    final bands = spectrum;
-    final hasLiveSpectrum = bands != null && bands.isNotEmpty;
-    final bandCount = bands?.length ?? 0;
-    final gridPaint = Paint()..color = Colors.white.withValues(alpha: 0.10)..strokeWidth = 0.7;
+    final gridPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.10)
+      ..strokeWidth = 0.7;
+
     for (var beat = 0; beat <= 8; beat++) {
       final x = size.width * beat / 8;
       canvas.drawLine(Offset(x, 2), Offset(x, size.height - 2), gridPaint);
     }
+
     for (var i = 0; i < count; i++) {
       final x = i * (barWidth + gap);
-      double amplitude = 0;
-      if (hasLiveSpectrum) {
-        final sourcePosition = i * (bandCount - 1) / (count - 1);
-        final lower = sourcePosition.floor();
-        final upper = math.min(lower + 1, bandCount - 1);
-        final blend = sourcePosition - lower;
-        final lowerValue = bands[lower];
-        final upperValue = bands[upper];
-        final a = lowerValue.isFinite ? lowerValue.clamp(0.0, 1.0).toDouble() : 0.0;
-        final b = upperValue.isFinite ? upperValue.clamp(0.0, 1.0).toDouble() : 0.0;
-        amplitude = a + (b - a) * blend;
-      }
-      final envelope = hasLiveSpectrum
-          ? math.sqrt(amplitude)
-          : 0.25 + 0.75 * math.pow(
-              (math.sin((i / count) * math.pi * 2.6 + seedValue % 13) + 1) / 2,
-              0.75).toDouble();
-      final texture = hasLiveSpectrum
-          ? 1.0
-          : 0.52 + 0.48 * math.sin(i * 1.71 + seedValue * 0.001).abs();
-      final pulse = hasLiveSpectrum
-          ? 1.0
-          : 1 + 0.055 * math.sin(phase * math.pi * 2 + i * 0.12);
-      final height = (hasLiveSpectrum
-          ? 2.0 + size.height * 0.84 * envelope
-          : size.height * 0.78 * envelope * texture * pulse)
+      final envelope = 0.25 +
+          0.75 *
+              math.pow(
+                (math.sin((i / count) * math.pi * 2.6 + seedValue % 13) + 1) /
+                    2,
+                0.75,
+              ).toDouble();
+      final texture = 0.52 + 0.48 * math.sin(i * 1.71 + seedValue * 0.001).abs();
+      final height = (size.height * 0.78 * envelope * texture)
           .clamp(2.0, size.height - 3);
       final played = i / count <= progress;
-      final paint = Paint()..color = color.withValues(
-        alpha: hasLiveSpectrum ? (0.35 + amplitude * 0.65) : played ? 0.98 : 0.30,
+      final paint = Paint()
+        ..color = color.withValues(alpha: played ? 0.98 : 0.30);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(x + barWidth / 2, center),
+            width: barWidth.clamp(0.35, 4).toDouble(),
+            height: height.toDouble(),
+          ),
+          const Radius.circular(2),
+        ),
+        paint,
       );
-      canvas.drawRRect(RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(x + barWidth / 2, center),
-          width: barWidth.clamp(0.35, 4).toDouble(), height: height.toDouble()),
-        const Radius.circular(2)), paint);
     }
+
     final playheadX = size.width * progress;
-    final playheadPaint = Paint()..color = Colors.white..strokeWidth = 1.4
+    final playheadPaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 1.4
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5);
-    canvas.drawLine(Offset(playheadX, 0), Offset(playheadX, size.height), playheadPaint);
-    canvas.drawCircle(Offset(playheadX, 3), 2.2, Paint()..color = Colors.white);
+    canvas.drawLine(
+      Offset(playheadX, 0),
+      Offset(playheadX, size.height),
+      playheadPaint,
+    );
+    canvas.drawCircle(
+      Offset(playheadX, 3),
+      2.2,
+      Paint()..color = Colors.white,
+    );
   }
 
   @override
   bool shouldRepaint(covariant _DeckWaveformPainter old) =>
-    old.seed != seed || old.progress != progress || old.color != color ||
-    old.phase != phase || !listEquals(old.spectrum, spectrum);
+      old.seed != seed || old.progress != progress || old.color != color;
 }
 
 class _TelemetryRow extends StatelessWidget {
