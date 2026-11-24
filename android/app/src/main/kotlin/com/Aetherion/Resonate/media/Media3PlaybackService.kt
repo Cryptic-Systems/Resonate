@@ -241,7 +241,9 @@ class Media3PlaybackService : MediaSessionService() {
 
     /** Play one physical deck; the playing deck becomes the sole focus owner. */
     fun playDjDeck(deckId: String): Boolean {
-        if (!djDualDeckMode || deckId !in setOf("A", "B") || isCommunicationActive()) return false
+        if (!djDualDeckMode || deckId !in setOf("A", "B") ||
+            isCommunicationActive() || crossfadeStatus in setOf("starting", "fading")
+        ) return false
         if (!promoteDjCanonicalDeck(deckId) || !setAudioFocusHandling(true)) return false
         val player = activePlayer
         if (player.mediaItemCount == 0 || player.playbackState != Player.STATE_READY) return false
@@ -257,7 +259,9 @@ class Media3PlaybackService : MediaSessionService() {
 
     /** Pause one physical deck; the other deck continues unless system transport owns the pause. */
     fun pauseDjDeck(deckId: String): Boolean {
-        if (!djDualDeckMode || deckId !in setOf("A", "B")) return false
+        if (!djDualDeckMode || deckId !in setOf("A", "B") ||
+            crossfadeStatus in setOf("starting", "fading")
+        ) return false
         val player = playerForPhysicalDeck(deckId) ?: return false
         val wasCanonical = player === activePlayer
         val peerDeckId = if (deckId == "A") "B" else "A"
@@ -280,7 +284,9 @@ class Media3PlaybackService : MediaSessionService() {
 
     /** Apply tempo/pitch to one physical deck without changing its partner. */
     fun setDjDeckPlaybackParameters(deckId: String, speed: Float, pitch: Float): Boolean {
-        if (!djDualDeckMode || deckId !in setOf("A", "B")) return false
+        if (!djDualDeckMode || deckId !in setOf("A", "B") ||
+            crossfadeStatus in setOf("starting", "fading")
+        ) return false
         val parameters = Media3DeckPlaybackParametersPolicy.create(speed, pitch) ?: return false
         val player = playerForPhysicalDeck(deckId) ?: return false
         return try {
@@ -322,7 +328,7 @@ class Media3PlaybackService : MediaSessionService() {
     /** Seek only the named physical deck, with duration and identity checked natively. */
     fun seekDjDeck(deckId: String, positionMs: Long, expectedMediaId: String): Boolean {
         if (!djDualDeckMode || deckId !in setOf("A", "B") || positionMs < 0L ||
-            expectedMediaId.isBlank()
+            expectedMediaId.isBlank() || crossfadeStatus in setOf("starting", "fading")
         ) return false
         val player = playerForPhysicalDeck(deckId) ?: return false
         if (player.currentMediaItem?.mediaId != expectedMediaId ||
