@@ -14,7 +14,7 @@ import 'playback_engine_session.dart';
 /// constructing multiple clients or listening to native snapshots independently.
 /// The app composition root injects it and commits the provider handoff after
 /// settings and queue restoration.
-class Media3ProviderSession implements PlaybackEngineSession, PlaybackStandbyCueBackend, PlaybackAuxiliaryEffectsBackend, PlaybackPitchSession, PlaybackDeckParametersSession, PlaybackStateRefreshSession, PlaybackTransitionPreviewBackend {
+class Media3ProviderSession implements PlaybackEngineSession, PlaybackStandbyCueBackend, PlaybackAuxiliaryEffectsBackend, PlaybackPitchSession, PlaybackDeckParametersSession, PlaybackStateRefreshSession, PlaybackTransitionPreviewBackend, PlaybackDjDeckSession {
   Media3ProviderSession({PlaybackBackend? backend})
       : _runtime = Media3PlaybackRuntime(
           backend ?? Media3MusicProviderAdapter(),
@@ -368,6 +368,36 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackStandbyCue
       _runtime.crossfade(duration: duration);
   @override
   Future<void> cancelCrossfade() => _runtime.cancelCrossfade();
+
+  @override
+  Future<void> enableDjDualDeckMode() => _runtime.enableDjDualDeckMode();
+
+  @override
+  Future<void> disableDjDualDeckMode() => _runtime.disableDjDualDeckMode();
+
+  @override
+  Future<void> setDjCrossfader(double position) => _runtime.setDjCrossfader(position);
+
+  @override
+  Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0}) =>
+      _runtime.loadDjDeck(deckId, songs, startIndex: startIndex);
+
+  @override
+  Future<void> playDjDeck(String deckId) => _runtime.playDjDeck(deckId);
+
+  @override
+  Future<void> pauseDjDeck(String deckId) => _runtime.pauseDjDeck(deckId);
+
+  @override
+  Future<void> seekDjDeck({
+    required String deckId,
+    required Duration position,
+    required String expectedMediaId,
+  }) => _runtime.seekDjDeck(
+        deckId: deckId,
+        position: position,
+        expectedMediaId: expectedMediaId,
+      );
 
   void _ensureAlive() {
     if (_disposed) throw StateError('Media3ProviderSession is disposed.');
