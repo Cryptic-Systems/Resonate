@@ -389,6 +389,20 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackStandbyCue
   Future<void> pauseDjDeck(String deckId) => _runtime.pauseDjDeck(deckId);
 
   @override
+  Future<void> clearDjDeck(String deckId) => _runtime.clearDjDeck(deckId);
+
+  @override
+  Future<void> setDjDeckPlaybackParameters({
+    required String deckId,
+    required double speed,
+    required double pitch,
+  }) => _runtime.setDjDeckPlaybackParameters(
+        deckId: deckId,
+        speed: speed,
+        pitch: pitch,
+      );
+
+  @override
   Future<void> seekDjDeck({
     required String deckId,
     required Duration position,
