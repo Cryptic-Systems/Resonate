@@ -545,6 +545,42 @@ class Media3PlaybackBridge(
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_FOCUS_UNAVAILABLE", "Media3 audio-focus policy is unavailable.", null)
                 }
+                "enableDjDualDeckMode" -> {
+                    val accepted = Media3PlaybackService.instance?.enableDjDualDeckMode() == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "DJ_DECK_MODE_UNAVAILABLE",
+                        "DJ dual-deck mode could not be enabled while a transition or prepared incoming deck is active.",
+                        null,
+                    )
+                }
+                "disableDjDualDeckMode" -> {
+                    val accepted = Media3PlaybackService.instance?.disableDjDualDeckMode() == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "DJ_DECK_MODE_BUSY",
+                        "DJ dual-deck mode cannot be disabled during an active handoff.",
+                        null,
+                    )
+                }
+                "setDjCrossfader" -> {
+                    val position = call.argument<Number>("position")?.toFloat()
+                    if (position == null || !position.isFinite() || position !in 0f..1f) {
+                        result.error(
+                            "INVALID_DJ_CROSSFADER",
+                            "Crossfader position must be finite and between 0 and 1.",
+                            null,
+                        )
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDjCrossfader(position) == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "DJ_CROSSFADER_REJECTED",
+                        "The DJ crossfader is unavailable outside DJ mode or during an active handoff.",
+                        null,
+                    )
+                }
                 "setVolume" -> {
                     val volume = call.argument<Number>("value")?.toFloat()
                     if (volume == null || !volume.isFinite()) {
@@ -770,6 +806,10 @@ class Media3PlaybackBridge(
         "audioSessionId" to (Media3PlaybackService.instance?.activeAudioSessionId() ?: 0),
         "standbyAudioSessionId" to (Media3PlaybackService.instance?.standbyAudioSessionId() ?: 0),
         "activeDeckId" to (Media3PlaybackService.instance?.activeDeckId() ?: "A"),
+        "djDualDeckMode" to (crossfade["djDualDeckMode"] == true),
+        "djCrossfaderPosition" to (crossfade["djCrossfaderPosition"] ?: 0.5f),
+        "deckA" to crossfade["deckA"],
+        "deckB" to crossfade["deckB"],
         "crossfadeStatus" to (crossfade["status"] ?: "idle"),
         "crossfadeProgress" to (crossfade["progress"] ?: 0f),
         "activeDeckVolume" to (crossfade["activeVolume"] ?: player.volume),
