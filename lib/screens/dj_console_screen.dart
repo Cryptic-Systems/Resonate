@@ -312,6 +312,9 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                         )
                     : null,
                 cuePosition: cuePosition,
+                channelGain: deck?.channelGain ?? 1.0,
+                onChannelGainChanged: (gain) =>
+                    music.setDjDeckChannelGain(deckId: id, gain: gain),
                 onSetCue: djReady && loaded
                     ? () => unawaited(_setCuePoint(id, deck))
                     : null,
@@ -463,6 +466,8 @@ class _ConsoleDeck extends StatefulWidget {
     required this.onPlayPause,
     required this.onLoad,
     required this.cuePosition,
+    required this.channelGain,
+    required this.onChannelGainChanged,
     required this.onSetCue,
     required this.onCue,
     required this.jogSeekEnabled,
@@ -479,6 +484,8 @@ class _ConsoleDeck extends StatefulWidget {
   final Future<void> Function() onPlayPause;
   final VoidCallback? onLoad;
   final Duration? cuePosition;
+  final double channelGain;
+  final Future<void> Function(double gain) onChannelGainChanged;
   final VoidCallback? onSetCue;
   final VoidCallback? onCue;
   final Future<void> Function(Duration position) onJogSeek;
@@ -502,6 +509,8 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   int? _requestedEndMs;
   double _viewportWidth = 0;
   bool _resetWaveformScrollPending = false;
+  double _channelGain = 1.0;
+  bool _channelGainDragging = false;
   double? _jogLastAngle;
   double _jogAccumulatedRadians = 0;
   Duration? _jogStartPosition;
@@ -518,6 +527,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     );
+    _channelGain = widget.channelGain.clamp(0.0, 1.0).toDouble();
     _syncPlatterMotion();
     _waveformScroll.addListener(_onWaveformScroll);
   }
@@ -525,6 +535,9 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   @override
   void didUpdateWidget(covariant _ConsoleDeck oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!_channelGainDragging && oldWidget.channelGain != widget.channelGain) {
+      _channelGain = widget.channelGain.clamp(0.0, 1.0).toDouble();
+    }
     if (_jogStartPosition != null &&
         (!widget.jogSeekEnabled || !widget.active ||
             oldWidget.expectedSongId != widget.expectedSongId ||
@@ -659,6 +672,26 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
   }
 
+  Future<void> _commitChannelGain(double value) async {
+    try {
+      await widget.onChannelGainChanged(value);
+      if (!mounted) return;
+      setState(() {
+        _channelGain = value;
+        _channelGainDragging = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _channelGain = widget.channelGain.clamp(0.0, 1.0).toDouble();
+        _channelGainDragging = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Channel gain was not applied: $error')),
+      );
+    }
+  }
+
   Future<void> _togglePlayback() async {
     try {
       await widget.onPlayPause();
@@ -758,6 +791,41 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                 child: const Text('SET'),
               ),
             ],
+          ),
+          const SizedBox(height: 5),
+          Row(
+            children: [
+              Text(
+                'CHANNEL GAIN',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: Colors.white70,
+                  letterSpacing: .8,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${(_channelGain * 100).round()}%',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: Colors.white70,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: _channelGain.clamp(0.0, 1.0).toDouble(),
+            min: 0.0,
+            max: 1.0,
+            divisions: 40,
+            onChanged: widget.canPlay
+                ? (value) => setState(() {
+                      _channelGainDragging = true;
+                      _channelGain = value;
+                    })
+                : null,
+            onChangeEnd: widget.canPlay
+                ? (value) => unawaited(_commitChannelGain(value))
+                : null,
           ),
           const SizedBox(height: 5),
           Row(
