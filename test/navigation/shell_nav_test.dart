@@ -23,7 +23,19 @@ void main() {
     expect(selected, <int>[1, 0]);
   });
 
-  test('uses the explicit experience handoff instead of a local tab', () async {\n    final nav = ShellNav();\n    var switched = false;\n    nav.bind((_) {}, playerTabIndex: 0, onSwitchToPlayer: () async {\n      switched = true;\n    });\n\n    await nav.switchToPlayer();\n\n    expect(switched, isTrue);\n  });\n\n  test('unbind prevents stale shell navigation callbacks', () {
+  test('uses the explicit experience handoff instead of a local tab', () async {
+    final nav = ShellNav();
+    var switched = false;
+    nav.bind((_) {}, playerTabIndex: 0, onSwitchToPlayer: () async {
+      switched = true;
+    });
+
+    await nav.switchToPlayer();
+
+    expect(switched, isTrue);
+  });
+
+  test('unbind prevents stale shell navigation callbacks', () {
     final nav = ShellNav();
     final selected = <int>[];
     nav.bind(selected.add, playerTabIndex: 0);
