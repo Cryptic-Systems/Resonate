@@ -581,6 +581,88 @@ class Media3PlaybackBridge(
                         null,
                     )
                 }
+                "loadDjDeck" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val rawItems = call.argument<List<Map<String, Any?>>>("items")
+                    val startIndex = call.argument<Number>("startIndex")?.toInt() ?: 0
+                    if (deckId !in setOf("A", "B") || rawItems.isNullOrEmpty() ||
+                        startIndex !in rawItems.indices
+                    ) {
+                        result.error("INVALID_DJ_DECK_QUEUE", "A physical A/B deck and non-empty queue with a valid start index are required.", null)
+                        return
+                    }
+                    val items = mutableListOf<MediaItem>()
+                    for (raw in rawItems) {
+                        val source = raw["uri"] as? String
+                        if (source.isNullOrBlank()) {
+                            result.error("INVALID_DJ_DECK_QUEUE", "Every deck queue item needs a non-empty URI.", null)
+                            return
+                        }
+                        val uri = Uri.parse(source)
+                        val title = (raw["title"] as? String)?.takeIf { it.isNotBlank() }
+                            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+                            ?: "Unknown track"
+                        val metadata = MediaMetadata.Builder()
+                            .setTitle(title)
+                            .setArtist(raw["artist"] as? String)
+                            .setAlbumTitle(raw["album"] as? String)
+                            .apply {
+                                val artwork = raw["artworkUri"] as? String
+                                if (!artwork.isNullOrBlank()) setArtworkUri(Uri.parse(artwork))
+                            }
+                            .build()
+                        items += MediaItem.Builder()
+                            .setMediaId((raw["id"] as? String)?.takeIf { it.isNotBlank() } ?: source)
+                            .setUri(uri)
+                            .setMediaMetadata(metadata)
+                            .build()
+                    }
+                    val accepted = Media3PlaybackService.instance?.loadDjDeck(
+                        deckId!!,
+                        items,
+                        startIndex,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_LOAD_REJECTED", "The selected physical deck could not load its independent queue.", null)
+                }
+                "playDjDeck" -> {
+                    val deckId = call.argument<String>("deckId")
+                    if (deckId !in setOf("A", "B")) {
+                        result.error("INVALID_DJ_DECK", "deckId must be A or B.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.playDjDeck(deckId!!) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_PLAY_REJECTED", "The deck is not ready or playback is blocked by an active communication session.", null)
+                }
+                "pauseDjDeck" -> {
+                    val deckId = call.argument<String>("deckId")
+                    if (deckId !in setOf("A", "B")) {
+                        result.error("INVALID_DJ_DECK", "deckId must be A or B.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.pauseDjDeck(deckId!!) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_PAUSE_REJECTED", "The selected physical deck could not be paused.", null)
+                }
+                "seekDjDeck" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val positionMs = call.argument<Number>("positionMs")?.toLong()
+                    val expectedMediaId = call.argument<String>("expectedMediaId")
+                    if (deckId !in setOf("A", "B") || positionMs == null ||
+                        positionMs < 0L || expectedMediaId.isNullOrBlank()
+                    ) {
+                        result.error("INVALID_DJ_DECK_SEEK", "A physical deck, nonnegative position and expected media ID are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.seekDjDeck(
+                        deckId!!,
+                        positionMs,
+                        expectedMediaId,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_SEEK_REJECTED", "The deck identity changed or the requested position is invalid.", null)
+                }
                 "setVolume" -> {
                     val volume = call.argument<Number>("value")?.toFloat()
                     if (volume == null || !volume.isFinite()) {
