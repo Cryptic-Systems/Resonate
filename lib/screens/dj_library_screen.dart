@@ -72,10 +72,20 @@ class _DjLibraryScreenState extends State<DjLibraryScreen> {
           ),
         ],
       ),
-      body: Consumer2<LibraryProvider, MusicProvider>(
-        builder: (context, library, music, _) {
-          final state = music.media3ShadowState;
-          final ready = state?.djDualDeckMode == true;
+      body: Consumer<LibraryProvider>(
+        builder: (context, library, _) {
+          final music = context.read<MusicProvider>();
+          final deckInfo = context.select<MusicProvider, (bool, String?, String?)>(
+            (provider) {
+              final state = provider.media3ShadowState;
+              return (
+                state?.djDualDeckMode == true,
+                state?.deckA?.title,
+                state?.deckB?.title,
+              );
+            },
+          );
+          final ready = deckInfo.$1;
           final query = _search.text.trim().toLowerCase();
           final songs = library.allSongs.where((song) {
             if (query.isEmpty) return true;
@@ -112,7 +122,7 @@ class _DjLibraryScreenState extends State<DjLibraryScreen> {
                                   child: _DeckTargetCard(
                                     deck: 'A',
                                     selected: _targetDeck == 'A',
-                                    title: state?.deckA?.title ?? 'Empty deck',
+                                    title: deckInfo.$2 ?? 'Empty deck',
                                     onTap: () => setState(() => _targetDeck = 'A'),
                                   ),
                                 ),
@@ -121,7 +131,7 @@ class _DjLibraryScreenState extends State<DjLibraryScreen> {
                                   child: _DeckTargetCard(
                                     deck: 'B',
                                     selected: _targetDeck == 'B',
-                                    title: state?.deckB?.title ?? 'Empty deck',
+                                    title: deckInfo.$3 ?? 'Empty deck',
                                     onTap: () => setState(() => _targetDeck = 'B'),
                                   ),
                                 ),
