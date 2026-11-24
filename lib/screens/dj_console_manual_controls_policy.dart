@@ -16,6 +16,25 @@ class DjConsoleManualControlsPolicy {
         index,
   ];
 
+  /// The native crossfader only accepts writes while both physical decks are
+  /// loaded and audibly playing. Mirror those preconditions in the UI so an
+  /// unavailable fader is disabled rather than repeatedly sending rejected
+  /// MethodChannel commands.
+  static bool canAdjustCrossfader({
+    required bool djModeEnabled,
+    required bool transitionInProgress,
+    required bool deckAHasMedia,
+    required bool deckBHasMedia,
+    required bool deckAIsPlaying,
+    required bool deckBIsPlaying,
+  }) =>
+      djModeEnabled &&
+      !transitionInProgress &&
+      deckAHasMedia &&
+      deckBHasMedia &&
+      deckAIsPlaying &&
+      deckBIsPlaying;
+
   /// Cue preview belongs to a queue occurrence, not just a media ID.
   static bool matchesCuePreview({
     required String? previewSongId,
