@@ -444,8 +444,6 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                             transitionInProgress: music.transitionInProgress,
                             deckAHasMedia: deckA?.mediaId != null,
                             deckBHasMedia: deckB?.mediaId != null,
-                            deckAIsPlaying: deckA?.isPlaying == true,
-                            deckBIsPlaying: deckB?.isPlaying == true,
                           ),
                           position: state?.djCrossfaderPosition ?? 0.5,
                           compact: compact,
