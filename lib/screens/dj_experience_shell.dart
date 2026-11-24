@@ -29,6 +29,8 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
   int _selectedIndex = _workspaceTab;
   bool _djSessionStarted = false;
   bool _consoleOpening = false;
+  bool _switchingToPlayer = false;
+  Future<void>? _sessionStart;
 
   @override
   void initState() {
@@ -43,7 +45,8 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
         playerTabIndex: _workspaceTab,
         onSwitchToPlayer: _switchToPlayer,
       );
-      unawaited(_startDjSession());
+      _sessionStart = _startDjSession();
+      unawaited(_sessionStart!);
     });
   }
 
@@ -60,8 +63,10 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
   }
 
   Future<void> _switchToPlayer() async {
-    if (!_djSessionStarted) return;
+    if (_switchingToPlayer || !_djSessionStarted) return;
+    _switchingToPlayer = true;
     try {
+      await _sessionStart;
       await _music.endDjSession();
       _djSessionStarted = false;
       if (!mounted) return;
@@ -74,6 +79,8 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not return to Resonate Player: $error')),
       );
+    } finally {
+      _switchingToPlayer = false;
     }
   }
 
