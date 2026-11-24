@@ -1123,6 +1123,7 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
   bool _gestureReady = false;
   Future<bool>? _gestureStartFuture;
   bool _writeInFlight = false;
+  Completer<void>? _writeSettled;
 
   @override
   void initState() {
@@ -1184,6 +1185,8 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
     if (value == null) return;
     _pendingPosition = null;
     _writeInFlight = true;
+    final settled = Completer<void>();
+    _writeSettled = settled;
     try {
       await widget.onChanged(value);
     } catch (error) {
@@ -1198,6 +1201,8 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
       await widget.onGestureEnd();
     } finally {
       _writeInFlight = false;
+      if (!settled.isCompleted) settled.complete();
+      if (identical(_writeSettled, settled)) _writeSettled = null;
       if (_gestureReady && _pendingPosition != null && _dragging) {
         await _flushWrite();
       }
@@ -1216,7 +1221,9 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
         // Wait for the last coalesced write to settle before releasing the
         // gesture lease. No late write can escape after gesture completion.
         while (_writeInFlight) {
-          await Future<void>.delayed(Duration.zero);
+          final settled = _writeSettled?.future;
+          if (settled == null) break;
+          await settled;
         }
         await _flushWrite();
       }
