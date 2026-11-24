@@ -10,13 +10,19 @@ class ShellNav extends ChangeNotifier {
   int _playerTabIndex = 2;
   Future<void> Function()? _switchToPlayer;
 
-  void bind(void Function(int index) goToTab, {int playerTabIndex = 2}) {
+  void bind(
+    void Function(int index) goToTab, {
+    int playerTabIndex = 2,
+    Future<void> Function()? onSwitchToPlayer,
+  }) {
     _goToTab = goToTab;
     _playerTabIndex = playerTabIndex;
+    _switchToPlayer = onSwitchToPlayer;
   }
 
   void unbind() {
     _goToTab = null;
+    _switchToPlayer = null;
   }
 
   void goToTab(int index) {
