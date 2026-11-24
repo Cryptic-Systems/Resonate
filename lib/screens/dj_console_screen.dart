@@ -223,9 +223,11 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                     await music.playDjDeck(id);
                   }
                 },
-                onLoad: () => unawaited(
-                  _chooseTrackForDeck(context, id, music, library),
-                ),
+                onLoad: djReady
+                    ? () => unawaited(
+                          _chooseTrackForDeck(context, id, music, library),
+                        )
+                    : null,
                 onJogSeek: (target) => music.seekDjDeck(
                   deckId: id,
                   position: target,
@@ -382,7 +384,7 @@ class _ConsoleDeck extends StatefulWidget {
   final String deck, status, title, artist;
   final bool active, compact, isPlaying, canPlay, jogSeekEnabled;
   final Future<void> Function() onPlayPause;
-  final VoidCallback onLoad;
+  final VoidCallback? onLoad;
   final Future<void> Function(Duration position) onJogSeek;
   final double progress;
   final Duration position, duration;
