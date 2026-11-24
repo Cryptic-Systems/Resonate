@@ -12,17 +12,15 @@ internal object Media3DjCrossfaderPolicy {
     }
 
     /**
-     * A crossfader write is valid only when both physical decks can contribute
-     * audible media. A paused/empty standby must never let a fader gesture
-     * attenuate the only playing deck.
+     * A crossfader can be pre-positioned whenever both physical decks have
+     * media. gainsForState keeps the sole playing deck at unity until both
+     * decks are audible, so moving the stored fader cannot attenuate one deck.
      */
     fun canApply(
         position: Float,
         djDualDeckMode: Boolean,
         activeHasMedia: Boolean,
         standbyHasMedia: Boolean,
-        activeIsPlaying: Boolean,
-        standbyIsPlaying: Boolean,
         transitionOwnsGain: Boolean,
     ): Boolean =
         position.isFinite() &&
@@ -30,8 +28,6 @@ internal object Media3DjCrossfaderPolicy {
             djDualDeckMode &&
             activeHasMedia &&
             standbyHasMedia &&
-            activeIsPlaying &&
-            standbyIsPlaying &&
             !transitionOwnsGain
 
     /**
