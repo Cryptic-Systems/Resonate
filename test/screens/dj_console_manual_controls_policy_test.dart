@@ -210,6 +210,8 @@ void main() {
         ),
         isFalse,
       );
+      // A paused deck does not block fader positioning; native gain policy
+      // keeps the currently audible deck at unity until both are playing.
       expect(
         DjConsoleManualControlsPolicy.canAdjustCrossfader(
           djModeEnabled: true,
@@ -217,7 +219,7 @@ void main() {
           deckAHasMedia: true,
           deckBHasMedia: true,
         ),
-        isFalse,
+        isTrue,
       );
       expect(
         DjConsoleManualControlsPolicy.canAdjustCrossfader(
@@ -225,8 +227,6 @@ void main() {
           transitionInProgress: false,
           deckAHasMedia: true,
           deckBHasMedia: true,
-          deckAIsPlaying: true,
-          deckBIsPlaying: true,
         ),
         isFalse,
       );
