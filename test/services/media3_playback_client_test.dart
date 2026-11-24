@@ -61,6 +61,55 @@ void main() {
       expect(state.hasError, isFalse);
     });
 
+    test('parses persistent DJ physical deck telemetry and crossfader', () {
+      final state = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'djDualDeckMode': true,
+        'djCrossfaderPosition': 0.25,
+        'deckA': <Object?, Object?>{
+          'mediaId': 'track-a',
+          'title': 'Deck A Track',
+          'artist': 'Artist A',
+          'positionMs': 12500,
+          'durationMs': 240000,
+          'isPlaying': true,
+          'playWhenReady': true,
+          'playbackState': 3,
+          'mediaItemCount': 1,
+          'volume': 0.9,
+          'speed': 1.02,
+          'pitch': 1.0,
+          'audioSessionId': 41,
+        },
+        'deckB': <Object?, Object?>{
+          'mediaId': 'track-b',
+          'title': 'Deck B Track',
+          'artist': 'Artist B',
+          'positionMs': 3000,
+          'durationMs': 180000,
+          'isPlaying': false,
+          'playWhenReady': false,
+          'playbackState': 2,
+          'mediaItemCount': 1,
+          'volume': 0.2,
+          'speed': 0.98,
+          'pitch': 0.98,
+          'audioSessionId': 42,
+        },
+      });
+
+      expect(state.djDualDeckMode, isTrue);
+      expect(state.djCrossfaderPosition, 0.25);
+      expect(state.deckA?.mediaId, 'track-a');
+      expect(state.deckA?.title, 'Deck A Track');
+      expect(state.deckA?.isPlaying, isTrue);
+      expect(state.deckA?.position, const Duration(milliseconds: 12500));
+      expect(state.deckA?.audioSessionId, 41);
+      expect(state.deckB?.mediaId, 'track-b');
+      expect(state.deckB?.isPlaying, isFalse);
+      expect(state.deckB?.speed, 0.98);
+      expect(state.deckB?.volume, 0.2);
+    });
+
     test('leaves missing or malformed native deck parameters unavailable', () {
       final state = Media3PlaybackState.fromMap(<Object?, Object?>{
         'activeSpeed': double.nan,
