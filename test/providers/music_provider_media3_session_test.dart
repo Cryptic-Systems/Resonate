@@ -72,7 +72,7 @@ Media3ProviderState _state({
       error: null,
     );
 
-class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueBackend {
+class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueBackend, PlaybackDjDeckSession {
   _FakePlaybackSession({bool synchronousStates = false})
       : states = StreamController<Media3ProviderState>.broadcast(
           sync: synchronousStates,
@@ -122,6 +122,8 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   Duration positionValue = Duration.zero;
   Duration? durationValue;
   double playbackSpeedValue = 1.0;
+  bool djDualDeckModeValue = false;
+  final Map<String, List<Song>> djDeckQueues = <String, List<Song>>{};
 
   @override
   Stream<int?> get audioSessionIdStream => audioSessions.stream;
@@ -407,6 +409,68 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   Future<void> dispose() async {
     disposed = true;
     calls.add('dispose');
+  }
+
+  @override
+  Future<void> enableDjDualDeckMode() async {
+    djDualDeckModeValue = true;
+    calls.add('enableDjDualDeckMode');
+  }
+
+  @override
+  Future<void> disableDjDualDeckMode() async {
+    djDualDeckModeValue = false;
+    calls.add('disableDjDualDeckMode');
+  }
+
+  @override
+  Future<void> setDjCrossfader(double position) async {
+    calls.add('setDjCrossfader:$position');
+  }
+
+  @override
+  Future<void> setDjDeckChannelGain({required String deckId, required double gain}) async {
+    calls.add('setDjDeckChannelGain:$deckId:$gain');
+  }
+
+  @override
+  Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0}) async {
+    djDeckQueues[deckId] = List<Song>.of(songs);
+    calls.add('loadDjDeck:$deckId');
+  }
+
+  @override
+  Future<void> playDjDeck(String deckId) async {
+    calls.add('playDjDeck:$deckId');
+  }
+
+  @override
+  Future<void> pauseDjDeck(String deckId) async {
+    calls.add('pauseDjDeck:$deckId');
+  }
+
+  @override
+  Future<void> clearDjDeck(String deckId) async {
+    djDeckQueues.remove(deckId);
+    calls.add('clearDjDeck:$deckId');
+  }
+
+  @override
+  Future<void> setDjDeckPlaybackParameters({
+    required String deckId,
+    required double speed,
+    required double pitch,
+  }) async {
+    calls.add('setDjDeckPlaybackParameters:$deckId:$speed:$pitch');
+  }
+
+  @override
+  Future<void> seekDjDeck({
+    required String deckId,
+    required Duration position,
+    required String expectedMediaId,
+  }) async {
+    calls.add('seekDjDeck:$deckId:${position.inMilliseconds}:$expectedMediaId');
   }
 
   @override
@@ -4248,6 +4312,48 @@ void main() {
       } finally {
         provider.dispose();
         await Future<void>.delayed(const Duration(milliseconds: 10));
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('DJ session exit restores Player queue, selected occurrence and paused position', () async {
+      final session = _FakePlaybackSession();
+      final music = MusicProvider(media3ProviderSession: session);
+      final first = _song('return-first');
+      final second = _song('return-second');
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        expect(
+          await music.playSong(second, queue: <Song>[first, second]),
+          isTrue,
+        );
+        session.positionValue = const Duration(seconds: 47);
+        session.playingValue = true;
+
+        await music.beginDjSession();
+
+        expect(session.djDualDeckModeValue, isTrue);
+        expect(session.playingValue, isFalse);
+        expect(session.djDeckQueues, isEmpty);
+        expect(music.queue.map((song) => song.id), ['return-first', 'return-second']);
+
+        await music.loadDjDeck('A', <Song>[first]);
+        await music.loadDjDeck('B', <Song>[second]);
+        await music.endDjSession();
+
+        expect(session.djDualDeckModeValue, isFalse);
+        expect(session.queue.map((song) => song.id), ['return-first', 'return-second']);
+        expect(session.loadedIndex, 1);
+        expect(session.currentSongValue?.id, 'return-second');
+        expect(session.positionValue, const Duration(seconds: 47));
+        expect(session.playingValue, isFalse,
+            reason: 'Returning to Player restores its queue paused; it must not autoplay.');
+        expect(session.calls, contains('disableDjDualDeckMode'));
+        expect(session.calls, contains('focus:true'));
+      } finally {
+        music.dispose();
         await session.audioSessions.close();
         await session.states.close();
       }
