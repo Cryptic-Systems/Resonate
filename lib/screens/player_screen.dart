@@ -123,6 +123,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     return ResonateGlassScaffold(
       title: const Text('Now Playing'),
       actions: [
+        const ExperienceModeChip(),
         Consumer<MusicProvider>(
           builder: (_, music, __) {
             return Padding(
