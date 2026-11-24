@@ -593,6 +593,27 @@ class Media3PlaybackClient {
     );
   }
 
+  /// Enables the persistent physical A/B deck lifecycle for Resonatix DJ.
+  Future<void> enableDjDualDeckMode() => _command('enableDjDualDeckMode');
+
+  /// Returns to Player's rolling active/standby lifecycle.
+  Future<void> disableDjDualDeckMode() => _command('disableDjDualDeckMode');
+
+  /// Applies the operator's physical A/B crossfader position (0 = A, 1 = B).
+  Future<void> setDjCrossfader(double position) async {
+    if (!position.isFinite || position < 0.0 || position > 1.0) {
+      throw ArgumentError.value(
+        position,
+        'position',
+        'Must be finite and between 0 and 1.',
+      );
+    }
+    await _invokeAccepted(
+      'setDjCrossfader',
+      <String, Object>{'position': position},
+    );
+  }
+
   Future<void> setVolume(double volume) async {
     if (!volume.isFinite) {
       throw ArgumentError.value(volume, 'volume', 'Must be finite.');
