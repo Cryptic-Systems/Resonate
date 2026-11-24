@@ -404,7 +404,6 @@ extension MusicProviderDjHandoff on MusicProvider {
       _djCrossfaderGestureLease = null;
     }
 
-    late final PlaybackControlLease lease;
     final acquired = await playbackControlArbiter.acquire(
       owner: 'dj_deck_operator',
       priority: PlaybackControlPriority.interactive,
@@ -421,7 +420,7 @@ extension MusicProviderDjHandoff on MusicProvider {
       },
     );
     if (acquired == null) return false;
-    lease = acquired;
+    final lease = acquired;
     if (!lease.isCurrent) return false;
     _djCrossfaderGestureLease = lease;
     return true;
