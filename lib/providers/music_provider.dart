@@ -130,6 +130,8 @@ class MusicProvider extends ChangeNotifier {
   bool _manualDjPreparationInvalidated = false;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
   bool get media3ProviderSessionActive => _media3ProviderSessionActive;
+  bool get _djDualDeckSessionActive =>
+      _media3ShadowState?.djDualDeckMode == true;
   /// True only while the operator's prepared standby deck still owns its lease.
   /// UI should derive readiness from this instead of caching a local flag: a
   /// higher-priority user transport can revoke the lease asynchronously.
@@ -2514,6 +2516,9 @@ class MusicProvider extends ChangeNotifier {
   int? resumePositionFor(String songId) => _resumeStore.positionFor(songId);
 
   void _maybeStartAutomaticCrossfade(Duration position) {
+    // Resonatix DJ owns both physical decks directly. Player's queue scheduler
+    // must never preload or advance either DJ deck behind the operator.
+    if (_djDualDeckSessionActive) return;
     // The injected session is authoritative from construction onward. During
     // startup it may not own playback yet, so do not fall through to a lazy
     // just_audio getter while waiting for the Media3 handoff to complete.
@@ -3472,6 +3477,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _advanceAfterCompletionInternal(String completedSongId, int intentToken) async {
+    if (_djDualDeckSessionActive) return;
     bool ownsCompletionAdvance() =>
         !_disposed &&
         _playbackIntentGate.isCurrent(intentToken);
