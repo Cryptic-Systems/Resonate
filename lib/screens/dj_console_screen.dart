@@ -813,6 +813,33 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(color: Colors.white60)),
+          const SizedBox(height: 7),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'PERFORMANCE CONTROLS',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: Colors.white38,
+                letterSpacing: 1.0,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: const [
+                _ConsolePlaceholderControl(label: 'VINYL', icon: Icons.album_outlined),
+                _ConsolePlaceholderControl(label: 'SLIP', icon: Icons.motion_photos_on_outlined),
+                _ConsolePlaceholderControl(label: 'SYNC', icon: Icons.sync_rounded),
+                _ConsolePlaceholderControl(label: 'LOOP', icon: Icons.loop_rounded),
+                _ConsolePlaceholderControl(label: 'HOT CUE', icon: Icons.bookmark_outline_rounded),
+                _ConsolePlaceholderControl(label: 'FX', icon: Icons.auto_awesome_outlined),
+                _ConsolePlaceholderControl(label: 'SAMPLES', icon: Icons.grid_view_rounded),
+              ],
+            ),
+          ),
           SizedBox(
             height: compact ? 218 : 286,
             child: Center(
@@ -1373,7 +1400,64 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
               fontSize: widget.compact ? 8 : 9,
             ),
           ),
+          const SizedBox(height: 10),
+          const Divider(height: 1, color: Colors.white12),
+          const SizedBox(height: 8),
+          Text(
+            'MIXER RACK · PLANNED',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: Colors.white38,
+              letterSpacing: .7,
+              fontSize: 8,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 3,
+            runSpacing: 3,
+            children: const [
+              _ConsolePlaceholderControl(label: 'EQ', icon: Icons.equalizer_rounded),
+              _ConsolePlaceholderControl(label: 'FILTER', icon: Icons.tune_rounded),
+              _ConsolePlaceholderControl(label: 'PFL', icon: Icons.headphones_rounded),
+              _ConsolePlaceholderControl(label: 'MASTER', icon: Icons.volume_up_rounded),
+              _ConsolePlaceholderControl(label: 'REC', icon: Icons.fiber_manual_record_rounded),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _ConsolePlaceholderControl extends StatelessWidget {
+  const _ConsolePlaceholderControl({required this.label, required this.icon});
+
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: Tooltip(
+        message: '$label control is planned but not wired yet',
+        child: OutlinedButton.icon(
+          onPressed: null,
+          icon: Icon(icon, size: 13),
+          label: Text(label),
+          style: OutlinedButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            minimumSize: const Size(0, 30),
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+            textStyle: const TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              letterSpacing: .3,
+            ),
+          ),
+        ),
       ),
     );
   }
