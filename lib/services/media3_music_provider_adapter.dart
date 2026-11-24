@@ -376,6 +376,10 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
         incomingMediaId: state.incomingMediaId,
         incomingReady: state.incomingReady,
         incomingPosition: state.incomingPosition,
+        djDualDeckMode: state.djDualDeckMode,
+        djCrossfaderPosition: state.djCrossfaderPosition,
+        deckA: _deckSnapshot(state.deckA),
+        deckB: _deckSnapshot(state.deckB),
         audioUnderrunCountA: state.audioUnderrunCountA,
         audioUnderrunCountB: state.audioUnderrunCountB,
         lastUnderrunDeck: state.lastUnderrunDeck,
@@ -388,6 +392,29 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
         hasError: state.hasError,
         error: state.error,
       );
+
+  static PlaybackDeckSnapshot? _deckSnapshot(Media3DjDeckSnapshot? deck) {
+    if (deck == null) return null;
+    return PlaybackDeckSnapshot(
+      deckId: deck.deckId,
+      mediaId: deck.mediaId,
+      title: deck.title,
+      artist: deck.artist,
+      album: deck.album,
+      position: deck.position,
+      bufferedPosition: deck.bufferedPosition,
+      duration: deck.duration,
+      isPlaying: deck.isPlaying,
+      playWhenReady: deck.playWhenReady,
+      playbackState: deck.playbackState,
+      mediaItemIndex: deck.mediaItemIndex,
+      mediaItemCount: deck.mediaItemCount,
+      volume: deck.volume,
+      speed: deck.speed,
+      pitch: deck.pitch,
+      audioSessionId: deck.audioSessionId,
+    );
+  }
 
   static Uri sourceUriForPath(String path) {
     final trimmed = path.trim();
