@@ -118,7 +118,19 @@ extension MusicProviderDjHandoff on MusicProvider {
   /// Starts a fresh, empty DJ session while retaining a return snapshot of
   /// Player's queue, current occurrence, position and playback preferences.
   /// Player audio is paused before either physical deck is repurposed.
-  Future<void> beginDjSession() async {
+  Future<void> _runDjSessionLifecycle(Future<void> Function() operation) {
+    final result = _djSessionLifecycleTail.then((_) => operation());
+    _djSessionLifecycleTail = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return result;
+  }
+
+  Future<void> beginDjSession() =>
+      _runDjSessionLifecycle(_beginDjSession);
+
+  Future<void> _beginDjSession() async {
     if (_djSessionReturnState != null) {
       throw StateError('A previous DJ session has not completed its Player return.');
     }
@@ -129,6 +141,7 @@ extension MusicProviderDjHandoff on MusicProvider {
       throw StateError('The shared Media3 session cannot start a DJ session.');
     }
 
+    final wasPlaying = session.isPlaying;
     await session.pause();
     if (session is PlaybackStateRefreshSession) {
       await (session as PlaybackStateRefreshSession).refreshState();
@@ -138,8 +151,8 @@ extension MusicProviderDjHandoff on MusicProvider {
       queueIndex: _queueIndex,
       position: session.position,
       repeatMode: _repeatMode,
-      shuffleEnabled: effectiveShuffleEnabled,
-      wasPlaying: session.isPlaying,
+      shuffleEnabled: _shuffleEnabled,
+      wasPlaying: wasPlaying,
     );
 
     try {
@@ -150,7 +163,7 @@ extension MusicProviderDjHandoff on MusicProvider {
       await clearDjDeck('B');
     } catch (_) {
       try {
-        await endDjSession();
+        await _endDjSession();
       } catch (recoveryError) {
         debugPrint('DJ session start rollback was incomplete: $recoveryError');
       }
@@ -243,7 +256,10 @@ extension MusicProviderDjHandoff on MusicProvider {
     );
   }
 
-  Future<void> endDjSession() async {
+  Future<void> endDjSession() =>
+      _runDjSessionLifecycle(_endDjSession);
+
+  Future<void> _endDjSession() async {
     final session = _media3ProviderSession;
     final returnState = _djSessionReturnState;
     if (session == null || !_media3ProviderSessionActive ||
