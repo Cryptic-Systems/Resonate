@@ -199,7 +199,7 @@ Before changing the current native deck lifecycle, document and test:
 
 Until this spike proves the required behavior, the current muted-standby crossfade remains the only validated behavior. The product target is traditional dual-deck operation, but UI controls must not claim capabilities before native behavior and DSP routing are implemented and tested.
 
-### 4.3 Native implementation audit — current baseline
+### 4.3 Native implementation audit — pre-implementation baseline
 
 The current native implementation confirms that the service already owns the two physical deck players, but they are still a rolling active/standby pair rather than two persistent DJ channels:
 
@@ -217,6 +217,24 @@ The current native implementation confirms that the service already owns the two
 - A single service-level focus owner remains the target. The standby player currently has focus handling disabled, while the canonical active player owns the MediaSession/focus path.
 
 **Implementation consequence:** keep the existing Player rolling active/standby behavior intact. Under the DJ policy, evolve the same two physical players into persistent Deck A and Deck B roles with independent queue identity, transport, cue, playback parameters and channel gain. Keep one MediaSession and one focus owner, with explicit canonical-deck routing for external system controls. A manual crossfader must write only the native per-channel gain path and must never be driven by automation. The master/output processing question remains open until the user's DSP upgrade is ready for a separate integration review; do not modify or duplicate the DSP engine to advance this phase.
+
+### 4.4 Implementation checkpoint — first persistent dual-deck batch
+
+**Status: implemented on `dj-workspace-development`; CI green on 2026-11-24 (run 45338147845, commit `cbfec792a8e371921c78a1b204c8b664d2fe822f`). Real-device audio validation remains outstanding.**
+
+The first implementation batch now changes the DJ policy from a rolling standby workflow into a persistent physical A/B session while preserving Player's existing behavior:
+
+- `Media3PlaybackService` retains both existing ExoPlayer instances while DJ dual-deck mode is active. Player mode continues to use its existing rolling active/standby promotion and release lifecycle.
+- Native commands now support physical-deck queue load/clear, play, pause, identity-checked seek, independent speed/pitch and an operator crossfader. Commands are exposed through the existing Media3 bridge, client, backend/runtime/session and MusicProvider.
+- The service keeps one canonical MediaSession/audio-focus owner. Starting the other deck promotes that physical deck as the canonical system-transport/focus owner while the first deck can continue playing. Pausing or clearing the canonical deck promotes a still-playing partner. System transport pause still pauses both decks.
+- Physical A/B identity and telemetry (track, duration, position, transport state, speed, pitch, output volume and audio-session ID) are projected through `Media3PlaybackState`, `PlaybackSnapshot` and `Media3ProviderState`.
+- The equal-power crossfader is a native per-channel gain operation. Only the DJ Console operator control calls it; Player Autopilot and DJ suggestion automation do not move it.
+- DJ deck commands leave the canonical Player queue held in MusicProvider untouched. A fresh DJ shell initializes the persistent mode and clears both native decks; the DJ Library loads into the selected deck without calling Player's normal play/queue path.
+- DJ Console now exposes separate Deck A/B load, play/pause, jog-seek and tempo controls plus the manual crossfader. DJ Workspace reports physical A/B telemetry. Player receives only the high-level read-only mix monitor.
+- Player queue preloading/automatic advancement and Intelligence Autopilot mutations are suspended while the DJ dual-deck session is active. Approving a suggested DJ set in DJ mode stages its first two tracks on A/B without starting playback; Player's approval-and-play behavior remains unchanged.
+- Every physical player still receives its existing deck-specific DSP sink processor. This does **not** establish a shared post-mix master DSP processor for the summed output. The user's upgraded DSP is not integrated or modified in this batch.
+
+**Remaining Phase 4 gates:** persistent cue-point memory and cue workflow; independent channel trim/gain controls; explicit safe recovery and Player-queue restoration on experience exit; tests for stale-command/lease revocation and queue isolation; and physical-device validation of simultaneous playback, focus handoff, crossfader response, output routing and DSP behavior. The shared post-mix/master DSP decision remains deferred until the user's DSP upgrade is ready.
 
 ## 5. Target application architecture
 
@@ -303,17 +321,20 @@ Acceptance:
 - No new player, MediaSession, DSP, audio focus owner or arbiter is introduced.
 
 ### Phase 2 — Resonate Player isolation
+**Status: implemented; CI verified.**
 Retain current HomeScreen behavior and remove manual DJ performance entry points from the Player shell. Preserve automatic DJ and all existing Player functionality. Add a read-only mix-monitor presentation to Player navigation; it must not expose physical engine/deck identifiers, gain telemetry, manual cueing, crossfader or Console/Transition Studio routes. Selected DJ Assist workflows must remain explicitly reviewable and approval-gated.
 
 Acceptance: Player regression suite and existing playback/Media3/DSP tests remain green; DJ Console and Transition Studio are not reachable from Player navigation; Engine B remains invisible and independently uncontrollable in Player; existing automatic crossfade/Autopilot preload behavior is preserved under MusicProvider ownership and DSP is verified on every audible transition source.
 
 ### Phase 3 — Resonatix DJ shell and integrated browser
-Create dedicated DJ navigation and connect existing library/playlist/analysis providers. Preserve Workspace and Console rather than recreating them.
+**Status: implemented; CI verified.**
+Create dedicated DJ navigation and connect existing library/playlist/analysis providers. Preserve Workspace and Console rather than recreating them. The DJ shell has dedicated Workspace and DJ Library tabs; the DJ Library loads tracks directly into a selected physical deck and does not route through Player's canonical play action.
 
 Acceptance: DJ shell can browse the existing library and choose a target deck without entering the Player experience. No duplicate library database/scanner/permission flow.
 
 ### Phase 4 — independent dual-deck lifecycle and mix path
-First complete the native/API design spike and implement/test the strict deck-usage policy gate at both Dart and native boundaries. Then evolve the existing two physical Media3 deck players and existing DSP/output path to support independent DJ deck loading, transport and concurrent audibility, with one shared master mix path and a manually operated crossfader. Player policy must remain strictly single-deck. Resolve session queue isolation and occurrence mapping before implementation. Do not create a new player or audio engine.
+**Status: in progress — first persistent-deck implementation batch landed and CI verified; remaining gates are listed in §4.4.**
+The native/API spike and first strict physical-deck command boundary are implemented. The existing two physical Media3 players now support independent deck queues, transport, seek, tempo and operator crossfading in DJ mode. Player retains its existing rolling single-user-facing-deck behavior. The per-player DSP sink remains shared infrastructure; a shared post-mix master path is not yet proven and is deferred for the user's upgraded DSP integration review. Do not create a new player or audio engine.
 
 Acceptance: empty launch; independently load/replace/unload A and B; independent start/pause/seek/cue/tempo; verified simultaneous playback; independent channel gains; tested crossfader curve and master output; correct focus/session/effects behavior; safe single-deck and dual-deck recovery; state/DSP routing for both physical decks; no Player queue corruption; stale-command and lease tests; all cleanup paths tested. Standby mute remains enforced whenever a deck is in a prepared-but-not-playing state.
 
