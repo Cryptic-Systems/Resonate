@@ -62,6 +62,7 @@ class Media3PlaybackService : MediaSessionService() {
     private var activeDeckId = "A"
     private var djDualDeckMode = false
     private var djCrossfaderPosition = 0.5f
+    private var suppressDjPeerPauseDeckId: String? = null
     private fun standbyDeckId(): String = if (activeDeckId == "A") "B" else "A"
     // ExoPlayer focus handling is opt-in at the migration boundary. The legacy
     // audio_session owner remains untouched until an explicit provider cutover.
@@ -165,6 +166,86 @@ class Media3PlaybackService : MediaSessionService() {
         applyDeckVolumes()
         return true
     }
+
+    private fun playerForPhysicalDeck(deckId: String): ExoPlayer? = when {
+        deckId == activeDeckId -> activePlayer
+        deckId == standbyDeckId() -> standbyPlayer
+        else -> null
+    }
+
+    /** Replace only the selected physical deck's queue; the other deck is untouched. */
+    fun loadDjDeck(deckId: String, items: List<MediaItem>, startIndex: Int): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") || items.isEmpty() ||
+            startIndex !in items.indices || items.any { it.localConfiguration?.uri == null } ||
+            crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        val player = playerForPhysicalDeck(deckId) ?: return false
+        return try {
+            player.pause()
+            player.stop()
+            player.clearMediaItems()
+            DspEngineRegistry.setDeckTrack(deckId, null)
+            player.setMediaItems(items, startIndex, 0L)
+            player.prepare()
+            DspEngineSinkHook.suspendDeck(deckId)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Play one physical deck without changing the other deck's transport. */
+    fun playDjDeck(deckId: String): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") || isCommunicationActive()) return false
+        val player = playerForPhysicalDeck(deckId) ?: return false
+        if (player.mediaItemCount == 0 || player.playbackState != Player.STATE_READY) return false
+        if (player === activePlayer && !setAudioFocusHandling(true)) return false
+        DspEngineSinkHook.activateDeck(deckId)
+        return try {
+            player.play()
+            true
+        } catch (_: Exception) {
+            DspEngineSinkHook.suspendDeck(deckId)
+            false
+        }
+    }
+
+    /** Pause one physical deck; the other deck continues unless system transport owns the pause. */
+    fun pauseDjDeck(deckId: String): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B")) return false
+        val player = playerForPhysicalDeck(deckId) ?: return false
+        if (player === activePlayer && player.playWhenReady) {
+            suppressDjPeerPauseDeckId = deckId
+        }
+        return try {
+            player.pause()
+            DspEngineSinkHook.suspendDeck(deckId)
+            true
+        } catch (_: Exception) {
+            suppressDjPeerPauseDeckId = null
+            false
+        }
+    }
+
+    /** Seek only the named physical deck, with duration and identity checked natively. */
+    fun seekDjDeck(deckId: String, positionMs: Long, expectedMediaId: String): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") || positionMs < 0L ||
+            expectedMediaId.isBlank()
+        ) return false
+        val player = playerForPhysicalDeck(deckId) ?: return false
+        if (player.currentMediaItem?.mediaId != expectedMediaId ||
+            player.mediaItemCount == 0
+        ) return false
+        val duration = player.duration
+        if (duration != C.TIME_UNSET && positionMs > duration) return false
+        return try {
+            player.seekTo(positionMs)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
 
     /**
      * Plays a short auxiliary sound without changing the canonical MediaSession
@@ -648,8 +729,15 @@ class Media3PlaybackService : MediaSessionService() {
                 // standby deck even when it is only preparing and no fade clock
                 // is active.
                 if (deck === activePlayer && !playWhenReady) {
-                    standbyPlayer?.pause()
-                    pauseCrossfade()
+                    val deckId = activeDeckId
+                    val isIndependentDeckPause =
+                        djDualDeckMode && suppressDjPeerPauseDeckId == deckId
+                    if (isIndependentDeckPause) {
+                        suppressDjPeerPauseDeckId = null
+                    } else {
+                        standbyPlayer?.pause()
+                    }
+                    if (!djDualDeckMode) pauseCrossfade()
                     stopTransitionPreview()
                 }
                 // Never allow a deck to continue output in call/VoIP mode.
