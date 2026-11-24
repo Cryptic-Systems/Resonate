@@ -12,6 +12,7 @@ import '../providers/dj_mode_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
 import '../services/dj_session_coordinator.dart';
+import '../services/playback_snapshot.dart';
 import '../ui/resonate_glass.dart';
 import 'dj_console_screen.dart';
 import 'dj_suggestion_mix_screen.dart';
@@ -119,6 +120,10 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
       body: Consumer3<MusicProvider, DjModeProvider, AudioVisualizationProvider>(
         builder: (context, music, dj, visualization, _) {
           final song = music.currentSong;
+          final deckState = music.media3ShadowState;
+          final djDeckSession = deckState?.djDualDeckMode == true;
+          final deckA = deckState?.deckA;
+          final deckB = deckState?.deckB;
           final duration = music.currentDuration ?? song?.duration ?? Duration.zero;
           final progress = duration.inMilliseconds <= 0
               ? 0.0
@@ -176,7 +181,37 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    if (song == null) ...[
+                    if (!widget.playerFacing && djDeckSession) ...[
+                      Text('Independent deck session',
+                          style: theme.textTheme.titleLarge),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Both physical decks are available for separate track loading and transport.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _WorkspaceDeckSummary(
+                              deck: 'A',
+                              snapshot: deckA,
+                              color: const Color(0xFF55D6BE),
+                              clock: _clock,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _WorkspaceDeckSummary(
+                              deck: 'B',
+                              snapshot: deckB,
+                              color: const Color(0xFF8EA7FF),
+                              clock: _clock,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else if (song == null) ...[
                       Text('No track playing', style: theme.textTheme.titleLarge),
                       const SizedBox(height: 4),
                       Text('Start playback from your library to populate the live session.',
@@ -305,6 +340,15 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                     incomingIdentityAmbiguous: incomingIdentityAmbiguous,
                     incomingUnverified: incomingMediaId != null && standbySong == null,
                     liveSpectrum: hasLiveSpectrum ? visualization.frequencies : null,
+                  );
+                }
+                if (deckState?.djDualDeckMode == true) {
+                  return _DjPhysicalDeckMonitorCard(
+                    deckA: deckState?.deckA,
+                    deckB: deckState?.deckB,
+                    crossfaderPosition: deckState?.djCrossfaderPosition ?? 0.5,
+                    underrunsA: deckState?.audioUnderrunCountA,
+                    underrunsB: deckState?.audioUnderrunCountB,
                   );
                 }
                 return Column(
@@ -485,6 +529,217 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+class _WorkspaceDeckSummary extends StatelessWidget {
+  const _WorkspaceDeckSummary({
+    required this.deck,
+    required this.snapshot,
+    required this.color,
+    required this.clock,
+  });
+
+  final String deck;
+  final PlaybackDeckSnapshot? snapshot;
+  final Color color;
+  final String Function(Duration) clock;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final loaded = snapshot?.mediaId != null;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: .35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Text('DECK $deck',
+                style: theme.textTheme.labelLarge?.copyWith(color: color)),
+            const Spacer(),
+            _StatusPill(
+              label: !loaded
+                  ? 'EMPTY'
+                  : snapshot!.isPlaying
+                      ? 'PLAYING'
+                      : 'LOADED',
+              active: snapshot?.isPlaying == true,
+            ),
+          ]),
+          const SizedBox(height: 7),
+          Text(
+            snapshot?.title ?? 'No track loaded',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall,
+          ),
+          Text(
+            snapshot?.artist ?? 'Waiting for track',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 7),
+          Text(
+            loaded
+                ? '${clock(snapshot!.position)} / ${snapshot.duration == null ? '--:--' : clock(snapshot.duration!)}'
+                : '—:— / —:—',
+            style: theme.textTheme.labelSmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DjPhysicalDeckMonitorCard extends StatelessWidget {
+  const _DjPhysicalDeckMonitorCard({
+    required this.deckA,
+    required this.deckB,
+    required this.crossfaderPosition,
+    required this.underrunsA,
+    required this.underrunsB,
+  });
+
+  final PlaybackDeckSnapshot? deckA;
+  final PlaybackDeckSnapshot? deckB;
+  final double crossfaderPosition;
+  final int? underrunsA;
+  final int? underrunsB;
+
+  String _clock(Duration value) {
+    final seconds = value.inSeconds.clamp(0, 1 << 30);
+    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+  }
+
+  Widget _deck(BuildContext context, String label, PlaybackDeckSnapshot? deck, Color color) {
+    final theme = Theme.of(context);
+    final loaded = deck?.mediaId != null;
+    final duration = deck?.duration;
+    return Expanded(
+      child: ResonateGlassCard(
+        margin: EdgeInsets.zero,
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Text('DECK $label',
+                  style: theme.textTheme.labelLarge?.copyWith(color: color)),
+              const Spacer(),
+              _StatusPill(
+                label: !loaded
+                    ? 'EMPTY'
+                    : deck!.isPlaying
+                        ? 'PLAYING'
+                        : 'PAUSED',
+                active: deck?.isPlaying == true,
+              ),
+            ]),
+            const SizedBox(height: 10),
+            Text(
+              deck?.title ?? 'No track loaded',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium,
+            ),
+            Text(
+              deck?.artist ?? 'Waiting for library selection',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            LinearProgressIndicator(
+              value: !loaded || duration == null || duration.inMilliseconds <= 0
+                  ? 0
+                  : (deck!.position.inMilliseconds / duration.inMilliseconds)
+                      .clamp(0.0, 1.0).toDouble(),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              loaded
+                  ? '${_clock(deck!.position)} / ${duration == null ? '--:--' : _clock(duration)}'
+                  : '—:— / —:—',
+              style: theme.textTheme.labelSmall,
+            ),
+            const SizedBox(height: 10),
+            _TelemetryRow(
+              icon: Icons.speed_rounded,
+              label: 'Tempo / key lock',
+              value: loaded
+                  ? '${deck!.speed.toStringAsFixed(3)}× · pitch ${deck.pitch.toStringAsFixed(3)}×'
+                  : 'Unavailable',
+            ),
+            const SizedBox(height: 6),
+            _TelemetryRow(
+              icon: Icons.volume_up_outlined,
+              label: 'Output gain',
+              value: loaded ? '${(deck!.volume * 100).round()}%' : 'Unavailable',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final aUnderruns = underrunsA;
+    final bUnderruns = underrunsB;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _deck(context, 'A', deckA, const Color(0xFF55D6BE))),
+            const SizedBox(width: 10),
+            Expanded(child: _deck(context, 'B', deckB, const Color(0xFF8EA7FF))),
+          ],
+        ),
+        const SizedBox(height: 10),
+        ResonateGlassCard(
+          margin: EdgeInsets.zero,
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            children: [
+              Row(children: [
+                Text('OPERATOR CROSSfADER',
+                    style: theme.textTheme.labelLarge),
+                const Spacer(),
+                Text('${(crossfaderPosition.clamp(0.0, 1.0) * 100).round()}% B',
+                    style: theme.textTheme.labelSmall),
+              ]),
+              const SizedBox(height: 6),
+              LinearProgressIndicator(value: crossfaderPosition.clamp(0.0, 1.0)),
+              const SizedBox(height: 8),
+              _TelemetryRow(
+                icon: Icons.graphic_eq_rounded,
+                label: 'Audio underruns',
+                value: aUnderruns == null || bUnderruns == null
+                    ? 'Telemetry unavailable'
+                    : 'Deck A $aUnderruns · Deck B $bUnderruns',
+                valueColor: ((aUnderruns ?? 0) + (bUnderruns ?? 0)) > 0
+                    ? theme.colorScheme.error
+                    : null,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Monitoring only. Deck transport and the crossfader are operated in DJ Console.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
