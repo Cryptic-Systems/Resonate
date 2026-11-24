@@ -123,6 +123,52 @@ extension MusicProviderDjHandoff on MusicProvider {
         (session) => session.pauseDjDeck(deckId),
       );
 
+  Future<void> clearDjDeck(String deckId) =>
+      _runDjDeckCommand<void>(
+        'clear_$deckId',
+        (session) => session.clearDjDeck(deckId),
+      );
+
+  Future<void> setDjDeckPlaybackParameters({
+    required String deckId,
+    required double speed,
+    required double pitch,
+  }) {
+    if ((deckId != 'A' && deckId != 'B') ||
+        !speed.isFinite || !pitch.isFinite ||
+        speed < 0.94 || speed > 1.06 ||
+        pitch < 0.94 || pitch > 1.06) {
+      throw ArgumentError('DJ deck tempo and pitch must remain within the ±6% performance limit.');
+    }
+    return _runDjDeckCommand<void>(
+      'tempo_$deckId',
+      (session) => session.setDjDeckPlaybackParameters(
+        deckId: deckId,
+        speed: speed,
+        pitch: pitch,
+      ),
+    );
+  }
+
+  Future<void> endDjSession() async {
+    final session = _media3ProviderSession;
+    if (session is! PlaybackDjDeckSession || !_media3ProviderSessionActive) return;
+    Object? firstError;
+    for (final deck in const ['A', 'B']) {
+      try {
+        await clearDjDeck(deck);
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+    try {
+      await disableDjDualDeckMode();
+    } catch (error) {
+      firstError ??= error;
+    }
+    if (firstError != null) throw StateError('DJ session cleanup was incomplete: $firstError');
+  }
+
   Future<void> seekDjDeck({
     required String deckId,
     required Duration position,
