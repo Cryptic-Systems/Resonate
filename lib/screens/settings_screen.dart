@@ -21,6 +21,7 @@ import 'liked_songs_screen.dart';
 import 'listening_history_screen.dart';
 import 'playlists_screen.dart';
 import 'queue_screen.dart';
+import 'dj_workspace_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -39,6 +40,7 @@ class SettingsScreen extends StatelessWidget {
               _item(context, 'Audio leveling', 'Analyze track loudness and review a conservative gain recommendation', Icons.graphic_eq_rounded, const AudioLevelingSettingsScreen()),
               _item(context, 'Modes', 'Listening context — Driving, Podcast, Running, Work', Icons.tune_rounded, ModesScreen(folderPicker: const ResonateModeFolderPickerPort())),
               _item(context, 'Automatic mixing', 'Optional beat-aware transitions and harmonic blending', Icons.auto_awesome_rounded, const DjModeSettingsScreen(playerFacing: true)),
+              _item(context, 'Mix monitoring', 'View automatic transition activity and incoming-track preparation', Icons.graphic_eq_rounded, const DjWorkspaceScreen(playerFacing: true)),
               // Effects remain grouped under Equalizer; track analysis has its own entry above.
             ], initiallyExpanded: true),
             _section(context, 'Audio', Icons.equalizer_rounded, [
