@@ -799,8 +799,8 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
         border: Border.all(color: accent.withValues(alpha: active ? .65 : .24), width: active ? 1.4 : 1),
         boxShadow: active ? [BoxShadow(color: accent.withValues(alpha: .08), blurRadius: 22)] : null,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: ListView(
+        padding: EdgeInsets.zero,
         children: [
           Row(children: [
             Text(deck, style: theme.textTheme.labelLarge?.copyWith(
@@ -813,6 +813,81 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(color: Colors.white60)),
+          SizedBox(
+            height: compact ? 218 : 286,
+            child: Center(
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: compact ? 290 : 350,
+                    maxHeight: compact ? 290 : 350,
+                  ),
+                  child: AnimatedBuilder(
+                    animation: _platterRotation,
+                    builder: (context, child) => Transform.rotate(
+                      angle: _platterRotation.value * math.pi * 2,
+                      child: child,
+                    ),
+                    child: LayoutBuilder(
+                      builder: (context, platterConstraints) {
+                        final center = Offset(
+                          platterConstraints.maxWidth / 2,
+                          platterConstraints.maxHeight / 2,
+                        );
+                        return GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onPanStart: widget.jogSeekEnabled
+                              ? (details) => _beginJog(details.localPosition, center)
+                              : null,
+                          onPanUpdate: widget.jogSeekEnabled
+                              ? (details) => _updateJog(details.localPosition, center)
+                              : null,
+                          onPanEnd: widget.jogSeekEnabled ? (_) => _finishJog() : null,
+                          onPanCancel: _cancelJog,
+                          child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const RadialGradient(colors: [
+                            Color(0xFF344353), Color(0xFF111923), Color(0xFF080D13),
+                          ]),
+                          border: Border.all(color: accent.withValues(alpha: .35), width: 2),
+                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .4), blurRadius: 18)],
+                        )),
+                        Positioned.fill(
+                          child: CustomPaint(
+                            painter: _ConsoleRecordDetailPainter(accent: accent),
+                          ),
+                        ),
+                        Container(
+                          width: 88, height: 88,
+                          decoration: BoxDecoration(shape: BoxShape.circle,
+                            color: const Color(0xFF182431),
+                            border: Border.all(color: accent.withValues(alpha: .7), width: 2)),
+                          child: Icon(Icons.album, color: accent, size: 44),
+                        ),
+                        Positioned(bottom: 18, child: Text(
+                          _jogPreviewPosition == null
+                              ? (widget.jogSeekEnabled ? 'TOUCH · DRAG TO SEEK' : 'PLATTER')
+                              : 'SEEK ${_time(_jogPreviewPosition!)}',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: _jogPreviewPosition == null
+                                ? Colors.white38 : accent,
+                            letterSpacing: 1.4,
+                          ),
+                        )),
+                          ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
           const SizedBox(height: 5),
           Row(
             children: [
@@ -901,80 +976,6 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             ],
           ),
           const SizedBox(height: 5),
-          Expanded(
-            child: Center(
-              child: AspectRatio(
-                aspectRatio: 1,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: compact ? 290 : 350,
-                    maxHeight: compact ? 290 : 350,
-                  ),
-                  child: AnimatedBuilder(
-                    animation: _platterRotation,
-                    builder: (context, child) => Transform.rotate(
-                      angle: _platterRotation.value * math.pi * 2,
-                      child: child,
-                    ),
-                    child: LayoutBuilder(
-                      builder: (context, platterConstraints) {
-                        final center = Offset(
-                          platterConstraints.maxWidth / 2,
-                          platterConstraints.maxHeight / 2,
-                        );
-                        return GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onPanStart: widget.jogSeekEnabled
-                              ? (details) => _beginJog(details.localPosition, center)
-                              : null,
-                          onPanUpdate: widget.jogSeekEnabled
-                              ? (details) => _updateJog(details.localPosition, center)
-                              : null,
-                          onPanEnd: widget.jogSeekEnabled ? (_) => _finishJog() : null,
-                          onPanCancel: _cancelJog,
-                          child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Container(decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: const RadialGradient(colors: [
-                            Color(0xFF344353), Color(0xFF111923), Color(0xFF080D13),
-                          ]),
-                          border: Border.all(color: accent.withValues(alpha: .35), width: 2),
-                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .4), blurRadius: 18)],
-                        )),
-                        Positioned.fill(
-                          child: CustomPaint(
-                            painter: _ConsoleRecordDetailPainter(accent: accent),
-                          ),
-                        ),
-                        Container(
-                          width: 88, height: 88,
-                          decoration: BoxDecoration(shape: BoxShape.circle,
-                            color: const Color(0xFF182431),
-                            border: Border.all(color: accent.withValues(alpha: .7), width: 2)),
-                          child: Icon(Icons.album, color: accent, size: 44),
-                        ),
-                        Positioned(bottom: 18, child: Text(
-                          _jogPreviewPosition == null
-                              ? (widget.jogSeekEnabled ? 'TOUCH · DRAG TO SEEK' : 'PLATTER')
-                              : 'SEEK ${_time(_jogPreviewPosition!)}',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: _jogPreviewPosition == null
-                                ? Colors.white38 : accent,
-                            letterSpacing: 1.4,
-                          ),
-                        )),
-                          ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
           const SizedBox(height: 8),
           FutureBuilder<DjTrackProfile?>(
             future: profileFuture,
