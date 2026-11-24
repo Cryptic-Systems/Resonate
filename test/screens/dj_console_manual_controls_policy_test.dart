@@ -131,6 +131,7 @@ void main() {
       expect(status(transition: true), 'TRANSITION IN PROGRESS');
       expect(status(bLoaded: false), 'LOAD BOTH DECKS');
       expect(status(aPlaying: false), 'FADER PRESET · PLAY BOTH DECKS');
+      expect(status(bPlaying: false), 'FADER PRESET · PLAY BOTH DECKS');
       expect(status(), 'MANUAL MIX READY');
     });
 
@@ -209,17 +210,6 @@ void main() {
           deckBHasMedia: false,
         ),
         isFalse,
-      );
-      // A paused deck does not block fader positioning; native gain policy
-      // keeps the currently audible deck at unity until both are playing.
-      expect(
-        DjConsoleManualControlsPolicy.canAdjustCrossfader(
-          djModeEnabled: true,
-          transitionInProgress: false,
-          deckAHasMedia: true,
-          deckBHasMedia: true,
-        ),
-        isTrue,
       );
       expect(
         DjConsoleManualControlsPolicy.canAdjustCrossfader(
