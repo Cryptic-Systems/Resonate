@@ -71,14 +71,15 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
         return;
       }
       final approved = widget.coordinator.approve(_mix);
-      music = context.read<MusicProvider>();
-      if (music!.isDjDualDeckSessionActive) {
+      final activeMusic = context.read<MusicProvider>();
+      music = activeMusic;
+      if (activeMusic.isDjDualDeckSessionActive) {
         // In Resonatix DJ, approval stages the first pair on the independent
         // physical decks. It must never route this workflow through Player's
         // canonical queue or start playback without the operator.
-        await music.loadDjDeck('A', <Song>[approved.songs.first]);
+        await activeMusic.loadDjDeck('A', <Song>[approved.songs.first]);
         if (approved.songs.length > 1) {
-          await music.loadDjDeck('B', <Song>[approved.songs[1]]);
+          await activeMusic.loadDjDeck('B', <Song>[approved.songs[1]]);
         }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -89,7 +90,7 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
         openShellPlayer(context);
         return;
       }
-      music!.setApprovedDjTransitions({
+      activeMusic.setApprovedDjTransitions({
         for (final transition in approved.transitions)
           '${transition.outgoingSongId}\u0000${transition.incomingSongId}': transition.plan,
       });
