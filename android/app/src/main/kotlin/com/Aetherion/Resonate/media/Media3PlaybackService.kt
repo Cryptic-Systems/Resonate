@@ -886,6 +886,18 @@ class Media3PlaybackService : MediaSessionService() {
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (!::activePlayer.isInitialized) return
+                // In persistent DJ mode, either physical deck can start or
+                // stop independently. Recompute physical A/B gains on both
+                // callbacks so the surviving deck returns to unity when its
+                // partner pauses, and the stored crossfader is restored when
+                // the second deck becomes audible. A native transition owns
+                // gain exclusively while starting/fading.
+                if (djDualDeckMode) {
+                    if (crossfadeStatus !in setOf("starting", "fading")) {
+                        applyDeckVolumes()
+                    }
+                    return
+                }
                 if (deck === standbyPlayer) {
                     // Do not attenuate the outgoing deck while ExoPlayer is
                     // still starting the incoming audio output. The fade clock
