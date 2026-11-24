@@ -106,6 +106,54 @@ void main() {
       );
     });
 
+    test('channel gain requires a loaded deck and an active safe DJ session', () {
+      expect(
+        DjConsoleManualControlsPolicy.canAdjustChannelGain(
+          djModeEnabled: true,
+          media3SessionActive: true,
+          transitionInProgress: false,
+          deckHasMedia: true,
+        ),
+        isTrue,
+      );
+      expect(
+        DjConsoleManualControlsPolicy.canAdjustChannelGain(
+          djModeEnabled: true,
+          media3SessionActive: true,
+          transitionInProgress: true,
+          deckHasMedia: true,
+        ),
+        isFalse,
+      );
+      expect(
+        DjConsoleManualControlsPolicy.canAdjustChannelGain(
+          djModeEnabled: true,
+          media3SessionActive: false,
+          transitionInProgress: false,
+          deckHasMedia: true,
+        ),
+        isFalse,
+      );
+      expect(
+        DjConsoleManualControlsPolicy.canAdjustChannelGain(
+          djModeEnabled: false,
+          media3SessionActive: true,
+          transitionInProgress: false,
+          deckHasMedia: true,
+        ),
+        isFalse,
+      );
+      expect(
+        DjConsoleManualControlsPolicy.canAdjustChannelGain(
+          djModeEnabled: true,
+          media3SessionActive: true,
+          transitionInProgress: false,
+          deckHasMedia: false,
+        ),
+        isFalse,
+      );
+    });
+
     test('crossfader requires two loaded and playing decks in DJ mode', () {
       expect(
         DjConsoleManualControlsPolicy.canAdjustCrossfader(
