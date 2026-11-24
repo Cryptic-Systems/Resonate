@@ -54,7 +54,7 @@ class ExperienceProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> selectInitialExperience(ResonateExperience experience) async {
+  /// Switches the active product experience after the caller has safely handed\n  /// playback ownership back to the destination shell.\n  Future<void> switchExperience(ResonateExperience experience) async {\n    if (!_isReady) {\n      throw StateError('Experience preferences have not finished loading.');\n    }\n    if (_selected == experience) return;\n    final prefs = await SharedPreferences.getInstance();\n    await prefs.setString(_storageKey, experience.storageValue);\n    _selected = experience;\n    _loadError = null;\n    notifyListeners();\n  }\n\n  Future<void> selectInitialExperience(ResonateExperience experience) async {
     if (!_isReady) {
       throw StateError('Experience preferences have not finished loading.');
     }
