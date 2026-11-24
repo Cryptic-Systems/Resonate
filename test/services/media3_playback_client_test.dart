@@ -76,6 +76,7 @@ void main() {
           'playbackState': 3,
           'mediaItemCount': 1,
           'volume': 0.9,
+          'channelGain': 0.82,
           'speed': 1.02,
           'pitch': 1.0,
           'audioSessionId': 41,
@@ -104,6 +105,7 @@ void main() {
       expect(state.deckA?.isPlaying, isTrue);
       expect(state.deckA?.position, const Duration(milliseconds: 12500));
       expect(state.deckA?.audioSessionId, 41);
+      expect(state.deckA?.channelGain, 0.82);
       expect(state.deckB?.mediaId, 'track-b');
       expect(state.deckB?.isPlaying, isFalse);
       expect(state.deckB?.speed, 0.98);
@@ -786,6 +788,7 @@ void main() {
         pitch: 1.0,
       );
       await client.setDjCrossfader(0.35);
+      await client.setDjDeckChannelGain(deckId: 'A', gain: 0.82);
       await client.clearDjDeck('B');
       await client.disableDjDualDeckMode();
 
@@ -797,6 +800,7 @@ void main() {
         'seekDjDeck',
         'setDjDeckPlaybackParameters',
         'setDjCrossfader',
+        'setDjDeckChannelGain',
         'clearDjDeck',
         'disableDjDualDeckMode',
       ]);
@@ -813,6 +817,9 @@ void main() {
       expect(tempoArgs['pitch'], 1.0);
       final faderArgs = Map<Object?, Object?>.from(calls[6].arguments as Map);
       expect(faderArgs['position'], 0.35);
+      final gainArgs = Map<Object?, Object?>.from(calls[7].arguments as Map);
+      expect(gainArgs['deckId'], 'A');
+      expect(gainArgs['gain'], 0.82);
     });
 
     test('rejects invalid deck identities, queue indices and mixer values', () async {
@@ -838,6 +845,18 @@ void main() {
       );
       await expectLater(client.setDjCrossfader(double.nan), throwsArgumentError);
       await expectLater(client.setDjCrossfader(1.01), throwsArgumentError);
+      await expectLater(
+        client.setDjDeckChannelGain(deckId: 'A', gain: double.nan),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setDjDeckChannelGain(deckId: 'C', gain: 0.8),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setDjDeckChannelGain(deckId: 'B', gain: 1.01),
+        throwsArgumentError,
+      );
       await expectLater(
         client.setDjDeckPlaybackParameters(
           deckId: 'A',
