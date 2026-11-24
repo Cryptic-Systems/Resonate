@@ -350,6 +350,12 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
   Future<void> setDjCrossfader(double position) => _client.setDjCrossfader(position);
 
   @override
+  Future<void> setDjDeckChannelGain({
+    required String deckId,
+    required double gain,
+  }) => _client.setDjDeckChannelGain(deckId: deckId, gain: gain);
+
+  @override
   Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0}) async {
     final playable = songs.where((song) => song.filePath.trim().isNotEmpty)
         .toList(growable: false);
