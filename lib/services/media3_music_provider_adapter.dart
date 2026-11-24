@@ -368,6 +368,20 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
   Future<void> pauseDjDeck(String deckId) => _client.pauseDjDeck(deckId);
 
   @override
+  Future<void> clearDjDeck(String deckId) => _client.clearDjDeck(deckId);
+
+  @override
+  Future<void> setDjDeckPlaybackParameters({
+    required String deckId,
+    required double speed,
+    required double pitch,
+  }) => _client.setDjDeckPlaybackParameters(
+        deckId: deckId,
+        speed: speed,
+        pitch: pitch,
+      );
+
+  @override
   Future<void> seekDjDeck({
     required String deckId,
     required Duration position,
