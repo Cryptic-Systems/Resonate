@@ -707,6 +707,57 @@ class Media3PlaybackClient {
     );
   }
 
+  /// Loads an isolated queue into one physical DJ deck without touching the other.
+  Future<void> loadDjDeck(
+    String deckId,
+    List<Media3QueueItem> items, {
+    int startIndex = 0,
+  }) async {
+    if (deckId != 'A' && deckId != 'B') {
+      throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
+    }
+    if (items.isEmpty || startIndex < 0 || startIndex >= items.length) {
+      throw ArgumentError('A non-empty deck queue and valid start index are required.');
+    }
+    await _invokeAccepted('loadDjDeck', <String, Object>{
+      'deckId': deckId,
+      'items': items.map((item) => item.toMap()).toList(growable: false),
+      'startIndex': startIndex,
+    });
+  }
+
+  Future<void> playDjDeck(String deckId) async {
+    _validatePhysicalDeck(deckId);
+    await _invokeAccepted('playDjDeck', <String, Object>{'deckId': deckId});
+  }
+
+  Future<void> pauseDjDeck(String deckId) async {
+    _validatePhysicalDeck(deckId);
+    await _invokeAccepted('pauseDjDeck', <String, Object>{'deckId': deckId});
+  }
+
+  Future<void> seekDjDeck({
+    required String deckId,
+    required Duration position,
+    required String expectedMediaId,
+  }) async {
+    _validatePhysicalDeck(deckId);
+    if (position.isNegative || expectedMediaId.trim().isEmpty) {
+      throw ArgumentError('A nonnegative position and expected media identity are required.');
+    }
+    await _invokeAccepted('seekDjDeck', <String, Object>{
+      'deckId': deckId,
+      'positionMs': position.inMilliseconds,
+      'expectedMediaId': expectedMediaId,
+    });
+  }
+
+  void _validatePhysicalDeck(String deckId) {
+    if (deckId != 'A' && deckId != 'B') {
+      throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
+    }
+  }
+
   Future<void> setVolume(double volume) async {
     if (!volume.isFinite) {
       throw ArgumentError.value(volume, 'volume', 'Must be finite.');
