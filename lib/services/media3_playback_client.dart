@@ -5,6 +5,81 @@ import 'package:flutter/services.dart';
 import '../models/song.dart';
 import 'resonate_diagnostics.dart';
 
+/// Physical A/B deck telemetry published by the native DJ mixer.
+class Media3DjDeckSnapshot {
+  const Media3DjDeckSnapshot({
+    required this.deckId,
+    this.mediaId,
+    this.title,
+    this.artist,
+    this.album,
+    this.position = Duration.zero,
+    this.bufferedPosition = Duration.zero,
+    this.duration,
+    this.isPlaying = false,
+    this.playWhenReady = false,
+    this.playbackState = 0,
+    this.mediaItemIndex = -1,
+    this.mediaItemCount = 0,
+    this.volume = 0,
+    this.speed = 1,
+    this.pitch = 1,
+    this.audioSessionId,
+  });
+
+  final String deckId;
+  final String? mediaId;
+  final String? title;
+  final String? artist;
+  final String? album;
+  final Duration position;
+  final Duration bufferedPosition;
+  final Duration? duration;
+  final bool isPlaying;
+  final bool playWhenReady;
+  final int playbackState;
+  final int mediaItemIndex;
+  final int mediaItemCount;
+  final double volume;
+  final double speed;
+  final double pitch;
+  final int? audioSessionId;
+
+  factory Media3DjDeckSnapshot.fromMap(
+    String deckId,
+    Map<Object?, Object?> map,
+  ) {
+    int integer(Object? value, [int fallback = 0]) =>
+        value is num && value.isFinite ? value.toInt() : fallback;
+    double decimal(Object? value, [double fallback = 0]) =>
+        value is num && value.isFinite ? value.toDouble() : fallback;
+    String? string(Object? value) => value is String ? value : null;
+    final rawDuration = map['durationMs'];
+    final sessionId = integer(map['audioSessionId']);
+    return Media3DjDeckSnapshot(
+      deckId: deckId,
+      mediaId: string(map['mediaId']),
+      title: string(map['title']),
+      artist: string(map['artist']),
+      album: string(map['album']),
+      position: Duration(milliseconds: integer(map['positionMs']).clamp(0, 0x7fffffff)),
+      bufferedPosition: Duration(milliseconds: integer(map['bufferedPositionMs']).clamp(0, 0x7fffffff)),
+      duration: rawDuration is num && rawDuration.isFinite && rawDuration >= 0
+          ? Duration(milliseconds: rawDuration.toInt().clamp(0, 0x7fffffff))
+          : null,
+      isPlaying: map['isPlaying'] == true,
+      playWhenReady: map['playWhenReady'] == true,
+      playbackState: integer(map['playbackState']),
+      mediaItemIndex: integer(map['mediaItemIndex'], -1),
+      mediaItemCount: integer(map['mediaItemCount']),
+      volume: decimal(map['volume']).clamp(0.0, 1.0).toDouble(),
+      speed: decimal(map['speed'], 1.0),
+      pitch: decimal(map['pitch'], 1.0),
+      audioSessionId: sessionId > 0 ? sessionId : null,
+    );
+  }
+}
+
 /// Immutable playback snapshot published by the native Media3 session.
 class Media3PlaybackState {
   const Media3PlaybackState({
@@ -55,6 +130,10 @@ class Media3PlaybackState {
     this.incomingMediaId,
     this.incomingReady = false,
     this.incomingPosition = Duration.zero,
+    this.djDualDeckMode = false,
+    this.djCrossfaderPosition = 0.5,
+    this.deckA,
+    this.deckB,
     required this.hasError,
     required this.error,
   });
@@ -111,6 +190,10 @@ class Media3PlaybackState {
   final String? incomingMediaId;
   final bool incomingReady;
   final Duration incomingPosition;
+  final bool djDualDeckMode;
+  final double djCrossfaderPosition;
+  final Media3DjDeckSnapshot? deckA;
+  final Media3DjDeckSnapshot? deckB;
   final bool hasError;
   final String? error;
 
@@ -126,6 +209,8 @@ class Media3PlaybackState {
 
     final rawDuration = map['durationMs'];
     final rawAudioDiagnostics = map['audioDiagnostics'];
+    final rawDeckA = map['deckA'];
+    final rawDeckB = map['deckB'];
     final audioDiagnostics = rawAudioDiagnostics is Map
         ? Map<Object?, Object?>.from(rawAudioDiagnostics)
         : const <Object?, Object?>{};
@@ -201,6 +286,14 @@ class Media3PlaybackState {
       incomingMediaId: stringValue(map['incomingMediaId']),
       incomingReady: boolValue(map['incomingReady']),
       incomingPosition: Duration(milliseconds: integerValue(map['incomingPositionMs']).clamp(0, 0x7fffffff).toInt()),
+      djDualDeckMode: boolValue(map['djDualDeckMode']),
+      djCrossfaderPosition: doubleValue(map['djCrossfaderPosition'], 0.5).clamp(0.0, 1.0).toDouble(),
+      deckA: rawDeckA is Map
+          ? Media3DjDeckSnapshot.fromMap('A', Map<Object?, Object?>.from(rawDeckA))
+          : null,
+      deckB: rawDeckB is Map
+          ? Media3DjDeckSnapshot.fromMap('B', Map<Object?, Object?>.from(rawDeckB))
+          : null,
       hasError: boolValue(map['hasError']),
       error: stringValue(map['error']),
     );
