@@ -50,12 +50,7 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
     // dispose still performs the guarded native cleanup.
     _djSessionStarted = true;
     try {
-      await _music.prepareMedia3ProviderSession();
-      await _music.enableDjDualDeckMode();
-      // The Player queue remains in MusicProvider's saved queue model. Both
-      // physical Media3 decks start empty for a fresh hands-on DJ session.
-      await _music.clearDjDeck('A');
-      await _music.clearDjDeck('B');
+      await _music.beginDjSession();
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
