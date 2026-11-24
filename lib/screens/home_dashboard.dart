@@ -13,6 +13,7 @@ import '../widgets/evolving_mix_card.dart';
 import '../widgets/autopilot_home_card.dart';
 import '../widgets/resonate_logo.dart';
 import '../widgets/resonate_mode_chip.dart';
+import '../widgets/experience_mode_chip.dart';
 import '../widgets/mode_player_density.dart';
 import '../modes/providers/mode_provider.dart';
 import '../widgets/mode_shelf_card.dart';
@@ -215,7 +216,7 @@ class HomeDashboard extends StatelessWidget {
 
     return ResonateGlassScaffold(
       title: const ResonateLogo(size: 58, full: true, showWord: false),
-      actions: const [ResonateModeChip(dense: true)],
+      actions: const [ExperienceModeChip(), ResonateModeChip(dense: true)],
       body: RefreshIndicator(
         onRefresh: intelligence.refreshRecommendations,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 34), children: children),
