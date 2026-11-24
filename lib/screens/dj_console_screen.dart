@@ -408,7 +408,14 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                       SizedBox(
                         width: compact ? 130 : 190,
                         child: _DjConsoleMixer(
-                          enabled: djReady && !music.transitionInProgress,
+                          enabled: DjConsoleManualControlsPolicy.canAdjustCrossfader(
+                            djModeEnabled: djReady,
+                            transitionInProgress: music.transitionInProgress,
+                            deckAHasMedia: deckA?.mediaId != null,
+                            deckBHasMedia: deckB?.mediaId != null,
+                            deckAIsPlaying: deckA?.isPlaying == true,
+                            deckBIsPlaying: deckB?.isPlaying == true,
+                          ),
                           position: state?.djCrossfaderPosition ?? 0.5,
                           compact: compact,
                           onChanged: music.setDjCrossfader,
@@ -1093,6 +1100,16 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
   @override
   void didUpdateWidget(covariant _DjConsoleMixer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!widget.enabled) {
+      // Drop any queued slider write as soon as native deck preconditions are
+      // lost (pause, unload, mode exit, or transition ownership).
+      _writeTimer?.cancel();
+      _writeTimer = null;
+      _pendingPosition = null;
+      _dragging = false;
+      _position = widget.position.clamp(0.0, 1.0).toDouble();
+      return;
+    }
     if (_pendingPosition == null && !_dragging) {
       _position = widget.position.clamp(0.0, 1.0).toDouble();
     }
@@ -1119,11 +1136,10 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
 
   @override
   void dispose() {
+    // A route teardown is not an operator gesture completion. Never dispatch a
+    // delayed native write after this mixer has left the active DJ surface.
     _writeTimer?.cancel();
-    if (_pendingPosition != null && widget.enabled) {
-      final value = _pendingPosition!;
-      unawaited(widget.onChanged(value).catchError((Object _) {}));
-    }
+    _pendingPosition = null;
     super.dispose();
   }
 
