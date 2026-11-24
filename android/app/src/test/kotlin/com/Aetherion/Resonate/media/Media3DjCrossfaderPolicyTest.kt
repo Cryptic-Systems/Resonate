@@ -26,22 +26,24 @@ class Media3DjCrossfaderPolicyTest {
     }
 
     @Test
-    fun inactiveStandbyKeepsTheOnlyAudibleDeckAtUnity() {
-        val activeA = Media3DjCrossfaderPolicy.gainsForState(
-            position = 0.5f,
-            activeDeckId = "A",
-            bothDecksPlaying = false,
-        )
-        val activeB = Media3DjCrossfaderPolicy.gainsForState(
-            position = 0.5f,
-            activeDeckId = "B",
-            bothDecksPlaying = false,
-        )
+    fun inactiveStandbyKeepsTheOnlyAudibleDeckAtUnityAtEveryFaderPosition() {
+        for (position in listOf(0f, 0.5f, 1f)) {
+            val activeA = Media3DjCrossfaderPolicy.gainsForState(
+                position = position,
+                activeDeckId = "A",
+                bothDecksPlaying = false,
+            )
+            val activeB = Media3DjCrossfaderPolicy.gainsForState(
+                position = position,
+                activeDeckId = "B",
+                bothDecksPlaying = false,
+            )
 
-        assertEquals(1f, activeA.first, 0.0001f)
-        assertEquals(0f, activeA.second, 0.0001f)
-        assertEquals(0f, activeB.first, 0.0001f)
-        assertEquals(1f, activeB.second, 0.0001f)
+            assertEquals(1f, activeA.first, 0.0001f)
+            assertEquals(0f, activeA.second, 0.0001f)
+            assertEquals(0f, activeB.first, 0.0001f)
+            assertEquals(1f, activeB.second, 0.0001f)
+        }
     }
 
     @Test
