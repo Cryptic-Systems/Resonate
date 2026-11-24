@@ -3,18 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../providers/music_provider.dart';
 import '../experience/experience_provider.dart';
-
 import '../navigation/shell_nav.dart';
+import '../providers/music_provider.dart';
+import 'dj_console_screen.dart';
+import 'dj_library_screen.dart';
 import 'dj_workspace_screen.dart';
-import 'dj_library_screen.dart';\nimport 'dj_console_screen.dart';
 
 /// Dedicated navigation shell for Resonatix DJ.
-///
-/// The integrated library is shared with Resonate Player, while the Workspace
-/// remains the DJ landing surface. The Console is opened from Workspace as a
-/// pushed landscape route so its orientation lifecycle stays scoped to it.
 class DjExperienceShell extends StatefulWidget {
   const DjExperienceShell({super.key});
 
@@ -25,12 +21,14 @@ class DjExperienceShell extends StatefulWidget {
 class _DjExperienceShellState extends State<DjExperienceShell> {
   static const int _workspaceTab = 0;
   static const int _libraryTab = 1;
+  static const int _consoleTab = 2;
 
   late final PageController _pageController;
   late final MusicProvider _music;
   ShellNav? _shellNav;
   int _selectedIndex = _workspaceTab;
   bool _djSessionStarted = false;
+  bool _consoleOpening = false;
 
   @override
   void initState() {
@@ -40,15 +38,16 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _shellNav = context.read<ShellNav>();
-      _shellNav?.bind(\n        _selectPage,\n        playerTabIndex: _workspaceTab,\n        onSwitchToPlayer: _switchToPlayer,\n      );
+      _shellNav?.bind(
+        _selectPage,
+        playerTabIndex: _workspaceTab,
+        onSwitchToPlayer: _switchToPlayer,
+      );
       unawaited(_startDjSession());
     });
   }
 
-  Future<void> _switchToPlayer() async {\n    if (!_djSessionStarted) return;\n    try {\n      await _music.endDjSession();\n      _djSessionStarted = false;\n      if (!mounted) return;\n      await context.read<ExperienceProvider>().switchExperience(\n            ResonateExperience.player,\n          );\n    } catch (error) {\n      if (!mounted) return;\n      ScaffoldMessenger.of(context).showSnackBar(\n        SnackBar(content: Text('Could not return to Resonate Player: $error')),\n      );\n    }\n  }\n\n  Future<void> _startDjSession() async {
-    // Mark the shell as responsible for cleanup before the first await. If
-    // initialization partially succeeds or is retried from the Library tab,
-    // dispose still performs the guarded native cleanup.
+  Future<void> _startDjSession() async {
     _djSessionStarted = true;
     try {
       await _music.beginDjSession();
@@ -60,6 +59,35 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
     }
   }
 
+  Future<void> _switchToPlayer() async {
+    if (!_djSessionStarted) return;
+    try {
+      await _music.endDjSession();
+      _djSessionStarted = false;
+      if (!mounted) return;
+      await context.read<ExperienceProvider>().switchExperience(
+            ResonateExperience.player,
+          );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not return to Resonate Player: $error')),
+      );
+    }
+  }
+
+  Future<void> _openConsole() async {
+    if (_consoleOpening || !mounted) return;
+    _consoleOpening = true;
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const DjConsoleScreen()),
+      );
+    } finally {
+      _consoleOpening = false;
+    }
+  }
+
   void _selectPage(int index) {
     if (index < _workspaceTab || index > _libraryTab || index == _selectedIndex) {
       return;
@@ -67,8 +95,8 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
     setState(() => _selectedIndex = index);
     _pageController.animateToPage(
       index,
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOutCubic,
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
     );
   }
 
@@ -90,14 +118,20 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
       body: PageView(
         controller: _pageController,
         onPageChanged: (index) => setState(() => _selectedIndex = index),
-        children: const [
-          DjWorkspaceScreen(),
-          DjLibraryScreen(),
+        children: [
+          DjWorkspaceScreen(onSwitchToPlayer: _switchToPlayer),
+          const DjLibraryScreen(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) {\n          if (index == 2) {\n            Navigator.of(context).push(\n              MaterialPageRoute(builder: (_) => const DjConsoleScreen()),\n            );\n            return;\n          }\n          _selectPage(index);\n        },
+        onDestinationSelected: (index) {
+          if (index == _consoleTab) {
+            unawaited(_openConsole());
+            return;
+          }
+          _selectPage(index);
+        },
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.graphic_eq_outlined),
@@ -108,6 +142,11 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
             icon: Icon(Icons.library_music_outlined),
             selectedIcon: Icon(Icons.library_music_rounded),
             label: 'Library',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.album_outlined),
+            selectedIcon: Icon(Icons.album_rounded),
+            label: 'Console',
           ),
         ],
       ),
