@@ -25,15 +25,11 @@ class DjConsoleManualControlsPolicy {
     required bool transitionInProgress,
     required bool deckAHasMedia,
     required bool deckBHasMedia,
-    required bool deckAIsPlaying,
-    required bool deckBIsPlaying,
   }) =>
       djModeEnabled &&
       !transitionInProgress &&
       deckAHasMedia &&
-      deckBHasMedia &&
-      deckAIsPlaying &&
-      deckBIsPlaying;
+      deckBHasMedia;
 
   /// Explain why the manual crossfader is unavailable. Keep the operator
   /// informed of the next actionable prerequisite instead of using one
@@ -51,7 +47,9 @@ class DjConsoleManualControlsPolicy {
     if (!media3SessionActive) return 'MEDIA3 SESSION INACTIVE';
     if (transitionInProgress) return 'TRANSITION IN PROGRESS';
     if (!deckAHasMedia || !deckBHasMedia) return 'LOAD BOTH DECKS';
-    if (!deckAIsPlaying || !deckBIsPlaying) return 'PLAY BOTH DECKS';
+    if (!deckAIsPlaying || !deckBIsPlaying) {
+      return 'FADER PRESET · PLAY BOTH DECKS';
+    }
     return 'MANUAL MIX READY';
   }
 
