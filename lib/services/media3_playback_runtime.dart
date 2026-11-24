@@ -708,6 +708,71 @@ class Media3PlaybackRuntime {
     await _run(() => (_backend as PlaybackCrossfadeBackend).crossfade(duration: duration));
   }
 
+  Future<void> enableDjDualDeckMode() => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support persistent DJ decks.');
+        }
+        await (backend as PlaybackDjDeckBackend).enableDjDualDeckMode();
+      });
+
+  Future<void> disableDjDualDeckMode() => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support persistent DJ decks.');
+        }
+        await (backend as PlaybackDjDeckBackend).disableDjDualDeckMode();
+      });
+
+  Future<void> setDjCrossfader(double position) => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support a DJ crossfader.');
+        }
+        await (backend as PlaybackDjDeckBackend).setDjCrossfader(position);
+      });
+
+  Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0}) =>
+      _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support independent DJ deck queues.');
+        }
+        await (backend as PlaybackDjDeckBackend).loadDjDeck(deckId, songs, startIndex: startIndex);
+      });
+
+  Future<void> playDjDeck(String deckId) => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support independent DJ deck transport.');
+        }
+        await (backend as PlaybackDjDeckBackend).playDjDeck(deckId);
+      });
+
+  Future<void> pauseDjDeck(String deckId) => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support independent DJ deck transport.');
+        }
+        await (backend as PlaybackDjDeckBackend).pauseDjDeck(deckId);
+      });
+
+  Future<void> seekDjDeck({
+    required String deckId,
+    required Duration position,
+    required String expectedMediaId,
+  }) => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support independent DJ deck seeking.');
+        }
+        await (backend as PlaybackDjDeckBackend).seekDjDeck(
+          deckId: deckId,
+          position: position,
+          expectedMediaId: expectedMediaId,
+        );
+      });
+
   Future<void> cancelCrossfade() async {
     _ensureAlive();
     if (_backend is! PlaybackCrossfadeBackend) {
