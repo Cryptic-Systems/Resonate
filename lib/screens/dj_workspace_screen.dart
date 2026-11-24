@@ -582,30 +582,28 @@ class _WorkspaceDeckSummary extends StatelessWidget {
             _StatusPill(
               label: !loaded
                   ? 'EMPTY'
-                  : snapshot!.isPlaying
+                  : currentSnapshot!.isPlaying
                       ? 'PLAYING'
                       : 'LOADED',
-              active: snapshot?.isPlaying == true,
+              active: currentSnapshot?.isPlaying == true,
             ),
           ]),
           const SizedBox(height: 7),
           Text(
-            snapshot?.title ?? 'No track loaded',
+            currentSnapshot?.title ?? 'No track loaded',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.titleSmall,
           ),
           Text(
-            snapshot?.artist ?? 'Waiting for track',
+            currentSnapshot?.artist ?? 'Waiting for track',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 7),
           Text(
-            snapshot == null || snapshot.mediaId == null
-                ? '—:— / —:—'
-                : _formatDeckTime(snapshot),
+            timeLabel,
             style: theme.textTheme.labelSmall,
           ),
         ],
