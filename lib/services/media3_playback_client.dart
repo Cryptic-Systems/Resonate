@@ -752,6 +752,33 @@ class Media3PlaybackClient {
     });
   }
 
+  Future<void> clearDjDeck(String deckId) async {
+    _validatePhysicalDeck(deckId);
+    await _invokeAccepted('clearDjDeck', <String, Object>{'deckId': deckId});
+  }
+
+  Future<void> setDjDeckPlaybackParameters({
+    required String deckId,
+    required double speed,
+    required double pitch,
+  }) async {
+    _validatePhysicalDeck(deckId);
+    for (final entry in <String, double>{'speed': speed, 'pitch': pitch}.entries) {
+      if (!entry.value.isFinite || entry.value < 0.5 || entry.value > 2.0) {
+        throw ArgumentError.value(
+          entry.value,
+          entry.key,
+          'Must be finite and between 0.5 and 2.0.',
+        );
+      }
+    }
+    await _invokeAccepted('setDjDeckPlaybackParameters', <String, Object>{
+      'deckId': deckId,
+      'speed': speed,
+      'pitch': pitch,
+    });
+  }
+
   void _validatePhysicalDeck(String deckId) {
     if (deckId != 'A' && deckId != 'B') {
       throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
