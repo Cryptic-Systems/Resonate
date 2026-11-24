@@ -105,5 +105,63 @@ void main() {
         isEmpty,
       );
     });
+
+    test('crossfader requires two loaded and playing decks in DJ mode', () {
+      expect(
+        DjConsoleManualControlsPolicy.canAdjustCrossfader(
+          djModeEnabled: true,
+          transitionInProgress: false,
+          deckAHasMedia: true,
+          deckBHasMedia: true,
+          deckAIsPlaying: true,
+          deckBIsPlaying: true,
+        ),
+        isTrue,
+      );
+      expect(
+        DjConsoleManualControlsPolicy.canAdjustCrossfader(
+          djModeEnabled: true,
+          transitionInProgress: true,
+          deckAHasMedia: true,
+          deckBHasMedia: true,
+          deckAIsPlaying: true,
+          deckBIsPlaying: true,
+        ),
+        isFalse,
+      );
+      expect(
+        DjConsoleManualControlsPolicy.canAdjustCrossfader(
+          djModeEnabled: true,
+          transitionInProgress: false,
+          deckAHasMedia: true,
+          deckBHasMedia: false,
+          deckAIsPlaying: true,
+          deckBIsPlaying: true,
+        ),
+        isFalse,
+      );
+      expect(
+        DjConsoleManualControlsPolicy.canAdjustCrossfader(
+          djModeEnabled: true,
+          transitionInProgress: false,
+          deckAHasMedia: true,
+          deckBHasMedia: true,
+          deckAIsPlaying: true,
+          deckBIsPlaying: false,
+        ),
+        isFalse,
+      );
+      expect(
+        DjConsoleManualControlsPolicy.canAdjustCrossfader(
+          djModeEnabled: false,
+          transitionInProgress: false,
+          deckAHasMedia: true,
+          deckBHasMedia: true,
+          deckAIsPlaying: true,
+          deckBIsPlaying: true,
+        ),
+        isFalse,
+      );
+    });
   });
 }
