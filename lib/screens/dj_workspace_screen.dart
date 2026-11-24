@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import '../models/song.dart';
 
 import '../navigation/shell_nav.dart';
-import '../providers/audio_visualization_provider.dart';
 import '../providers/dj_mode_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
@@ -23,11 +22,12 @@ import 'dj_transition_studio_screen.dart';
 /// This surface never owns a player and never issues transport or manual deck
 /// preparation commands. Hands-on deck operation belongs in DJ Console.
 class DjWorkspaceScreen extends StatefulWidget {
-  const DjWorkspaceScreen({super.key, this.playerFacing = false});
+  const DjWorkspaceScreen({super.key, this.playerFacing = false, this.onSwitchToPlayer});
 
   /// Player receives a user-facing mix monitor, never physical deck telemetry
   /// or links into hands-on DJ performance tools.
   final bool playerFacing;
+  final Future<void> Function()? onSwitchToPlayer;
 
   @override
   State<DjWorkspaceScreen> createState() => _DjWorkspaceScreenState();
@@ -40,12 +40,6 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
   String _clock(Duration value) {
     final seconds = value.inSeconds.clamp(0, 1 << 30);
     return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
-  }
-
-  Future<void> _openDjConsole() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const DjConsoleScreen()),
-    );
   }
 
   Future<void> _openTransitionStudio() async {
@@ -115,10 +109,24 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ResonateGlassScaffold(
-      title: Text(widget.playerFacing ? 'Mix Monitor' : 'DJ Workspace'),
-      body: Consumer3<MusicProvider, DjModeProvider, AudioVisualizationProvider>(
-        builder: (context, music, dj, visualization, _) {
+    return Scaffold(
+      backgroundColor: theme.colorScheme.surface,
+      appBar: AppBar(
+        title: Text(widget.playerFacing ? 'Mix Monitor' : 'DJ Workspace'),
+        leading: widget.playerFacing ? null : Builder(
+          builder: (context) => IconButton(
+            tooltip: 'Switch experience',
+            icon: const Icon(Icons.menu_rounded),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+      ),
+      drawer: widget.playerFacing ? null : _DjModeDrawer(
+        onSwitchToPlayer: widget.onSwitchToPlayer,
+      ),
+      body: SafeArea(
+        child: Consumer2<MusicProvider, DjModeProvider>(
+        builder: (context, music, dj, _) {
           final song = music.currentSong;
           final deckState = music.media3ShadowState;
           final djDeckSession = deckState?.djDualDeckMode == true;
@@ -165,6 +173,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
               ),
               const SizedBox(height: 18),
               ResonateGlassCard(
+        blurEnabled: false,
                 margin: EdgeInsets.zero,
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -331,7 +340,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                 final hasDeckTelemetry = deckState != null;
                 final activeGain = deckState?.activeDeckVolume;
                 final standbyGain = deckState?.standbyDeckVolume;
-                final hasLiveSpectrum = visualization.hasLiveSpectrum;
+                const hasLiveSpectrum = false;
                 if (widget.playerFacing) {
                   return _PlayerMixMonitorCard(
                     currentSong: song,
@@ -345,7 +354,11 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                     incomingPreparing: incomingStatus == 'preparing',
                     incomingIdentityAmbiguous: incomingIdentityAmbiguous,
                     incomingUnverified: incomingMediaId != null && standbySong == null,
-                    liveSpectrum: hasLiveSpectrum ? visualization.frequencies : null,
+                    liveSpectrum: null,
+                    outgoingGain: activeGain,
+                    incomingGain: standbyGain,
+                    outgoingEngine: activeDeckId,
+                    incomingEngine: standbyDeckId,
                   );
                 }
                 if (deckState?.djDualDeckMode == true) {
@@ -482,15 +495,6 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
               }),
               const SizedBox(height: 14),
               if (!widget.playerFacing) ...[
-                Text('PERFORMANCE', style: theme.textTheme.labelLarge),
-                const SizedBox(height: 8),
-                _WorkspaceAction(
-                  icon: Icons.album_rounded,
-                  title: 'Open DJ Console',
-                  subtitle: 'Load and control independent Deck A and Deck B, adjust tempo, jog-seek and operate the manual crossfader.',
-                  onTap: _openDjConsole,
-                ),
-                const SizedBox(height: 14),
                 Text('WORKSPACE TOOLS', style: theme.textTheme.labelLarge),
                 const SizedBox(height: 8),
                 _WorkspaceAction(
@@ -534,6 +538,56 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
             ],
           );
         },
+      )),
+    );
+  }
+}
+
+class _DjModeDrawer extends StatelessWidget {
+  const _DjModeDrawer({required this.onSwitchToPlayer});
+
+  final Future<void> Function()? onSwitchToPlayer;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Drawer(
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+              child: Text('EXPERIENCE', style: theme.textTheme.labelLarge),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+              child: Text(
+                'Choose the environment you want to use.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.music_note_rounded),
+              title: const Text('Resonate Player'),
+              subtitle: const Text('Everyday listening and automation'),
+              trailing: const Icon(Icons.arrow_forward_rounded),
+              onTap: onSwitchToPlayer == null ? null : () async {
+                Navigator.of(context).pop();
+                await onSwitchToPlayer!.call();
+              },
+            ),
+            const Divider(height: 20),
+            ListTile(
+              leading: Icon(Icons.album_rounded, color: theme.colorScheme.primary),
+              title: const Text('Resonatix DJ'),
+              subtitle: const Text('Current experience'),
+              trailing: Icon(Icons.check_circle_rounded, color: theme.colorScheme.primary),
+              selected: true,
+              onTap: () => Navigator.of(context).pop(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -769,6 +823,10 @@ class _PlayerMixMonitorCard extends StatelessWidget {
     required this.incomingIdentityAmbiguous,
     required this.incomingUnverified,
     required this.liveSpectrum,
+    required this.outgoingGain,
+    required this.incomingGain,
+    required this.outgoingEngine,
+    required this.incomingEngine,
   });
 
   final Song? currentSong;
@@ -783,6 +841,10 @@ class _PlayerMixMonitorCard extends StatelessWidget {
   final bool incomingIdentityAmbiguous;
   final bool incomingUnverified;
   final List<double>? liveSpectrum;
+  final double? outgoingGain;
+  final double? incomingGain;
+  final String? outgoingEngine;
+  final String? incomingEngine;
 
   String _clock(Duration value) {
     final seconds = value.inSeconds.clamp(0, 1 << 30);
@@ -848,7 +910,13 @@ class _PlayerMixMonitorCard extends StatelessWidget {
               Text(_clock(currentDuration), style: theme.textTheme.labelSmall),
             ]),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          _EngineVolumeMeter(
+            label: 'Outgoing · Engine ${outgoingEngine ?? '—'}',
+            gain: outgoingGain,
+            color: const Color(0xFF55D6BE),
+          ),
+          const SizedBox(height: 14),
           const Divider(height: 1),
           const SizedBox(height: 12),
           Text('INCOMING MIX', style: theme.textTheme.labelSmall),
@@ -871,6 +939,12 @@ class _PlayerMixMonitorCard extends StatelessWidget {
             ),
           const SizedBox(height: 6),
           Text(incomingStatus, style: theme.textTheme.bodySmall),
+          const SizedBox(height: 10),
+          _EngineVolumeMeter(
+            label: 'Incoming · Engine ${incomingEngine ?? '—'}',
+            gain: incomingGain,
+            color: const Color(0xFF8EA7FF),
+          ),
           if (liveSpectrum != null && liveSpectrum!.isNotEmpty) ...[
             const SizedBox(height: 12),
             SizedBox(
@@ -900,6 +974,57 @@ class _PlayerMixMonitorCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+
+class _EngineVolumeMeter extends StatelessWidget {
+  const _EngineVolumeMeter({
+    required this.label,
+    required this.gain,
+    required this.color,
+  });
+
+  final String label;
+  final double? gain;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final value = (gain ?? 0).clamp(0.0, 1.0).toDouble();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text(label, style: theme.textTheme.labelSmall)),
+            Text(
+              gain == null ? '—' : '${(value * 100).round()}%',
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: value),
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 90),
+          builder: (context, animated, _) => ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: LinearProgressIndicator(
+              value: gain == null ? 0 : animated,
+              minHeight: 8,
+              color: color,
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
