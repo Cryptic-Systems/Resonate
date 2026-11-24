@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../providers/music_provider.dart';
+
 import '../navigation/shell_nav.dart';
 import 'dj_workspace_screen.dart';
-import 'library_screen.dart';
+import 'dj_library_screen.dart';
 
 /// Dedicated navigation shell for Resonatix DJ.
 ///
@@ -22,18 +26,38 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
   static const int _libraryTab = 1;
 
   late final PageController _pageController;
+  late final MusicProvider _music;
   ShellNav? _shellNav;
   int _selectedIndex = _workspaceTab;
+  bool _djSessionStarted = false;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: _workspaceTab);
+    _music = context.read<MusicProvider>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _shellNav = context.read<ShellNav>();
       _shellNav?.bind(_selectPage, playerTabIndex: _workspaceTab);
+      unawaited(_startDjSession());
     });
+  }
+
+  Future<void> _startDjSession() async {
+    try {
+      await _music.enableDjDualDeckMode();
+      _djSessionStarted = true;
+      // The Player queue remains in MusicProvider's saved queue model. Both
+      // physical Media3 decks start empty for a fresh hands-on DJ session.
+      await _music.clearDjDeck('A');
+      await _music.clearDjDeck('B');
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not initialize Resonatix DJ: $error')),
+      );
+    }
   }
 
   void _selectPage(int index) {
@@ -51,6 +75,7 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
   @override
   void dispose() {
     _shellNav?.unbind();
+    if (_djSessionStarted) unawaited(_music.endDjSession());
     _pageController.dispose();
     super.dispose();
   }
@@ -63,7 +88,7 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
         onPageChanged: (index) => setState(() => _selectedIndex = index),
         children: const [
           DjWorkspaceScreen(),
-          LibraryScreen(),
+          DjLibraryScreen(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
