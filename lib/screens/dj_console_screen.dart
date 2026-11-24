@@ -887,6 +887,7 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
   Timer? _writeTimer;
   double? _pendingPosition;
   late double _position;
+  bool _dragging = false;
 
   @override
   void initState() {
@@ -897,7 +898,7 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
   @override
   void didUpdateWidget(covariant _DjConsoleMixer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_pendingPosition == null) {
+    if (_pendingPosition == null && !_dragging) {
       _position = widget.position.clamp(0.0, 1.0).toDouble();
     }
   }
@@ -974,6 +975,7 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
                 max: 1,
                 divisions: 100,
                 value: _position,
+                onChangeStart: widget.enabled ? (_) => _dragging = true : null,
                 onChanged: widget.enabled
                     ? (value) {
                         setState(() => _position = value);
@@ -982,6 +984,7 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
                     : null,
                 onChangeEnd: widget.enabled
                     ? (value) {
+                        _dragging = false;
                         _writeTimer?.cancel();
                         _writeTimer = null;
                         _pendingPosition = value;
