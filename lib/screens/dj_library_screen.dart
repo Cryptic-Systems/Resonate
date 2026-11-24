@@ -83,7 +83,7 @@ class _DjLibraryScreenState extends State<DjLibraryScreen> {
           }).toList(growable: false);
 
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 76, 16, 24),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
               ResonateGlassCard(
                 child: Column(
