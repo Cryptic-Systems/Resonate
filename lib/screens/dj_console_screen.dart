@@ -11,6 +11,7 @@ import '../providers/library_provider.dart';
 import '../dj_engine/analysis/dj_waveform_chunk.dart';
 import '../models/song.dart';
 import '../services/dj_waveform_range_reader.dart';
+import '../services/playback_snapshot.dart';
 import '../providers/dj_mode_provider.dart';
 import '../dj_engine/core/dj_types.dart';
 import '../ui/resonate_glass.dart';
@@ -194,7 +195,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
 
           Widget buildDeck({
             required String id,
-            required dynamic deck,
+            required PlaybackDeckSnapshot? deck,
             required Song? song,
             required Duration duration,
             required double progress,
@@ -366,6 +367,9 @@ class _ConsoleDeck extends StatefulWidget {
   const _ConsoleDeck({
     required this.deck, required this.active, required this.compact,
     required this.isPlaying,
+    required this.canPlay,
+    required this.onPlayPause,
+    required this.onLoad,
     required this.jogSeekEnabled,
     required this.onJogSeek,
     required this.status, required this.title, required this.artist, required this.progress,
@@ -376,7 +380,9 @@ class _ConsoleDeck extends StatefulWidget {
   });
 
   final String deck, status, title, artist;
-  final bool active, compact, isPlaying, jogSeekEnabled;
+  final bool active, compact, isPlaying, canPlay, jogSeekEnabled;
+  final Future<void> Function() onPlayPause;
+  final VoidCallback onLoad;
   final Future<void> Function(Duration position) onJogSeek;
   final double progress;
   final Duration position, duration;
@@ -550,6 +556,17 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     }
   }
 
+  Future<void> _togglePlayback() async {
+    try {
+      await widget.onPlayPause();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Deck transport was not applied: $error')),
+      );
+    }
+  }
+
   void _syncPlatterMotion() {
     // Eligibility includes the no-transition guard. If a transition starts
     // during a drag, didUpdateWidget clears the gesture and this stops the
@@ -613,7 +630,33 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(color: Colors.white60)),
-          const SizedBox(height: 12),
+          const SizedBox(height: 5),
+          Row(
+            children: [
+              IconButton.filledTonal(
+                visualDensity: VisualDensity.compact,
+                onPressed: widget.canPlay ? _togglePlayback : null,
+                icon: Icon(widget.isPlaying
+                    ? Icons.pause_rounded
+                    : Icons.play_arrow_rounded),
+                tooltip: widget.isPlaying ? 'Pause deck' : 'Play deck',
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: widget.onLoad,
+                  icon: const Icon(Icons.library_add_rounded, size: 15),
+                  label: const Text('LOAD TRACK'),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 7),
+                    textStyle: theme.textTheme.labelSmall,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
           Expanded(
             child: Center(
               child: AspectRatio(
@@ -821,6 +864,159 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     );
   }
 }
+class _DjConsoleMixer extends StatefulWidget {
+  const _DjConsoleMixer({
+    required this.enabled,
+    required this.position,
+    required this.compact,
+    required this.onChanged,
+  });
+
+  final bool enabled;
+  final double position;
+  final bool compact;
+  final Future<void> Function(double position) onChanged;
+
+  @override
+  State<_DjConsoleMixer> createState() => _DjConsoleMixerState();
+}
+
+class _DjConsoleMixerState extends State<_DjConsoleMixer> {
+  Timer? _writeTimer;
+  double? _pendingPosition;
+  late double _position;
+
+  @override
+  void initState() {
+    super.initState();
+    _position = widget.position.clamp(0.0, 1.0).toDouble();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DjConsoleMixer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_pendingPosition == null) {
+      _position = widget.position.clamp(0.0, 1.0).toDouble();
+    }
+  }
+
+  void _queueWrite(double value) {
+    _pendingPosition = value;
+    _writeTimer ??= Timer(const Duration(milliseconds: 28), _flushWrite);
+  }
+
+  void _flushWrite() {
+    _writeTimer?.cancel();
+    _writeTimer = null;
+    final value = _pendingPosition;
+    _pendingPosition = null;
+    if (value == null || !widget.enabled) return;
+    unawaited(widget.onChanged(value).catchError((Object error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Crossfader update was not applied: $error')),
+      );
+    }));
+  }
+
+  @override
+  void dispose() {
+    _writeTimer?.cancel();
+    if (_pendingPosition != null && widget.enabled) {
+      final value = _pendingPosition!;
+      unawaited(widget.onChanged(value).catchError((Object _) {}));
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = theme.colorScheme.primary;
+    return Container(
+      padding: EdgeInsets.all(widget.compact ? 8 : 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF101923),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accent.withValues(alpha: .3)),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.tune_rounded, color: accent, size: widget.compact ? 20 : 25),
+          const SizedBox(height: 7),
+          Text('MIXER',
+              style: theme.textTheme.labelLarge?.copyWith(
+                letterSpacing: 1.4,
+                fontWeight: FontWeight.w900,
+              )),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Text('A', style: theme.textTheme.labelLarge),
+              const Spacer(),
+              Text('B', style: theme.textTheme.labelLarge),
+            ],
+          ),
+          RotatedBox(
+            quarterTurns: 0,
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: widget.compact ? 3 : 4,
+                thumbShape: RoundSliderThumbShape(
+                  enabledThumbRadius: widget.compact ? 8 : 10,
+                ),
+              ),
+              child: Slider(
+                min: 0,
+                max: 1,
+                divisions: 100,
+                value: _position,
+                onChanged: widget.enabled
+                    ? (value) {
+                        setState(() => _position = value);
+                        _queueWrite(value);
+                      }
+                    : null,
+                onChangeEnd: widget.enabled
+                    ? (value) {
+                        _writeTimer?.cancel();
+                        _writeTimer = null;
+                        _pendingPosition = value;
+                        _flushWrite();
+                      }
+                    : null,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _position <= 0.01
+                ? 'DECK A'
+                : _position >= 0.99
+                    ? 'DECK B'
+                    : 'BLEND',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: accent,
+              letterSpacing: 1.2,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'OPERATOR ONLY',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: Colors.white54,
+              fontSize: widget.compact ? 8 : 9,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ConsoleRecordDetailPainter extends CustomPainter {
   const _ConsoleRecordDetailPainter({required this.accent});
 
