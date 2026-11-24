@@ -102,7 +102,9 @@ class AutopilotController extends ChangeNotifier {
         : intelligence.recommendations;
   }
 
-  bool get _mayMutatePlayback => AutopilotModePolicy.mayMutatePlayback(
+  bool get _mayMutatePlayback =>
+      !music.isDjDualDeckSessionActive &&
+      AutopilotModePolicy.mayMutatePlayback(
         consentGranted: _consentGranted,
         intelligenceEnabled: intelligence.isEnabled,
         autopilotEnabled: intelligence.isAutopilot,
