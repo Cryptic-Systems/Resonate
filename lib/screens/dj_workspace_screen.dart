@@ -64,7 +64,13 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
       if (!mounted) return;
       if (!dj.isEnabled) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enable DJ Mode before preparing a DJ set.')),
+          SnackBar(
+            content: Text(
+              widget.playerFacing
+                  ? 'Enable automatic mixing before preparing a DJ set.'
+                  : 'Enable DJ Mode before preparing a DJ set.',
+            ),
+          ),
         );
         return;
       }
@@ -233,7 +239,10 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
               ),
 
               const SizedBox(height: 14),
-              Text('LIVE DECK MONITOR', style: theme.textTheme.labelLarge),
+              Text(
+                widget.playerFacing ? 'AUTOMATIC MIX' : 'LIVE DECK MONITOR',
+                style: theme.textTheme.labelLarge,
+              ),
               const SizedBox(height: 8),
               Builder(builder: (context) {
                 final deckState = music.media3ShadowState;
@@ -463,7 +472,9 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Playback safety: this workspace prepares and monitors DJ decisions; it does not create a second player. Live output remains under the shared playback-control arbiter, and Media3 remains the only playback authority.',
+                        widget.playerFacing
+                            ? 'Playback safety: automatic mixing uses the shared playback-control authority and existing audio session. This monitor does not create or control a second player.'
+                            : 'Playback safety: this workspace prepares and monitors DJ decisions; it does not create a second player. Live output remains under the shared playback-control arbiter, and Media3 remains the only playback authority.',
                         style: theme.textTheme.bodySmall,
                       ),
                     ),
