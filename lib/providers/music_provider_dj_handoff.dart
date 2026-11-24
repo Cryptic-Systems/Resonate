@@ -142,7 +142,10 @@ extension MusicProviderDjHandoff on MusicProvider {
     }
 
     final wasPlaying = session.isPlaying;
-    await session.pause();
+    // Route the Player stop through MusicProvider's canonical transport lane
+    // so pending automatic work is cancelled and media focus is relinquished
+    // before the physical players become DJ decks.
+    await pause(source: 'experience_switch');
     if (session is PlaybackStateRefreshSession) {
       await (session as PlaybackStateRefreshSession).refreshState();
     }
