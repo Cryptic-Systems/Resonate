@@ -10,6 +10,7 @@ import '../providers/music_provider.dart';
 import '../providers/library_provider.dart';
 import '../dj_engine/analysis/dj_waveform_chunk.dart';
 import '../models/song.dart';
+import '../navigation/shell_nav.dart';
 import '../services/dj_waveform_range_reader.dart';
 import '../services/dj_cue_point_store.dart';
 import '../services/playback_snapshot.dart';
@@ -364,8 +365,23 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
               children: [
                 Row(
                   children: [
+                    IconButton.filledTonal(
+                      tooltip: 'Return to Resonate Player',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => openShellPlayer(context),
+                      icon: const Icon(Icons.arrow_back_rounded),
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'DJ CONSOLE',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
                     _ConsoleStatus(
-                      label: djReady ? 'DUAL DECK SESSION' : 'DJ SESSION UNAVAILABLE',
+                      label: djReady ? 'DUAL DECK SESSION' : 'SESSION OFF',
                       active: djReady,
                     ),
                     const SizedBox(width: 8),
@@ -376,12 +392,10 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                       active: deckA?.isPlaying == true || deckB?.isPlaying == true,
                     ),
                     const Spacer(),
-                    Text(
-                      'RESONATE  /  INDEPENDENT A/B DECKS',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        letterSpacing: 1.1,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                    TextButton.icon(
+                      onPressed: () => openShellPlayer(context),
+                      icon: const Icon(Icons.graphic_eq_rounded, size: 16),
+                      label: const Text('PLAYER'),
                     ),
                   ],
                 ),
@@ -414,7 +428,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                       ),
                       SizedBox(width: compact ? 8 : 12),
                       SizedBox(
-                        width: compact ? 130 : 190,
+                        width: compact ? 146 : 204,
                         child: _DjConsoleMixer(
                           enabled: DjConsoleManualControlsPolicy.canAdjustCrossfader(
                             djModeEnabled: djReady && music.media3ProviderSessionActive,
