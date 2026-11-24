@@ -297,6 +297,13 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                 compact: compact,
                 isPlaying: isPlaying,
                 canPlay: djReady && loaded && music.media3ProviderSessionActive,
+                canAdjustChannelGain:
+                    DjConsoleManualControlsPolicy.canAdjustChannelGain(
+                  djModeEnabled: djReady,
+                  media3SessionActive: music.media3ProviderSessionActive,
+                  transitionInProgress: music.transitionInProgress,
+                  deckHasMedia: loaded,
+                ),
                 jogSeekEnabled: djReady && loaded &&
                     music.media3ProviderSessionActive &&
                     !music.transitionInProgress,
@@ -475,6 +482,7 @@ class _ConsoleDeck extends StatefulWidget {
     required this.onLoad,
     required this.cuePosition,
     required this.channelGain,
+    required this.canAdjustChannelGain,
     required this.onChannelGainChanged,
     required this.onSetCue,
     required this.onCue,
@@ -493,6 +501,7 @@ class _ConsoleDeck extends StatefulWidget {
   final VoidCallback? onLoad;
   final Duration? cuePosition;
   final double channelGain;
+  final bool canAdjustChannelGain;
   final Future<void> Function(double gain) onChannelGainChanged;
   final VoidCallback? onSetCue;
   final VoidCallback? onCue;
@@ -543,7 +552,12 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   @override
   void didUpdateWidget(covariant _ConsoleDeck oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_channelGainDragging && oldWidget.channelGain != widget.channelGain) {
+    if (!widget.canAdjustChannelGain) {
+      // Drop a local preview if a native transition takes ownership of gain.
+      _channelGainDragging = false;
+      _channelGain = widget.channelGain.clamp(0.0, 1.0).toDouble();
+    } else if (!_channelGainDragging &&
+        oldWidget.channelGain != widget.channelGain) {
       _channelGain = widget.channelGain.clamp(0.0, 1.0).toDouble();
     }
     if (_jogStartPosition != null &&
@@ -681,6 +695,15 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   }
 
   Future<void> _commitChannelGain(double value) async {
+    if (!widget.canAdjustChannelGain) {
+      if (mounted) {
+        setState(() {
+          _channelGain = widget.channelGain.clamp(0.0, 1.0).toDouble();
+          _channelGainDragging = false;
+        });
+      }
+      return;
+    }
     try {
       await widget.onChannelGainChanged(value);
       if (!mounted) return;
@@ -825,13 +848,13 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             min: 0.0,
             max: 1.0,
             divisions: 40,
-            onChanged: widget.canPlay
+            onChanged: widget.canAdjustChannelGain
                 ? (value) => setState(() {
                       _channelGainDragging = true;
                       _channelGain = value;
                     })
                 : null,
-            onChangeEnd: widget.canPlay
+            onChangeEnd: widget.canAdjustChannelGain
                 ? (value) => unawaited(_commitChannelGain(value))
                 : null,
           ),
