@@ -9,6 +9,16 @@ import kotlin.math.sin
 
 class Media3GainPolicyTest {
     @Test
+    fun djChannelGainComposesWithCrossfaderAndMasterWithoutChangingPartner() {
+        val policy = Media3GainPolicy(initialMasterVolume = 0.8f)
+
+        assertEquals(0.4f, policy.djDeckVolume(0.5f, 1f), 0.0001f)
+        assertEquals(0.2f, policy.djDeckVolume(0.5f, 0.5f), 0.0001f)
+        assertEquals(0f, policy.djDeckVolume(0f, 0.75f), 0f)
+        assertEquals(0.8f, policy.djDeckVolume(1f, 1f), 0.0001f)
+    }
+
+    @Test
     fun masterVolumeScalesBothDecksDuringFade() {
         val policy = Media3GainPolicy(initialMasterVolume = 0.4f)
         policy.setCrossfadeGains(active = 0.6f, standby = 0.8f)
