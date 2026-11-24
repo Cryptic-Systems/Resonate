@@ -124,6 +124,21 @@ abstract interface class PlaybackCrossfadeBackend {
   Future<void> cancelCrossfade();
 }
 
+/// Optional capability for the dedicated persistent A/B DJ deck lifecycle.
+abstract interface class PlaybackDjDeckBackend {
+  Future<void> enableDjDualDeckMode();
+  Future<void> disableDjDualDeckMode();
+  Future<void> setDjCrossfader(double position);
+  Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0});
+  Future<void> playDjDeck(String deckId);
+  Future<void> pauseDjDeck(String deckId);
+  Future<void> seekDjDeck({
+    required String deckId,
+    required Duration position,
+    required String expectedMediaId,
+  });
+}
+
 /// Repeat behavior shared by backend implementations.
 enum PlaybackQueueRepeatMode {
   off('off'),
