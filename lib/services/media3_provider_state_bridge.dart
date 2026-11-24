@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../models/song.dart';
 import 'media3_playback_runtime.dart';
+import 'playback_snapshot.dart';
 
 /// Projects the serialized Media3 runtime into the small state surface that
 /// MusicProvider and its UI consumers need.
