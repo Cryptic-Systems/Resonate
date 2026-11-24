@@ -4,10 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/music_provider.dart';
+import '../experience/experience_provider.dart';
 
 import '../navigation/shell_nav.dart';
 import 'dj_workspace_screen.dart';
-import 'dj_library_screen.dart';
+import 'dj_library_screen.dart';\nimport 'dj_console_screen.dart';
 
 /// Dedicated navigation shell for Resonatix DJ.
 ///
@@ -39,12 +40,12 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _shellNav = context.read<ShellNav>();
-      _shellNav?.bind(_selectPage, playerTabIndex: _workspaceTab);
+      _shellNav?.bind(\n        _selectPage,\n        playerTabIndex: _workspaceTab,\n        onSwitchToPlayer: _switchToPlayer,\n      );
       unawaited(_startDjSession());
     });
   }
 
-  Future<void> _startDjSession() async {
+  Future<void> _switchToPlayer() async {\n    if (!_djSessionStarted) return;\n    try {\n      await _music.endDjSession();\n      _djSessionStarted = false;\n      if (!mounted) return;\n      await context.read<ExperienceProvider>().switchExperience(\n            ResonateExperience.player,\n          );\n    } catch (error) {\n      if (!mounted) return;\n      ScaffoldMessenger.of(context).showSnackBar(\n        SnackBar(content: Text('Could not return to Resonate Player: $error')),\n      );\n    }\n  }\n\n  Future<void> _startDjSession() async {
     // Mark the shell as responsible for cleanup before the first await. If
     // initialization partially succeeds or is retried from the Library tab,
     // dispose still performs the guarded native cleanup.
@@ -96,7 +97,7 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        onDestinationSelected: _selectPage,
+        onDestinationSelected: (index) {\n          if (index == 2) {\n            Navigator.of(context).push(\n              MaterialPageRoute(builder: (_) => const DjConsoleScreen()),\n            );\n            return;\n          }\n          _selectPage(index);\n        },
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.graphic_eq_outlined),
