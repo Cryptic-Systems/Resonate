@@ -72,19 +72,18 @@ class _DjLibraryScreenState extends State<DjLibraryScreen> {
           ),
         ],
       ),
-      body: Consumer<LibraryProvider>(
-        builder: (context, library, _) {
-          final music = context.read<MusicProvider>();
-          final deckInfo = context.select<MusicProvider, (bool, String?, String?)>(
-            (provider) {
-              final state = provider.media3ShadowState;
-              return (
-                state?.djDualDeckMode == true,
-                state?.deckA?.title,
-                state?.deckB?.title,
-              );
-            },
+      body: Selector<MusicProvider, (bool, String?, String?)>(
+        selector: (context, provider) {
+          final state = provider.media3ShadowState;
+          return (
+            state?.djDualDeckMode == true,
+            state?.deckA?.title,
+            state?.deckB?.title,
           );
+        },
+        builder: (context, deckInfo, _) => Consumer<LibraryProvider>(
+          builder: (context, library, _) {
+          final music = context.read<MusicProvider>();
           final ready = deckInfo.$1;
           final query = _search.text.trim().toLowerCase();
           final songs = library.allSongs.where((song) {
@@ -291,7 +290,8 @@ class _DjLibraryScreenState extends State<DjLibraryScreen> {
                 ),
             ],
           );
-        },
+          },
+        ),
       ),
     );
   }
