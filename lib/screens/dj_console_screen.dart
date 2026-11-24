@@ -163,64 +163,10 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
     final song = await showModalBottomSheet<Song>(
       context: context,
       isScrollControlled: true,
-      builder: (sheetContext) {
-        final theme = Theme.of(sheetContext);
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.82,
-          minChildSize: 0.45,
-          maxChildSize: 0.95,
-          builder: (context, controller) => SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text('Load Deck $deckId',
-                            style: theme.textTheme.titleLarge),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(sheetContext),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: library.allSongs.isEmpty
-                      ? const Center(child: Text('No music in the shared library yet.'))
-                      : ListView.builder(
-                          controller: controller,
-                          itemCount: library.allSongs.length,
-                          itemBuilder: (context, index) {
-                            final song = library.allSongs[index];
-                            final playable = song.filePath.trim().isNotEmpty;
-                            return ListTile(
-                              enabled: playable,
-                              leading: const Icon(Icons.music_note_rounded),
-                              title: Text(song.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis),
-                              subtitle: Text(song.artist,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis),
-                              trailing: playable
-                                  ? const Icon(Icons.add_circle_outline_rounded)
-                                  : const Icon(Icons.block_rounded),
-                              onTap: playable
-                                  ? () => Navigator.pop(sheetContext, song)
-                                  : null,
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      builder: (sheetContext) => _DjTrackPickerSheet(
+        deckId: deckId,
+        songs: library.allSongs,
+      ),
     );
     if (song == null || !mounted) return;
     try {
@@ -1490,6 +1436,149 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DjTrackPickerSheet extends StatefulWidget {
+  const _DjTrackPickerSheet({
+    required this.deckId,
+    required this.songs,
+  });
+
+  final String deckId;
+  final List<Song> songs;
+
+  @override
+  State<_DjTrackPickerSheet> createState() => _DjTrackPickerSheetState();
+}
+
+class _DjTrackPickerSheetState extends State<_DjTrackPickerSheet> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final normalizedQuery = _query.trim().toLowerCase();
+    final filteredSongs = normalizedQuery.isEmpty
+        ? widget.songs
+        : widget.songs.where((song) {
+            return song.title.toLowerCase().contains(normalizedQuery) ||
+                song.artist.toLowerCase().contains(normalizedQuery) ||
+                song.album.toLowerCase().contains(normalizedQuery);
+          }).toList(growable: false);
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.82,
+      minChildSize: 0.45,
+      maxChildSize: 0.95,
+      builder: (context, controller) => SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Load Deck ${widget.deckId}',
+                      style: theme.textTheme.titleLarge,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            if (widget.songs.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                child: TextField(
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  onChanged: (value) => setState(() => _query = value),
+                  decoration: InputDecoration(
+                    hintText: 'Search title, artist, or album',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Clear search',
+                            onPressed: () => setState(() => _query = ''),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ),
+            Expanded(
+              child: widget.songs.isEmpty
+                  ? const Center(
+                      child: Text('No music in the shared library yet.'),
+                    )
+                  : filteredSongs.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              'No tracks match "${_query.trim()}".',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          controller: controller,
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          itemCount: filteredSongs.length,
+                          itemBuilder: (context, index) {
+                            final song = filteredSongs[index];
+                            final playable = song.filePath.trim().isNotEmpty;
+                            return ListTile(
+                              enabled: playable,
+                              leading: const Icon(Icons.music_note_rounded),
+                              title: Text(
+                                song.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                '${song.artist} · ${song.album}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: playable
+                                  ? const Icon(Icons.add_circle_outline_rounded)
+                                  : const Icon(Icons.block_rounded),
+                              onTap: playable
+                                  ? () => Navigator.pop(context, song)
+                                  : null,
+                            );
+                          },
+                        ),
+            ),
+            if (widget.songs.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 6, 18, 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${filteredSongs.length} of ${widget.songs.length} tracks',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
