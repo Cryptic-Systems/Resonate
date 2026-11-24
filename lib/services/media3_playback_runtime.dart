@@ -757,6 +757,30 @@ class Media3PlaybackRuntime {
         await (backend as PlaybackDjDeckBackend).pauseDjDeck(deckId);
       });
 
+  Future<void> clearDjDeck(String deckId) => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support clearing DJ decks.');
+        }
+        await (backend as PlaybackDjDeckBackend).clearDjDeck(deckId);
+      });
+
+  Future<void> setDjDeckPlaybackParameters({
+    required String deckId,
+    required double speed,
+    required double pitch,
+  }) => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support physical DJ deck tempo.');
+        }
+        await (backend as PlaybackDjDeckBackend).setDjDeckPlaybackParameters(
+          deckId: deckId,
+          speed: speed,
+          pitch: pitch,
+        );
+      });
+
   Future<void> seekDjDeck({
     required String deckId,
     required Duration position,
