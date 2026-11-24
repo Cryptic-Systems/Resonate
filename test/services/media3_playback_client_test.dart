@@ -746,6 +746,117 @@ void main() {
     });
   });
 
+  group('Media3 persistent DJ deck commands', () {
+    const channel = MethodChannel('resonate/media3_test_dj_decks');
+    late Media3PlaybackClient client;
+
+    setUp(() {
+      client = Media3PlaybackClient(methodChannel: channel);
+    });
+
+    tearDown(() {
+      channel.setMockMethodCallHandler(null);
+    });
+
+    test('sends isolated deck queue, transport, cue, tempo and mixer commands', () async {
+      final calls = <MethodCall>[];
+      channel.setMockMethodCallHandler((call) async {
+        calls.add(call);
+        return true;
+      });
+      final item = Media3QueueItem(
+        id: 'dj-track-a',
+        uri: Uri.file('/music/dj-track-a.flac'),
+        title: 'DJ Track A',
+        artist: 'Artist',
+      );
+
+      await client.enableDjDualDeckMode();
+      await client.loadDjDeck('A', <Media3QueueItem>[item]);
+      await client.playDjDeck('A');
+      await client.pauseDjDeck('B');
+      await client.seekDjDeck(
+        deckId: 'A',
+        position: const Duration(seconds: 42),
+        expectedMediaId: 'dj-track-a',
+      );
+      await client.setDjDeckPlaybackParameters(
+        deckId: 'B',
+        speed: 1.04,
+        pitch: 1.0,
+      );
+      await client.setDjCrossfader(0.35);
+      await client.clearDjDeck('B');
+      await client.disableDjDualDeckMode();
+
+      expect(calls.map((call) => call.method).toList(), [
+        'enableDjDualDeckMode',
+        'loadDjDeck',
+        'playDjDeck',
+        'pauseDjDeck',
+        'seekDjDeck',
+        'setDjDeckPlaybackParameters',
+        'setDjCrossfader',
+        'clearDjDeck',
+        'disableDjDualDeckMode',
+      ]);
+      final loadArgs = Map<Object?, Object?>.from(calls[1].arguments as Map);
+      expect(loadArgs['deckId'], 'A');
+      expect(loadArgs['startIndex'], 0);
+      expect((loadArgs['items'] as List).single['id'], 'dj-track-a');
+      final seekArgs = Map<Object?, Object?>.from(calls[4].arguments as Map);
+      expect(seekArgs['positionMs'], 42000);
+      expect(seekArgs['expectedMediaId'], 'dj-track-a');
+      final tempoArgs = Map<Object?, Object?>.from(calls[5].arguments as Map);
+      expect(tempoArgs['deckId'], 'B');
+      expect(tempoArgs['speed'], 1.04);
+      expect(tempoArgs['pitch'], 1.0);
+      final faderArgs = Map<Object?, Object?>.from(calls[6].arguments as Map);
+      expect(faderArgs['position'], 0.35);
+    });
+
+    test('rejects invalid deck identities, queue indices and mixer values', () async {
+      await expectLater(client.playDjDeck('C'), throwsArgumentError);
+      await expectLater(client.clearDjDeck(''), throwsArgumentError);
+      await expectLater(
+        client.loadDjDeck('A', const <Media3QueueItem>[]),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.loadDjDeck(
+          'B',
+          <Media3QueueItem>[
+            Media3QueueItem(
+              id: 'one',
+              uri: Uri.file('/music/one.mp3'),
+              title: 'One',
+            ),
+          ],
+          startIndex: 1,
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(client.setDjCrossfader(double.nan), throwsArgumentError);
+      await expectLater(client.setDjCrossfader(1.01), throwsArgumentError);
+      await expectLater(
+        client.setDjDeckPlaybackParameters(
+          deckId: 'A',
+          speed: 1.2,
+          pitch: 1.0,
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.seekDjDeck(
+          deckId: 'B',
+          position: const Duration(milliseconds: -1),
+          expectedMediaId: 'track-b',
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('Media3 isolated transition audition', () {
     const channel = MethodChannel('resonate/media3_test_audition');
     late Media3PlaybackClient client;
