@@ -88,12 +88,12 @@ class _DjConsoleDeckTempoControlState
             pitch >= 0.5 &&
             pitch <= 2.0;
         final percent = telemetryValid
-            ? (((speed! - 1.0) * 100.0)
+            ? (((speed - 1.0) * 100.0)
                 .clamp(-6.0, 6.0).toDouble())
             : 0.0;
         final keyLock = _keyLockEnabled ??
             (telemetryValid
-                ? (pitch! - 1.0).abs() <= 0.001
+                ? (pitch - 1.0).abs() <= 0.001
                 : true);
         final shownPercent = (_previewPercent ?? percent)
             .clamp(-6.0, 6.0).toDouble();
