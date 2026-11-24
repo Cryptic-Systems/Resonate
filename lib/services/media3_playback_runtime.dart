@@ -732,6 +732,20 @@ class Media3PlaybackRuntime {
         await (backend as PlaybackDjDeckBackend).setDjCrossfader(position);
       });
 
+  Future<void> setDjDeckChannelGain({
+    required String deckId,
+    required double gain,
+  }) => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support DJ channel gain.');
+        }
+        await (backend as PlaybackDjDeckBackend).setDjDeckChannelGain(
+          deckId: deckId,
+          gain: gain,
+        );
+      });
+
   Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0}) =>
       _run(() async {
         final backend = _backend;
