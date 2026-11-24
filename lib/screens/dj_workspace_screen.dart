@@ -172,7 +172,8 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
               ),
               const SizedBox(height: 18),
               ResonateGlassCard(
-        blurEnabled: false,
+                blurEnabled: false,
+blurEnabled: false,
 blurEnabled: false,
                 margin: EdgeInsets.zero,
                 padding: const EdgeInsets.all(16),
@@ -340,7 +341,6 @@ blurEnabled: false,
                 final hasDeckTelemetry = deckState != null;
                 final activeGain = deckState?.activeDeckVolume;
                 final standbyGain = deckState?.standbyDeckVolume;
-                const hasLiveSpectrum = false;
                 if (widget.playerFacing) {
                   return _PlayerMixMonitorCard(
                     currentSong: song,
@@ -374,7 +374,8 @@ blurEnabled: false,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     ResonateGlassCard(
-        blurEnabled: false,
+                blurEnabled: false,
+blurEnabled: false,
 margin: EdgeInsets.zero,
                       padding: const EdgeInsets.all(14),
                       child: Column(
@@ -398,7 +399,7 @@ margin: EdgeInsets.zero,
                             standbyReady: standbyDeckReady,
                             isPlaying: music.isPlaying,
                             transitionActive: music.transitionInProgress,
-                            liveSpectrum: hasLiveSpectrum ? visualization.frequencies : null,
+                            liveSpectrum: null,
                           ),
                           const SizedBox(height: 14),
                           Row(
@@ -518,7 +519,8 @@ margin: EdgeInsets.zero,
               ),
               const SizedBox(height: 18),
               ResonateGlassCard(
-        blurEnabled: false,
+                blurEnabled: false,
+blurEnabled: false,
 margin: EdgeInsets.zero,
                 padding: const EdgeInsets.all(14),
                 child: Row(
@@ -693,7 +695,8 @@ class _DjPhysicalDeckMonitorCard extends StatelessWidget {
     final loaded = deck?.mediaId != null;
     final duration = deck?.duration;
     return ResonateGlassCard(
-        blurEnabled: false,
+                blurEnabled: false,
+blurEnabled: false,
 margin: EdgeInsets.zero,
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -775,7 +778,8 @@ margin: EdgeInsets.zero,
         ),
         const SizedBox(height: 10),
         ResonateGlassCard(
-        blurEnabled: false,
+                blurEnabled: false,
+blurEnabled: false,
 margin: EdgeInsets.zero,
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -870,7 +874,8 @@ class _PlayerMixMonitorCard extends StatelessWidget {
                         ? 'Incoming track identity is not yet verified'
                         : 'No incoming track prepared';
     return ResonateGlassCard(
-        blurEnabled: false,
+                blurEnabled: false,
+blurEnabled: false,
 margin: EdgeInsets.zero,
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -1524,7 +1529,8 @@ class _WorkspaceAction extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ResonateGlassCard(
-        blurEnabled: false,
+                blurEnabled: false,
+blurEnabled: false,
 margin: EdgeInsets.zero,
       padding: EdgeInsets.zero,
       child: ListTile(
