@@ -182,6 +182,7 @@ class Media3PlaybackService : MediaSessionService() {
 
     /** Operator-owned physical A/B crossfader; automation never calls this. */
     fun setDjCrossfader(position: Float): Boolean {
+        if (!::activePlayer.isInitialized || !djDualDeckMode) return false
         val standby = standbyPlayer
         if (!Media3DjCrossfaderPolicy.canApply(
                 position = position,
