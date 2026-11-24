@@ -663,6 +663,35 @@ class Media3PlaybackBridge(
                     if (accepted) result.success(true)
                     else result.error("DJ_DECK_SEEK_REJECTED", "The deck identity changed or the requested position is invalid.", null)
                 }
+                "clearDjDeck" -> {
+                    val deckId = call.argument<String>("deckId")
+                    if (deckId == null || deckId !in setOf("A", "B")) {
+                        result.error("INVALID_DJ_DECK", "deckId must be A or B.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.clearDjDeck(deckId) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_CLEAR_REJECTED", "The selected physical deck could not be cleared.", null)
+                }
+                "setDjDeckPlaybackParameters" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val speed = call.argument<Number>("speed")?.toFloat()
+                    val pitch = call.argument<Number>("pitch")?.toFloat()
+                    if (deckId == null || deckId !in setOf("A", "B") ||
+                        speed == null || pitch == null ||
+                        Media3DeckPlaybackParametersPolicy.create(speed, pitch) == null
+                    ) {
+                        result.error("INVALID_DJ_DECK_PARAMETERS", "A physical deck and finite speed/pitch values from 0.5 to 2.0 are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDjDeckPlaybackParameters(
+                        deckId,
+                        speed,
+                        pitch,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_PARAMETERS_REJECTED", "The selected deck parameters could not be applied.", null)
+                }
                 "setVolume" -> {
                     val volume = call.argument<Number>("value")?.toFloat()
                     if (volume == null || !volume.isFinite()) {
