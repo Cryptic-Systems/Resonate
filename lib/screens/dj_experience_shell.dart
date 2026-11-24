@@ -46,6 +46,7 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
 
   Future<void> _startDjSession() async {
     try {
+      await _music.prepareMedia3ProviderSession();
       await _music.enableDjDualDeckMode();
       _djSessionStarted = true;
       // The Player queue remains in MusicProvider's saved queue model. Both
