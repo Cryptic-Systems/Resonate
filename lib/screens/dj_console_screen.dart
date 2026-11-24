@@ -240,9 +240,11 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ResonateGlassScaffold(
-      title: const Text('DJ Console'),
-      body: Consumer2<MusicProvider, LibraryProvider>(
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: ResonateGlassBackground(
+        child: SafeArea(
+          child: Consumer2<MusicProvider, LibraryProvider>(
         builder: (context, music, library, _) {
           final state = music.media3ShadowState;
           final deckA = state?.deckA;
@@ -484,6 +486,8 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
             ),
           );
         },
+          ),
+        ),
       ),
     );
   }
@@ -1002,9 +1006,8 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
               ),
             ],
           ),
-          const SizedBox(height: 5),
           const SizedBox(height: 8),
-          FutureBuilder<DjTrackProfile?>(
+          FutureBuilder<DjTrackProfile?>
             future: profileFuture,
             builder: (context, profileSnapshot) {
               final profile = profileSnapshot.data;
@@ -1083,7 +1086,8 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                             child: SizedBox(
                               width: contentWidth,
                               height: compact ? 42 : 58,
-                              child: CustomPaint(
+                              child: RepaintBoundary(
+                                child: CustomPaint(
                                 painter: _ConsoleWavePainter(
                                   progress: progress,
                                   color: accent,
@@ -1091,6 +1095,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                                   beatGrid: beatGrid,
                                   sections: sections,
                                   durationMs: duration.inMilliseconds,
+                                ),
                                 ),
                               ),
                             ),
