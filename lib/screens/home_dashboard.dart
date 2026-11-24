@@ -216,7 +216,7 @@ class HomeDashboard extends StatelessWidget {
 
     return ResonateGlassScaffold(
       title: const ResonateLogo(size: 58, full: true, showWord: false),
-      actions: const [ExperienceModeChip(), ResonateModeChip(dense: true)],
+      actions: const [ExperienceModeChip(dense: true), ResonateModeChip(dense: true)],
       body: RefreshIndicator(
         onRefresh: intelligence.refreshRecommendations,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 34), children: children),
