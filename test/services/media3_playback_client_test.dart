@@ -841,7 +841,7 @@ void main() {
       await expectLater(
         client.setDjDeckPlaybackParameters(
           deckId: 'A',
-          speed: 1.2,
+          speed: 2.01,
           pitch: 1.0,
         ),
         throwsArgumentError,
