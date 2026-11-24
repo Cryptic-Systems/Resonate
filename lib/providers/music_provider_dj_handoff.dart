@@ -174,7 +174,8 @@ extension MusicProviderDjHandoff on MusicProvider {
 
   Future<void> endDjSession() async {
     final session = _media3ProviderSession;
-    if (session is! PlaybackDjDeckSession || !_media3ProviderSessionActive) return;
+    if (session == null || session is! PlaybackDjDeckSession ||
+        !_media3ProviderSessionActive) return;
     Object? firstError;
     try {
       await cancelPreparedManualDjDeck();
