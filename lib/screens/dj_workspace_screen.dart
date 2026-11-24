@@ -481,7 +481,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                 _WorkspaceAction(
                   icon: Icons.album_rounded,
                   title: 'Open DJ Console',
-                  subtitle: 'Enter the landscape two-deck performance environment. Interactive deck controls are being brought online in validated stages.',
+                  subtitle: 'Load and control independent Deck A and Deck B, adjust tempo, jog-seek and operate the manual crossfader.',
                   onTap: _openDjConsole,
                 ),
                 const SizedBox(height: 14),
