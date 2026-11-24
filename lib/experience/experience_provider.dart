@@ -21,9 +21,8 @@ enum ResonateExperience {
 
 /// Persists the user's top-level experience choice.
 ///
-/// This first milestone only supports first-run selection. Changing an
-/// already-selected experience is deliberately reserved for the safe
-/// switching coordinator, which must stop and normalize playback first.
+/// Runtime changes are exposed separately from first-run selection so the
+/// owning experience shell can normalize playback before switching products.
 class ExperienceProvider extends ChangeNotifier {
   static const String _storageKey = 'resonate_selected_experience';
 
