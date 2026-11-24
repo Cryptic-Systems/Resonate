@@ -1005,7 +1005,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             ],
           ),
           const SizedBox(height: 8),
-          child: FutureBuilder<DjTrackProfile?>(
+          FutureBuilder<DjTrackProfile?>(
             future: profileFuture,
             builder: (context, profileSnapshot) {
               final profile = profileSnapshot.data;
