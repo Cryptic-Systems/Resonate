@@ -129,6 +129,7 @@ abstract interface class PlaybackDjDeckBackend {
   Future<void> enableDjDualDeckMode();
   Future<void> disableDjDualDeckMode();
   Future<void> setDjCrossfader(double position);
+  Future<void> setDjDeckChannelGain({required String deckId, required double gain});
   Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0});
   Future<void> playDjDeck(String deckId);
   Future<void> pauseDjDeck(String deckId);
