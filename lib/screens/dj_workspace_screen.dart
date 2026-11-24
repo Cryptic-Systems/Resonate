@@ -173,7 +173,6 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
               const SizedBox(height: 18),
               ResonateGlassCard(
                 blurEnabled: false,
-blurEnabled: false,
                 margin: EdgeInsets.zero,
                 padding: const EdgeInsets.all(16),
                 child: Column(
