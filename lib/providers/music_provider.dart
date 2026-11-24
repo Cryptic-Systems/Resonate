@@ -108,6 +108,7 @@ class MusicProvider extends ChangeNotifier {
   _DjSessionReturnState? _djSessionReturnState;
   Future<void> _djSessionLifecycleTail = Future<void>.value();
   final Set<Future<void>> _djDeckCommandsInFlight = <Future<void>>{};
+  PlaybackControlLease? _djCrossfaderGestureLease;
   // A library selection may commit before Media3 publishes its replacement timeline.
   // Fence delayed snapshots from the previous item until the selected occurrence arrives.
   String? _media3PendingSelectionSongId;
@@ -4946,6 +4947,11 @@ class MusicProvider extends ChangeNotifier {
     // Retire the standby deck and release that lease before disposing Media3
     // or closing an arbiter owned by this provider.
     unawaited(() async {
+      try {
+        await endDjCrossfaderGesture();
+      } catch (error) {
+        debugPrint('DJ crossfader gesture disposal cleanup failed: $error');
+      }
       try {
         await cancelPreparedManualDjDeck();
       } catch (error) {
