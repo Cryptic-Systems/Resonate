@@ -93,6 +93,10 @@ extension MusicProviderDjHandoff on MusicProvider {
       'enable_mode',
       (session) => session.enableDjDualDeckMode(),
     );
+    final session = _media3ProviderSession;
+    if (session is PlaybackStateRefreshSession) {
+      await (session as PlaybackStateRefreshSession).refreshState();
+    }
   }
 
   Future<void> disableDjDualDeckMode() =>
