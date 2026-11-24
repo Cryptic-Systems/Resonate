@@ -22,7 +22,11 @@ import 'dj_transition_studio_screen.dart';
 /// This surface never owns a player and never issues transport or manual deck
 /// preparation commands. Hands-on deck operation belongs in DJ Console.
 class DjWorkspaceScreen extends StatefulWidget {
-  const DjWorkspaceScreen({super.key});
+  const DjWorkspaceScreen({super.key, this.playerFacing = false});
+
+  /// Player receives a user-facing mix monitor, never physical deck telemetry
+  /// or links into hands-on DJ performance tools.
+  final bool playerFacing;
 
   @override
   State<DjWorkspaceScreen> createState() => _DjWorkspaceScreenState();
@@ -105,7 +109,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ResonateGlassScaffold(
-      title: const Text('DJ Workspace'),
+      title: Text(widget.playerFacing ? 'Mix Monitor' : 'DJ Workspace'),
       body: Consumer3<MusicProvider, DjModeProvider, AudioVisualizationProvider>(
         builder: (context, music, dj, visualization, _) {
           final song = music.currentSong;
@@ -127,10 +131,18 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Watch the mix unfold.',
-                            style: theme.textTheme.titleMedium),
-                        Text('Live deck activity, incoming preparation and transitions — observed in real time.',
-                            style: theme.textTheme.bodySmall),
+                        Text(
+                          widget.playerFacing
+                              ? 'Watch Resonate shape the listening session.'
+                              : 'Watch the mix unfold.',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        Text(
+                          widget.playerFacing
+                              ? 'Automatic transition activity and incoming-track preparation, without exposing the performance controls.'
+                              : 'Live deck activity, incoming preparation and transitions — observed in real time.',
+                          style: theme.textTheme.bodySmall,
+                        ),
                       ],
                     ),
                   ),
@@ -150,7 +162,9 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                         Text('LIVE SESSION', style: theme.textTheme.labelLarge),
                         const Spacer(),
                         _StatusPill(
-                          label: dj.isEnabled ? 'DJ enabled' : 'DJ disabled',
+                          label: widget.playerFacing
+                              ? (dj.isEnabled ? 'Automatic mixing on' : 'Automatic mixing off')
+                              : (dj.isEnabled ? 'DJ enabled' : 'DJ disabled'),
                           active: dj.isEnabled,
                         ),
                       ],
@@ -268,6 +282,22 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                 final activeGain = deckState?.activeDeckVolume;
                 final standbyGain = deckState?.standbyDeckVolume;
                 final hasLiveSpectrum = visualization.hasLiveSpectrum;
+                if (widget.playerFacing) {
+                  return _PlayerMixMonitorCard(
+                    currentSong: song,
+                    incomingSong: standbySong,
+                    currentProgress: progress,
+                    currentPosition: music.currentPosition,
+                    currentDuration: duration,
+                    isPlaying: music.isPlaying,
+                    transitionInProgress: music.transitionInProgress,
+                    incomingReady: standbyDeckReady,
+                    incomingPreparing: incomingStatus == 'preparing',
+                    incomingIdentityAmbiguous: incomingIdentityAmbiguous,
+                    incomingUnverified: incomingMediaId != null && standbySong == null,
+                    liveSpectrum: hasLiveSpectrum ? visualization.frequencies : null,
+                  );
+                }
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -392,24 +422,29 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                 );
               }),
               const SizedBox(height: 14),
-              Text('PERFORMANCE', style: theme.textTheme.labelLarge),
-              const SizedBox(height: 8),
-              _WorkspaceAction(
-                icon: Icons.album_rounded,
-                title: 'Open DJ Console',
-                subtitle: 'Enter the landscape two-deck performance environment. Interactive deck controls are being brought online in validated stages.',
-                onTap: _openDjConsole,
-              ),
-              const SizedBox(height: 14),
-              Text('WORKSPACE TOOLS', style: theme.textTheme.labelLarge),
-              const SizedBox(height: 8),
-              _WorkspaceAction(
-                icon: Icons.compare_arrows_rounded,
-                title: 'Transition Studio',
-                subtitle: 'Analyze a pair of tracks, edit Mix-In / Mix-Out cues and inspect transition plans.',
-                onTap: _openTransitionStudio,
-              ),
-              const SizedBox(height: 10),
+              if (!widget.playerFacing) ...[
+                Text('PERFORMANCE', style: theme.textTheme.labelLarge),
+                const SizedBox(height: 8),
+                _WorkspaceAction(
+                  icon: Icons.album_rounded,
+                  title: 'Open DJ Console',
+                  subtitle: 'Enter the landscape two-deck performance environment. Interactive deck controls are being brought online in validated stages.',
+                  onTap: _openDjConsole,
+                ),
+                const SizedBox(height: 14),
+                Text('WORKSPACE TOOLS', style: theme.textTheme.labelLarge),
+                const SizedBox(height: 8),
+                _WorkspaceAction(
+                  icon: Icons.compare_arrows_rounded,
+                  title: 'Transition Studio',
+                  subtitle: 'Analyze a pair of tracks, edit Mix-In / Mix-Out cues and inspect transition plans.',
+                  onTap: _openTransitionStudio,
+                ),
+                const SizedBox(height: 10),
+              ] else ...[
+                Text('DJ ASSIST', style: theme.textTheme.labelLarge),
+                const SizedBox(height: 8),
+              ],
               _WorkspaceAction(
                 icon: Icons.queue_music_rounded,
                 title: 'Prepare a DJ set',
@@ -438,6 +473,155 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _PlayerMixMonitorCard extends StatelessWidget {
+  const _PlayerMixMonitorCard({
+    required this.currentSong,
+    required this.incomingSong,
+    required this.currentProgress,
+    required this.currentPosition,
+    required this.currentDuration,
+    required this.isPlaying,
+    required this.transitionInProgress,
+    required this.incomingReady,
+    required this.incomingPreparing,
+    required this.incomingIdentityAmbiguous,
+    required this.incomingUnverified,
+    required this.liveSpectrum,
+  });
+
+  final Song? currentSong;
+  final Song? incomingSong;
+  final double currentProgress;
+  final Duration currentPosition;
+  final Duration currentDuration;
+  final bool isPlaying;
+  final bool transitionInProgress;
+  final bool incomingReady;
+  final bool incomingPreparing;
+  final bool incomingIdentityAmbiguous;
+  final bool incomingUnverified;
+  final List<double>? liveSpectrum;
+
+  String _clock(Duration value) {
+    final seconds = value.inSeconds.clamp(0, 1 << 30);
+    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final incomingStatus = transitionInProgress
+        ? 'Transition in progress'
+        : incomingReady
+            ? 'Ready for automatic transition'
+            : incomingPreparing
+                ? 'Preparing incoming track'
+                : incomingIdentityAmbiguous
+                    ? 'Incoming track occurrence is ambiguous'
+                    : incomingUnverified
+                        ? 'Incoming track identity is not yet verified'
+                        : 'No incoming track prepared';
+    return ResonateGlassCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.graphic_eq_rounded, color: theme.colorScheme.primary),
+            const SizedBox(width: 8),
+            Text('AUTOMATIC MIX MONITOR', style: theme.textTheme.labelLarge),
+            const Spacer(),
+            _StatusPill(
+              label: transitionInProgress
+                  ? 'Transitioning'
+                  : isPlaying
+                      ? 'Playing'
+                      : 'Paused',
+              active: isPlaying || transitionInProgress,
+            ),
+          ]),
+          const SizedBox(height: 14),
+          Text('NOW PLAYING', style: theme.textTheme.labelSmall),
+          const SizedBox(height: 4),
+          Text(
+            currentSong?.title ?? 'Nothing playing',
+            style: theme.textTheme.titleMedium,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (currentSong != null) ...[
+            Text(
+              currentSong!.artist,
+              style: theme.textTheme.bodySmall,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 10),
+            LinearProgressIndicator(value: currentProgress),
+            const SizedBox(height: 5),
+            Row(children: [
+              Text(_clock(currentPosition), style: theme.textTheme.labelSmall),
+              const Spacer(),
+              Text(_clock(currentDuration), style: theme.textTheme.labelSmall),
+            ]),
+          ],
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+          Text('INCOMING MIX', style: theme.textTheme.labelSmall),
+          const SizedBox(height: 4),
+          Text(
+            incomingSong?.title ??
+                (incomingUnverified || incomingIdentityAmbiguous
+                    ? 'Track details unavailable'
+                    : 'No incoming track'),
+            style: theme.textTheme.titleSmall,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (incomingSong != null)
+            Text(
+              incomingSong!.artist,
+              style: theme.textTheme.bodySmall,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          const SizedBox(height: 6),
+          Text(incomingStatus, style: theme.textTheme.bodySmall),
+          if (liveSpectrum != null && liveSpectrum!.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 38,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (final value in liveSpectrum!.take(48))
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 1),
+                        child: FractionallySizedBox(
+                          heightFactor: value.clamp(0.04, 1.0).toDouble(),
+                          alignment: Alignment.bottomCenter,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary.withValues(alpha: 0.72),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
