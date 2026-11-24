@@ -463,7 +463,7 @@ extension MusicProviderDjHandoff on MusicProvider {
       if (!lease.isCurrent) {
         throw StateError('Crossfader gesture was preempted; no write was sent.');
       }
-      await session.setDjCrossfader(position);
+      await (session as PlaybackDjDeckSession).setDjCrossfader(position);
     } finally {
       if (!settled.isCompleted) settled.complete();
       _djDeckCommandsInFlight.remove(settled.future);
