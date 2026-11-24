@@ -234,6 +234,20 @@ extension MusicProviderDjHandoff on MusicProvider {
         (session) => session.setDjCrossfader(position),
       );
 
+  Future<void> setDjDeckChannelGain({
+    required String deckId,
+    required double gain,
+  }) {
+    if ((deckId != 'A' && deckId != 'B') ||
+        !gain.isFinite || gain < 0.0 || gain > 1.0) {
+      throw ArgumentError('DJ channel gain must be finite and between 0 and 1.');
+    }
+    return _runDjDeckCommand<void>(
+      'channel_gain_$deckId',
+      (session) => session.setDjDeckChannelGain(deckId: deckId, gain: gain),
+    );
+  }
+
   Future<void> previewDjTransition({
     required Uri outgoingUri, required Uri incomingUri,
     required Duration outgoingStart, required Duration incomingStart,
