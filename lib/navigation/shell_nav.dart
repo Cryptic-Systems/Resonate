@@ -7,7 +7,8 @@ import 'package:provider/provider.dart';
 /// bar stays visible and only one player surface exists.
 class ShellNav extends ChangeNotifier {
   void Function(int index)? _goToTab;
-  int _playerTabIndex = 2;\n  Future<void> Function()? _switchToPlayer;
+  int _playerTabIndex = 2;
+  Future<void> Function()? _switchToPlayer;
 
   void bind(void Function(int index) goToTab, {int playerTabIndex = 2}) {
     _goToTab = goToTab;
@@ -23,7 +24,18 @@ class ShellNav extends ChangeNotifier {
   }
 
   /// Player tab index in the main shell (For You=0, Library=1, Player=2, Settings=3).
-  void goToPlayer() => goToTab(_playerTabIndex);\n\n  /// Leaves Resonatix DJ through its owning shell so the DJ session is\n  /// normalized before the Player experience is mounted.\n  Future<void> switchToPlayer() async {\n    final action = _switchToPlayer;\n    if (action != null) {\n      await action();\n    } else {\n      goToPlayer();\n    }\n  }
+  void goToPlayer() => goToTab(_playerTabIndex);
+
+  /// Leaves Resonatix DJ through its owning shell so the DJ session is
+  /// normalized before the Player experience is mounted.
+  Future<void> switchToPlayer() async {
+    final action = _switchToPlayer;
+    if (action != null) {
+      await action();
+    } else {
+      goToPlayer();
+    }
+  }
 }
 
 /// Switch to the shell Player tab and drop any routes stacked above the shell.
