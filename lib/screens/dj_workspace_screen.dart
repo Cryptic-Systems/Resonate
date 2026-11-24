@@ -1373,7 +1373,6 @@ class _DeckWaveform extends StatelessWidget {
             seed: seed,
             progress: safeProgress,
             color: color,
-            phase: 0,
           ),
         ),
       ),
