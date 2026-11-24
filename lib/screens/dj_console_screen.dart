@@ -410,7 +410,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                         width: compact ? 130 : 190,
                         child: _DjConsoleMixer(
                           enabled: DjConsoleManualControlsPolicy.canAdjustCrossfader(
-                            djModeEnabled: djReady,
+                            djModeEnabled: djReady && music.media3ProviderSessionActive,
                             transitionInProgress: music.transitionInProgress,
                             deckAHasMedia: deckA?.mediaId != null,
                             deckBHasMedia: deckB?.mediaId != null,
