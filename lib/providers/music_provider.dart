@@ -4942,6 +4942,10 @@ class MusicProvider extends ChangeNotifier {
     _media3ShadowState = null;
     _activeAndroidAudioSessionId = null;
     final media3Session = _media3ProviderSession;
+    // Invalidate the UI-facing prepared state synchronously. Native standby
+    // retirement and lease release remain asynchronous below, but disposed
+    // widgets must stop observing this deck immediately.
+    _manualDjPreparedDeck = null;
     // A manual DJ standby lease can outlive the workspace that prepared it,
     // especially when the arbiter is injected and therefore externally owned.
     // Retire the standby deck and release that lease before disposing Media3
