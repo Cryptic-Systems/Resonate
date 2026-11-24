@@ -75,7 +75,11 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
   @override
   void dispose() {
     _shellNav?.unbind();
-    if (_djSessionStarted) unawaited(_music.endDjSession());
+    if (_djSessionStarted) {
+      unawaited(_music.endDjSession().catchError((Object error) {
+        debugPrint('DJ session cleanup failed: $error');
+      }));
+    }
     _pageController.dispose();
     super.dispose();
   }
