@@ -231,6 +231,7 @@ void main() {
     });
 
     test('projects persistent physical A/B deck telemetry and crossfader', () async {
+      await runtime.loadQueue([_song('track-a')]);
       backend.value = _snapshot(
         mediaId: 'track-a',
         djDualDeckMode: true,
@@ -258,7 +259,6 @@ void main() {
           audioSessionId: 52,
         ),
       );
-      await runtime.loadQueue([_song('track-a')]);
       backend.controller.add(backend.value);
       await Future<void>.delayed(Duration.zero);
       await bridge.start();
