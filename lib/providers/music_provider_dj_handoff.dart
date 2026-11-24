@@ -51,6 +51,24 @@ class ManualDjPreparedDeck {
       );
 }
 
+class _DjSessionReturnState {
+  _DjSessionReturnState({
+    required List<Song> queue,
+    required this.queueIndex,
+    required this.position,
+    required this.repeatMode,
+    required this.shuffleEnabled,
+    required this.wasPlaying,
+  }) : queue = List<Song>.unmodifiable(queue);
+
+  final List<Song> queue;
+  final int queueIndex;
+  final Duration position;
+  final PlaybackRepeatMode repeatMode;
+  final bool shuffleEnabled;
+  final bool wasPlaying;
+}
+
 extension MusicProviderDjHandoff on MusicProvider {
 
   Future<T> _runDjDeckCommand<T>(
@@ -94,6 +112,49 @@ extension MusicProviderDjHandoff on MusicProvider {
       }
     } finally {
       await lease.release();
+    }
+  }
+
+  /// Starts a fresh, empty DJ session while retaining a return snapshot of
+  /// Player's queue, current occurrence, position and playback preferences.
+  /// Player audio is paused before either physical deck is repurposed.
+  Future<void> beginDjSession() async {
+    if (_djSessionReturnState != null) {
+      throw StateError('A previous DJ session has not completed its Player return.');
+    }
+    await prepareMedia3ProviderSession();
+    final session = _media3ProviderSession;
+    if (session == null || !_media3ProviderSessionActive ||
+        session is! PlaybackDjDeckSession) {
+      throw StateError('The shared Media3 session cannot start a DJ session.');
+    }
+
+    await session.pause();
+    if (session is PlaybackStateRefreshSession) {
+      await (session as PlaybackStateRefreshSession).refreshState();
+    }
+    _djSessionReturnState = _DjSessionReturnState(
+      queue: _queue,
+      queueIndex: _queueIndex,
+      position: session.position,
+      repeatMode: _repeatMode,
+      shuffleEnabled: effectiveShuffleEnabled,
+      wasPlaying: session.isPlaying,
+    );
+
+    try {
+      await enableDjDualDeckMode();
+      // DJ starts with two empty physical decks. The saved Player queue is
+      // held in MusicProvider and is not copied into either DJ deck.
+      await clearDjDeck('A');
+      await clearDjDeck('B');
+    } catch (_) {
+      try {
+        await endDjSession();
+      } catch (recoveryError) {
+        debugPrint('DJ session start rollback was incomplete: $recoveryError');
+      }
+      rethrow;
     }
   }
 
@@ -184,35 +245,111 @@ extension MusicProviderDjHandoff on MusicProvider {
 
   Future<void> endDjSession() async {
     final session = _media3ProviderSession;
-    if (session == null || session is! PlaybackDjDeckSession ||
-        !_media3ProviderSessionActive ||
-        (!_djDualDeckModeRequested && _media3ShadowState?.djDualDeckMode != true)) {
+    final returnState = _djSessionReturnState;
+    if (session == null || !_media3ProviderSessionActive ||
+        session is! PlaybackDjDeckSession) {
       return;
     }
-    Object? firstError;
-    try {
-      await cancelPreparedManualDjDeck();
-      await _runDjDeckCommand<void>(
-        'cancel_transition',
-        (_) => session.cancelCrossfade(),
-      );
-    } catch (error) {
-      firstError = error;
-    }
-    for (final deck in const ['A', 'B']) {
+    final modeActive = _djDualDeckModeRequested ||
+        _media3ShadowState?.djDualDeckMode == true;
+    if (!modeActive && returnState == null) return;
+
+    if (modeActive) {
       try {
-        await clearDjDeck(deck);
+        await cancelPreparedManualDjDeck();
       } catch (error) {
-        firstError ??= error;
+        debugPrint('DJ prepared-deck cancellation during exit failed: $error');
+      }
+      try {
+        await _runDjDeckCommand<void>(
+          'cancel_transition',
+          (_) => session.cancelCrossfade(),
+        );
+      } catch (error) {
+        debugPrint('DJ transition cancellation during exit failed: $error');
+      }
+      for (final deck in const ['A', 'B']) {
+        try {
+          await clearDjDeck(deck);
+        } catch (error) {
+          debugPrint('DJ Deck $deck cleanup deferred to native mode teardown: $error');
+        }
+      }
+      try {
+        await disableDjDualDeckMode();
+      } catch (error) {
+        debugPrint('DJ dual-deck mode teardown failed: $error');
+      }
+      if (session is PlaybackStateRefreshSession) {
+        try {
+          await (session as PlaybackStateRefreshSession).refreshState();
+        } catch (_) {}
       }
     }
-    try {
-      await disableDjDualDeckMode();
-    } catch (error) {
-      firstError ??= error;
+
+    final modeStillActive = _djDualDeckModeRequested ||
+        _media3ShadowState?.djDualDeckMode == true;
+    if (modeStillActive) {
+      throw StateError(
+        'DJ session could not be safely closed. Player queue was not restored.',
+      );
     }
-    if (firstError != null) throw StateError('DJ session cleanup was incomplete: $firstError');
+
+    if (returnState == null) return;
+    try {
+      // Restore the original Player queue only after native DJ mode is down.
+      // This replaces any remaining deck-local queue and never auto-resumes
+      // playback; the listener explicitly presses Play in Player.
+      _queueStore.replace(
+        returnState.queue,
+        index: returnState.queueIndex,
+      );
+      _repeatMode = returnState.repeatMode;
+      _shuffleEnabled = returnState.shuffleEnabled;
+
+      if (_queue.isEmpty) {
+        await session.clearQueue();
+      } else {
+        await session.loadQueue(_queue, startIndex: _queueIndex);
+      }
+      await session.setRepeatMode(switch (_repeatMode) {
+        PlaybackRepeatMode.one => PlaybackQueueRepeatMode.one,
+        PlaybackRepeatMode.all => PlaybackQueueRepeatMode.all,
+        PlaybackRepeatMode.off => PlaybackQueueRepeatMode.off,
+      });
+      await session.setShuffleMode(effectiveShuffleEnabled);
+
+      if (session is PlaybackStateRefreshSession) {
+        await (session as PlaybackStateRefreshSession).refreshState();
+      }
+      if (_queue.isNotEmpty && returnState.position > Duration.zero) {
+        var target = returnState.position;
+        final duration = session.duration;
+        if (duration != null && duration > Duration.zero && target >= duration) {
+          target = duration - const Duration(milliseconds: 1);
+        }
+        if (target > Duration.zero) await session.seek(target);
+      }
+      await session.setAudioFocusHandling(true);
+      if (session is PlaybackStateRefreshSession) {
+        await (session as PlaybackStateRefreshSession).refreshState();
+      }
+      await _persistQueue();
+      _djSessionReturnState = null;
+      unawaited(ResonateDiagnostics.record('dj_session_player_queue_restored', {
+        'queueLength': _queue.length,
+        'queueIndex': _queueIndex,
+        'positionMs': returnState.position.inMilliseconds,
+        'wasPlayingBeforeDj': returnState.wasPlaying,
+        'autoResumed': false,
+      }));
+      notifyListeners();
+    } catch (error) {
+      // Keep the return snapshot so a later safe cleanup attempt can retry.
+      throw StateError('Player queue restoration failed: $error');
+    }
   }
+
 
   Future<void> seekDjDeck({
     required String deckId,
