@@ -124,8 +124,31 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
         onSwitchToPlayer: widget.onSwitchToPlayer,
       ),
       body: SafeArea(
-        child: Consumer2<MusicProvider, DjModeProvider>(
-        builder: (context, music, dj, _) {
+        child: Consumer<DjModeProvider>(
+          builder: (context, dj, _) => Selector<
+              MusicProvider,
+              ({
+                Song? song,
+                Object? deckState,
+                Duration? duration,
+                Duration position,
+                bool playing,
+                bool transitioning,
+                String? strategy,
+                List<Song> queue,
+              })>(
+            selector: (context, provider) => (
+              song: provider.currentSong,
+              deckState: provider.media3ShadowState,
+              duration: provider.currentDuration,
+              position: provider.currentPosition,
+              playing: provider.isPlaying,
+              transitioning: provider.transitionInProgress,
+              strategy: provider.lastDjStrategy,
+              queue: provider.queue,
+            ),
+            builder: (context, snapshot, _) {
+          final music = context.read<MusicProvider>();
           final song = music.currentSong;
           final deckState = music.media3ShadowState;
           final djDeckSession = deckState?.djDualDeckMode == true;
@@ -537,8 +560,10 @@ margin: EdgeInsets.zero,
               ),
             ],
           );
-        },
-      )),
+            },
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1274,18 +1299,12 @@ class _DeckVisualTile extends StatelessWidget {
           style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white60)),
         const SizedBox(height: 8),
         Text(
-          liveSpectrum == null || liveSpectrum.isEmpty
-              ? 'SIGNAL GUIDE · LIVE BANDS UNAVAILABLE'
-              : liveSpectrum.any((value) => value.isFinite && value > 0.002)
-                  ? 'LIVE OUTPUT · 32-BAND SPECTRUM'
-                  : 'LIVE SPECTRUM · LEVELS AT FLOOR',
+          'SIGNAL GUIDE · PLAYBACK POSITION',
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
             color: Colors.white38, fontSize: 8, letterSpacing: 0.8)),
         const SizedBox(height: 3),
         SizedBox(height: 58, width: double.infinity, child: _DeckWaveform(
-          seed: song?.id ?? deckLabel, progress: progress, color: accent,
-          spectrum: liveSpectrum, animate: isPlaying && isActive &&
-              (liveSpectrum == null || liveSpectrum.isEmpty))),
+          seed: song?.id ?? deckLabel, progress: progress, color: accent)),
         const SizedBox(height: 3),
         Row(children: [
           Text(_clock(position),
@@ -1298,83 +1317,31 @@ class _DeckVisualTile extends StatelessWidget {
   }
 }
 
-class _DeckWaveform extends StatefulWidget {
-  const _DeckWaveform({required this.seed, required this.progress,
-    required this.color, required this.animate, this.spectrum});
+class _DeckWaveform extends StatelessWidget {
+  const _DeckWaveform({
+    required this.seed,
+    required this.progress,
+    required this.color,
+  });
+
   final String seed;
   final double progress;
   final Color color;
-  final bool animate;
-  final List<double>? spectrum;
-
-  @override
-  State<_DeckWaveform> createState() => _DeckWaveformState();
-}
-
-class _DeckWaveformState extends State<_DeckWaveform> with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800));
-  }
-
-  void _syncAnimationPreference() {
-    final shouldAnimate =
-        widget.animate && !MediaQuery.disableAnimationsOf(context);
-    if (shouldAnimate && !_controller.isAnimating) {
-      _controller.repeat();
-    } else if (!shouldAnimate && _controller.isAnimating) {
-      _controller.stop();
-    }
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _syncAnimationPreference();
-  }
-
-  @override
-  void didUpdateWidget(covariant _DeckWaveform oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _syncAnimationPreference();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
-    final progress = widget.progress.clamp(0.0, 1.0).toDouble();
-    final liveSpectrum = widget.spectrum;
-    final hasLiveBands = liveSpectrum != null && liveSpectrum.isNotEmpty;
-    final hasLiveActivity = liveSpectrum?.any(
-          (value) => value.isFinite && value > 0.002) ??
-        false;
+    final safeProgress = progress.clamp(0.0, 1.0).toDouble();
     return Semantics(
       image: true,
-      label: '${!hasLiveBands
-          ? 'Illustrative signal guide; live spectrum bands are unavailable.'
-          : hasLiveActivity
-              ? 'Live 32-band audio output spectrum.'
-              : 'Live 32-band audio output spectrum; current levels are at the floor.'} '
-          'Playback position ${(progress * 100).round()} percent.',
+      label: 'Illustrative waveform. Playback position '
+          '${(safeProgress * 100).round()} percent.',
       child: RepaintBoundary(
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) => CustomPaint(
-            painter: _DeckWaveformPainter(
-              seed: widget.seed,
-              progress: progress,
-              color: widget.color,
-              phase: _controller.value,
-              spectrum: widget.spectrum,
-            ),
+        child: CustomPaint(
+          painter: _DeckWaveformPainter(
+            seed: seed,
+            progress: safeProgress,
+            color: color,
+            phase: 0,
           ),
         ),
       ),
