@@ -53,6 +53,96 @@ class ManualDjPreparedDeck {
 
 extension MusicProviderDjHandoff on MusicProvider {
 
+  Future<T> _runDjDeckCommand<T>(
+    String command,
+    Future<T> Function(PlaybackDjDeckSession session) action,
+  ) async {
+    final session = _media3ProviderSession;
+    if (session == null || !_media3ProviderSessionActive) {
+      throw StateError('Start the shared Media3 session before using DJ decks.');
+    }
+    if (session is! PlaybackDjDeckSession) {
+      throw UnsupportedError('The active playback session does not expose independent DJ decks.');
+    }
+    final settled = Completer<void>();
+    final lease = await playbackControlArbiter.acquire(
+      owner: 'dj_deck_operator',
+      priority: PlaybackControlPriority.interactive,
+      onRevoked: (revocation) async {
+        if (revocation.reason == PlaybackControlRevocationReason.released) return;
+        await settled.future;
+      },
+    );
+    if (lease == null) {
+      throw StateError('DJ deck control is busy; no deck command was sent.');
+    }
+    try {
+      if (!lease.authorizeWrite('dj_deck:$command')) {
+        throw StateError('DJ deck control authority expired; no deck command was sent.');
+      }
+      return await action(session as PlaybackDjDeckSession);
+    } finally {
+      if (!settled.isCompleted) settled.complete();
+      await lease.release();
+    }
+  }
+
+  Future<void> enableDjDualDeckMode() async {
+    await cancelPreparedManualDjDeck();
+    await _runDjDeckCommand<void>(
+      'enable_mode',
+      (session) => session.enableDjDualDeckMode(),
+    );
+  }
+
+  Future<void> disableDjDualDeckMode() =>
+      _runDjDeckCommand<void>(
+        'disable_mode',
+        (session) => session.disableDjDualDeckMode(),
+      );
+
+  Future<void> loadDjDeck(
+    String deckId,
+    List<Song> songs, {
+    int startIndex = 0,
+  }) =>
+      _runDjDeckCommand<void>(
+        'load_$deckId',
+        (session) => session.loadDjDeck(deckId, songs, startIndex: startIndex),
+      );
+
+  Future<void> playDjDeck(String deckId) =>
+      _runDjDeckCommand<void>(
+        'play_$deckId',
+        (session) => session.playDjDeck(deckId),
+      );
+
+  Future<void> pauseDjDeck(String deckId) =>
+      _runDjDeckCommand<void>(
+        'pause_$deckId',
+        (session) => session.pauseDjDeck(deckId),
+      );
+
+  Future<void> seekDjDeck({
+    required String deckId,
+    required Duration position,
+    required String expectedMediaId,
+  }) =>
+      _runDjDeckCommand<void>(
+        'seek_$deckId',
+        (session) => session.seekDjDeck(
+          deckId: deckId,
+          position: position,
+          expectedMediaId: expectedMediaId,
+        ),
+      );
+
+  Future<void> setDjCrossfader(double position) =>
+      _runDjDeckCommand<void>(
+        'crossfader',
+        (session) => session.setDjCrossfader(position),
+      );
+
   Future<void> previewDjTransition({
     required Uri outgoingUri, required Uri incomingUri,
     required Duration outgoingStart, required Duration incomingStart,
