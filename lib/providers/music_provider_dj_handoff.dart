@@ -384,11 +384,89 @@ extension MusicProviderDjHandoff on MusicProvider {
         ),
       );
 
-  Future<void> setDjCrossfader(double position) =>
-      _runDjDeckCommand<void>(
-        'crossfader',
-        (session) => session.setDjCrossfader(position),
-      );
+  /// Retains interactive authority for the complete crossfader drag.
+  ///
+  /// The retained lease is deliberately separate from ordinary per-command
+  /// DJ leases: once user transport preempts this gesture, later slider events
+  /// cannot silently reacquire authority after the transport command finishes.
+  Future<bool> beginDjCrossfaderGesture() async {
+    final session = _media3ProviderSession;
+    if (session == null ||
+        !_media3ProviderSessionActive ||
+        session is! PlaybackDjDeckSession ||
+        !_djDualDeckSessionActive) {
+      return false;
+    }
+
+    final current = _djCrossfaderGestureLease;
+    if (current != null) {
+      if (current.isCurrent) return true;
+      _djCrossfaderGestureLease = null;
+    }
+
+    late final PlaybackControlLease lease;
+    final acquired = await playbackControlArbiter.acquire(
+      owner: 'dj_deck_operator',
+      priority: PlaybackControlPriority.interactive,
+      onRevoked: (revocation) async {
+        if (revocation.reason == PlaybackControlRevocationReason.released) {
+          return;
+        }
+        if (identical(_djCrossfaderGestureLease, lease)) {
+          _djCrossfaderGestureLease = null;
+        }
+        // A dispatched native write cannot be recalled. Drain accepted writes
+        // before the higher-priority transport owner is granted.
+        while (_djDeckCommandsInFlight.isNotEmpty) {
+          await Future.wait(_djDeckCommandsInFlight.toList(growable: false));
+        }
+      },
+    );
+    if (acquired == null) return false;
+    lease = acquired;
+    if (!lease.isCurrent) return false;
+    _djCrossfaderGestureLease = lease;
+    return true;
+  }
+
+  /// Ends the retained operator gesture. Safe after preemption or disposal.
+  Future<void> endDjCrossfaderGesture() async {
+    final lease = _djCrossfaderGestureLease;
+    _djCrossfaderGestureLease = null;
+    if (lease != null) {
+      await lease.release();
+    }
+  }
+
+  /// Crossfader writes are accepted only inside the currently retained drag.
+  /// Unlike ordinary deck commands, this path never reacquires a stale lease.
+  Future<void> setDjCrossfader(double position) async {
+    if (!position.isFinite || position < 0.0 || position > 1.0) {
+      throw ArgumentError.value(position, 'position', 'Must be finite and between 0 and 1.');
+    }
+    final session = _media3ProviderSession;
+    final lease = _djCrossfaderGestureLease;
+    if (session == null ||
+        !_media3ProviderSessionActive ||
+        session is! PlaybackDjDeckSession ||
+        lease == null ||
+        !lease.isCurrent ||
+        !lease.authorizeWrite('dj_deck:crossfader')) {
+      throw StateError('Crossfader gesture authority is unavailable; no write was sent.');
+    }
+
+    final settled = Completer<void>();
+    _djDeckCommandsInFlight.add(settled.future);
+    try {
+      if (!lease.isCurrent) {
+        throw StateError('Crossfader gesture was preempted; no write was sent.');
+      }
+      await session.setDjCrossfader(position);
+    } finally {
+      if (!settled.isCompleted) settled.complete();
+      _djDeckCommandsInFlight.remove(settled.future);
+    }
+  }
 
   Future<void> setDjDeckChannelGain({
     required String deckId,
