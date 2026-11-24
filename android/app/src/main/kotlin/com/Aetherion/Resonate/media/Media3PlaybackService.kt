@@ -244,9 +244,10 @@ class Media3PlaybackService : MediaSessionService() {
         if (!djDualDeckMode || deckId !in setOf("A", "B") ||
             isCommunicationActive() || crossfadeStatus in setOf("starting", "fading")
         ) return false
+        val target = playerForPhysicalDeck(deckId) ?: return false
+        if (target.mediaItemCount == 0 || target.playbackState != Player.STATE_READY) return false
         if (!promoteDjCanonicalDeck(deckId) || !setAudioFocusHandling(true)) return false
         val player = activePlayer
-        if (player.mediaItemCount == 0 || player.playbackState != Player.STATE_READY) return false
         DspEngineSinkHook.activateDeck(deckId)
         return try {
             player.play()
@@ -289,6 +290,7 @@ class Media3PlaybackService : MediaSessionService() {
         ) return false
         val parameters = Media3DeckPlaybackParametersPolicy.create(speed, pitch) ?: return false
         val player = playerForPhysicalDeck(deckId) ?: return false
+        if (player.mediaItemCount == 0) return false
         return try {
             player.playbackParameters = parameters
             true
