@@ -1181,30 +1181,34 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
     _writeTimer?.cancel();
     _writeTimer = null;
     if (!_gestureReady || !widget.enabled || _writeInFlight) return;
-    final value = _pendingPosition;
-    if (value == null) return;
-    _pendingPosition = null;
-    _writeInFlight = true;
-    final settled = Completer<void>();
-    _writeSettled = settled;
-    try {
-      await widget.onChanged(value);
-    } catch (error) {
-      _gestureReady = false;
+
+    // Keep a single native write in flight while coalescing intermediate
+    // slider positions to the latest value. This prevents asynchronous
+    // MethodChannel completions from applying stale positions out of order.
+    while (_gestureReady && widget.enabled) {
+      final value = _pendingPosition;
+      if (value == null) return;
       _pendingPosition = null;
-      _dragging = false;
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Crossfader update was not applied: $error')),
-        );
-      }
-      await widget.onGestureEnd();
-    } finally {
-      _writeInFlight = false;
-      if (!settled.isCompleted) settled.complete();
-      if (identical(_writeSettled, settled)) _writeSettled = null;
-      if (_gestureReady && _pendingPosition != null && _dragging) {
-        await _flushWrite();
+      _writeInFlight = true;
+      final settled = Completer<void>();
+      _writeSettled = settled;
+      try {
+        await widget.onChanged(value);
+      } catch (error) {
+        _gestureReady = false;
+        _pendingPosition = null;
+        _dragging = false;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Crossfader update was not applied: $error')),
+          );
+        }
+        await widget.onGestureEnd();
+        return;
+      } finally {
+        _writeInFlight = false;
+        if (!settled.isCompleted) settled.complete();
+        if (identical(_writeSettled, settled)) _writeSettled = null;
       }
     }
   }
