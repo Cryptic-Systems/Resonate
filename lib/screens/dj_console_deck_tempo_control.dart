@@ -36,13 +36,8 @@ class _DjConsoleDeckTempoControlState
   }) async {
     if (_busy) return;
     final state = music.media3ShadowState;
-    if (state == null ||
-        DjConsoleTempoPolicy.roleForPhysicalDeck(
-              physicalDeckId: widget.physicalDeckId,
-              activeDeckId: state.activeDeckId,
-            ) == DjConsoleTempoDeckRole.unavailable) {
-      return;
-    }
+    final deck = widget.physicalDeckId == 'A' ? state?.deckA : state?.deckB;
+    if (state?.djDualDeckMode != true || deck?.mediaId == null) return;
     final parameters = DjConsoleTempoPolicy.parametersFor(
       percent: percent,
       keyLockEnabled: keyLock,
@@ -51,8 +46,8 @@ class _DjConsoleDeckTempoControlState
 
     setState(() => _busy = true);
     try {
-      await music.setPreparedManualDjDeckParameters(
-        physicalDeckId: widget.physicalDeckId,
+      await music.setDjDeckPlaybackParameters(
+        deckId: widget.physicalDeckId,
         speed: parameters.speed,
         pitch: parameters.pitch,
       );
@@ -81,19 +76,9 @@ class _DjConsoleDeckTempoControlState
     return Consumer<MusicProvider>(
       builder: (context, music, _) {
         final state = music.media3ShadowState;
-        final activeDeckId = state?.activeDeckId;
-        final role = DjConsoleTempoPolicy.roleForPhysicalDeck(
-          physicalDeckId: widget.physicalDeckId,
-          activeDeckId: activeDeckId,
-        );
-        final roleKnown = role != DjConsoleTempoDeckRole.unavailable;
-        final isActive = role == DjConsoleTempoDeckRole.active;
-        final speed = isActive
-            ? state?.activeDeckSpeed
-            : state?.standbyDeckSpeed;
-        final pitch = isActive
-            ? state?.activeDeckPitch
-            : state?.standbyDeckPitch;
+        final deck = widget.physicalDeckId == 'A' ? state?.deckA : state?.deckB;
+        final speed = deck?.speed;
+        final pitch = deck?.pitch;
         final telemetryValid = speed != null &&
             pitch != null &&
             speed.isFinite &&
@@ -113,14 +98,13 @@ class _DjConsoleDeckTempoControlState
         final shownPercent = (_previewPercent ?? percent)
             .clamp(-6.0, 6.0).toDouble();
         final canWrite = !_busy &&
+            state?.djDualDeckMode == true &&
+            deck?.mediaId != null &&
             telemetryValid &&
-            roleKnown &&
-            music.hasPreparedManualDjDeck &&
-            music.manualDjPreparedDeck != null &&
             music.media3ProviderSessionActive &&
-            music.isPlaying &&
             !music.transitionInProgress &&
-            state?.crossfadeStatus == 'ready';
+            state?.crossfadeStatus != 'starting' &&
+            state?.crossfadeStatus != 'fading';
         final textStyle = theme.textTheme.labelSmall?.copyWith(
           color: Colors.white70,
           fontSize: widget.compact ? 8 : 9,
