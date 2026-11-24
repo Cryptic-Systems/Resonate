@@ -5,7 +5,9 @@ import '../experience/experience_provider.dart';
 
 /// Compact product-mode switch for Resonate Player surfaces.
 class ExperienceModeChip extends StatelessWidget {
-  const ExperienceModeChip({super.key});
+  const ExperienceModeChip({super.key, this.dense = false});
+
+  final bool dense;
 
   Future<void> _showSwitcher(BuildContext context) async {
     await showModalBottomSheet<void>(
@@ -46,8 +48,9 @@ class ExperienceModeChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ActionChip(
-      avatar: const Icon(Icons.music_note_rounded, size: 16),
-      label: const Text('Resonate Player'),
+      visualDensity: dense ? VisualDensity.compact : VisualDensity.standard,
+      avatar: Icon(Icons.music_note_rounded, size: dense ? 14 : 16),
+      label: Text(dense ? 'Player' : 'Resonate Player'),
       onPressed: () => _showSwitcher(context),
     );
   }
