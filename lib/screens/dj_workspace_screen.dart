@@ -145,13 +145,17 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                         Text(
                           widget.playerFacing
                               ? 'Watch Resonate shape the listening session.'
-                              : 'Watch the mix unfold.',
+                              : djDeckSession
+                                  ? 'Monitor both independent DJ decks.'
+                                  : 'Watch the mix unfold.',
                           style: theme.textTheme.titleMedium,
                         ),
                         Text(
                           widget.playerFacing
                               ? 'Automatic transition activity and incoming-track preparation, without exposing the performance controls.'
-                              : 'Live deck activity, incoming preparation and transitions — observed in real time.',
+                              : djDeckSession
+                                  ? 'Track identity, transport, tempo and output state for Deck A and Deck B.'
+                                  : 'Live deck activity, incoming preparation and transitions — observed in real time.',
                           style: theme.textTheme.bodySmall,
                         ),
                       ],
@@ -175,8 +179,10 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                         _StatusPill(
                           label: widget.playerFacing
                               ? (dj.isEnabled ? 'Automatic mixing on' : 'Automatic mixing off')
-                              : (dj.isEnabled ? 'DJ enabled' : 'DJ disabled'),
-                          active: dj.isEnabled,
+                              : djDeckSession
+                                  ? 'DJ session active'
+                                  : (dj.isEnabled ? 'DJ enabled' : 'DJ disabled'),
+                          active: djDeckSession || dj.isEnabled,
                         ),
                       ],
                     ),
