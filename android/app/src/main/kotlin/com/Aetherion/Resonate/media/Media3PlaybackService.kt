@@ -60,6 +60,8 @@ class Media3PlaybackService : MediaSessionService() {
     // isPlaying. ExoPlayer's play() request can precede audible output startup.
     private var startingCrossfadeDurationMs: Long? = null
     private var activeDeckId = "A"
+    private var djDualDeckMode = false
+    private var djCrossfaderPosition = 0.5f
     private fun standbyDeckId(): String = if (activeDeckId == "A") "B" else "A"
     // ExoPlayer focus handling is opt-in at the migration boundary. The legacy
     // audio_session owner remains untouched until an explicit provider cutover.
@@ -98,8 +100,70 @@ class Media3PlaybackService : MediaSessionService() {
     }
 
     private fun applyDeckVolumes() {
-        if (::activePlayer.isInitialized) activePlayer.volume = gainPolicy.activeVolume()
-        standbyPlayer?.volume = gainPolicy.standbyVolume()
+        if (!::activePlayer.isInitialized) return
+        val standby = standbyPlayer
+        val transitionOwnsGain = crossfadeStatus == "starting" || crossfadeStatus == "fading"
+        if (djDualDeckMode && standby != null && !transitionOwnsGain) {
+            val (deckAGain, deckBGain) = Media3DjCrossfaderPolicy.gains(djCrossfaderPosition)
+            val activeGain = if (activeDeckId == "A") deckAGain else deckBGain
+            val standbyGain = if (standbyDeckId() == "A") deckAGain else deckBGain
+            activePlayer.volume = gainPolicy.djDeckVolume(activeGain)
+            standby.volume = gainPolicy.djDeckVolume(standbyGain)
+            return
+        }
+        activePlayer.volume = gainPolicy.activeVolume()
+        standby?.let { it.volume = gainPolicy.standbyVolume() }
+    }
+
+    /** Enter the persistent two-deck policy without changing the canonical queue. */
+    fun enableDjDualDeckMode(): Boolean {
+        if (!::activePlayer.isInitialized || isDestroyed ||
+            crossfadeStatus in setOf("preparing", "waiting_ready", "ready", "starting", "fading") ||
+            (standbyPlayer?.mediaItemCount ?: 0) > 0
+        ) return false
+        val standby = standbyPlayer ?: newPlayer(
+            handleAudioFocus = false,
+            deckId = standbyDeckId(),
+        ).also { standbyPlayer = it }
+        djDualDeckMode = true
+        djCrossfaderPosition = 0.5f
+        standby.setAudioAttributes(audioAttributes(), false)
+        standby.setHandleAudioBecomingNoisy(false)
+        standby.pause()
+        DspEngineSinkHook.suspendDeck(standbyDeckId())
+        applyDeckVolumes()
+        return true
+    }
+
+    /** Exit persistent DJ mixing and retire only the non-canonical deck. */
+    fun disableDjDualDeckMode(): Boolean {
+        if (!djDualDeckMode) return true
+        if (crossfadeStatus in setOf("starting", "fading")) return false
+        djDualDeckMode = false
+        val retiringDeckId = standbyDeckId()
+        val standby = standbyPlayer
+        standbyPlayer = null
+        if (standby != null) {
+            runCatching { standby.pause(); standby.stop(); standby.clearMediaItems() }
+            DspEngineRegistry.setDeckTrack(retiringDeckId, null)
+            DspEngineSinkHook.suspendDeck(retiringDeckId)
+            DspEngineSinkHook.forgetDeck(retiringDeckId)
+            standby.release()
+        }
+        gainPolicy.resetDecks()
+        applyDeckVolumes()
+        crossfadeStatus = "idle"
+        return true
+    }
+
+    /** Operator-owned physical A/B crossfader; automation never calls this. */
+    fun setDjCrossfader(position: Float): Boolean {
+        if (!djDualDeckMode || !position.isFinite() || position !in 0f..1f ||
+            crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        djCrossfaderPosition = position
+        applyDeckVolumes()
+        return true
     }
 
     /**
@@ -843,11 +907,22 @@ class Media3PlaybackService : MediaSessionService() {
                     // The old physical deck is no longer needed after promotion.
                     // Release it instead of keeping a second ExoPlayer alive.
                     oldPlayer.pause()
-                    oldPlayer.release()
-                    DspEngineSinkHook.forgetDeck(outgoingDeckId)
+                    if (djDualDeckMode) {
+                        // DJ mode keeps both physical ExoPlayers alive. The
+                        // outgoing deck becomes the new standby instead of
+                        // being destroyed after every handoff.
+                        oldPlayer.setAudioAttributes(audioAttributes(), false)
+                        oldPlayer.setHandleAudioBecomingNoisy(false)
+                        standbyPlayer = oldPlayer
+                        DspEngineSinkHook.suspendDeck(outgoingDeckId)
+                    } else {
+                        standbyPlayer = null
+                        oldPlayer.release()
+                        DspEngineSinkHook.forgetDeck(outgoingDeckId)
+                    }
                     gainPolicy.resetDecks()
-                    applyDeckVolumes()
                     crossfadeStatus = "completed"
+                    applyDeckVolumes()
                     fadeRunnable = null
                     crossfadeClock.reset()
                 } else {
@@ -958,12 +1033,19 @@ class Media3PlaybackService : MediaSessionService() {
             DspEngineRegistry.setDeckTrack(retiringDeckId, null)
             standby.pause()
             standby.clearMediaItems()
-            standbyPlayer = null
-            DspEngineSinkHook.suspendDeck(retiringDeckId)
-            DspEngineSinkHook.forgetDeck(retiringDeckId)
-            standby.release()
+            if (djDualDeckMode) {
+                // Preserve the physical player and DSP attachment for the
+                // next independently prepared DJ deck occurrence.
+                DspEngineSinkHook.suspendDeck(retiringDeckId)
+            } else {
+                standbyPlayer = null
+                DspEngineSinkHook.suspendDeck(retiringDeckId)
+                DspEngineSinkHook.forgetDeck(retiringDeckId)
+                standby.release()
+            }
         }
         crossfadeStatus = "idle"
+        if (djDualDeckMode) applyDeckVolumes()
         return true
     }
 
@@ -974,6 +1056,9 @@ class Media3PlaybackService : MediaSessionService() {
      */
     fun restorePrimaryDeckForNewSelection(): Boolean {
         if (!::activePlayer.isInitialized) return false
+        // A new Player selection exits DJ's persistent pair and restores the
+        // ordinary single-user-deck lifecycle before loading its queue.
+        djDualDeckMode = false
         clearPreload("restore_primary_deck_for_new_selection")
         stopTransitionPreview()
         if (activeDeckId == "A") return true
@@ -1101,6 +1186,10 @@ class Media3PlaybackService : MediaSessionService() {
             else -> 0f
         },
         "activeDeckId" to activeDeckId,
+        "djDualDeckMode" to djDualDeckMode,
+        "djCrossfaderPosition" to djCrossfaderPosition,
+        "deckA" to physicalDeckState("A"),
+        "deckB" to physicalDeckState("B"),
         "activeMediaId" to activePlayer.currentMediaItem?.mediaId,
         "incomingReady" to (standbyPlayer?.playbackState == Player.STATE_READY),
         "incomingMediaId" to standbyPlayer?.currentMediaItem?.mediaId,
@@ -1127,6 +1216,33 @@ class Media3PlaybackService : MediaSessionService() {
         "lastPreloadInvalidationElapsedRealtimeMs" to lastPreloadInvalidationElapsedRealtimeMs,
         "preloadInvalidationCount" to preloadInvalidationCount,
     )
+
+    private fun physicalDeckState(deckId: String): Map<String, Any?>? {
+        val player = when {
+            activeDeckId == deckId -> activePlayer
+            standbyDeckId() == deckId -> standbyPlayer
+            else -> null
+        } ?: return null
+        return mapOf(
+            "deckId" to deckId,
+            "mediaId" to player.currentMediaItem?.mediaId,
+            "title" to player.mediaMetadata.title?.toString(),
+            "artist" to player.mediaMetadata.artist?.toString(),
+            "album" to player.mediaMetadata.albumTitle?.toString(),
+            "positionMs" to player.currentPosition.coerceAtLeast(0L),
+            "bufferedPositionMs" to player.bufferedPosition.coerceAtLeast(0L),
+            "durationMs" to player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L),
+            "isPlaying" to player.isPlaying,
+            "playWhenReady" to player.playWhenReady,
+            "playbackState" to player.playbackState,
+            "mediaItemIndex" to player.currentMediaItemIndex,
+            "mediaItemCount" to player.mediaItemCount,
+            "volume" to player.volume,
+            "speed" to player.playbackParameters.speed,
+            "pitch" to player.playbackParameters.pitch,
+            "audioSessionId" to player.audioSessionId,
+        )
+    }
 
     private var isDestroyed = false
 
