@@ -1345,9 +1345,15 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
             quarterTurns: 0,
             child: SliderTheme(
               data: SliderTheme.of(context).copyWith(
-                trackHeight: widget.compact ? 3 : 4,
+                trackHeight: widget.compact ? 4 : 5,
+                activeTrackColor: accent,
+                inactiveTrackColor: Colors.white24,
+                disabledActiveTrackColor: accent.withValues(alpha: .55),
+                disabledInactiveTrackColor: Colors.white24,
+                disabledThumbColor: accent.withValues(alpha: .8),
                 thumbShape: RoundSliderThumbShape(
-                  enabledThumbRadius: widget.compact ? 8 : 10,
+                  enabledThumbRadius: widget.compact ? 9 : 11,
+                  disabledThumbRadius: widget.compact ? 9 : 11,
                 ),
               ),
               child: Slider(
@@ -1393,7 +1399,7 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
           ),
           const SizedBox(height: 5),
           Text(
-            'OPERATOR ONLY',
+            widget.enabled ? 'MANUAL MIX READY' : 'LOAD & PLAY BOTH DECKS',
             textAlign: TextAlign.center,
             style: theme.textTheme.labelSmall?.copyWith(
               color: Colors.white54,
