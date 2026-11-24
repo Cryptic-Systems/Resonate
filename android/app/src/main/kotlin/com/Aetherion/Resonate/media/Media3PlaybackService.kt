@@ -779,6 +779,22 @@ class Media3PlaybackService : MediaSessionService() {
         repeatMode = Player.REPEAT_MODE_OFF
         addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
+                // If the canonical DJ deck ends naturally while its physical
+                // partner is already playing, hand MediaSession/focus ownership
+                // to that audible deck. Do not do this for pause or buffering:
+                // those states are handled by the operator/transport policies.
+                if (djDualDeckMode && deck === activePlayer &&
+                    playbackState == Player.STATE_ENDED
+                ) {
+                    val peerDeckId = standbyDeckId()
+                    if (standbyPlayer?.isPlaying == true && !isCommunicationActive()) {
+                        promoteDjCanonicalDeck(peerDeckId)
+                        setAudioFocusHandling(true)
+                    } else {
+                        applyDeckVolumes()
+                    }
+                    return
+                }
                 // The standby deck identity changes after promotion. Attach
                 // readiness handling to both physical players so later preloads
                 // receive the same deferred-start behavior.
