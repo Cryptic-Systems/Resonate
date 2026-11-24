@@ -80,6 +80,8 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
         await activeMusic.loadDjDeck('A', <Song>[approved.songs.first]);
         if (approved.songs.length > 1) {
           await activeMusic.loadDjDeck('B', <Song>[approved.songs[1]]);
+        } else {
+          await activeMusic.clearDjDeck('B');
         }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
