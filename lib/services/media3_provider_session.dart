@@ -379,6 +379,12 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackStandbyCue
   Future<void> setDjCrossfader(double position) => _runtime.setDjCrossfader(position);
 
   @override
+  Future<void> setDjDeckChannelGain({
+    required String deckId,
+    required double gain,
+  }) => _runtime.setDjDeckChannelGain(deckId: deckId, gain: gain);
+
+  @override
   Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0}) =>
       _runtime.loadDjDeck(deckId, songs, startIndex: startIndex);
 
