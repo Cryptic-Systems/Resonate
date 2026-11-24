@@ -29,6 +29,7 @@ import '../modes/providers/mode_provider.dart';
 import '../widgets/autopilot_takeover_card.dart';
 import 'equalizer_screen.dart';
 import 'queue_screen.dart';
+import 'dj_workspace_screen.dart';
 import 'album_screen.dart';
 import 'artist_screen.dart';
 import 'lyrics_screen.dart';
@@ -633,6 +634,20 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             shareTile,
             replayTile,
             if (density.sleepTimerSuggested) sleepTile,
+            ListTile(
+              leading: const Icon(Icons.graphic_eq_rounded),
+              title: const Text('Mix monitoring'),
+              subtitle: const Text('View automatic transition activity and incoming-track preparation'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const DjWorkspaceScreen(playerFacing: true),
+                  ),
+                );
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.equalizer_rounded),
               title: const Text('Equalizer'),
