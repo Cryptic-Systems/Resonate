@@ -106,6 +106,34 @@ void main() {
       );
     });
 
+    test('crossfader status explains the first unmet operating requirement', () {
+      String status({
+        bool dj = true,
+        bool media3 = true,
+        bool transition = false,
+        bool aLoaded = true,
+        bool bLoaded = true,
+        bool aPlaying = true,
+        bool bPlaying = true,
+      }) =>
+          DjConsoleManualControlsPolicy.crossfaderStatusText(
+            djModeEnabled: dj,
+            media3SessionActive: media3,
+            transitionInProgress: transition,
+            deckAHasMedia: aLoaded,
+            deckBHasMedia: bLoaded,
+            deckAIsPlaying: aPlaying,
+            deckBIsPlaying: bPlaying,
+          );
+
+      expect(status(dj: false), 'START DJ SESSION');
+      expect(status(media3: false), 'MEDIA3 SESSION INACTIVE');
+      expect(status(transition: true), 'TRANSITION IN PROGRESS');
+      expect(status(bLoaded: false), 'LOAD BOTH DECKS');
+      expect(status(aPlaying: false), 'PLAY BOTH DECKS');
+      expect(status(), 'MANUAL MIX READY');
+    });
+
     test('channel gain requires a loaded deck and an active safe DJ session', () {
       expect(
         DjConsoleManualControlsPolicy.canAdjustChannelGain(
