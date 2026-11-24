@@ -95,13 +95,17 @@ extension MusicProviderDjHandoff on MusicProvider {
         'enable_mode',
         (session) => session.enableDjDualDeckMode(),
       );
-      final session = _media3ProviderSession;
-      if (session is PlaybackStateRefreshSession) {
-        await (session as PlaybackStateRefreshSession).refreshState();
-      }
     } catch (_) {
       _djDualDeckModeRequested = false;
       rethrow;
+    }
+    final session = _media3ProviderSession;
+    if (session is PlaybackStateRefreshSession) {
+      // Native mode is already committed. A failed readback must not reopen
+      // Player automation; the state stream will reconcile on its next tick.
+      try {
+        await (session as PlaybackStateRefreshSession).refreshState();
+      } catch (_) {}
     }
   }
 
@@ -113,7 +117,9 @@ extension MusicProviderDjHandoff on MusicProvider {
     _djDualDeckModeRequested = false;
     final session = _media3ProviderSession;
     if (session is PlaybackStateRefreshSession) {
-      await (session as PlaybackStateRefreshSession).refreshState();
+      try {
+        await (session as PlaybackStateRefreshSession).refreshState();
+      } catch (_) {}
     }
   }
 
