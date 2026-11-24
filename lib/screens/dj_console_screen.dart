@@ -323,20 +323,38 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
             child: Column(
               children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => openShellPlayer(context),
+                    icon: const Icon(Icons.arrow_back_rounded, size: 20),
+                    label: const Text(
+                      'RETURN TO RESONATE PLAYER',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .7,
+                      ),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: theme.colorScheme.primary,
+                      foregroundColor: theme.colorScheme.onPrimary,
+                      minimumSize: const Size.fromHeight(48),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
                 Wrap(
                   crossAxisAlignment: WrapCrossAlignment.center,
                   spacing: 8,
                   runSpacing: 6,
                   children: [
-                    FilledButton.tonalIcon(
-                      onPressed: () => openShellPlayer(context),
-                      icon: const Icon(Icons.arrow_back_rounded, size: 17),
-                      label: const Text('PLAYER'),
-                      style: FilledButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                      ),
-                    ),
                     const Text(
                       'DJ CONSOLE',
                       style: TextStyle(
