@@ -427,6 +427,8 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                           position: state?.djCrossfaderPosition ?? 0.5,
                           compact: compact,
                           onChanged: music.setDjCrossfader,
+                          onGestureStart: music.beginDjCrossfaderGesture,
+                          onGestureEnd: music.endDjCrossfaderGesture,
                         ),
                       ),
                       SizedBox(width: compact ? 8 : 12),
@@ -1098,12 +1100,16 @@ class _DjConsoleMixer extends StatefulWidget {
     required this.position,
     required this.compact,
     required this.onChanged,
+    required this.onGestureStart,
+    required this.onGestureEnd,
   });
 
   final bool enabled;
   final double position;
   final bool compact;
   final Future<void> Function(double position) onChanged;
+  final Future<bool> Function() onGestureStart;
+  final Future<void> Function() onGestureEnd;
 
   @override
   State<_DjConsoleMixer> createState() => _DjConsoleMixerState();
@@ -1114,6 +1120,9 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
   double? _pendingPosition;
   late double _position;
   bool _dragging = false;
+  bool _gestureReady = false;
+  Future<bool>? _gestureStartFuture;
+  bool _writeInFlight = false;
 
   @override
   void initState() {
@@ -1125,12 +1134,10 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
   void didUpdateWidget(covariant _DjConsoleMixer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!widget.enabled) {
-      // Drop any queued slider write as soon as native deck preconditions are
-      // lost (pause, unload, mode exit, or transition ownership).
-      _writeTimer?.cancel();
-      _writeTimer = null;
-      _pendingPosition = null;
-      _dragging = false;
+      // Losing native preconditions cancels the whole gesture, not just its
+      // debounce timer. The provider releases retained authority after any
+      // asynchronous acquisition has settled.
+      _cancelGesture(oldWidget.onGestureEnd);
       _position = widget.position.clamp(0.0, 1.0).toDouble();
       return;
     }
@@ -1139,31 +1146,116 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
     }
   }
 
-  void _queueWrite(double value) {
-    _pendingPosition = value;
-    _writeTimer ??= Timer(const Duration(milliseconds: 28), _flushWrite);
+  Future<void> _startGesture() async {
+    _gestureReady = false;
+    final start = widget.onGestureStart();
+    _gestureStartFuture = start;
+    final accepted = await start;
+    if (!mounted) {
+      await widget.onGestureEnd();
+      return;
+    }
+    if (!accepted || !widget.enabled) {
+      _pendingPosition = null;
+      _gestureReady = false;
+      _writeTimer?.cancel();
+      _writeTimer = null;
+      _position = widget.position.clamp(0.0, 1.0).toDouble();
+      return;
+    }
+    _gestureReady = true;
+    if (_pendingPosition != null && _dragging) {
+      await _flushWrite();
+    }
   }
 
-  void _flushWrite() {
+  void _queueWrite(double value) {
+    _pendingPosition = value;
+    _writeTimer ??= Timer(const Duration(milliseconds: 28), () {
+      unawaited(_flushWrite());
+    });
+  }
+
+  Future<void> _flushWrite() async {
     _writeTimer?.cancel();
     _writeTimer = null;
+    if (!_gestureReady || !widget.enabled || _writeInFlight) return;
     final value = _pendingPosition;
+    if (value == null) return;
     _pendingPosition = null;
-    if (value == null || !widget.enabled) return;
-    unawaited(widget.onChanged(value).catchError((Object error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Crossfader update was not applied: $error')),
-      );
-    }));
+    _writeInFlight = true;
+    try {
+      await widget.onChanged(value);
+    } catch (error) {
+      _gestureReady = false;
+      _pendingPosition = null;
+      _dragging = false;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Crossfader update was not applied: $error')),
+        );
+      }
+      await widget.onGestureEnd();
+    } finally {
+      _writeInFlight = false;
+      if (_gestureReady && _pendingPosition != null && _dragging) {
+        await _flushWrite();
+      }
+    }
+  }
+
+  Future<void> _finishGesture(double finalValue) async {
+    final start = _gestureStartFuture;
+    if (start != null) {
+      final accepted = await start;
+      if (!accepted) {
+        _pendingPosition = null;
+      } else if (widget.enabled) {
+        _gestureReady = true;
+        _pendingPosition = finalValue;
+        // Wait for the last coalesced write to settle before releasing the
+        // gesture lease. No late write can escape after gesture completion.
+        while (_writeInFlight) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        await _flushWrite();
+      }
+    }
+    _gestureReady = false;
+    _gestureStartFuture = null;
+    await widget.onGestureEnd();
+  }
+
+  void _cancelGesture(Future<void> Function() release) {
+    _writeTimer?.cancel();
+    _writeTimer = null;
+    _pendingPosition = null;
+    _dragging = false;
+    _gestureReady = false;
+    final start = _gestureStartFuture;
+    _gestureStartFuture = null;
+    unawaited(() async {
+      if (start != null) await start;
+      await release();
+    }());
   }
 
   @override
   void dispose() {
-    // A route teardown is not an operator gesture completion. Never dispatch a
-    // delayed native write after this mixer has left the active DJ surface.
+    // A route teardown is not a gesture completion. Wait for a pending lease
+    // acquisition, then release it; never dispatch the queued slider value.
     _writeTimer?.cancel();
     _pendingPosition = null;
+    final start = _gestureStartFuture;
+    _gestureStartFuture = null;
+    if (start != null) {
+      unawaited(() async {
+        await start;
+        await widget.onGestureEnd();
+      }());
+    } else if (_gestureReady) {
+      unawaited(widget.onGestureEnd());
+    }
     super.dispose();
   }
 
@@ -1210,7 +1302,12 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
                 max: 1,
                 divisions: 100,
                 value: _position,
-                onChangeStart: widget.enabled ? (_) => _dragging = true : null,
+                onChangeStart: widget.enabled
+                    ? (_) {
+                        _dragging = true;
+                        unawaited(_startGesture());
+                      }
+                    : null,
                 onChanged: widget.enabled
                     ? (value) {
                         setState(() => _position = value);
@@ -1222,8 +1319,7 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
                         _dragging = false;
                         _writeTimer?.cancel();
                         _writeTimer = null;
-                        _pendingPosition = value;
-                        _flushWrite();
+                        unawaited(_finishGesture(value));
                       }
                     : null,
               ),
