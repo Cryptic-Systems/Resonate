@@ -105,6 +105,8 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   bool throwOnPreloadNext = false;
   bool throwOnDeckSpeedOnce = false;
   bool throwOnClearDeckEqOverlay = false;
+  bool throwOnClearDjDeckOnce = false;
+  bool throwOnDisableDjModeOnce = false;
   bool deferLoadQueueState = false;
   Completer<void>? cancelCrossfadeGate;
   Completer<void>? crossfadeGate;
@@ -420,8 +422,12 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
 
   @override
   Future<void> disableDjDualDeckMode() async {
-    djDualDeckModeValue = false;
     calls.add('disableDjDualDeckMode');
+    if (throwOnDisableDjModeOnce) {
+      throwOnDisableDjModeOnce = false;
+      throw StateError('simulated DJ mode teardown failure');
+    }
+    djDualDeckModeValue = false;
   }
 
   @override
@@ -457,8 +463,12 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
 
   @override
   Future<void> clearDjDeck(String deckId) async {
-    djDeckQueues.remove(deckId);
     calls.add('clearDjDeck:$deckId');
+    if (throwOnClearDjDeckOnce) {
+      throwOnClearDjDeckOnce = false;
+      throw StateError('simulated DJ deck cleanup failure');
+    }
+    djDeckQueues.remove(deckId);
   }
 
   @override
@@ -4388,6 +4398,99 @@ void main() {
         await session.audioSessions.close();
         await session.states.close();
         await arbiter.close();
+      }
+    });
+
+    test('partial DJ session initialization rolls back and restores Player state', () async {
+      final session = _FakePlaybackSession();
+      final music = MusicProvider(media3ProviderSession: session);
+      final first = _song('rollback-first');
+      final second = _song('rollback-second');
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        expect(
+          await music.playSong(second, queue: <Song>[first, second]),
+          isTrue,
+        );
+        session.positionValue = const Duration(seconds: 31);
+        session.playingValue = true;
+        session.throwOnClearDjDeckOnce = true;
+
+        await expectLater(
+          music.beginDjSession(),
+          throwsA(isA<StateError>()),
+        );
+
+        expect(session.djDualDeckModeValue, isFalse,
+            reason: 'A failed partial initialization must disable native DJ mode.');
+        expect(session.djDeckQueues, isEmpty,
+            reason: 'Rollback must clear any partially initialized DJ deck.');
+        expect(session.queue.map((song) => song.id), ['rollback-first', 'rollback-second']);
+        expect(session.loadedIndex, 1);
+        expect(session.currentSongValue?.id, 'rollback-second');
+        expect(session.positionValue, const Duration(seconds: 31));
+        expect(session.playingValue, isFalse,
+            reason: 'Rollback restores Player paused; it must not autoplay.');
+        expect(session.focusHandling, isTrue);
+        expect(session.calls, contains('disableDjDualDeckMode'));
+
+        // The failed attempt must release its lifecycle snapshot so a fresh
+        // DJ session can begin without being blocked by stale recovery state.
+        await music.beginDjSession();
+        expect(session.djDualDeckModeValue, isTrue);
+        await music.endDjSession();
+        expect(session.djDualDeckModeValue, isFalse);
+      } finally {
+        music.dispose();
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('failed DJ teardown retains Player snapshot for a later safe retry', () async {
+      final session = _FakePlaybackSession();
+      final music = MusicProvider(media3ProviderSession: session);
+      final first = _song('retry-first');
+      final second = _song('retry-second');
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        expect(
+          await music.playSong(second, queue: <Song>[first, second]),
+          isTrue,
+        );
+        session.positionValue = const Duration(seconds: 52);
+        await music.beginDjSession();
+        await music.loadDjDeck('A', <Song>[first]);
+        await music.loadDjDeck('B', <Song>[second]);
+        session.throwOnDisableDjModeOnce = true;
+
+        await expectLater(
+          music.endDjSession(),
+          throwsA(isA<StateError>()),
+        );
+
+        expect(session.djDualDeckModeValue, isTrue,
+            reason: 'Native DJ mode must remain authoritative after failed teardown.');
+        expect(session.queue.map((song) => song.id), isEmpty,
+            reason: 'Player queue must not be restored while native DJ mode is active.');
+        expect(session.djDeckQueues, isEmpty,
+            reason: 'Deck cleanup may complete, but the mode still blocks Player restoration.');
+
+        await music.endDjSession();
+
+        expect(session.djDualDeckModeValue, isFalse);
+        expect(session.queue.map((song) => song.id), ['retry-first', 'retry-second']);
+        expect(session.loadedIndex, 1);
+        expect(session.currentSongValue?.id, 'retry-second');
+        expect(session.positionValue, const Duration(seconds: 52));
+        expect(session.playingValue, isFalse);
+        expect(session.focusHandling, isTrue);
+      } finally {
+        music.dispose();
+        await session.audioSessions.close();
+        await session.states.close();
       }
     });
 
