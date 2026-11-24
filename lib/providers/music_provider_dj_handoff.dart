@@ -412,9 +412,7 @@ extension MusicProviderDjHandoff on MusicProvider {
         if (revocation.reason == PlaybackControlRevocationReason.released) {
           return;
         }
-        if (identical(_djCrossfaderGestureLease, lease)) {
-          _djCrossfaderGestureLease = null;
-        }
+        _djCrossfaderGestureLease = null;
         // A dispatched native write cannot be recalled. Drain accepted writes
         // before the higher-priority transport owner is granted.
         while (_djDeckCommandsInFlight.isNotEmpty) {
