@@ -11,7 +11,7 @@ import 'playback_snapshot.dart';
 /// Resonate's Song/queue model into immutable Media3 descriptors and forwards
 /// the native state stream. MusicProvider can migrate its transport boundary
 /// through this facade without exposing Media3 implementation details.
-class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackStandbyCueBackend, PlaybackPlaylistSyncBackend, PlaybackSpeedBackend, PlaybackPitchBackend, PlaybackDeckSpeedBackend, PlaybackDeckParametersBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend, PlaybackTransitionPreviewBackend {
+class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackStandbyCueBackend, PlaybackPlaylistSyncBackend, PlaybackSpeedBackend, PlaybackPitchBackend, PlaybackDeckSpeedBackend, PlaybackDeckParametersBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend, PlaybackTransitionPreviewBackend, PlaybackDjDeckBackend {
   Media3MusicProviderAdapter({Media3PlaybackClient? client})
       : _client = client ?? Media3PlaybackClient();
 
@@ -339,6 +339,44 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
 
   @override
   Future<void> cancelCrossfade() => _client.cancelCrossfade();
+
+  @override
+  Future<void> enableDjDualDeckMode() => _client.enableDjDualDeckMode();
+
+  @override
+  Future<void> disableDjDualDeckMode() => _client.disableDjDualDeckMode();
+
+  @override
+  Future<void> setDjCrossfader(double position) => _client.setDjCrossfader(position);
+
+  @override
+  Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0}) async {
+    final playable = songs.where((song) => song.filePath.trim().isNotEmpty)
+        .toList(growable: false);
+    final playableStart = resolvePlayableStartIndex(songs, startIndex);
+    await _client.loadDjDeck(
+      deckId,
+      playable.map(Media3QueueItem.fromSong).toList(growable: false),
+      startIndex: playableStart,
+    );
+  }
+
+  @override
+  Future<void> playDjDeck(String deckId) => _client.playDjDeck(deckId);
+
+  @override
+  Future<void> pauseDjDeck(String deckId) => _client.pauseDjDeck(deckId);
+
+  @override
+  Future<void> seekDjDeck({
+    required String deckId,
+    required Duration position,
+    required String expectedMediaId,
+  }) => _client.seekDjDeck(
+        deckId: deckId,
+        position: position,
+        expectedMediaId: expectedMediaId,
+      );
 
   @override
   Future<PlaybackSnapshot> currentState() async =>
