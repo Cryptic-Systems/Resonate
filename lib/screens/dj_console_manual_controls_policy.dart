@@ -35,6 +35,26 @@ class DjConsoleManualControlsPolicy {
       deckAIsPlaying &&
       deckBIsPlaying;
 
+  /// Explain why the manual crossfader is unavailable. Keep the operator
+  /// informed of the next actionable prerequisite instead of using one
+  /// generic disabled-state message.
+  static String crossfaderStatusText({
+    required bool djModeEnabled,
+    required bool media3SessionActive,
+    required bool transitionInProgress,
+    required bool deckAHasMedia,
+    required bool deckBHasMedia,
+    required bool deckAIsPlaying,
+    required bool deckBIsPlaying,
+  }) {
+    if (!djModeEnabled) return 'START DJ SESSION';
+    if (!media3SessionActive) return 'MEDIA3 SESSION INACTIVE';
+    if (transitionInProgress) return 'TRANSITION IN PROGRESS';
+    if (!deckAHasMedia || !deckBHasMedia) return 'LOAD BOTH DECKS';
+    if (!deckAIsPlaying || !deckBIsPlaying) return 'PLAY BOTH DECKS';
+    return 'MANUAL MIX READY';
+  }
+
   /// Channel gain can be adjusted on a loaded deck, including while paused,
   /// but never while the native transition controller owns deck gain.
   static bool canAdjustChannelGain({
