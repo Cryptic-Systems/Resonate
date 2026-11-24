@@ -11,7 +11,7 @@
 
 Resonate will provide two mutually exclusive user experiences over one shared audio platform and one strictly exclusive deck-usage policy. Exactly one deck policy may be active at a time: single-deck Player policy or dual-deck DJ policy. A policy transition temporarily authorizes neither experience to issue deck commands.
 
-1. **Resonate Player** — everyday listening, the existing player/library experience, current automatic DJ behavior, DSP, Intelligence, Ask Resonate, voice and feedback. It does not expose manual DJ Console controls.
+1. **Resonate Player** — everyday listening, the existing player/library experience, current automatic DJ behavior, DSP, Intelligence, Ask Resonate, voice and feedback. It retains a user-facing, read-only mix monitor and selected DJ Assist workflows, but does not expose physical deck telemetry, manual DJ Console controls or independent deck operation.
 2. **Resonatix DJ** — a dedicated DJ performance environment with its own workspace, Console and integrated library browser. It uses the same shared library records and playback foundation. A fresh DJ session starts with both deck slots empty.
 
 **User-facing deck boundary:** Resonate Player exposes exactly one logical/user-facing deck. The second physical Media3 player (Engine B) remains invisible and is not independently controllable from Player UI, but it may be used as a restricted, private transition resource for existing automatic crossfade and Autopilot preload behavior. Those operations remain owned by the existing `MusicProvider`/Autopilot path and are permitted only while `PLAYER_SINGLE_DECK` is active. This is a distinction between logical deck exposure and physical playback resources: Player may briefly render two sources during an automatic transition, but it never exposes a second independently operable deck. Only Resonatix DJ activates the user-facing `DJ_DUAL_DECK` topology.
@@ -74,7 +74,7 @@ A lease is generation-bound. Revocation invalidates the lease before asynchronou
 | `DjEngine` | Transition candidate generation, scoring, risk analysis and execution planning | Reuse |
 | `DjAutopilotPlanner` | Candidate ranking with transition memory | Reuse |
 | `DjSessionCoordinator` | Reviewable suggestion mixes without directly mutating playback | Reuse |
-| `DjWorkspaceScreen` | Watch-only monitoring of Media3 deck and transition state | Retain inside Resonatix DJ |
+| `DjWorkspaceScreen` | Watch-only monitoring of Media3 deck and transition state | Full deck telemetry in Resonatix DJ; Player uses a restricted high-level mix-monitor presentation with no physical engine/deck identity or performance routes |
 | `DjConsoleScreen` | Landscape performance surface, measured waveforms, deck status, active-deck jog seek and manual controls | Retain and evolve |
 | Manual DJ handoff in `MusicProvider` | Deck B preparation, cue, tempo parameters, crossfade, cancellation and lease cleanup | Reuse; extend only for the empty-session workflow |
 
@@ -229,7 +229,7 @@ A small experience preference/store and lifecycle coordinator are acceptable new
 
 ### 5.3 Resonate Player shell
 
-Reuse the current HomeScreen and its tabs as the starting point. Remove DJ Console/manual performance entry points from this shell. Keep existing automatic DJ, Intelligence, DSP, voice and normal playback behavior. Shared Settings remains reachable.
+Reuse the current HomeScreen and its tabs as the starting point. Remove DJ Console/manual performance entry points from this shell. Keep existing automatic DJ, Intelligence, DSP, voice and normal playback behavior. Provide a Player-facing mix monitor that reports current playback, incoming-track preparation, transition status and live spectrum without exposing Engine A/B identity, deck gain/telemetry or performance controls. Keep selected DJ Assist workflows only where they are reviewable and require explicit approval before playback changes. Shared Settings remains reachable.
 
 ### 5.4 Resonatix DJ shell
 
@@ -284,9 +284,9 @@ Acceptance:
 - No new player, MediaSession, DSP, audio focus owner or arbiter is introduced.
 
 ### Phase 2 — Resonate Player isolation
-Retain current HomeScreen behavior and remove manual DJ performance entry points from the Player shell. Preserve automatic DJ and all existing Player functionality.
+Retain current HomeScreen behavior and remove manual DJ performance entry points from the Player shell. Preserve automatic DJ and all existing Player functionality. Add a read-only mix-monitor presentation to Player navigation; it must not expose physical engine/deck identifiers, gain telemetry, manual cueing, crossfader or Console/Transition Studio routes. Selected DJ Assist workflows must remain explicitly reviewable and approval-gated.
 
-Acceptance: Player regression suite and existing playback/Media3/DSP tests remain green; DJ Console is not reachable from Player navigation; Engine B remains invisible and independently uncontrollable in Player; existing automatic crossfade/Autopilot preload behavior is preserved under MusicProvider ownership and DSP is verified on every audible transition source.
+Acceptance: Player regression suite and existing playback/Media3/DSP tests remain green; DJ Console and Transition Studio are not reachable from Player navigation; Engine B remains invisible and independently uncontrollable in Player; existing automatic crossfade/Autopilot preload behavior is preserved under MusicProvider ownership and DSP is verified on every audible transition source.
 
 ### Phase 3 — Resonatix DJ shell and integrated browser
 Create dedicated DJ navigation and connect existing library/playlist/analysis providers. Preserve Workspace and Console rather than recreating them.
