@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show FontFeature;
 
@@ -6,13 +7,13 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/music_provider.dart';
+import '../providers/library_provider.dart';
 import '../dj_engine/analysis/dj_waveform_chunk.dart';
 import '../models/song.dart';
 import '../services/dj_waveform_range_reader.dart';
 import '../providers/dj_mode_provider.dart';
 import '../dj_engine/core/dj_types.dart';
 import '../ui/resonate_glass.dart';
-import 'dj_console_manual_controls.dart';
 import 'dj_console_deck_tempo_control.dart';
 import 'dj_console_jog_seek_policy.dart';
 import 'dj_console_overlay_policy.dart';
@@ -74,216 +75,286 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
     super.dispose();
   }
 
+  Future<void> _chooseTrackForDeck(
+    BuildContext context,
+    String deckId,
+    MusicProvider music,
+    LibraryProvider library,
+  ) async {
+    final song = await showModalBottomSheet<Song>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.82,
+          minChildSize: 0.45,
+          maxChildSize: 0.95,
+          builder: (context, controller) => SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text('Load Deck $deckId',
+                            style: theme.textTheme.titleLarge),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: library.allSongs.isEmpty
+                      ? const Center(child: Text('No music in the shared library yet.'))
+                      : ListView.builder(
+                          controller: controller,
+                          itemCount: library.allSongs.length,
+                          itemBuilder: (context, index) {
+                            final song = library.allSongs[index];
+                            final playable = song.filePath.trim().isNotEmpty;
+                            return ListTile(
+                              enabled: playable,
+                              leading: const Icon(Icons.music_note_rounded),
+                              title: Text(song.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                              subtitle: Text(song.artist,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                              trailing: playable
+                                  ? const Icon(Icons.add_circle_outline_rounded)
+                                  : const Icon(Icons.block_rounded),
+                              onTap: playable
+                                  ? () => Navigator.pop(sheetContext, song)
+                                  : null,
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (song == null || !mounted) return;
+    try {
+      await music.loadDjDeck(deckId, <Song>[song]);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Loaded “${song.title}” into Deck $deckId.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load Deck $deckId: $error')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ResonateGlassScaffold(
       title: const Text('DJ Console'),
-      body: Consumer<MusicProvider>(
-        builder: (context, music, _) {
-          final song = music.currentSong;
-          final deckState = music.media3ShadowState;
-          final reportedDeckId = deckState?.activeDeckId;
-          final activeDeckId = reportedDeckId == 'A' || reportedDeckId == 'B'
-              ? reportedDeckId
-              : null;
-          final incomingMediaId = deckState?.incomingMediaId;
-          final incomingMatches = incomingMediaId == null
-              ? <Song>[]
-              : music.queue
-                  .where((candidate) => candidate.id == incomingMediaId)
-                  .toList(growable: false);
-          // A media ID can occur more than once in a queue. Never guess which
-          // occurrence Media3 prepared; only expose uniquely matched metadata.
-          final standbySong = activeDeckId != null &&
-                  incomingMatches.length == 1
-              ? incomingMatches.single
-              : null;
-          final standbyIdentityAmbiguous =
-              activeDeckId != null && incomingMatches.length > 1;
-          final standbyReady = activeDeckId != null &&
-              standbySong != null &&
-              deckState?.incomingReady == true &&
-              deckState?.crossfadeStatus == 'ready' &&
-              !music.transitionInProgress;
-          final standbyPosition = standbySong == null
-              ? Duration.zero
-              : deckState?.incomingPosition ?? Duration.zero;
-          final duration = music.currentDuration ?? song?.duration ?? Duration.zero;
-          final position = music.currentPosition;
-          final progress = duration.inMilliseconds <= 0
-              ? 0.0
-              : (position.inMilliseconds / duration.inMilliseconds)
-                  .clamp(0.0, 1.0).toDouble();
-          final standbyDuration = standbySong?.duration ?? Duration.zero;
-          final standbyProgress = standbyDuration.inMilliseconds <= 0
-              ? 0.0
-              : (standbyPosition.inMilliseconds /
-                      standbyDuration.inMilliseconds)
-                  .clamp(0.0, 1.0).toDouble();
-          final activeProfileFuture = _profileFutureFor(context, song?.id);
-          final standbyProfileFuture =
-              _profileFutureFor(context, standbySong?.id);
-          String standbyStatus() {
-            if (activeDeckId == null) return 'UNMAPPED';
-            if (standbyIdentityAmbiguous) return 'AMBIGUOUS';
-            if (incomingMediaId != null && standbySong == null) {
-              return 'UNVERIFIED';
+      body: Consumer2<MusicProvider, LibraryProvider>(
+        builder: (context, music, library, _) {
+          final state = music.media3ShadowState;
+          final deckA = state?.deckA;
+          final deckB = state?.deckB;
+
+          Song? findSong(String? id) {
+            if (id == null) return null;
+            for (final candidate in library.allSongs) {
+              if (candidate.id == id) return candidate;
             }
-            if (deckState?.crossfadeStatus == 'preparing') {
-              return 'PREPARING';
-            }
-            if (standbyReady) return 'READY · MUTED';
-            return 'STANDBY';
+            return null;
           }
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 760;
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        _ConsoleStatus(label: song == null ? 'NO ACTIVE TRACK' : 'MEDIA3 SESSION', active: song != null),
-                        const SizedBox(width: 8),
-                        const _ConsoleStatus(label: 'MANUAL DECK B ENABLED · ACTIVE-DECK JOG SEEK', active: true),
-                        const Spacer(),
-                        Text('RESONATE  /  TWO-DECK SYSTEM',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              letterSpacing: 1.3, color: theme.colorScheme.onSurfaceVariant)),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(child: _ConsoleDeck(
-                            deck: 'DECK A',
-                            active: activeDeckId == 'A', compact: compact,
-                            isPlaying: music.isPlaying && activeDeckId == 'A',
-                            jogSeekEnabled: activeDeckId == 'A' && song != null &&
-                                music.media3ProviderSessionActive && music.isPlaying &&
-                                !music.transitionInProgress,
-                            onJogSeek: (target) => music.seek(
-                              target, source: 'dj_console_jog_seek',
-                            ),
-                            status: activeDeckId == null
-                                ? 'UNMAPPED'
-                                : activeDeckId == 'A' ? 'ON AIR' : standbyStatus(),
-                            title: activeDeckId == 'A'
-                                ? song?.title ?? 'Waiting for track'
-                                : standbySong?.title ?? 'Standby deck',
-                            artist: activeDeckId == 'A'
-                                ? song?.artist ?? 'Select music in the library'
-                                : standbySong?.artist ??
-                                    (standbyIdentityAmbiguous
-                                        ? 'Incoming queue occurrence is ambiguous'
-                                        : 'No verified incoming track'),
-                            progress: activeDeckId == 'A' ? progress : standbyProgress,
-                            position: activeDeckId == 'A' ? position : standbyPosition,
-                            duration: activeDeckId == 'A' ? duration : standbyDuration,
-                            profileFuture: activeDeckId == 'A'
-                                ? activeProfileFuture
-                                : standbyProfileFuture,
-                            expectedSongId: activeDeckId == 'A'
-                                ? song?.id
-                                : standbySong?.id,
-                            waveformSourceKey: activeDeckId == 'A'
-                                ? song?.filePath
-                                : standbySong?.filePath,
-                            waveformLoader: activeDeckId == 'A' && song != null
-                                ? (startMs, endMs) => _waveformReader.loadVisibleRange(
-                                    song, startMs: startMs, endMs: endMs)
-                                : activeDeckId != 'A' && standbySong != null
-                                    ? (startMs, endMs) =>
-                                        _waveformReader.loadVisibleRange(
-                                          standbySong,
-                                          startMs: startMs,
-                                          endMs: endMs,
-                                        )
-                                    : null,
-                          )),
-                          SizedBox(width: compact ? 8 : 12),
-                          SizedBox(
-                            width: compact ? 112 : 190,
-                            child: DjConsoleManualControls(compact: compact),
-                          ),
-                          SizedBox(width: compact ? 8 : 12),
-                          Expanded(child: _ConsoleDeck(
-                            deck: 'DECK B',
-                            active: activeDeckId == 'B', compact: compact,
-                            isPlaying: music.isPlaying && activeDeckId == 'B',
-                            jogSeekEnabled: activeDeckId == 'B' && song != null &&
-                                music.media3ProviderSessionActive && music.isPlaying &&
-                                !music.transitionInProgress,
-                            onJogSeek: (target) => music.seek(
-                              target, source: 'dj_console_jog_seek',
-                            ),
-                            status: activeDeckId == null
-                                ? 'UNMAPPED'
-                                : activeDeckId == 'B' ? 'ON AIR' : standbyStatus(),
-                            title: activeDeckId == 'B'
-                                ? song?.title ?? 'Waiting for track'
-                                : standbySong?.title ?? 'Standby deck',
-                            artist: activeDeckId == 'B'
-                                ? song?.artist ?? 'Select music in the library'
-                                : standbySong?.artist ??
-                                    (standbyIdentityAmbiguous
-                                        ? 'Incoming queue occurrence is ambiguous'
-                                        : 'No verified incoming track'),
-                            progress: activeDeckId == 'B' ? progress : standbyProgress,
-                            position: activeDeckId == 'B' ? position : standbyPosition,
-                            duration: activeDeckId == 'B' ? duration : standbyDuration,
-                            profileFuture: activeDeckId == 'B'
-                                ? activeProfileFuture
-                                : standbyProfileFuture,
-                            expectedSongId: activeDeckId == 'B'
-                                ? song?.id
-                                : standbySong?.id,
-                            waveformSourceKey: activeDeckId == 'B'
-                                ? song?.filePath
-                                : standbySong?.filePath,
-                            waveformLoader: activeDeckId == 'B' && song != null
-                                ? (startMs, endMs) => _waveformReader.loadVisibleRange(
-                                    song, startMs: startMs, endMs: endMs)
-                                : activeDeckId != 'B' && standbySong != null
-                                    ? (startMs, endMs) =>
-                                        _waveformReader.loadVisibleRange(
-                                          standbySong,
-                                          startMs: startMs,
-                                          endMs: endMs,
-                                        )
-                                    : null,
-                          )),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(Icons.info_outline, size: 15,
-                            color: theme.colorScheme.onSurfaceVariant),
-                        const SizedBox(width: 7),
-                        Expanded(child: Text(
-                          'Manual Deck B preparation, cueing and equal-power handoff are enabled. '
-                          'Jog drag seeks once on release. Tempo is limited to ±6% with key lock; scratch, pitch-bend and continuous mixer controls remain locked.',
-                          maxLines: 2, overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant),
-                        )),
-                        TextButton.icon(
-                          onPressed: () => Navigator.of(context).maybePop(),
-                          icon: const Icon(Icons.dashboard_outlined, size: 17),
-                          label: const Text('Workspace'),
+
+          final songA = findSong(deckA?.mediaId);
+          final songB = findSong(deckB?.mediaId);
+          final durationA = deckA?.duration ?? songA?.duration ?? Duration.zero;
+          final durationB = deckB?.duration ?? songB?.duration ?? Duration.zero;
+          final progressA = durationA.inMilliseconds <= 0
+              ? 0.0
+              : (deckA!.position.inMilliseconds / durationA.inMilliseconds)
+                  .clamp(0.0, 1.0).toDouble();
+          final progressB = durationB.inMilliseconds <= 0
+              ? 0.0
+              : (deckB!.position.inMilliseconds / durationB.inMilliseconds)
+                  .clamp(0.0, 1.0).toDouble();
+          final djReady = state?.djDualDeckMode == true;
+          final compact = MediaQuery.sizeOf(context).width < 820;
+
+          Widget buildDeck({
+            required String id,
+            required dynamic deck,
+            required Song? song,
+            required Duration duration,
+            required double progress,
+          }) {
+            final loaded = deck?.mediaId != null;
+            final isPlaying = deck?.isPlaying == true;
+            final title = deck?.title ?? song?.title ?? 'Empty deck';
+            final artist = deck?.artist ?? song?.artist ??
+                'Load a track from the shared library';
+            final position = deck?.position ?? Duration.zero;
+            return Expanded(
+              child: _ConsoleDeck(
+                deck: 'DECK $id',
+                active: loaded,
+                compact: compact,
+                isPlaying: isPlaying,
+                canPlay: djReady && loaded && music.media3ProviderSessionActive,
+                jogSeekEnabled: djReady && loaded &&
+                    music.media3ProviderSessionActive &&
+                    !music.transitionInProgress,
+                onPlayPause: () async {
+                  if (isPlaying) {
+                    await music.pauseDjDeck(id);
+                  } else {
+                    await music.playDjDeck(id);
+                  }
+                },
+                onLoad: () => unawaited(
+                  _chooseTrackForDeck(context, id, music, library),
+                ),
+                onJogSeek: (target) => music.seekDjDeck(
+                  deckId: id,
+                  position: target,
+                  expectedMediaId: deck.mediaId as String,
+                ),
+                status: !loaded
+                    ? 'EMPTY'
+                    : isPlaying
+                        ? 'PLAYING'
+                        : 'LOADED',
+                title: title,
+                artist: artist,
+                progress: progress,
+                position: position,
+                duration: duration,
+                profileFuture: _profileFutureFor(context, song?.id),
+                expectedSongId: song?.id ?? deck?.mediaId as String?,
+                waveformSourceKey: song?.filePath,
+                waveformLoader: song == null
+                    ? null
+                    : (startMs, endMs) => _waveformReader.loadVisibleRange(
+                          song,
+                          startMs: startMs,
+                          endMs: endMs,
                         ),
-                      ],
+              ),
+            );
+          }
+
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    _ConsoleStatus(
+                      label: djReady ? 'DUAL DECK SESSION' : 'DJ SESSION UNAVAILABLE',
+                      active: djReady,
+                    ),
+                    const SizedBox(width: 8),
+                    _ConsoleStatus(
+                      label: (deckA?.isPlaying == true || deckB?.isPlaying == true)
+                          ? 'OUTPUT ACTIVE'
+                          : 'OUTPUT STOPPED',
+                      active: deckA?.isPlaying == true || deckB?.isPlaying == true,
+                    ),
+                    const Spacer(),
+                    Text(
+                      'RESONATE  /  INDEPENDENT A/B DECKS',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        letterSpacing: 1.1,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
-              );
-            },
+                const SizedBox(height: 10),
+                if (!djReady)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: MaterialBanner(
+                      content: const Text(
+                        'The persistent DJ deck session is not active. Return to the DJ Workspace and initialize the session before using the Console.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).maybePop(),
+                          child: const Text('WORKSPACE'),
+                        ),
+                      ],
+                    ),
+                  ),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      buildDeck(
+                        id: 'A',
+                        deck: deckA,
+                        song: songA,
+                        duration: durationA,
+                        progress: progressA,
+                      ),
+                      SizedBox(width: compact ? 8 : 12),
+                      SizedBox(
+                        width: compact ? 130 : 190,
+                        child: _DjConsoleMixer(
+                          enabled: djReady && !music.transitionInProgress,
+                          position: state?.djCrossfaderPosition ?? 0.5,
+                          compact: compact,
+                          onChanged: music.setDjCrossfader,
+                        ),
+                      ),
+                      SizedBox(width: compact ? 8 : 12),
+                      buildDeck(
+                        id: 'B',
+                        deck: deckB,
+                        song: songB,
+                        duration: durationB,
+                        progress: progressB,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 15,
+                        color: theme.colorScheme.onSurfaceVariant),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        'Each deck owns its queue, transport, cue position and tempo. The crossfader is operator-controlled; Player Autopilot cannot move it. Jog drag seeks the selected physical deck once on release.',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      icon: const Icon(Icons.dashboard_outlined, size: 17),
+                      label: const Text('Workspace'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           );
         },
       ),
