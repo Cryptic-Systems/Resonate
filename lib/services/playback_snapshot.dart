@@ -15,6 +15,7 @@ class PlaybackDeckSnapshot {
     this.mediaItemIndex = -1,
     this.mediaItemCount = 0,
     this.volume = 0,
+    this.channelGain = 1,
     this.speed = 1,
     this.pitch = 1,
     this.audioSessionId,
@@ -33,6 +34,7 @@ class PlaybackDeckSnapshot {
   final int mediaItemIndex;
   final int mediaItemCount;
   final double volume;
+  final double channelGain;
   final double speed;
   final double pitch;
   final int? audioSessionId;
