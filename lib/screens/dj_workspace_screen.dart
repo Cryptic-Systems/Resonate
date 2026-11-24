@@ -560,7 +560,11 @@ class _WorkspaceDeckSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final loaded = snapshot?.mediaId != null;
+    final currentSnapshot = snapshot;
+    final loaded = currentSnapshot?.mediaId != null;
+    final timeLabel = currentSnapshot == null || currentSnapshot.mediaId == null
+        ? '—:— / —:—'
+        : _formatDeckTime(currentSnapshot);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
