@@ -102,6 +102,15 @@ extension MusicProviderDjHandoff on MusicProvider {
       if (!lease.authorizeWrite('dj_deck:$command')) {
         throw StateError('DJ deck control authority expired; no deck command was sent.');
       }
+      // Authority may have been queued behind another owner's cleanup. The
+      // provider can be disposed while that acquisition is waiting, so recheck
+      // lifecycle state immediately before registering and dispatching native
+      // work. A stale session must never receive a post-disposal deck command.
+      if (_disposed ||
+          !_media3ProviderSessionActive ||
+          !identical(_media3ProviderSession, session)) {
+        throw StateError('The DJ playback provider is no longer active; no deck command was sent.');
+      }
       final settled = Completer<void>();
       _djDeckCommandsInFlight.add(settled.future);
       try {
