@@ -4465,6 +4465,8 @@ void main() {
         await music.loadDjDeck('A', <Song>[first]);
         await music.loadDjDeck('B', <Song>[second]);
         session.throwOnDisableDjModeOnce = true;
+        final loadQueueCallsBeforeTeardown =
+            session.calls.where((call) => call == 'loadQueue').length;
 
         await expectLater(
           music.endDjSession(),
@@ -4473,13 +4475,21 @@ void main() {
 
         expect(session.djDualDeckModeValue, isTrue,
             reason: 'Native DJ mode must remain authoritative after failed teardown.');
-        expect(session.queue.map((song) => song.id), isEmpty,
-            reason: 'Player queue must not be restored while native DJ mode is active.');
+        expect(
+          session.calls.where((call) => call == 'loadQueue').length,
+          loadQueueCallsBeforeTeardown,
+          reason: 'Player restoration must not be dispatched while native DJ mode is active.',
+        );
+        expect(session.queue.map((song) => song.id), ['retry-first', 'retry-second'],
+            reason: 'The fake session retains its original Player queue until a restoration load is dispatched.');
         expect(session.djDeckQueues, isEmpty,
             reason: 'Deck cleanup may complete, but the mode still blocks Player restoration.');
 
         await music.endDjSession();
 
+        expect(session.calls.where((call) => call == 'loadQueue').length,
+            loadQueueCallsBeforeTeardown + 1,
+            reason: 'A safe retry must dispatch exactly one Player queue restoration.');
         expect(session.djDualDeckModeValue, isFalse);
         expect(session.queue.map((song) => song.id), ['retry-first', 'retry-second']);
         expect(session.loadedIndex, 1);
