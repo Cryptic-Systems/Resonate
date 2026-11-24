@@ -66,6 +66,10 @@ class Media3ProviderStateBridge {
       incomingMediaId: snapshot?.incomingMediaId,
       incomingReady: snapshot?.incomingReady ?? false,
       incomingPosition: snapshot?.incomingPosition ?? Duration.zero,
+      djDualDeckMode: snapshot?.djDualDeckMode ?? false,
+      djCrossfaderPosition: snapshot?.djCrossfaderPosition ?? 0.5,
+      deckA: snapshot?.deckA,
+      deckB: snapshot?.deckB,
       audioUnderrunCountA: snapshot?.audioUnderrunCountA ?? 0,
       audioUnderrunCountB: snapshot?.audioUnderrunCountB ?? 0,
       lastUnderrunDeck: snapshot?.lastUnderrunDeck,
@@ -122,6 +126,10 @@ class Media3ProviderState {
     this.incomingMediaId,
     this.incomingReady = false,
     this.incomingPosition = Duration.zero,
+    this.djDualDeckMode = false,
+    this.djCrossfaderPosition = 0.5,
+    this.deckA,
+    this.deckB,
     this.audioUnderrunCountA = 0,
     this.audioUnderrunCountB = 0,
     this.lastUnderrunDeck,
@@ -164,6 +172,10 @@ class Media3ProviderState {
         incomingMediaId = null,
         incomingReady = false,
         incomingPosition = Duration.zero,
+        djDualDeckMode = false,
+        djCrossfaderPosition = 0.5,
+        deckA = null,
+        deckB = null,
         audioUnderrunCountA = 0,
         audioUnderrunCountB = 0,
         lastUnderrunDeck = null,
@@ -212,6 +224,10 @@ class Media3ProviderState {
   final String? incomingMediaId;
   final bool incomingReady;
   final Duration incomingPosition;
+  final bool djDualDeckMode;
+  final double djCrossfaderPosition;
+  final PlaybackDeckSnapshot? deckA;
+  final PlaybackDeckSnapshot? deckB;
   final int audioUnderrunCountA;
   final int audioUnderrunCountB;
   final String? lastUnderrunDeck;
