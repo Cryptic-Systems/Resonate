@@ -160,12 +160,19 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
     MusicProvider music,
     LibraryProvider library,
   ) async {
+    final state = music.media3ShadowState;
+    final currentDeckMediaId =
+        (deckId == 'A' ? state?.deckA : state?.deckB)?.mediaId;
+    final otherDeckMediaId =
+        (deckId == 'A' ? state?.deckB : state?.deckA)?.mediaId;
     final song = await showModalBottomSheet<Song>(
       context: context,
       isScrollControlled: true,
       builder: (sheetContext) => _DjTrackPickerSheet(
         deckId: deckId,
         songs: library.allSongs,
+        currentDeckMediaId: currentDeckMediaId,
+        otherDeckMediaId: otherDeckMediaId,
       ),
     );
     if (song == null || !mounted) return;
@@ -1445,10 +1452,14 @@ class _DjTrackPickerSheet extends StatefulWidget {
   const _DjTrackPickerSheet({
     required this.deckId,
     required this.songs,
+    required this.currentDeckMediaId,
+    required this.otherDeckMediaId,
   });
 
   final String deckId;
   final List<Song> songs;
+  final String? currentDeckMediaId;
+  final String? otherDeckMediaId;
 
   @override
   State<_DjTrackPickerSheet> createState() => _DjTrackPickerSheetState();
@@ -1541,9 +1552,27 @@ class _DjTrackPickerSheetState extends State<_DjTrackPickerSheet> {
                           itemBuilder: (context, index) {
                             final song = filteredSongs[index];
                             final playable = song.filePath.trim().isNotEmpty;
+                            final loadedHere =
+                                song.id == widget.currentDeckMediaId;
+                            final loadedOnOtherDeck =
+                                song.id == widget.otherDeckMediaId;
+                            final deckLabel = loadedHere
+                                ? 'THIS DECK'
+                                : loadedOnOtherDeck
+                                    ? 'OTHER DECK'
+                                    : null;
                             return ListTile(
                               enabled: playable,
-                              leading: const Icon(Icons.music_note_rounded),
+                              leading: Icon(
+                                loadedHere
+                                    ? Icons.check_circle_rounded
+                                    : loadedOnOtherDeck
+                                        ? Icons.album_rounded
+                                        : Icons.music_note_rounded,
+                                color: loadedHere || loadedOnOtherDeck
+                                    ? theme.colorScheme.primary
+                                    : null,
+                              ),
                               title: Text(
                                 song.title,
                                 maxLines: 1,
@@ -1554,9 +1583,17 @@ class _DjTrackPickerSheetState extends State<_DjTrackPickerSheet> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              trailing: playable
-                                  ? const Icon(Icons.add_circle_outline_rounded)
-                                  : const Icon(Icons.block_rounded),
+                              trailing: deckLabel != null
+                                  ? Text(
+                                      deckLabel,
+                                      style: theme.textTheme.labelSmall?.copyWith(
+                                        color: theme.colorScheme.primary,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    )
+                                  : playable
+                                      ? const Icon(Icons.add_circle_outline_rounded)
+                                      : const Icon(Icons.block_rounded),
                               onTap: playable
                                   ? () => Navigator.pop(context, song)
                                   : null,
