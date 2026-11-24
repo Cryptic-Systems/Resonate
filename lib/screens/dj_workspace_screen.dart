@@ -552,6 +552,11 @@ class _WorkspaceDeckSummary extends StatelessWidget {
   final Color color;
   final String Function(Duration) clock;
 
+  String _formatDeckTime(PlaybackDeckSnapshot value) {
+    final duration = value.duration;
+    return '${clock(value.position)} / ${duration == null ? '--:--' : clock(duration)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -594,9 +599,9 @@ class _WorkspaceDeckSummary extends StatelessWidget {
           ),
           const SizedBox(height: 7),
           Text(
-            loaded
-                ? '${clock(snapshot!.position)} / ${snapshot.duration == null ? '--:--' : clock(snapshot.duration!)}'
-                : '—:— / —:—',
+            snapshot == null || snapshot.mediaId == null
+                ? '—:— / —:—'
+                : _formatDeckTime(snapshot),
             style: theme.textTheme.labelSmall,
           ),
         ],
@@ -680,7 +685,7 @@ class _DjPhysicalDeckMonitorCard extends StatelessWidget {
               icon: Icons.speed_rounded,
               label: 'Tempo / key lock',
               value: loaded
-                  ? '${deck!.speed.toStringAsFixed(3)}× · pitch ${deck!.pitch.toStringAsFixed(3)}×'
+                  ? '${deck!.speed.toStringAsFixed(3)}× · pitch ${deck.pitch.toStringAsFixed(3)}×'
                   : 'Unavailable',
             ),
             const SizedBox(height: 6),
