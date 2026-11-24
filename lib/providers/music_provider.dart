@@ -106,6 +106,7 @@ class MusicProvider extends ChangeNotifier {
   Media3ProviderState? _media3ShadowState;
   bool _djDualDeckModeRequested = false;
   _DjSessionReturnState? _djSessionReturnState;
+  Future<void> _djSessionLifecycleTail = Future<void>.value();
   final Set<Future<void>> _djDeckCommandsInFlight = <Future<void>>{};
   // A library selection may commit before Media3 publishes its replacement timeline.
   // Fence delayed snapshots from the previous item until the selected occurrence arrives.
