@@ -422,6 +422,16 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                 Expanded(
                   child: Builder(
                     builder: (context) {
+                      final mixerStatus =
+                          DjConsoleManualControlsPolicy.crossfaderStatusText(
+                        djModeEnabled: djReady,
+                        media3SessionActive: music.media3ProviderSessionActive,
+                        transitionInProgress: music.transitionInProgress,
+                        deckAHasMedia: deckA?.mediaId != null,
+                        deckBHasMedia: deckB?.mediaId != null,
+                        deckAIsPlaying: deckA?.isPlaying == true,
+                        deckBIsPlaying: deckB?.isPlaying == true,
+                      );
                       final mixer = SizedBox(
                         width: portraitLayout
                             ? double.infinity
@@ -439,6 +449,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                           ),
                           position: state?.djCrossfaderPosition ?? 0.5,
                           compact: compact,
+                          statusMessage: mixerStatus,
                           onChanged: music.setDjCrossfader,
                           onGestureStart: music.beginDjCrossfaderGesture,
                           onGestureEnd: music.endDjCrossfaderGesture,
@@ -1188,6 +1199,7 @@ class _DjConsoleMixer extends StatefulWidget {
     required this.enabled,
     required this.position,
     required this.compact,
+    required this.statusMessage,
     required this.onChanged,
     required this.onGestureStart,
     required this.onGestureEnd,
@@ -1196,6 +1208,7 @@ class _DjConsoleMixer extends StatefulWidget {
   final bool enabled;
   final double position;
   final bool compact;
+  final String statusMessage;
   final Future<void> Function(double position) onChanged;
   final Future<bool> Function() onGestureStart;
   final Future<void> Function() onGestureEnd;
@@ -1446,7 +1459,7 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
           ),
           const SizedBox(height: 5),
           Text(
-            widget.enabled ? 'MANUAL MIX READY' : 'LOAD & PLAY BOTH DECKS',
+            widget.statusMessage,
             textAlign: TextAlign.center,
             style: theme.textTheme.labelSmall?.copyWith(
               color: Colors.white54,
