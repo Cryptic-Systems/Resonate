@@ -104,6 +104,7 @@ class MusicProvider extends ChangeNotifier {
   StreamSubscription<int?>? _media3AudioSessionSub;
   StreamSubscription<Media3ProviderState>? _media3StateSub;
   Media3ProviderState? _media3ShadowState;
+  bool _djDualDeckModeRequested = false;
   // A library selection may commit before Media3 publishes its replacement timeline.
   // Fence delayed snapshots from the previous item until the selected occurrence arrives.
   String? _media3PendingSelectionSongId;
@@ -131,7 +132,7 @@ class MusicProvider extends ChangeNotifier {
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
   bool get media3ProviderSessionActive => _media3ProviderSessionActive;
   bool get _djDualDeckSessionActive =>
-      _media3ShadowState?.djDualDeckMode == true;
+      _djDualDeckModeRequested || _media3ShadowState?.djDualDeckMode == true;
   bool get isDjDualDeckSessionActive => _djDualDeckSessionActive;
   /// True only while the operator's prepared standby deck still owns its lease.
   /// UI should derive readiness from this instead of caching a local flag: a
