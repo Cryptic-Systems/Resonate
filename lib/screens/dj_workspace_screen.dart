@@ -6,14 +6,12 @@ import 'package:provider/provider.dart';
 
 import '../models/song.dart';
 
-import '../navigation/shell_nav.dart';
 import '../providers/dj_mode_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
 import '../services/dj_session_coordinator.dart';
 import '../services/playback_snapshot.dart';
 import '../ui/resonate_glass.dart';
-import 'dj_console_screen.dart';
 import 'dj_suggestion_mix_screen.dart';
 import 'dj_transition_studio_screen.dart';
 
@@ -174,6 +172,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
               const SizedBox(height: 18),
               ResonateGlassCard(
         blurEnabled: false,
+blurEnabled: false,
                 margin: EdgeInsets.zero,
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -233,7 +232,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                           style: theme.textTheme.bodyMedium),
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
-                        onPressed: () => context.read<ShellNav>().goToTab(1),
+                        onPressed: () => Navigator.of(context).maybePop(),
                         icon: const Icon(Icons.library_music_rounded),
                         label: const Text('Open library'),
                       ),
@@ -374,7 +373,8 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     ResonateGlassCard(
-                      margin: EdgeInsets.zero,
+        blurEnabled: false,
+margin: EdgeInsets.zero,
                       padding: const EdgeInsets.all(14),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -517,7 +517,8 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
               ),
               const SizedBox(height: 18),
               ResonateGlassCard(
-                margin: EdgeInsets.zero,
+        blurEnabled: false,
+margin: EdgeInsets.zero,
                 padding: const EdgeInsets.all(14),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -691,7 +692,8 @@ class _DjPhysicalDeckMonitorCard extends StatelessWidget {
     final loaded = deck?.mediaId != null;
     final duration = deck?.duration;
     return ResonateGlassCard(
-        margin: EdgeInsets.zero,
+        blurEnabled: false,
+margin: EdgeInsets.zero,
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -772,7 +774,8 @@ class _DjPhysicalDeckMonitorCard extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         ResonateGlassCard(
-          margin: EdgeInsets.zero,
+        blurEnabled: false,
+margin: EdgeInsets.zero,
           padding: const EdgeInsets.all(12),
           child: Column(
             children: [
@@ -866,7 +869,8 @@ class _PlayerMixMonitorCard extends StatelessWidget {
                         ? 'Incoming track identity is not yet verified'
                         : 'No incoming track prepared';
     return ResonateGlassCard(
-      margin: EdgeInsets.zero,
+        blurEnabled: false,
+margin: EdgeInsets.zero,
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1519,7 +1523,8 @@ class _WorkspaceAction extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ResonateGlassCard(
-      margin: EdgeInsets.zero,
+        blurEnabled: false,
+margin: EdgeInsets.zero,
       padding: EdgeInsets.zero,
       child: ListTile(
         onTap: onTap,
