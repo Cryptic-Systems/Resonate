@@ -45,10 +45,13 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
   }
 
   Future<void> _startDjSession() async {
+    // Mark the shell as responsible for cleanup before the first await. If
+    // initialization partially succeeds or is retried from the Library tab,
+    // dispose still performs the guarded native cleanup.
+    _djSessionStarted = true;
     try {
       await _music.prepareMedia3ProviderSession();
       await _music.enableDjDualDeckMode();
-      _djSessionStarted = true;
       // The Player queue remains in MusicProvider's saved queue model. Both
       // physical Media3 decks start empty for a fresh hands-on DJ session.
       await _music.clearDjDeck('A');
