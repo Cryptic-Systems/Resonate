@@ -119,9 +119,14 @@ class Media3PlaybackService : MediaSessionService() {
     /** Enter the persistent two-deck policy without changing the canonical queue. */
     fun enableDjDualDeckMode(): Boolean {
         if (!::activePlayer.isInitialized || isDestroyed ||
-            crossfadeStatus in setOf("preparing", "waiting_ready", "ready", "starting", "fading") ||
-            (standbyPlayer?.mediaItemCount ?: 0) > 0
+            crossfadeStatus in setOf("starting", "fading")
         ) return false
+        // A Player preload is not a DJ deck queue. Retire it before promoting
+        // the same physical standby player into the persistent DJ lifecycle.
+        if (standbyPlayer != null || crossfadeStatus in setOf("preparing", "waiting_ready", "ready")) {
+            clearPreload("enter_dj_dual_deck_mode")
+        }
+        if ((standbyPlayer?.mediaItemCount ?: 0) > 0) return false
         val standby = standbyPlayer ?: newPlayer(
             handleAudioFocus = false,
             deckId = standbyDeckId(),
@@ -173,6 +178,35 @@ class Media3PlaybackService : MediaSessionService() {
         else -> null
     }
 
+    /** Rebind the single MediaSession/focus owner to the requested physical deck. */
+    private fun promoteDjCanonicalDeck(deckId: String): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B")) return false
+        if (deckId == activeDeckId) return true
+        val target = standbyPlayer ?: return false
+        val outgoing = activePlayer
+        val outgoingDeckId = activeDeckId
+        activePlayer = target
+        standbyPlayer = outgoing
+        activeDeckId = deckId
+        target.setAudioAttributes(
+            audioAttributes(),
+            AudioOutputPolicy.handlesAudioFocus(
+                isCanonicalActiveDeck = true,
+                focusHandlingEnabled = media3AudioFocusEnabled,
+            ),
+        )
+        target.setHandleAudioBecomingNoisy(AudioOutputPolicy.handlesBecomingNoisy(true))
+        outgoing.setAudioAttributes(audioAttributes(), false)
+        outgoing.setHandleAudioBecomingNoisy(false)
+        DspEngineRegistry.setActiveDeck(deckId)
+        if (target.isPlaying) DspEngineSinkHook.activateDeck(deckId)
+        if (outgoing.isPlaying) DspEngineSinkHook.activateDeck(outgoingDeckId)
+        else DspEngineSinkHook.suspendDeck(outgoingDeckId)
+        mediaSession?.setPlayer(target)
+        applyDeckVolumes()
+        return true
+    }
+
     /** Replace only the selected physical deck's queue; the other deck is untouched. */
     fun loadDjDeck(deckId: String, items: List<MediaItem>, startIndex: Int): Boolean {
         if (!djDualDeckMode || deckId !in setOf("A", "B") || items.isEmpty() ||
@@ -180,7 +214,12 @@ class Media3PlaybackService : MediaSessionService() {
             crossfadeStatus in setOf("starting", "fading")
         ) return false
         val player = playerForPhysicalDeck(deckId) ?: return false
+        val peerDeckId = if (deckId == "A") "B" else "A"
+        val peer = playerForPhysicalDeck(peerDeckId)
         return try {
+            if (player === activePlayer && player.playWhenReady) {
+                suppressDjPeerPauseDeckId = deckId
+            }
             player.pause()
             player.stop()
             player.clearMediaItems()
@@ -188,18 +227,24 @@ class Media3PlaybackService : MediaSessionService() {
             player.setMediaItems(items, startIndex, 0L)
             player.prepare()
             DspEngineSinkHook.suspendDeck(deckId)
+            if (player === activePlayer && peer?.isPlaying == true) {
+                suppressDjPeerPauseDeckId = null
+                promoteDjCanonicalDeck(peerDeckId)
+                setAudioFocusHandling(true)
+            }
             true
         } catch (_: Exception) {
+            suppressDjPeerPauseDeckId = null
             false
         }
     }
 
-    /** Play one physical deck without changing the other deck's transport. */
+    /** Play one physical deck; the playing deck becomes the sole focus owner. */
     fun playDjDeck(deckId: String): Boolean {
         if (!djDualDeckMode || deckId !in setOf("A", "B") || isCommunicationActive()) return false
-        val player = playerForPhysicalDeck(deckId) ?: return false
+        if (!promoteDjCanonicalDeck(deckId) || !setAudioFocusHandling(true)) return false
+        val player = activePlayer
         if (player.mediaItemCount == 0 || player.playbackState != Player.STATE_READY) return false
-        if (player === activePlayer && !setAudioFocusHandling(true)) return false
         DspEngineSinkHook.activateDeck(deckId)
         return try {
             player.play()
@@ -214,12 +259,59 @@ class Media3PlaybackService : MediaSessionService() {
     fun pauseDjDeck(deckId: String): Boolean {
         if (!djDualDeckMode || deckId !in setOf("A", "B")) return false
         val player = playerForPhysicalDeck(deckId) ?: return false
-        if (player === activePlayer && player.playWhenReady) {
-            suppressDjPeerPauseDeckId = deckId
-        }
+        val wasCanonical = player === activePlayer
+        val peerDeckId = if (deckId == "A") "B" else "A"
+        val peer = playerForPhysicalDeck(peerDeckId)
+        if (wasCanonical && player.playWhenReady) suppressDjPeerPauseDeckId = deckId
         return try {
             player.pause()
             DspEngineSinkHook.suspendDeck(deckId)
+            if (wasCanonical && peer?.isPlaying == true) {
+                suppressDjPeerPauseDeckId = null
+                promoteDjCanonicalDeck(peerDeckId)
+                setAudioFocusHandling(true)
+            }
+            true
+        } catch (_: Exception) {
+            suppressDjPeerPauseDeckId = null
+            false
+        }
+    }
+
+    /** Apply tempo/pitch to one physical deck without changing its partner. */
+    fun setDjDeckPlaybackParameters(deckId: String, speed: Float, pitch: Float): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B")) return false
+        val parameters = Media3DeckPlaybackParametersPolicy.create(speed, pitch) ?: return false
+        val player = playerForPhysicalDeck(deckId) ?: return false
+        return try {
+            player.playbackParameters = parameters
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Clear only the named physical deck while preserving the partner. */
+    fun clearDjDeck(deckId: String): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") ||
+            crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        val player = playerForPhysicalDeck(deckId) ?: return false
+        val wasCanonical = player === activePlayer
+        val peerDeckId = if (deckId == "A") "B" else "A"
+        val peer = playerForPhysicalDeck(peerDeckId)
+        if (wasCanonical && player.playWhenReady) suppressDjPeerPauseDeckId = deckId
+        return try {
+            player.pause()
+            player.stop()
+            player.clearMediaItems()
+            DspEngineRegistry.setDeckTrack(deckId, null)
+            DspEngineSinkHook.suspendDeck(deckId)
+            if (wasCanonical && peer?.isPlaying == true) {
+                suppressDjPeerPauseDeckId = null
+                promoteDjCanonicalDeck(peerDeckId)
+                setAudioFocusHandling(true)
+            }
             true
         } catch (_: Exception) {
             suppressDjPeerPauseDeckId = null
