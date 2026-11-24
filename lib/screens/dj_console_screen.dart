@@ -326,7 +326,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed: () => openShellPlayer(context),
+                    onPressed: () async => context.read<ShellNav>().switchToPlayer(),
                     icon: const Icon(Icons.arrow_back_rounded, size: 20),
                     label: const Text(
                       'RETURN TO RESONATE PLAYER',
