@@ -813,33 +813,6 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(color: Colors.white60)),
-          const SizedBox(height: 7),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'PERFORMANCE CONTROLS',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: Colors.white38,
-                letterSpacing: 1.0,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: const [
-                _ConsolePlaceholderControl(label: 'VINYL', icon: Icons.album_outlined),
-                _ConsolePlaceholderControl(label: 'SLIP', icon: Icons.motion_photos_on_outlined),
-                _ConsolePlaceholderControl(label: 'SYNC', icon: Icons.sync_rounded),
-                _ConsolePlaceholderControl(label: 'LOOP', icon: Icons.loop_rounded),
-                _ConsolePlaceholderControl(label: 'HOT CUE', icon: Icons.bookmark_outline_rounded),
-                _ConsolePlaceholderControl(label: 'FX', icon: Icons.auto_awesome_outlined),
-                _ConsolePlaceholderControl(label: 'SAMPLES', icon: Icons.grid_view_rounded),
-              ],
-            ),
-          ),
           SizedBox(
             height: compact ? 218 : 286,
             child: Center(
@@ -913,6 +886,33 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                   ),
                 ),
               ),
+            ),
+          ),
+          const SizedBox(height: 7),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'PERFORMANCE CONTROLS',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: Colors.white38,
+                letterSpacing: 1.0,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: const [
+                _ConsolePlaceholderControl(label: 'VINYL', icon: Icons.album_outlined),
+                _ConsolePlaceholderControl(label: 'SLIP', icon: Icons.motion_photos_on_outlined),
+                _ConsolePlaceholderControl(label: 'SYNC', icon: Icons.sync_rounded),
+                _ConsolePlaceholderControl(label: 'LOOP', icon: Icons.loop_rounded),
+                _ConsolePlaceholderControl(label: 'HOT CUE', icon: Icons.bookmark_outline_rounded),
+                _ConsolePlaceholderControl(label: 'FX', icon: Icons.auto_awesome_outlined),
+                _ConsolePlaceholderControl(label: 'SAMPLES', icon: Icons.grid_view_rounded),
+              ],
             ),
           ),
           const SizedBox(height: 5),
