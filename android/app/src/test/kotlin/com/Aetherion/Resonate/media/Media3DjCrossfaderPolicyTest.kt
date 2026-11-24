@@ -76,6 +76,16 @@ class Media3DjCrossfaderPolicyTest {
         )
 
         assertTrue(allowed())
+        assertTrue(!Media3DjCrossfaderPolicy.canApply(
+            position = 0.5f,
+            djDualDeckMode = false,
+            activeHasMedia = true,
+            standbyHasMedia = true,
+            activeIsPlaying = true,
+            standbyIsPlaying = true,
+            transitionOwnsGain = false,
+        ))
+        assertTrue(!allowed(activeHasMedia = false))
         assertTrue(!allowed(standbyHasMedia = false))
         assertTrue(!allowed(activeIsPlaying = false))
         assertTrue(!allowed(standbyIsPlaying = false))
