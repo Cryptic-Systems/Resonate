@@ -174,7 +174,6 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
               ResonateGlassCard(
                 blurEnabled: false,
 blurEnabled: false,
-blurEnabled: false,
                 margin: EdgeInsets.zero,
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -375,7 +374,6 @@ blurEnabled: false,
                   children: [
                     ResonateGlassCard(
                 blurEnabled: false,
-blurEnabled: false,
 margin: EdgeInsets.zero,
                       padding: const EdgeInsets.all(14),
                       child: Column(
@@ -520,7 +518,6 @@ margin: EdgeInsets.zero,
               const SizedBox(height: 18),
               ResonateGlassCard(
                 blurEnabled: false,
-blurEnabled: false,
 margin: EdgeInsets.zero,
                 padding: const EdgeInsets.all(14),
                 child: Row(
@@ -696,7 +693,6 @@ class _DjPhysicalDeckMonitorCard extends StatelessWidget {
     final duration = deck?.duration;
     return ResonateGlassCard(
                 blurEnabled: false,
-blurEnabled: false,
 margin: EdgeInsets.zero,
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -779,7 +775,6 @@ margin: EdgeInsets.zero,
         const SizedBox(height: 10),
         ResonateGlassCard(
                 blurEnabled: false,
-blurEnabled: false,
 margin: EdgeInsets.zero,
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -875,7 +870,6 @@ class _PlayerMixMonitorCard extends StatelessWidget {
                         : 'No incoming track prepared';
     return ResonateGlassCard(
                 blurEnabled: false,
-blurEnabled: false,
 margin: EdgeInsets.zero,
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -1530,7 +1524,6 @@ class _WorkspaceAction extends StatelessWidget {
     final theme = Theme.of(context);
     return ResonateGlassCard(
                 blurEnabled: false,
-blurEnabled: false,
 margin: EdgeInsets.zero,
       padding: EdgeInsets.zero,
       child: ListTile(
