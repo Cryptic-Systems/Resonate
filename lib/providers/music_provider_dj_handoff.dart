@@ -88,22 +88,34 @@ extension MusicProviderDjHandoff on MusicProvider {
   }
 
   Future<void> enableDjDualDeckMode() async {
-    await cancelPreparedManualDjDeck();
+    _djDualDeckModeRequested = true;
+    try {
+      await cancelPreparedManualDjDeck();
+      await _runDjDeckCommand<void>(
+        'enable_mode',
+        (session) => session.enableDjDualDeckMode(),
+      );
+      final session = _media3ProviderSession;
+      if (session is PlaybackStateRefreshSession) {
+        await (session as PlaybackStateRefreshSession).refreshState();
+      }
+    } catch (_) {
+      _djDualDeckModeRequested = false;
+      rethrow;
+    }
+  }
+
+  Future<void> disableDjDualDeckMode() async {
     await _runDjDeckCommand<void>(
-      'enable_mode',
-      (session) => session.enableDjDualDeckMode(),
+      'disable_mode',
+      (session) => session.disableDjDualDeckMode(),
     );
+    _djDualDeckModeRequested = false;
     final session = _media3ProviderSession;
     if (session is PlaybackStateRefreshSession) {
       await (session as PlaybackStateRefreshSession).refreshState();
     }
   }
-
-  Future<void> disableDjDualDeckMode() =>
-      _runDjDeckCommand<void>(
-        'disable_mode',
-        (session) => session.disableDjDualDeckMode(),
-      );
 
   Future<void> loadDjDeck(
     String deckId,
@@ -158,6 +170,12 @@ extension MusicProviderDjHandoff on MusicProvider {
     final session = _media3ProviderSession;
     if (session is! PlaybackDjDeckSession || !_media3ProviderSessionActive) return;
     Object? firstError;
+    try {
+      await cancelPreparedManualDjDeck();
+      await session.cancelCrossfade();
+    } catch (error) {
+      firstError = error;
+    }
     for (final deck in const ['A', 'B']) {
       try {
         await clearDjDeck(deck);
