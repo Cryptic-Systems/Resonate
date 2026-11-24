@@ -64,13 +64,17 @@ extension MusicProviderDjHandoff on MusicProvider {
     if (session is! PlaybackDjDeckSession) {
       throw UnsupportedError('The active playback session does not expose independent DJ decks.');
     }
-    final settled = Completer<void>();
     final lease = await playbackControlArbiter.acquire(
       owner: 'dj_deck_operator',
       priority: PlaybackControlPriority.interactive,
       onRevoked: (revocation) async {
         if (revocation.reason == PlaybackControlRevocationReason.released) return;
-        await settled.future;
+        // The arbiter may have renewed this owner for several slider/transport
+        // writes. Drain every accepted command before a higher-priority owner
+        // is granted, not just the first command's future.
+        while (_djDeckCommandsInFlight.isNotEmpty) {
+          await Future.wait(_djDeckCommandsInFlight.toList(growable: false));
+        }
       },
     );
     if (lease == null) {
@@ -80,9 +84,15 @@ extension MusicProviderDjHandoff on MusicProvider {
       if (!lease.authorizeWrite('dj_deck:$command')) {
         throw StateError('DJ deck control authority expired; no deck command was sent.');
       }
-      return await action(session as PlaybackDjDeckSession);
+      final settled = Completer<void>();
+      _djDeckCommandsInFlight.add(settled.future);
+      try {
+        return await action(session as PlaybackDjDeckSession);
+      } finally {
+        if (!settled.isCompleted) settled.complete();
+        _djDeckCommandsInFlight.remove(settled.future);
+      }
     } finally {
-      if (!settled.isCompleted) settled.complete();
       await lease.release();
     }
   }
