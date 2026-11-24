@@ -297,6 +297,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
               child: _ConsoleDeck(
                 deck: 'DECK $id',
                 active: loaded,
+                onAir: state?.activeDeckId == id,
                 compact: compact,
                 isPlaying: isPlaying,
                 canPlay: djReady && loaded && music.media3ProviderSessionActive,
@@ -493,7 +494,8 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
 
 class _ConsoleDeck extends StatefulWidget {
   const _ConsoleDeck({
-    required this.deck, required this.active, required this.compact,
+    required this.deck, required this.active, required this.onAir,
+    required this.compact,
     required this.isPlaying,
     required this.canPlay,
     required this.onPlayPause,
@@ -514,7 +516,7 @@ class _ConsoleDeck extends StatefulWidget {
   });
 
   final String deck, status, title, artist;
-  final bool active, compact, isPlaying, canPlay, jogSeekEnabled;
+  final bool active, onAir, compact, isPlaying, canPlay, jogSeekEnabled;
   final Future<void> Function() onPlayPause;
   final VoidCallback? onLoad;
   final Duration? cuePosition;
@@ -780,7 +782,10 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accent = widget.active ? const Color(0xFF55D6BE) : const Color(0xFF8290A8);
+    final accent = widget.deck.endsWith('A')
+        ? const Color(0xFF55D6BE)
+        : const Color(0xFF8EA7FF);
+    final onAir = widget.onAir;
     final compact = widget.compact;
     final active = widget.active;
     final deck = widget.deck;
@@ -798,8 +803,13 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
       decoration: BoxDecoration(
         color: const Color(0xFF101923),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: accent.withValues(alpha: active ? .65 : .24), width: active ? 1.4 : 1),
-        boxShadow: active ? [BoxShadow(color: accent.withValues(alpha: .08), blurRadius: 22)] : null,
+        border: Border.all(
+          color: accent.withValues(alpha: onAir ? .82 : (active ? .30 : .16)),
+          width: onAir ? 2 : 1,
+        ),
+        boxShadow: onAir
+            ? [BoxShadow(color: accent.withValues(alpha: .14), blurRadius: 22)]
+            : null,
       ),
       child: ListView(
         padding: EdgeInsets.zero,
