@@ -581,6 +581,19 @@ class Media3PlaybackBridge(
                         null,
                     )
                 }
+                "setDjDeckChannelGain" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val gain = call.argument<Number>("gain")?.toFloat()
+                    if (deckId !in setOf("A", "B") || gain == null ||
+                        !gain.isFinite() || gain !in 0f..1f
+                    ) {
+                        result.error("INVALID_DJ_CHANNEL_GAIN", "A physical deck and finite gain from 0 to 1 are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDjDeckChannelGain(deckId!!, gain) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_CHANNEL_GAIN_REJECTED", "Channel gain is unavailable outside DJ mode or during a handoff.", null)
+                }
                 "loadDjDeck" -> {
                     val deckId = call.argument<String>("deckId")
                     val rawItems = call.argument<List<Map<String, Any?>>>("items")
