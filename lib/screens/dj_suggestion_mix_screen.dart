@@ -72,6 +72,23 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
       }
       final approved = widget.coordinator.approve(_mix);
       music = context.read<MusicProvider>();
+      if (music!.isDjDualDeckSessionActive) {
+        // In Resonatix DJ, approval stages the first pair on the independent
+        // physical decks. It must never route this workflow through Player's
+        // canonical queue or start playback without the operator.
+        await music.loadDjDeck('A', <Song>[approved.songs.first]);
+        if (approved.songs.length > 1) {
+          await music.loadDjDeck('B', <Song>[approved.songs[1]]);
+        }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('DJ set approved. The first two tracks are staged on Deck A and Deck B; start them from DJ Console.'),
+          ),
+        );
+        openShellPlayer(context);
+        return;
+      }
       music!.setApprovedDjTransitions({
         for (final transition in approved.transitions)
           '${transition.outgoingSongId}\u0000${transition.incomingSongId}': transition.plan,
@@ -108,6 +125,7 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDjSession = context.watch<MusicProvider>().isDjDualDeckSessionActive;
     final transitionsByOutgoing = {
       for (final transition in _mix.transitions)
         transition.outgoingSongId: transition,
@@ -221,7 +239,13 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.check_circle_outline_rounded),
-                  label: Text(_approving ? 'Starting mix…' : 'Approve & play mix'),
+                  label: Text(
+                    _approving
+                        ? (isDjSession ? 'Staging decks…' : 'Starting mix…')
+                        : (isDjSession
+                            ? 'Approve & stage first two decks'
+                            : 'Approve & play mix'),
+                  ),
                 ),
               ),
             ),
