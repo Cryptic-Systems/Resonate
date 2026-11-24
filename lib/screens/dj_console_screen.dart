@@ -271,7 +271,10 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
               : (deckB!.position.inMilliseconds / durationB.inMilliseconds)
                   .clamp(0.0, 1.0).toDouble();
           final djReady = state?.djDualDeckMode == true;
-          final compact = MediaQuery.sizeOf(context).width < 820;
+          final screenSize = MediaQuery.sizeOf(context);
+          final compact = screenSize.width < 820;
+          final portraitLayout = screenSize.height > screenSize.width &&
+              screenSize.width < 1000;
 
           Widget buildDeck({
             required String id,
@@ -293,9 +296,9 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
             final artist = deck?.artist ?? song?.artist ??
                 'Load a track from the shared library';
             final position = deck?.position ?? Duration.zero;
-            return Expanded(
-              child: _ConsoleDeck(
+            return _ConsoleDeck(
                 deck: 'DECK $id',
+                allowInternalScroll: !portraitLayout,
                 active: loaded,
                 onAir: state?.activeDeckId == id,
                 compact: compact,
@@ -360,15 +363,17 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                           startMs: startMs,
                           endMs: endMs,
                         ),
-              ),
-            );
+              );
           }
 
           return Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
             child: Column(
               children: [
-                Row(
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 6,
                   children: [
                     FilledButton.tonalIcon(
                       onPressed: () => openShellPlayer(context),
@@ -379,7 +384,6 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                       ),
                     ),
-                    const SizedBox(width: 10),
                     const Text(
                       'DJ CONSOLE',
                       style: TextStyle(
@@ -387,19 +391,16 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                         letterSpacing: 1.2,
                       ),
                     ),
-                    const SizedBox(width: 10),
                     _ConsoleStatus(
                       label: djReady ? 'DUAL DECK SESSION' : 'SESSION OFF',
                       active: djReady,
                     ),
-                    const SizedBox(width: 8),
                     _ConsoleStatus(
                       label: (deckA?.isPlaying == true || deckB?.isPlaying == true)
                           ? 'OUTPUT ACTIVE'
                           : 'OUTPUT STOPPED',
                       active: deckA?.isPlaying == true || deckB?.isPlaying == true,
                     ),
-                    const Spacer(),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -419,19 +420,14 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                     ),
                   ),
                 Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      buildDeck(
-                        id: 'A',
-                        deck: deckA,
-                        song: songA,
-                        duration: durationA,
-                        progress: progressA,
-                      ),
-                      SizedBox(width: compact ? 8 : 12),
-                      SizedBox(
-                        width: compact ? 146 : 204,
+                  child: Builder(
+                    builder: (context) {
+                      final mixer = SizedBox(
+                        width: portraitLayout
+                            ? double.infinity
+                            : compact
+                                ? 146
+                                : 204,
                         child: _DjConsoleMixer(
                           enabled: DjConsoleManualControlsPolicy.canAdjustCrossfader(
                             djModeEnabled: djReady && music.media3ProviderSessionActive,
@@ -447,16 +443,46 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                           onGestureStart: music.beginDjCrossfaderGesture,
                           onGestureEnd: music.endDjCrossfaderGesture,
                         ),
-                      ),
-                      SizedBox(width: compact ? 8 : 12),
-                      buildDeck(
+                      );
+                      final deckAWidget = buildDeck(
+                        id: 'A',
+                        deck: deckA,
+                        song: songA,
+                        duration: durationA,
+                        progress: progressA,
+                      );
+                      final deckBWidget = buildDeck(
                         id: 'B',
                         deck: deckB,
                         song: songB,
                         duration: durationB,
                         progress: progressB,
-                      ),
-                    ],
+                      );
+
+                      if (portraitLayout) {
+                        return ListView(
+                          padding: EdgeInsets.zero,
+                          children: [
+                            deckAWidget,
+                            const SizedBox(height: 8),
+                            mixer,
+                            const SizedBox(height: 8),
+                            deckBWidget,
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(child: deckAWidget),
+                          SizedBox(width: compact ? 8 : 12),
+                          mixer,
+                          SizedBox(width: compact ? 8 : 12),
+                          Expanded(child: deckBWidget),
+                        ],
+                      );
+                    },
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -497,6 +523,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
 class _ConsoleDeck extends StatefulWidget {
   const _ConsoleDeck({
     required this.deck, required this.active, required this.onAir,
+    required this.allowInternalScroll,
     required this.compact,
     required this.isPlaying,
     required this.canPlay,
@@ -519,6 +546,7 @@ class _ConsoleDeck extends StatefulWidget {
 
   final String deck, status, title, artist;
   final bool active, onAir, compact, isPlaying, canPlay, jogSeekEnabled;
+  final bool allowInternalScroll;
   final Future<void> Function() onPlayPause;
   final VoidCallback? onLoad;
   final Duration? cuePosition;
@@ -815,6 +843,10 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
       ),
       child: ListView(
         padding: EdgeInsets.zero,
+        shrinkWrap: !widget.allowInternalScroll,
+        physics: widget.allowInternalScroll
+            ? null
+            : const NeverScrollableScrollPhysics(),
         children: [
           Row(children: [
             Text(deck, style: theme.textTheme.labelLarge?.copyWith(
