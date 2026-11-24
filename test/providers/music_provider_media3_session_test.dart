@@ -101,6 +101,7 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   (double, double)? deckSpeeds;
   bool disposed = false;
   bool throwOnCrossfade = false;
+  Completer<void>? djCrossfaderGate;
   bool throwOnPreloadNext = false;
   bool throwOnDeckSpeedOnce = false;
   bool throwOnClearDeckEqOverlay = false;
@@ -426,6 +427,11 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   @override
   Future<void> setDjCrossfader(double position) async {
     calls.add('setDjCrossfader:$position');
+    final gate = djCrossfaderGate;
+    if (gate != null) {
+      djCrossfaderGate = null;
+      await gate.future;
+    }
   }
 
   @override
@@ -4314,6 +4320,74 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 10));
         await session.audioSessions.close();
         await session.states.close();
+      }
+    });
+
+    test('crossfader drag retains authority and drains writes on user preemption', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final music = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final writeGate = Completer<void>();
+      session.djCrossfaderGate = writeGate;
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        await music.enableDjDualDeckMode();
+        expect(await music.beginDjCrossfaderGesture(), isTrue);
+        expect(arbiter.activeOwner, 'dj_deck_operator');
+
+        final write = music.setDjCrossfader(0.35);
+        for (var attempt = 0;
+            attempt < 50 &&
+                !session.calls.contains('setDjCrossfader:0.35');
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+        expect(session.calls, contains('setDjCrossfader:0.35'));
+
+        final userLeaseFuture = arbiter.acquire(
+          owner: 'user_transport',
+          priority: PlaybackControlPriority.userTransport,
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          arbiter.activeOwner,
+          isNull,
+          reason: 'User transport must wait while an accepted native write drains.',
+        );
+
+        writeGate.complete();
+        await write;
+        final userLease = await userLeaseFuture;
+        expect(userLease, isNotNull);
+        expect(arbiter.activeOwner, 'user_transport');
+        await userLease!.release();
+
+        await expectLater(
+          music.setDjCrossfader(0.7),
+          throwsStateError,
+          reason: 'A preempted drag must not reacquire authority after transport ends.',
+        );
+        expect(
+          session.calls.where((call) => call.startsWith('setDjCrossfader:')),
+          hasLength(1),
+        );
+
+        expect(await music.beginDjCrossfaderGesture(), isTrue);
+        await music.setDjCrossfader(0.65);
+        expect(session.calls, contains('setDjCrossfader:0.65'));
+        await music.endDjCrossfaderGesture();
+        expect(arbiter.activeOwner, isNull);
+      } finally {
+        await music.endDjCrossfaderGesture();
+        music.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await session.audioSessions.close();
+        await session.states.close();
+        await arbiter.close();
       }
     });
 
