@@ -367,13 +367,16 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
               children: [
                 Row(
                   children: [
-                    IconButton.filledTonal(
-                      tooltip: 'Return to Resonate Player',
-                      visualDensity: VisualDensity.compact,
+                    FilledButton.tonalIcon(
                       onPressed: () => openShellPlayer(context),
-                      icon: const Icon(Icons.arrow_back_rounded),
+                      icon: const Icon(Icons.arrow_back_rounded, size: 17),
+                      label: const Text('PLAYER'),
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                      ),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 10),
                     const Text(
                       'DJ CONSOLE',
                       style: TextStyle(
@@ -394,11 +397,6 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                       active: deckA?.isPlaying == true || deckB?.isPlaying == true,
                     ),
                     const Spacer(),
-                    TextButton.icon(
-                      onPressed: () => openShellPlayer(context),
-                      icon: const Icon(Icons.graphic_eq_rounded, size: 16),
-                      label: const Text('PLAYER'),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
