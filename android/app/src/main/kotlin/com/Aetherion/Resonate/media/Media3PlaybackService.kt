@@ -261,6 +261,9 @@ class Media3PlaybackService : MediaSessionService() {
             player.pause()
             player.stop()
             player.clearMediaItems()
+            // Tempo/pitch belongs to the loaded track, not the physical deck.
+            // A replacement track starts neutral without changing its partner.
+            player.playbackParameters = Media3DeckPlaybackParametersPolicy.forNewTrack()
             DspEngineRegistry.setDeckTrack(deckId, null)
             player.setMediaItems(items, startIndex, 0L)
             player.prepare()
