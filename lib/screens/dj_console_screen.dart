@@ -17,6 +17,7 @@ import '../providers/dj_mode_provider.dart';
 import '../dj_engine/core/dj_types.dart';
 import '../ui/resonate_glass.dart';
 import 'dj_console_deck_tempo_control.dart';
+import 'dj_console_manual_controls_policy.dart';
 import 'dj_console_jog_seek_policy.dart';
 import 'dj_console_overlay_policy.dart';
 import 'dj_console_waveform_status.dart';
