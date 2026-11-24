@@ -96,6 +96,12 @@ abstract interface class PlaybackDjDeckSession {
   Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0});
   Future<void> playDjDeck(String deckId);
   Future<void> pauseDjDeck(String deckId);
+  Future<void> clearDjDeck(String deckId);
+  Future<void> setDjDeckPlaybackParameters({
+    required String deckId,
+    required double speed,
+    required double pitch,
+  });
   Future<void> seekDjDeck({
     required String deckId,
     required Duration position,
