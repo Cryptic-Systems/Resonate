@@ -102,6 +102,7 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   bool disposed = false;
   bool throwOnCrossfade = false;
   Completer<void>? djCrossfaderGate;
+  Completer<void>? djDeckCommandGate;
   bool throwOnPreloadNext = false;
   bool throwOnDeckSpeedOnce = false;
   bool throwOnClearDeckEqOverlay = false;
@@ -447,8 +448,13 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
 
   @override
   Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0}) async {
-    djDeckQueues[deckId] = List<Song>.of(songs);
     calls.add('loadDjDeck:$deckId');
+    final gate = djDeckCommandGate;
+    if (gate != null) {
+      djDeckCommandGate = null;
+      await gate.future;
+    }
+    djDeckQueues[deckId] = List<Song>.of(songs);
   }
 
   @override
@@ -4330,6 +4336,62 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 10));
         await session.audioSessions.close();
         await session.states.close();
+      }
+    });
+
+    test('user transport waits for an accepted native DJ deck command to drain', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final music = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final commandGate = Completer<void>();
+      final track = _song('dj-command-drain');
+      session.djDeckCommandGate = commandGate;
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        await music.enableDjDualDeckMode();
+
+        final load = music.loadDjDeck('A', <Song>[track]);
+        for (var attempt = 0;
+            attempt < 50 && !session.calls.contains('loadDjDeck:A');
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+        expect(
+          session.calls,
+          contains('loadDjDeck:A'),
+          reason: 'The DJ deck load must enter its native operation before preemption.',
+        );
+
+        final userLeaseFuture = arbiter.acquire(
+          owner: 'user_transport_during_dj_load',
+          priority: PlaybackControlPriority.userTransport,
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          arbiter.activeOwner,
+          isNull,
+          reason: 'User transport must wait while the accepted native deck command drains.',
+        );
+
+        commandGate.complete();
+        await load;
+        final userLease = await userLeaseFuture;
+        expect(userLease, isNotNull);
+        expect(arbiter.activeOwner, 'user_transport_during_dj_load');
+        expect(session.djDeckQueues['A'], <Song>[track]);
+        await userLease!.release();
+        expect(arbiter.activeOwner, isNull);
+      } finally {
+        if (!commandGate.isCompleted) commandGate.complete();
+        music.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await session.audioSessions.close();
+        await session.states.close();
+        await arbiter.close();
       }
     });
 
