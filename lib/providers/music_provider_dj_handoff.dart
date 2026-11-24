@@ -172,7 +172,10 @@ extension MusicProviderDjHandoff on MusicProvider {
     Object? firstError;
     try {
       await cancelPreparedManualDjDeck();
-      await session.cancelCrossfade();
+      await _runDjDeckCommand<void>(
+        'cancel_transition',
+        (_) => session.cancelCrossfade(),
+      );
     } catch (error) {
       firstError = error;
     }
