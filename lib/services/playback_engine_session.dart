@@ -88,6 +88,21 @@ abstract interface class PlaybackEngineSession
 }
 
 
+/// Explicit capability for the persistent independent A/B DJ deck session.
+abstract interface class PlaybackDjDeckSession {
+  Future<void> enableDjDualDeckMode();
+  Future<void> disableDjDualDeckMode();
+  Future<void> setDjCrossfader(double position);
+  Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0});
+  Future<void> playDjDeck(String deckId);
+  Future<void> pauseDjDeck(String deckId);
+  Future<void> seekDjDeck({
+    required String deckId,
+    required Duration position,
+    required String expectedMediaId,
+  });
+}
+
 /// Optional explicit snapshot refresh for lifecycle/focus reconciliation.
 abstract interface class PlaybackStateRefreshSession {
   Future<void> refreshState();
