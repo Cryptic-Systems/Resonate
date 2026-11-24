@@ -68,8 +68,9 @@ internal class Media3GainPolicy(initialMasterVolume: Float = 1f) {
     fun standbyVolume(): Float = (composedBaseGain() * standbyDeckGain).coerceIn(0f, 1f)
 
     /** Physical-deck output used only by the dedicated DJ mixer policy. */
-    fun djDeckVolume(crossfaderGain: Float): Float =
-        (composedBaseGain() * crossfaderGain.coerceFiniteUnit()).coerceIn(0f, 1f)
+    fun djDeckVolume(crossfaderGain: Float, channelGain: Float = 1f): Float =
+        (composedBaseGain() * crossfaderGain.coerceFiniteUnit() *
+            channelGain.coerceFiniteUnit()).coerceIn(0f, 1f)
 
     private fun Float.coerceFiniteUnit(): Float =
         if (isFinite()) coerceIn(0f, 1f) else 0f
