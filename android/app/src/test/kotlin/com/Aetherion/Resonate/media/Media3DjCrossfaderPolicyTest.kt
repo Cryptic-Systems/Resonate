@@ -58,20 +58,16 @@ class Media3DjCrossfaderPolicyTest {
     }
 
     @Test
-    fun crossfaderWriteRequiresTwoPlayingDecksAndNoTransition() {
+    fun crossfaderCanBePrepositionedWithTwoLoadedDecksAndNoTransition() {
         fun allowed(
             activeHasMedia: Boolean = true,
             standbyHasMedia: Boolean = true,
-            activeIsPlaying: Boolean = true,
-            standbyIsPlaying: Boolean = true,
             transitionOwnsGain: Boolean = false,
         ) = Media3DjCrossfaderPolicy.canApply(
             position = 0.5f,
             djDualDeckMode = true,
             activeHasMedia = activeHasMedia,
             standbyHasMedia = standbyHasMedia,
-            activeIsPlaying = activeIsPlaying,
-            standbyIsPlaying = standbyIsPlaying,
             transitionOwnsGain = transitionOwnsGain,
         )
 
@@ -81,14 +77,13 @@ class Media3DjCrossfaderPolicyTest {
             djDualDeckMode = false,
             activeHasMedia = true,
             standbyHasMedia = true,
-            activeIsPlaying = true,
-            standbyIsPlaying = true,
             transitionOwnsGain = false,
         ))
         assertTrue(!allowed(activeHasMedia = false))
         assertTrue(!allowed(standbyHasMedia = false))
-        assertTrue(!allowed(activeIsPlaying = false))
-        assertTrue(!allowed(standbyIsPlaying = false))
+        // Playback state does not gate fader positioning. applyDeckVolumes
+        // keeps the sole audible deck at unity until its partner also plays.
+        assertTrue(allowed())
         assertTrue(!allowed(transitionOwnsGain = true))
         assertTrue(!Media3DjCrossfaderPolicy.canApply(
             position = Float.NaN,
