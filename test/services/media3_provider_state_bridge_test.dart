@@ -43,6 +43,10 @@ PlaybackSnapshot _snapshot({
   int lastUnderrunBufferSizeMs = 0,
   int lastUnderrunElapsedSinceFeedMs = 0,
   int lastUnderrunElapsedRealtimeMs = 0,
+  bool djDualDeckMode = false,
+  double djCrossfaderPosition = 0.5,
+  PlaybackDeckSnapshot? deckA,
+  PlaybackDeckSnapshot? deckB,
 }) =>
     PlaybackSnapshot(
       connected: true,
@@ -71,6 +75,10 @@ PlaybackSnapshot _snapshot({
       incomingMediaId: incomingMediaId,
       incomingReady: incomingReady,
       incomingPosition: incomingPosition,
+      djDualDeckMode: djDualDeckMode,
+      djCrossfaderPosition: djCrossfaderPosition,
+      deckA: deckA,
+      deckB: deckB,
       audioUnderrunCountA: audioUnderrunCountA,
       audioUnderrunCountB: audioUnderrunCountB,
       lastUnderrunDeck: lastUnderrunDeck,
@@ -220,6 +228,49 @@ void main() {
       expect(projected.standbyAudioSessionId, 43);
       expect(projected.repeatMode, 'one');
       expect(projected.shuffleModeEnabled, isTrue);
+    });
+
+    test('projects persistent physical A/B deck telemetry and crossfader', () async {
+      backend.value = _snapshot(
+        mediaId: 'track-a',
+        djDualDeckMode: true,
+        djCrossfaderPosition: 0.35,
+        deckA: const PlaybackDeckSnapshot(
+          deckId: 'A',
+          mediaId: 'track-a',
+          title: 'Deck A',
+          artist: 'Artist A',
+          position: Duration(seconds: 10),
+          duration: Duration(minutes: 3),
+          isPlaying: true,
+          volume: 0.8,
+          audioSessionId: 51,
+        ),
+        deckB: const PlaybackDeckSnapshot(
+          deckId: 'B',
+          mediaId: 'track-b',
+          title: 'Deck B',
+          artist: 'Artist B',
+          position: Duration(seconds: 4),
+          duration: Duration(minutes: 4),
+          isPlaying: false,
+          volume: 0.3,
+          audioSessionId: 52,
+        ),
+      );
+      await runtime.loadQueue([_song('track-a')]);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+      await bridge.start();
+
+      expect(bridge.current.djDualDeckMode, isTrue);
+      expect(bridge.current.djCrossfaderPosition, 0.35);
+      expect(bridge.current.deckA?.mediaId, 'track-a');
+      expect(bridge.current.deckA?.isPlaying, isTrue);
+      expect(bridge.current.deckA?.audioSessionId, 51);
+      expect(bridge.current.deckB?.mediaId, 'track-b');
+      expect(bridge.current.deckB?.isPlaying, isFalse);
+      expect(bridge.current.deckB?.volume, 0.3);
     });
 
     test('projects native crossfade phase and both physical deck gains', () async {
