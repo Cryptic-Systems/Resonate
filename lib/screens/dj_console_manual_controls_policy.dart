@@ -16,10 +16,9 @@ class DjConsoleManualControlsPolicy {
         index,
   ];
 
-  /// The native crossfader only accepts writes while both physical decks are
-  /// loaded and audibly playing. Mirror those preconditions in the UI so an
-  /// unavailable fader is disabled rather than repeatedly sending rejected
-  /// MethodChannel commands.
+  /// The native crossfader accepts pre-positioning once both physical decks
+  /// have media. Native gain policy preserves unity on the sole playing deck
+  /// until both decks are audible; transitions retain exclusive gain ownership.
   static bool canAdjustCrossfader({
     required bool djModeEnabled,
     required bool transitionInProgress,
