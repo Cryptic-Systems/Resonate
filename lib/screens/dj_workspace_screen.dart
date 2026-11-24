@@ -623,8 +623,7 @@ class _DjPhysicalDeckMonitorCard extends StatelessWidget {
     final theme = Theme.of(context);
     final loaded = deck?.mediaId != null;
     final duration = deck?.duration;
-    return Expanded(
-      child: ResonateGlassCard(
+    return ResonateGlassCard(
         margin: EdgeInsets.zero,
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -675,7 +674,7 @@ class _DjPhysicalDeckMonitorCard extends StatelessWidget {
               icon: Icons.speed_rounded,
               label: 'Tempo / key lock',
               value: loaded
-                  ? '${deck!.speed.toStringAsFixed(3)}× · pitch ${deck.pitch.toStringAsFixed(3)}×'
+                  ? '${deck!.speed.toStringAsFixed(3)}× · pitch ${deck!.pitch.toStringAsFixed(3)}×'
                   : 'Unavailable',
             ),
             const SizedBox(height: 6),
@@ -686,8 +685,7 @@ class _DjPhysicalDeckMonitorCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
+      );
   }
 
   @override
@@ -712,14 +710,14 @@ class _DjPhysicalDeckMonitorCard extends StatelessWidget {
           child: Column(
             children: [
               Row(children: [
-                Text('OPERATOR CROSSfADER',
+                Text('OPERATOR CROSSFADER',
                     style: theme.textTheme.labelLarge),
                 const Spacer(),
                 Text('${(crossfaderPosition.clamp(0.0, 1.0) * 100).round()}% B',
                     style: theme.textTheme.labelSmall),
               ]),
               const SizedBox(height: 6),
-              LinearProgressIndicator(value: crossfaderPosition.clamp(0.0, 1.0)),
+              LinearProgressIndicator(value: crossfaderPosition.clamp(0.0, 1.0).toDouble()),
               const SizedBox(height: 8),
               _TelemetryRow(
                 icon: Icons.graphic_eq_rounded,
