@@ -1,3 +1,43 @@
+/// Engine-neutral telemetry for one persistent physical playback deck.
+class PlaybackDeckSnapshot {
+  const PlaybackDeckSnapshot({
+    required this.deckId,
+    this.mediaId,
+    this.title,
+    this.artist,
+    this.album,
+    this.position = Duration.zero,
+    this.bufferedPosition = Duration.zero,
+    this.duration,
+    this.isPlaying = false,
+    this.playWhenReady = false,
+    this.playbackState = 0,
+    this.mediaItemIndex = -1,
+    this.mediaItemCount = 0,
+    this.volume = 0,
+    this.speed = 1,
+    this.pitch = 1,
+    this.audioSessionId,
+  });
+  final String deckId;
+  final String? mediaId;
+  final String? title;
+  final String? artist;
+  final String? album;
+  final Duration position;
+  final Duration bufferedPosition;
+  final Duration? duration;
+  final bool isPlaying;
+  final bool playWhenReady;
+  final int playbackState;
+  final int mediaItemIndex;
+  final int mediaItemCount;
+  final double volume;
+  final double speed;
+  final double pitch;
+  final int? audioSessionId;
+}
+
 /// Engine-neutral playback state consumed by Resonate's provider and UI.
 ///
 /// This deliberately avoids Media3/ExoPlayer types so a backend can be swapped
@@ -34,6 +74,10 @@ class PlaybackSnapshot {
     this.incomingMediaId,
     this.incomingReady = false,
     this.incomingPosition = Duration.zero,
+    this.djDualDeckMode = false,
+    this.djCrossfaderPosition = 0.5,
+    this.deckA,
+    this.deckB,
     this.audioUnderrunCountA = 0,
     this.audioUnderrunCountB = 0,
     this.lastUnderrunDeck,
@@ -81,6 +125,10 @@ class PlaybackSnapshot {
   final String? incomingMediaId;
   final bool incomingReady;
   final Duration incomingPosition;
+  final bool djDualDeckMode;
+  final double djCrossfaderPosition;
+  final PlaybackDeckSnapshot? deckA;
+  final PlaybackDeckSnapshot? deckB;
   /// Cumulative native underruns attributed to physical A/B output decks.
   final int audioUnderrunCountA;
   final int audioUnderrunCountB;
