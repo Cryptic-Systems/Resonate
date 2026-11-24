@@ -199,6 +199,25 @@ Before changing the current native deck lifecycle, document and test:
 
 Until this spike proves the required behavior, the current muted-standby crossfade remains the only validated behavior. The product target is traditional dual-deck operation, but UI controls must not claim capabilities before native behavior and DSP routing are implemented and tested.
 
+### 4.3 Native implementation audit — current baseline
+
+The current native implementation confirms that the service already owns the two physical deck players, but they are still a rolling active/standby pair rather than two persistent DJ channels:
+
+- `Media3PlaybackService` creates Deck A as the canonical `activePlayer` and creates `standbyPlayer` lazily when `preloadNext` is requested. The standby is muted, receives a copy of the canonical queue and is prepared at a selected queue occurrence.
+- The canonical `MediaSession` is bound to the active player. Standby does not independently own audio focus or system-media transport authority.
+- Existing standby operations include guarded cue seeking and independent active/standby speed and pitch writes. These are role-relative operations, not a complete stable Deck A/Deck B command API. There is no independent standby play/pause, queue replacement or channel-gain contract.
+- Crossfade completion promotes standby to active, rebinds the `MediaSession`, then pauses/releases the outgoing player and forgets its DSP processor. `restorePrimaryDeckForNewSelection` can recreate Deck A. This lifecycle explicitly retires one player after every completed handoff and therefore cannot be used unchanged for persistent independent decks.
+- `loadNewQueue` restores the primary active deck and loads the canonical queue there. It does not establish an independent DJ set/queue per physical deck. Queue isolation is still a required design and implementation gate.
+
+**DSP attachment findings (audit only; no DSP code changed):**
+
+- Every player created by the service receives a deck-specific `DspEngineAudioProcessor` from the `DefaultAudioSink` factory. The registry tracks DSP handles by physical deck and keeps deck-specific track-analysis hints.
+- During the existing automatic crossfade, the standby processor is activated before standby playback while the outgoing processor remains active; after promotion, the outgoing processor is suspended and released. This supports the current two-source transition path at the per-player sink level.
+- `Media3GainPolicy` composes master, track-level, preamp, sleep-fade, focus-duck and active/standby gain factors, then writes the resulting volume to each ExoPlayer. This is a per-player gain stage before Android's output mixer; it is not evidence of a DSP master processor operating on the summed two-deck signal.
+- A single service-level focus owner remains the target. The standby player currently has focus handling disabled, while the canonical active player owns the MediaSession/focus path.
+
+**Implementation consequence:** keep the existing Player rolling active/standby behavior intact. Under the DJ policy, evolve the same two physical players into persistent Deck A and Deck B roles with independent queue identity, transport, cue, playback parameters and channel gain. Keep one MediaSession and one focus owner, with explicit canonical-deck routing for external system controls. A manual crossfader must write only the native per-channel gain path and must never be driven by automation. The master/output processing question remains open until the user's DSP upgrade is ready for a separate integration review; do not modify or duplicate the DSP engine to advance this phase.
+
 ## 5. Target application architecture
 
 ### 5.1 Shared application services
