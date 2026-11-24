@@ -105,6 +105,7 @@ class MusicProvider extends ChangeNotifier {
   StreamSubscription<Media3ProviderState>? _media3StateSub;
   Media3ProviderState? _media3ShadowState;
   bool _djDualDeckModeRequested = false;
+  final Set<Future<void>> _djDeckCommandsInFlight = <Future<void>>{};
   // A library selection may commit before Media3 publishes its replacement timeline.
   // Fence delayed snapshots from the previous item until the selected occurrence arrives.
   String? _media3PendingSelectionSongId;
