@@ -11,6 +11,7 @@ import '../providers/library_provider.dart';
 import '../dj_engine/analysis/dj_waveform_chunk.dart';
 import '../models/song.dart';
 import '../services/dj_waveform_range_reader.dart';
+import '../services/dj_cue_point_store.dart';
 import '../services/playback_snapshot.dart';
 import '../providers/dj_mode_provider.dart';
 import '../dj_engine/core/dj_types.dart';
@@ -36,6 +37,8 @@ class DjConsoleScreen extends StatefulWidget {
 class _DjConsoleScreenState extends State<DjConsoleScreen> {
   final Map<String, Future<DjTrackProfile?>> _profileFutures = {};
   final DjWaveformRangeReader _waveformReader = DjWaveformRangeReader();
+  final DjCuePointStore _cuePointStore = DjCuePointStore();
+  Map<String, Duration> _cuePoints = <String, Duration>{};
 
   Future<DjTrackProfile?>? _profileFutureFor(
     BuildContext context,
@@ -64,6 +67,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
   void initState() {
     super.initState();
     SystemChrome.setPreferredOrientations(_landscape);
+    unawaited(_loadCuePoints());
   }
 
   @override
@@ -74,6 +78,71 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
       DeviceOrientation.portraitDown,
     ]);
     super.dispose();
+  }
+
+  Future<void> _loadCuePoints() async {
+    final loaded = await _cuePointStore.load();
+    if (!mounted) return;
+    setState(() => _cuePoints = loaded);
+  }
+
+  Future<void> _setCuePoint(
+    String deckId,
+    PlaybackDeckSnapshot? deck,
+  ) async {
+    final trackId = deck?.mediaId;
+    if (trackId == null || trackId.isEmpty) return;
+    final updated = Map<String, Duration>.from(_cuePoints)
+      ..[trackId] = deck!.position;
+    try {
+      await _cuePointStore.saveAll(updated);
+      if (!mounted) return;
+      setState(() => _cuePoints = updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Deck $deckId cue saved at ${_formatCue(deck.position)}.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cue point could not be saved: $error')),
+      );
+    }
+  }
+
+  Future<void> _seekToCue(
+    String deckId,
+    PlaybackDeckSnapshot? deck,
+  ) async {
+    final trackId = deck?.mediaId;
+    if (trackId == null || trackId.isEmpty) return;
+    final cue = _cuePoints[trackId];
+    if (cue == null) return;
+    final duration = deck!.duration;
+    if (duration != null && cue > duration) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Saved cue is beyond this track duration. Set a new cue point.')),
+      );
+      return;
+    }
+    try {
+      await context.read<MusicProvider>().seekDjDeck(
+        deckId: deckId,
+        position: cue,
+        expectedMediaId: trackId,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Deck $deckId cue seek was not applied: $error')),
+      );
+    }
+  }
+
+  String _formatCue(Duration value) {
+    final seconds = value.inSeconds.clamp(0, 1 << 30);
+    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
   }
 
   Future<void> _chooseTrackForDeck(
@@ -202,6 +271,13 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
           }) {
             final loaded = deck?.mediaId != null;
             final isPlaying = deck?.isPlaying == true;
+            final trackId = deck?.mediaId;
+            final storedCue = trackId == null ? null : _cuePoints[trackId];
+            final cuePosition = storedCue != null &&
+                    deck?.duration != null &&
+                    storedCue > deck!.duration!
+                ? null
+                : storedCue;
             final title = deck?.title ?? song?.title ?? 'Empty deck';
             final artist = deck?.artist ?? song?.artist ??
                 'Load a track from the shared library';
@@ -227,6 +303,13 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                     ? () => unawaited(
                           _chooseTrackForDeck(context, id, music, library),
                         )
+                    : null,
+                cuePosition: cuePosition,
+                onSetCue: djReady && loaded
+                    ? () => unawaited(_setCuePoint(id, deck))
+                    : null,
+                onCue: djReady && loaded && cuePosition != null
+                    ? () => unawaited(_seekToCue(id, deck))
                     : null,
                 onJogSeek: (target) => music.seekDjDeck(
                   deckId: id,
@@ -372,6 +455,9 @@ class _ConsoleDeck extends StatefulWidget {
     required this.canPlay,
     required this.onPlayPause,
     required this.onLoad,
+    required this.cuePosition,
+    required this.onSetCue,
+    required this.onCue,
     required this.jogSeekEnabled,
     required this.onJogSeek,
     required this.status, required this.title, required this.artist, required this.progress,
@@ -385,6 +471,9 @@ class _ConsoleDeck extends StatefulWidget {
   final bool active, compact, isPlaying, canPlay, jogSeekEnabled;
   final Future<void> Function() onPlayPause;
   final VoidCallback? onLoad;
+  final Duration? cuePosition;
+  final VoidCallback? onSetCue;
+  final VoidCallback? onCue;
   final Future<void> Function(Duration position) onJogSeek;
   final double progress;
   final Duration position, duration;
@@ -558,6 +647,11 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     }
   }
 
+  String _format(Duration value) {
+    final seconds = value.inSeconds.clamp(0, 1 << 30);
+    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+  }
+
   Future<void> _togglePlayback() async {
     try {
       await widget.onPlayPause();
@@ -632,6 +726,32 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(color: Colors.white60)),
+          const SizedBox(height: 5),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.cuePosition == null
+                      ? 'NO CUE'
+                      : 'CUE ${_format(widget.cuePosition!)}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: Colors.white70,
+                    letterSpacing: .7,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              TextButton(
+                onPressed: widget.onCue,
+                child: const Text('CUE'),
+              ),
+              TextButton(
+                onPressed: widget.onSetCue,
+                child: const Text('SET'),
+              ),
+            ],
+          ),
           const SizedBox(height: 5),
           Row(
             children: [
