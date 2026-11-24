@@ -35,6 +35,19 @@ class DjConsoleManualControlsPolicy {
       deckAIsPlaying &&
       deckBIsPlaying;
 
+  /// Channel gain can be adjusted on a loaded deck, including while paused,
+  /// but never while the native transition controller owns deck gain.
+  static bool canAdjustChannelGain({
+    required bool djModeEnabled,
+    required bool media3SessionActive,
+    required bool transitionInProgress,
+    required bool deckHasMedia,
+  }) =>
+      djModeEnabled &&
+      media3SessionActive &&
+      !transitionInProgress &&
+      deckHasMedia;
+
   /// Cue preview belongs to a queue occurrence, not just a media ID.
   static bool matchesCuePreview({
     required String? previewSongId,
