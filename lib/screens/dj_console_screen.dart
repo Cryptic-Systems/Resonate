@@ -340,9 +340,11 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                 ),
                 status: !loaded
                     ? 'EMPTY'
-                    : isPlaying
-                        ? 'PLAYING'
-                        : 'LOADED',
+                    : state?.activeDeckId == id
+                        ? 'ACTIVE'
+                        : isPlaying
+                            ? 'PLAYING'
+                            : 'STANDBY',
                 title: title,
                 artist: artist,
                 progress: progress,
@@ -818,7 +820,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             Text(deck, style: theme.textTheme.labelLarge?.copyWith(
               color: accent, letterSpacing: 1.8, fontWeight: FontWeight.w800)),
             const Spacer(),
-            _ConsoleStatus(label: status, active: active),
+            _ConsoleStatus(label: status, active: onAir),
           ]),
           const SizedBox(height: 10),
           Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
