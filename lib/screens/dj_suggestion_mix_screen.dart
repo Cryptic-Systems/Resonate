@@ -114,7 +114,9 @@ class _DjSuggestionMixScreenState extends State<DjSuggestionMixScreen> {
       if (!mounted) return;
       openShellPlayer(context);
     } catch (error) {
-      music?.setApprovedDjTransitions(const {});
+      if (music != null && !music.isDjDualDeckSessionActive) {
+        music.setApprovedDjTransitions(const {});
+      }
       if (!mounted) return;
       setState(() => _approving = false);
       ScaffoldMessenger.of(context).showSnackBar(
