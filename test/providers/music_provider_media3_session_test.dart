@@ -4339,6 +4339,56 @@ void main() {
       }
     });
 
+    test('disposed provider rejects a DJ deck command queued for control authority', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final music = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final revocationGate = Completer<void>();
+      final track = _song('dj-command-after-dispose');
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        final backgroundLease = await arbiter.acquire(
+          owner: 'background_dj_test',
+          priority: PlaybackControlPriority.background,
+          onRevoked: (_) async => revocationGate.future,
+        );
+        expect(backgroundLease, isNotNull);
+
+        final load = music.loadDjDeck('A', <Song>[track]);
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          arbiter.activeOwner,
+          isNull,
+          reason: 'The DJ command must be waiting for the current owner cleanup.',
+        );
+
+        // Dispose while the higher-priority DJ acquisition is still queued.
+        // Once the old owner settles, the acquired lease must not dispatch
+        // against the now-disposed provider/session.
+        music.dispose();
+        revocationGate.complete();
+
+        await expectLater(load, throwsStateError);
+        expect(
+          session.calls.where((call) => call == 'loadDjDeck:A'),
+          isEmpty,
+          reason: 'A queued command must not reach native after provider disposal.',
+        );
+        await backgroundLease!.release();
+      } finally {
+        if (!revocationGate.isCompleted) revocationGate.complete();
+        music.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await session.audioSessions.close();
+        await session.states.close();
+        await arbiter.close();
+      }
+    });
+
     test('user transport waits for an accepted native DJ deck command to drain', () async {
       final session = _FakePlaybackSession();
       final arbiter = PlaybackControlArbiter();
