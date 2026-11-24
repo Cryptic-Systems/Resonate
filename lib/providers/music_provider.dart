@@ -132,6 +132,7 @@ class MusicProvider extends ChangeNotifier {
   bool get media3ProviderSessionActive => _media3ProviderSessionActive;
   bool get _djDualDeckSessionActive =>
       _media3ShadowState?.djDualDeckMode == true;
+  bool get isDjDualDeckSessionActive => _djDualDeckSessionActive;
   /// True only while the operator's prepared standby deck still owns its lease.
   /// UI should derive readiness from this instead of caching a local flag: a
   /// higher-priority user transport can revoke the lease asynchronously.
