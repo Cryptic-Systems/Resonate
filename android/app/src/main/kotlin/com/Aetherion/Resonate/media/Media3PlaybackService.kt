@@ -62,6 +62,8 @@ class Media3PlaybackService : MediaSessionService() {
     private var activeDeckId = "A"
     private var djDualDeckMode = false
     private var djCrossfaderPosition = 0.5f
+    private var djDeckGainA = 1f
+    private var djDeckGainB = 1f
     private var suppressDjPeerPauseDeckId: String? = null
     private fun standbyDeckId(): String = if (activeDeckId == "A") "B" else "A"
     // ExoPlayer focus handling is opt-in at the migration boundary. The legacy
@@ -106,10 +108,14 @@ class Media3PlaybackService : MediaSessionService() {
         val transitionOwnsGain = crossfadeStatus == "starting" || crossfadeStatus == "fading"
         if (djDualDeckMode && standby != null && !transitionOwnsGain) {
             val (deckAGain, deckBGain) = Media3DjCrossfaderPolicy.gains(djCrossfaderPosition)
-            val activeGain = if (activeDeckId == "A") deckAGain else deckBGain
-            val standbyGain = if (standbyDeckId() == "A") deckAGain else deckBGain
-            activePlayer.volume = gainPolicy.djDeckVolume(activeGain)
-            standby.volume = gainPolicy.djDeckVolume(standbyGain)
+            val activeId = activeDeckId
+            val standbyId = standbyDeckId()
+            val activeGain = if (activeId == "A") deckAGain else deckBGain
+            val standbyGain = if (standbyId == "A") deckAGain else deckBGain
+            val activeChannelGain = if (activeId == "A") djDeckGainA else djDeckGainB
+            val standbyChannelGain = if (standbyId == "A") djDeckGainA else djDeckGainB
+            activePlayer.volume = gainPolicy.djDeckVolume(activeGain, activeChannelGain)
+            standby.volume = gainPolicy.djDeckVolume(standbyGain, standbyChannelGain)
             return
         }
         activePlayer.volume = gainPolicy.activeVolume()
@@ -133,6 +139,8 @@ class Media3PlaybackService : MediaSessionService() {
         ).also { standbyPlayer = it }
         djDualDeckMode = true
         djCrossfaderPosition = 0.5f
+        djDeckGainA = 1f
+        djDeckGainB = 1f
         standby.setAudioAttributes(audioAttributes(), false)
         standby.setHandleAudioBecomingNoisy(false)
         standby.pause()
@@ -146,6 +154,8 @@ class Media3PlaybackService : MediaSessionService() {
         if (!djDualDeckMode) return true
         if (crossfadeStatus in setOf("starting", "fading")) return false
         djDualDeckMode = false
+        djDeckGainA = 1f
+        djDeckGainB = 1f
         val retiringDeckId = standbyDeckId()
         val standby = standbyPlayer
         standbyPlayer = null
@@ -168,6 +178,17 @@ class Media3PlaybackService : MediaSessionService() {
             crossfadeStatus in setOf("starting", "fading")
         ) return false
         djCrossfaderPosition = position
+        applyDeckVolumes()
+        return true
+    }
+
+    /** Operator-owned channel gain (0 = mute, 1 = unity); independent of crossfader. */
+    fun setDjDeckChannelGain(deckId: String, gain: Float): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") ||
+            !gain.isFinite() || gain !in 0f..1f ||
+            crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        if (deckId == "A") djDeckGainA = gain else djDeckGainB = gain
         applyDeckVolumes()
         return true
     }
@@ -1376,6 +1397,8 @@ class Media3PlaybackService : MediaSessionService() {
         "activeDeckId" to activeDeckId,
         "djDualDeckMode" to djDualDeckMode,
         "djCrossfaderPosition" to djCrossfaderPosition,
+        "djDeckGainA" to djDeckGainA,
+        "djDeckGainB" to djDeckGainB,
         "deckA" to physicalDeckState("A"),
         "deckB" to physicalDeckState("B"),
         "activeMediaId" to activePlayer.currentMediaItem?.mediaId,
@@ -1426,6 +1449,7 @@ class Media3PlaybackService : MediaSessionService() {
             "mediaItemIndex" to player.currentMediaItemIndex,
             "mediaItemCount" to player.mediaItemCount,
             "volume" to player.volume,
+            "channelGain" to if (deckId == "A") djDeckGainA else djDeckGainB,
             "speed" to player.playbackParameters.speed,
             "pitch" to player.playbackParameters.pitch,
             "audioSessionId" to player.audioSessionId,
