@@ -33,7 +33,7 @@ void main() {
     expect(restored.selected, ResonateExperience.resonatixDj);
   });
 
-  test('unknown stored values fail back to first-run selection', () async {
+  test('safe switch updates the selected experience and persists it', () async {\n    final experience = ExperienceProvider();\n    await experience.ready;\n    await experience.selectInitialExperience(ResonateExperience.resonatixDj);\n\n    await experience.switchExperience(ResonateExperience.player);\n\n    expect(experience.selected, ResonateExperience.player);\n    final restored = ExperienceProvider();\n    await restored.ready;\n    expect(restored.selected, ResonateExperience.player);\n  });\n\n  test('unknown stored values fail back to first-run selection', () async {
     SharedPreferences.setMockInitialValues({
       'resonate_selected_experience': 'unknown_mode',
     });
