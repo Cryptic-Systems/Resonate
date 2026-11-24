@@ -107,7 +107,15 @@ class Media3PlaybackService : MediaSessionService() {
         val standby = standbyPlayer
         val transitionOwnsGain = crossfadeStatus == "starting" || crossfadeStatus == "fading"
         if (djDualDeckMode && standby != null && !transitionOwnsGain) {
-            val (deckAGain, deckBGain) = Media3DjCrossfaderPolicy.gains(djCrossfaderPosition)
+            val bothDecksPlaying = activePlayer.mediaItemCount > 0 &&
+                standby.mediaItemCount > 0 &&
+                activePlayer.isPlaying &&
+                standby.isPlaying
+            val (deckAGain, deckBGain) = Media3DjCrossfaderPolicy.gainsForState(
+                position = djCrossfaderPosition,
+                activeDeckId = activeDeckId,
+                bothDecksPlaying = bothDecksPlaying,
+            )
             val activeId = activeDeckId
             val standbyId = standbyDeckId()
             val activeGain = if (activeId == "A") deckAGain else deckBGain
@@ -174,8 +182,16 @@ class Media3PlaybackService : MediaSessionService() {
 
     /** Operator-owned physical A/B crossfader; automation never calls this. */
     fun setDjCrossfader(position: Float): Boolean {
-        if (!djDualDeckMode || !position.isFinite() || position !in 0f..1f ||
-            crossfadeStatus in setOf("starting", "fading")
+        val standby = standbyPlayer
+        if (!Media3DjCrossfaderPolicy.canApply(
+                position = position,
+                djDualDeckMode = djDualDeckMode,
+                activeHasMedia = activePlayer.mediaItemCount > 0,
+                standbyHasMedia = standby?.mediaItemCount?.let { it > 0 } == true,
+                activeIsPlaying = activePlayer.isPlaying,
+                standbyIsPlaying = standby?.isPlaying == true,
+                transitionOwnsGain = crossfadeStatus in setOf("starting", "fading"),
+            )
         ) return false
         djCrossfaderPosition = position
         applyDeckVolumes()
