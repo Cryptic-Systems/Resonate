@@ -431,6 +431,11 @@ extension MusicProviderDjHandoff on MusicProvider {
   Future<void> endDjCrossfaderGesture() async {
     final lease = _djCrossfaderGestureLease;
     _djCrossfaderGestureLease = null;
+    // Even a normal gesture end must drain an already-dispatched native write
+    // before releasing authority to another controller.
+    while (_djDeckCommandsInFlight.isNotEmpty) {
+      await Future.wait(_djDeckCommandsInFlight.toList(growable: false));
+    }
     if (lease != null) {
       await lease.release();
     }
