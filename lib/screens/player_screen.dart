@@ -19,6 +19,7 @@ import '../services/playback_authority.dart';
 import '../widgets/audio_visualization_widget.dart';
 import '../widgets/dj_mode_status_chip.dart';
 import '../widgets/resonate_mode_chip.dart';
+import '../widgets/experience_mode_chip.dart';
 import '../widgets/mode_player_density.dart';
 import '../widgets/mode_artwork_banner.dart';
 import 'mode_shelf_screen.dart';
