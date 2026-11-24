@@ -198,8 +198,6 @@ void main() {
           transitionInProgress: true,
           deckAHasMedia: true,
           deckBHasMedia: true,
-          deckAIsPlaying: true,
-          deckBIsPlaying: true,
         ),
         isFalse,
       );
