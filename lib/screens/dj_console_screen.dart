@@ -81,26 +81,31 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
   }
 
   Future<void> _loadCuePoints() async {
-    final loaded = await _cuePointStore.load();
-    if (!mounted) return;
-    setState(() => _cuePoints = loaded);
+    try {
+      final loaded = await _cuePointStore.load();
+      if (!mounted) return;
+      setState(() => _cuePoints = loaded);
+    } catch (error) {
+      debugPrint('DJ cue points could not be loaded: $error');
+    }
   }
 
   Future<void> _setCuePoint(
     String deckId,
     PlaybackDeckSnapshot? deck,
   ) async {
-    final trackId = deck?.mediaId;
+    final currentDeck = deck;
+    final trackId = currentDeck?.mediaId;
     if (trackId == null || trackId.isEmpty) return;
     final updated = Map<String, Duration>.from(_cuePoints)
-      ..[trackId] = deck!.position;
+      ..[trackId] = currentDeck!.position;
     try {
       await _cuePointStore.saveAll(updated);
       if (!mounted) return;
       setState(() => _cuePoints = updated);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Deck $deckId cue saved at ${_formatCue(deck.position)}.'),
+          content: Text('Deck $deckId cue saved at ${_formatCue(currentDeck.position)}.'),
         ),
       );
     } catch (error) {
@@ -115,17 +120,19 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
     String deckId,
     PlaybackDeckSnapshot? deck,
   ) async {
-    final trackId = deck?.mediaId;
+    final currentDeck = deck;
+    final trackId = currentDeck?.mediaId;
     if (trackId == null || trackId.isEmpty) return;
     final cue = _cuePoints[trackId];
     if (cue == null) return;
-    final duration = deck!.duration;
+    final duration = currentDeck!.duration;
     if (duration != null && cue > duration) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Saved cue is beyond this track duration. Set a new cue point.')),
       );
       return;
     }
+    if (!mounted) return;
     try {
       await context.read<MusicProvider>().seekDjDeck(
         deckId: deckId,
