@@ -189,8 +189,6 @@ class Media3PlaybackService : MediaSessionService() {
                 djDualDeckMode = djDualDeckMode,
                 activeHasMedia = activePlayer.mediaItemCount > 0,
                 standbyHasMedia = standby?.mediaItemCount?.let { it > 0 } == true,
-                activeIsPlaying = activePlayer.isPlaying,
-                standbyIsPlaying = standby?.isPlaying == true,
                 transitionOwnsGain = crossfadeStatus in setOf("starting", "fading"),
             )
         ) return false
