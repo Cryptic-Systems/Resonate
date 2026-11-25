@@ -290,7 +290,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                   .clamp(0.0, 1.0).toDouble();
           final djReady = state?.djDualDeckMode == true;
           final screenSize = MediaQuery.sizeOf(context);
-          final compact = screenSize.width < 820;
+          final compact = screenSize.width < 820 || screenSize.height < 520;
 
           Widget buildDeck({
             required String id,
