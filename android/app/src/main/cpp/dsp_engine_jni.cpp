@@ -3,6 +3,7 @@
 
 #include "dsp_engine.h"
 #include "core/track_scan_session.h"
+#include "core/track_analysis_cache.h"
 
 #include <algorithm>
 #include <array>
