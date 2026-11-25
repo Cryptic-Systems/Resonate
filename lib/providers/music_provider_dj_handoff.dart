@@ -305,6 +305,8 @@ extension MusicProviderDjHandoff on MusicProvider {
       }
       try {
         await disableDjDualDeckMode();
+        _djDeckEqGains['A'] = const [0.0, 0.0, 0.0];
+        _djDeckEqGains['B'] = const [0.0, 0.0, 0.0];
       } catch (error) {
         debugPrint('DJ dual-deck mode teardown failed: $error');
       }
