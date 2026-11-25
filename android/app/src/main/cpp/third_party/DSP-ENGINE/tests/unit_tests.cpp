@@ -495,7 +495,7 @@ TEST(eq_32_bands_full_params) {
     for (float s : out)
         EXPECT_TRUE(std::isfinite(s));
 
-    /* Re-set all 31 with deliberately varied non-default Q + types and process again. */
+    /* Re-set all 32 with deliberately varied non-default Q + types and process again. */
     for (int i = 0; i < DSP_EQ_MAX_BANDS; ++i) {
         bands[i].q = 0.4f + 0.2f * static_cast<float>((i * 3) % 11);
         bands[i].type = (i % 5); /* 0..4 cycle: peak, LS, HS, LP, HP */
