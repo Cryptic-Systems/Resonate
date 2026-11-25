@@ -108,6 +108,11 @@ abstract interface class PlaybackDjDeckSession {
     required Duration position,
     required String expectedMediaId,
   });
+  Future<void> setDjDeckEq({
+    required String deckId,
+    required List<double> gainsDb,
+  });
+  Future<void> clearDjDeckEq({required String deckId});
 }
 
 /// Optional explicit snapshot refresh for lifecycle/focus reconciliation.
