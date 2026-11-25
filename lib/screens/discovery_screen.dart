@@ -106,8 +106,8 @@ class _DiscoveryRecommendationTileState
       final queue = index >= 0
           ? widget.songs.sublist(index)
           : <Song>[widget.song];
-      await music.playSong(widget.song, queue: queue, startIndex: 0);
-      if (mounted) openShellPlayer(context);
+      final started = await music.playSong(widget.song, queue: queue, startIndex: 0);
+      if (mounted && started) openShellPlayer(context);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
