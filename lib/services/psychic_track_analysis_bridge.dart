@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 import '../dj_engine/analysis/dj_pcm_profile_analyzer.dart';
 import '../models/song.dart';
 
-/// Background-only bridge to Psychic's native whole-track analyzer/cache.
+/// Background-only bridge to Psychic's native sampled-window track analyzer/cache.
 /// It consumes the same distributed PCM windows already decoded for DJ
 /// profiling; it never touches the live Media3 audio callback.
 class PsychicTrackAnalysisBridge {
