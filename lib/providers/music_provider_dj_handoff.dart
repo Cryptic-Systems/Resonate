@@ -393,6 +393,31 @@ extension MusicProviderDjHandoff on MusicProvider {
         ),
       );
 
+  Future<void> setDjDeckEq({
+    required String deckId,
+    required List<double> gainsDb,
+  }) {
+    if ((deckId != 'A' && deckId != 'B') ||
+        gainsDb.length != 3 ||
+        gainsDb.any((gain) => !gain.isFinite || gain < -12.0 || gain > 12.0)) {
+      throw ArgumentError('DJ EQ requires deck A/B and three gains from -12 to +12 dB.');
+    }
+    return _runDjDeckCommand<void>(
+      'eq_$deckId',
+      (session) => session.setDjDeckEq(deckId: deckId, gainsDb: gainsDb),
+    );
+  }
+
+  Future<void> clearDjDeckEq({required String deckId}) {
+    if (deckId != 'A' && deckId != 'B') {
+      throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
+    }
+    return _runDjDeckCommand<void>(
+      'eq_reset_$deckId',
+      (session) => session.clearDjDeckEq(deckId: deckId),
+    );
+  }
+
   /// Retains interactive authority for the complete crossfader drag.
   ///
   /// The retained lease is deliberately separate from ordinary per-command
