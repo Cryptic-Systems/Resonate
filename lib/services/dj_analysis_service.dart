@@ -97,12 +97,16 @@ class DjAnalysisService {
     return profile != null && profile.waveformSegments.isNotEmpty;
   }
 
-  /// True only when Psychic has a usable, persisted report for this track.
-  /// Insufficient sampled coverage remains eligible for a later idle retry.
-  Future<bool> hasPsychicAnalysis(String songId) async {
-    // Psychic's native background scanner is currently Android-backed.
-    // Do not force repeated profile rebuilds on platforms without that bridge.
+  /// True when this profile has a persisted Psychic attempt, including a
+  /// report that explicitly records insufficient sampled coverage.
+  Future<bool> hasPsychicReport(String songId) async {
     if (!Platform.isAndroid) return true;
+    return await getPsychicAnalysis(songId) != null;
+  }
+
+  /// True only when Psychic has a usable, persisted report for this track.
+  Future<bool> hasPsychicAnalysis(String songId) async {
+    if (!await hasPsychicReport(songId)) return false;
     final report = await getPsychicAnalysis(songId);
     if (report == null || report['sufficientData'] != true) return false;
     final sampled = report['sampledDurationSeconds'];
