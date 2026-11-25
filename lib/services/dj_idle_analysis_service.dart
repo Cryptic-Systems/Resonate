@@ -133,6 +133,7 @@ class DjIdleAnalysisService {
           }
 
           _scanned++;
+          await DjAnalysisForegroundService.heartbeat();
           final before = existing;
           final needsFullProfile = before == null ||
               before.isStale ||
@@ -219,6 +220,7 @@ class DjIdleAnalysisService {
               song.duration.inMilliseconds <= 0) {
             continue;
           }
+          await DjAnalysisForegroundService.heartbeat();
           final processed = await _waveformChunks.processMissingChunks(
             song,
             maxChunks: waveformChunksRemaining,
