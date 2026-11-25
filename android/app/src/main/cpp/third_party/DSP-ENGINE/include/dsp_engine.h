@@ -122,7 +122,7 @@ typedef struct {
 
 /** Maximum parametric EQ bands accepted by dsp_eq_set_bands / dsp_eq_set_band.
  *  Matches the engine-side storage and MultiBandEq capacity. */
-#define DSP_EQ_MAX_BANDS 31
+#define DSP_EQ_MAX_BANDS 32
 
 /**
  * Gain-reduction metering for UI.
