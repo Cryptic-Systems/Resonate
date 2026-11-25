@@ -18,7 +18,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <service android:name=".DjAnalysisForegroundService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="specialUse">
+        <service android:name=".DjAnalysisForegroundService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-visible local DJ library analysis and track-intelligence preparation" />
         </service>
         <service android:name=".media.Media3PlaybackService" android:exported="true" android:foregroundServiceType="mediaPlayback">
