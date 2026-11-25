@@ -18,8 +18,6 @@ import '../services/audio_file_service.dart';
 import '../services/playback_authority.dart';
 import '../widgets/audio_visualization_widget.dart';
 import '../widgets/dj_mode_status_chip.dart';
-import '../widgets/resonate_mode_chip.dart';
-import '../widgets/experience_mode_chip.dart';
 import '../widgets/mode_player_density.dart';
 import '../widgets/mode_artwork_banner.dart';
 import 'mode_shelf_screen.dart';
@@ -40,6 +38,7 @@ import 'crossfade_screen.dart';
 import 'dj_mode_settings_screen.dart';
 import '../modes/screens/modes_screen.dart';
 import '../modes/integration/resonate_mode_ports.dart';
+import '../experience/experience_provider.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -1298,6 +1297,17 @@ class _PlayerSideDrawer extends StatelessWidget {
               onTap: () => onOpen(const DjModeSettingsScreen(playerFacing: true)),
             ),
             const Divider(),
+            ListTile(
+              leading: const Icon(Icons.album_rounded),
+              title: const Text('Switch to Resonatix DJ'),
+              subtitle: const Text('Open the manual performance workspace'),
+              onTap: () async {
+                Navigator.of(context).pop();
+                await context.read<ExperienceProvider>().switchExperience(
+                      ResonateExperience.resonatixDj,
+                    );
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.settings_outlined),
               title: const Text('Settings'),
