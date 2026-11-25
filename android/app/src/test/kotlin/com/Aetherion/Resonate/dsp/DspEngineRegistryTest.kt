@@ -57,7 +57,7 @@ class DspEngineRegistryTest {
             qs: FloatArray, types: IntArray, enabled: Boolean
         ) {
             calls += "parametric:" + handle + ":" + frequenciesHz.size + ":" +
-                qs.firstOrNull() + ":" + types.firstOrNull()
+                qs.firstOrNull() + ":" + types.joinToString(",")
             setEqBands(handle, frequenciesHz.map { it.toDouble() }.toDoubleArray(),
                 gainsDb.map { it.toDouble() }.toDoubleArray(), enabled)
         }
@@ -843,6 +843,38 @@ class DspEngineRegistryTest {
         // The temporary transition overlay remains after DJ EQ is reset.
         assertTrue(fake.calls.any { it.startsWith("eq:1001:") })
         assertFalse(fake.calls.any { it == "eq:1001:0.0,0.0,0.0:true" })
+    }
+
+    @Test
+    fun dj_filter_isolated_per_physical_deck_and_composes_with_eq_and_transition() {
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        assertTrue(DspEngineRegistry.register(2, 2002L, "B"))
+        DspEngineRegistry.setActiveDeck("A")
+        assertTrue(DspEngineRegistry.setDjEqOverlay(
+            "A", doubleArrayOf(80.0, 1000.0, 12000.0), doubleArrayOf(3.0, 0.0, -2.0),
+        ))
+        assertTrue(DspEngineRegistry.setTemporaryEqOverlay(
+            "active", doubleArrayOf(100.0, 1000.0), doubleArrayOf(-1.0, 1.0),
+        ))
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.setDjDeckFilter("A", 3, 900.0))
+        assertTrue(fake.calls.any { it.startsWith("parametric:1001:32:") && it.endsWith(":0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3") })
+        assertFalse(fake.calls.any { it.startsWith("parametric:2002:") })
+
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.setDjDeckFilter("A", 4, 1200.0))
+        assertTrue(fake.calls.any { it.contains(":4") && it.startsWith("parametric:1001:32:") })
+        assertTrue(DspEngineRegistry.clearDjDeckFilter("A"))
+        assertFalse(fake.calls.any { it.startsWith("parametric:2002:") })
+    }
+
+    @Test
+    fun dj_filter_rejects_invalid_deck_type_and_cutoff() {
+        assertFalse(DspEngineRegistry.setDjDeckFilter("active", 3, 900.0))
+        assertFalse(DspEngineRegistry.setDjDeckFilter("A", 2, 900.0))
+        assertFalse(DspEngineRegistry.setDjDeckFilter("A", 3, 20.0))
+        assertFalse(DspEngineRegistry.setDjDeckFilter("B", 4, Double.NaN))
     }
 
     @Test
