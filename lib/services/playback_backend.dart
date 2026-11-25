@@ -144,6 +144,11 @@ abstract interface class PlaybackDjDeckBackend {
     required Duration position,
     required String expectedMediaId,
   });
+  Future<void> setDjDeckEq({
+    required String deckId,
+    required List<double> gainsDb,
+  });
+  Future<void> clearDjDeckEq({required String deckId});
 }
 
 /// Repeat behavior shared by backend implementations.
