@@ -2,7 +2,7 @@
 
 Highly optimized **64-bit** audio processing engine for Flutter music players and native apps.
 
-**Version 0.6.0** — Intelligent headroom + auto-bass (offline scan + online servo).
+**Psychic 0.6.1** — Adaptive headroom control, content-aware gain decisions, track analysis and track intelligence.
 
 ## Features
 
