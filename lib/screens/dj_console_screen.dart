@@ -221,8 +221,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
           final djReady = state?.djDualDeckMode == true;
           final screenSize = MediaQuery.sizeOf(context);
           final compact = screenSize.width < 820;
-          final portraitLayout = screenSize.height > screenSize.width &&
-              screenSize.width < 1000;
+          final portraitLayout = false;
 
           Widget buildDeck({
             required String id,
@@ -389,19 +388,6 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                         duration: durationB,
                         progress: progressB,
                       );
-
-                      if (portraitLayout) {
-                        return ListView(
-                          padding: EdgeInsets.zero,
-                          children: [
-                            deckAWidget,
-                            const SizedBox(height: 8),
-                            mixer,
-                            const SizedBox(height: 8),
-                            deckBWidget,
-                          ],
-                        );
-                      }
 
                       return Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -921,15 +907,11 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
               ),
               const SizedBox(width: 4),
               Expanded(
-                child: OutlinedButton.icon(
+                child: IconButton.outlined(
+                  tooltip: 'Load track',
+                  visualDensity: VisualDensity.compact,
                   onPressed: widget.onLoad,
-                  icon: const Icon(Icons.library_add_rounded, size: 15),
-                  label: const Text('LOAD TRACK'),
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 7),
-                    textStyle: theme.textTheme.labelSmall,
-                  ),
+                  icon: const Icon(Icons.library_music_rounded, size: 18),
                 ),
               ),
             ],
