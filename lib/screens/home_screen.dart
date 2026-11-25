@@ -150,12 +150,14 @@ class _HomeScreenState extends State<HomeScreen> {
               height: _navigationVisible ? 80 : 20,
               child: _navigationVisible
                   ? NavigationBar(
-                      selectedIndex: _selectedIndex,
-                      onDestinationSelected: _selectPage,
+                      selectedIndex: _selectedIndex == 0 ? 0 : _selectedIndex == 2 ? 1 : 2,
+                      onDestinationSelected: (index) => _selectPage(
+                        index == 0 ? 0 : index == 1 ? 2 : 1,
+                      ),
                       destinations: const [
                         NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'For You'),
-                        NavigationDestination(icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music), label: 'Library'),
                         NavigationDestination(icon: Icon(Icons.music_note_outlined), selectedIcon: Icon(Icons.music_note), label: 'Player'),
+                        NavigationDestination(icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music), label: 'Library'),
                       ],
                     )
                   : GestureDetector(
