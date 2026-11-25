@@ -7,6 +7,8 @@ import android.provider.DocumentsContract
 import com.Aetherion.Resonate.media.PermissionHelper
 import com.Aetherion.Resonate.media.Media3PlaybackBridge
 import com.Aetherion.Resonate.media.AudioCommunicationGuard
+import com.aetherion.resonate.dsp.DspEngineJni
+import java.util.concurrent.Executors
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -25,6 +27,7 @@ class MainActivity : FlutterActivity() {
     private var media3PlaybackBridge: Media3PlaybackBridge? = null
     private val pcmAnalysisHandler = PcmAnalysisHandler(this)
     private val folderScanHandler = FolderScanHandler(this) { permissionHelper.hasAudioPermission() }
+    private val psychicAnalysisExecutor = Executors.newSingleThreadExecutor()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -64,6 +67,44 @@ class MainActivity : FlutterActivity() {
                     (call.argument<Number>("marginDb") ?: 1.0).toFloat(),
                     result,
                 )
+                "psychicAnalyzeTrackMetrics" -> {
+                    val stableId = call.argument<String>("stableId").orEmpty()
+                    val fileSize = call.argument<Number>("fileSizeBytes")?.toLong() ?: 0L
+                    val modifiedTime = call.argument<Number>("modifiedTimeNs")?.toLong() ?: 0L
+                    val rms = call.argument<List<Number>>("rmsValues")?.map { it.toFloat() }?.toFloatArray()
+                    val peak = call.argument<List<Number>>("peakValues")?.map { it.toFloat() }?.toFloatArray()
+                    val bass = call.argument<List<Number>>("bassValues")?.map { it.toFloat() }?.toFloatArray()
+                    val durations = call.argument<List<Number>>("durations")?.map { it.toFloat() }?.toFloatArray()
+                    if (stableId.isBlank() || rms == null || peak == null || bass == null || durations == null ||
+                        rms.isEmpty() || rms.size != peak.size || rms.size != bass.size || rms.size != durations.size) {
+                        result.error("PSYCHIC_INVALID_INPUT", "Invalid Psychic track analysis metrics.", null)
+                    } else {
+                        psychicAnalysisExecutor.execute {
+                            try {
+                                val values = DspEngineJni.nativeAnalyzeTrackMetrics(
+                                    stableId, fileSize, modifiedTime, rms, peak, bass, durations,
+                                )
+                                runOnUiThread {
+                                    if (values == null || values.size < 26) {
+                                        result.error("PSYCHIC_ANALYSIS_FAILED", "Psychic could not produce a track report.", null)
+                                    } else {
+                                        result.success(values.toList())
+                                    }
+                                }
+                            } catch (error: Throwable) {
+                                runOnUiThread {
+                                    result.error("PSYCHIC_ANALYSIS_FAILED", error.message, null)
+                                }
+                            }
+                        }
+                    }
+                }
+                "psychicTrackCacheStats" -> {
+                    psychicAnalysisExecutor.execute {
+                        val stats = DspEngineJni.nativeGetTrackCacheStats()
+                        runOnUiThread { result.success(stats?.toList() ?: emptyList<Long>()) }
+                    }
+                }
                 "cancelPcmAnalysis" -> pcmAnalysisHandler.cancel(result)
                 else -> result.notImplemented()
             }
@@ -178,6 +219,7 @@ class MainActivity : FlutterActivity() {
         effectsChannelHandler.release()
         pcmAnalysisHandler.release()
         folderScanHandler.release()
+        psychicAnalysisExecutor.shutdownNow()
         super.onDestroy()
     }
 }
