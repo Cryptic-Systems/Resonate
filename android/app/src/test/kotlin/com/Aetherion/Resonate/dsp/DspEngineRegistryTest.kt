@@ -873,6 +873,30 @@ class DspEngineRegistryTest {
     }
 
     @Test
+    fun service_teardown_removes_dj_eq_and_filter_from_both_physical_decks() {
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        assertTrue(DspEngineRegistry.register(2, 2002L, "B"))
+        assertTrue(DspEngineRegistry.setDjEqOverlay(
+            "A", doubleArrayOf(80.0, 1000.0, 12000.0), doubleArrayOf(6.0, 2.0, 0.0),
+        ))
+        assertTrue(DspEngineRegistry.setDjEqOverlay(
+            "B", doubleArrayOf(80.0, 1000.0, 12000.0), doubleArrayOf(3.0, 0.0, 0.0),
+        ))
+        assertTrue(DspEngineRegistry.setDjDeckFilter("A", 3, 900.0))
+        assertTrue(DspEngineRegistry.setDjDeckFilter("B", 4, 1400.0))
+        fake.calls.clear()
+
+        DspEngineRegistry.resetDjDeckOverlaysForServiceTeardown()
+
+        assertTrue(fake.calls.any { it.startsWith("parametric:1001:31:") })
+        assertTrue(fake.calls.any { it.startsWith("parametric:2002:31:") })
+        assertFalse(fake.calls.any { it.startsWith("parametric:1001:32:") })
+        assertFalse(fake.calls.any { it.startsWith("parametric:2002:32:") })
+        assertTrue(fake.calls.any { it.startsWith("preamp:1001:1.0") })
+        assertTrue(fake.calls.any { it.startsWith("preamp:2002:1.0") })
+    }
+
+    @Test
     fun dj_filter_rejects_invalid_deck_type_and_cutoff() {
         assertFalse(DspEngineRegistry.setDjDeckFilter("active", 3, 900.0))
         assertFalse(DspEngineRegistry.setDjDeckFilter("A", 2, 900.0))
