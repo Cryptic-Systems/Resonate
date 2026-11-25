@@ -9,7 +9,6 @@ import '../providers/music_provider.dart';
 import '../widgets/mini_player_bar.dart';
 import 'library_screen.dart';
 import 'player_screen.dart';
-import 'settings_screen.dart';
 import '../navigation/shell_nav.dart';
 import 'home_dashboard.dart';
 
@@ -32,7 +31,6 @@ class _HomeScreenState extends State<HomeScreen> {
     HomeDashboard(),
     LibraryScreen(),
     PlayerScreen(),
-    SettingsScreen(),
   ];
 
   @override
@@ -77,9 +75,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _selectPage(int index) {
-    if (index == 3) {
-      context.read<AskResonateController>().close();
-    }
     setState(() {
       _selectedIndex = index;
       _navigationVisible = true;
@@ -111,10 +106,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final showAsk = _selectedIndex <= 2;
 
-    final labels = const ['For You', 'Library', 'Player', 'Settings'];
+    final labels = const ['For You', 'Library', 'Player'];
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      context.read<AskResonateController>().setContext(labels[_selectedIndex.clamp(0, 3)]);
+      context.read<AskResonateController>().setContext(labels[_selectedIndex.clamp(0, 2)]);
     });
 
     return Scaffold(
@@ -130,9 +125,6 @@ class _HomeScreenState extends State<HomeScreen> {
               controller: _pageController,
               itemCount: _screens.length,
               onPageChanged: (index) {
-                if (index == 3) {
-                  context.read<AskResonateController>().close();
-                }
                 setState(() {
                   _selectedIndex = index;
                   _navigationVisible = true;
@@ -164,7 +156,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'For You'),
                         NavigationDestination(icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music), label: 'Library'),
                         NavigationDestination(icon: Icon(Icons.music_note_outlined), selectedIcon: Icon(Icons.music_note), label: 'Player'),
-                        NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Settings'),
                       ],
                     )
                   : GestureDetector(
