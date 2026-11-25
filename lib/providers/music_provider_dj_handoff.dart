@@ -307,6 +307,10 @@ extension MusicProviderDjHandoff on MusicProvider {
         await disableDjDualDeckMode();
         _djDeckEqGains['A'] = const [0.0, 0.0, 0.0];
         _djDeckEqGains['B'] = const [0.0, 0.0, 0.0];
+        _djDeckFilterTypes['A'] = 0;
+        _djDeckFilterTypes['B'] = 0;
+        _djDeckFilterCutoffs['A'] = 1000.0;
+        _djDeckFilterCutoffs['B'] = 1000.0;
       } catch (error) {
         debugPrint('DJ dual-deck mode teardown failed: $error');
       }
@@ -421,6 +425,22 @@ extension MusicProviderDjHandoff on MusicProvider {
       'eq_reset_$deckId',
       (session) => session.clearDjDeckEq(deckId: deckId),
     );
+  }
+
+  Future<void> setDjDeckFilter({required String deckId, required int type, required double cutoffHz}) {
+    if ((deckId != 'A' && deckId != 'B') ||
+        !const [0, 3, 4].contains(type) ||
+        !cutoffHz.isFinite || cutoffHz < 40 || cutoffHz > 18000) {
+      throw ArgumentError('DJ filter requires deck A/B, bypass/LP/HP and cutoff 40–18000 Hz.');
+    }
+    return _runDjDeckCommand<void>(
+      'filter_$deckId',
+      (session) => session.setDjDeckFilter(deckId: deckId, type: type, cutoffHz: cutoffHz),
+    ).then((_) {
+      _djDeckFilterTypes[deckId] = type;
+      _djDeckFilterCutoffs[deckId] = cutoffHz;
+      notifyListeners();
+    });
   }
 
   /// Retains interactive authority for the complete crossfader drag.
