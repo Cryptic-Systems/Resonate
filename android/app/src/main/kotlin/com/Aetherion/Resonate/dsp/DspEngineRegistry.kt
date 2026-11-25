@@ -480,7 +480,7 @@ object DspEngineRegistry {
             }.toMap()
         base["liveMetersByDeck"] = metersByDeck
         base["activeDeckId"] = activeDeckId
-        base["dspVersion"] = "0.6.0"
+        base["dspVersion"] = "0.6.1"
         base.putAll(latencySnapshot())
         return base
     }
