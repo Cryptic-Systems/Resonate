@@ -1115,7 +1115,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
               },
             ),
           ),
-          const SizedBox(height: compact ? 2 : 5),
+          SizedBox(height: compact ? 2 : 5),
           const SizedBox(height: 5),
           Row(
             children: [
