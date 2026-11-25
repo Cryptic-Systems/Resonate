@@ -405,7 +405,10 @@ extension MusicProviderDjHandoff on MusicProvider {
     return _runDjDeckCommand<void>(
       'eq_$deckId',
       (session) => session.setDjDeckEq(deckId: deckId, gainsDb: gainsDb),
-    );
+    ).then((_) {
+      _djDeckEqGains[deckId] = List<double>.unmodifiable(gainsDb);
+      notifyListeners();
+    });
   }
 
   Future<void> clearDjDeckEq({required String deckId}) {
