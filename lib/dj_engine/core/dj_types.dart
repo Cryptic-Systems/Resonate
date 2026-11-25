@@ -205,6 +205,7 @@ class DjTrackProfile {
   final List<DjWaveformSegment> waveformSegments;
   final double analysisConfidence;
   final int analysisVersion;
+  final Map<String, dynamic>? psychicAnalysis;
 
   const DjTrackProfile({
     required this.songId,
@@ -224,7 +225,30 @@ class DjTrackProfile {
     this.waveformSegments = const [],
     this.analysisConfidence = 0,
     this.analysisVersion = 1,
+    this.psychicAnalysis,
   });
+
+  DjTrackProfile copyWith({Map<String, dynamic>? psychicAnalysis}) =>
+      DjTrackProfile(
+        songId: songId,
+        durationMs: durationMs,
+        fingerprint: fingerprint,
+        beatGrid: beatGrid,
+        keyRoot: keyRoot,
+        keyMode: keyMode,
+        keyConfidence: keyConfidence,
+        harmonicChanges: harmonicChanges,
+        sections: sections,
+        energyCurve: energyCurve,
+        spectrum: spectrum,
+        dspAnalysis: dspAnalysis,
+        transitions: transitions,
+        silenceRegions: silenceRegions,
+        waveformSegments: waveformSegments,
+        analysisConfidence: analysisConfidence,
+        analysisVersion: analysisVersion,
+        psychicAnalysis: psychicAnalysis ?? this.psychicAnalysis,
+      );
 
   bool get hasKey => keyRoot != null && keyRoot! >= 0 && keyRoot! < 12 && keyMode != null;
   bool get hasTempo => beatGrid.usable;
