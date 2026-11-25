@@ -820,7 +820,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
           Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(color: Colors.white60)),
           SizedBox(
-            height: compact ? 84 : 112,
+            height: compact ? 58 : 86,
             child: Center(
               child: AspectRatio(
                 aspectRatio: 1,
@@ -868,11 +868,11 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                           ),
                         ),
                         Container(
-                          width: 88, height: 88,
+                          width: compact ? 54 : 72, height: compact ? 54 : 72,
                           decoration: BoxDecoration(shape: BoxShape.circle,
                             color: const Color(0xFF182431),
                             border: Border.all(color: accent.withValues(alpha: .7), width: 2)),
-                          child: Icon(Icons.album, color: accent, size: 44),
+                          child: Icon(Icons.album, color: accent, size: compact ? 28 : 36),
                         ),
                         Positioned(bottom: 18, child: Text(
                           _jogPreviewPosition == null
@@ -911,7 +911,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                           ? null
                           : () => widget.onHotCue!(index),
                       style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+                        padding: EdgeInsets.symmetric(vertical: compact ? 3 : 6, horizontal: 2),
                         side: BorderSide(color: cue == null ? Colors.white24 : accent.withValues(alpha: .65)),
                         foregroundColor: cue == null ? Colors.white38 : accent,
                         backgroundColor: cue == null ? Colors.white.withValues(alpha: .025) : accent.withValues(alpha: .09),
@@ -950,7 +950,9 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
               ),
             ],
           ),
-          Slider(
+          SizedBox(
+            height: compact ? 20 : 28,
+            child: Slider(
             value: _channelGain.clamp(0.0, 1.0).toDouble(),
             min: 0.0,
             max: 1.0,
@@ -964,8 +966,9 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             onChangeEnd: widget.canAdjustChannelGain
                 ? (value) => unawaited(_commitChannelGain(value))
                 : null,
+            ),
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 3),
           Row(
             children: [
               IconButton.filledTonal(
@@ -987,7 +990,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 3),
           FutureBuilder<DjTrackProfile?>(
             future: profileFuture,
             builder: (context, profileSnapshot) {
@@ -1055,7 +1058,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Container(
-                        height: compact ? 26 : 34,
+                        height: compact ? 22 : 30,
                         decoration: BoxDecoration(
                           color: const Color(0xFF080E15),
                           borderRadius: BorderRadius.circular(9),
@@ -1066,7 +1069,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                             scrollDirection: Axis.horizontal,
                             child: SizedBox(
                               width: contentWidth,
-                              height: compact ? 42 : 58,
+                              height: compact ? 22 : 30,
                               child: RepaintBoundary(
                                 child: CustomPaint(
                                 painter: _ConsoleWavePainter(
@@ -1091,7 +1094,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                           ),
                         ]),
                       ),
-                      const SizedBox(height: 7),
+                      const SizedBox(height: 2),
                       _ConsoleAnalysisStrip(
                         profile: verifiedProfile,
                         positionMs: position.inMilliseconds,
@@ -1105,7 +1108,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
               );
             },
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 2),
           Row(children: [
             Text(_time(position), style: theme.textTheme.labelSmall?.copyWith(
               fontFeatures: const [FontFeature.tabularFigures()])),
