@@ -93,20 +93,25 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
   }
 
   Future<void> _setHotCue(String deckId, PlaybackDeckSnapshot? deck, int slot) async {
-    final trackId = deck?.mediaId;
-    if (trackId == null || trackId.isEmpty || slot < 0 || slot >= DjCuePointStore.slotCount) return;
+    final expectedTrackId = deck?.mediaId;
+    if (expectedTrackId == null || expectedTrackId.isEmpty || slot < 0 || slot >= DjCuePointStore.slotCount) return;
+    final music = context.read<MusicProvider>();
+    final latestState = music.media3ShadowState;
+    final latestDeck = deckId == 'A' ? latestState?.deckA : latestState?.deckB;
+    if (latestState?.djDualDeckMode != true || latestDeck?.mediaId != expectedTrackId) return;
+    final cuePosition = latestDeck!.position;
     final updated = <String, List<Duration?>>{
       for (final entry in _hotCues.entries) entry.key: List<Duration?>.from(entry.value),
     };
-    final slots = updated.putIfAbsent(trackId, () => List<Duration?>.filled(DjCuePointStore.slotCount, null));
+    final slots = updated.putIfAbsent(expectedTrackId, () => List<Duration?>.filled(DjCuePointStore.slotCount, null));
     while (slots.length < DjCuePointStore.slotCount) { slots.add(null); }
-    slots[slot] = deck!.position;
+    slots[slot] = cuePosition;
     try {
       await _cuePointStore.saveAll(updated);
       if (!mounted) return;
       setState(() => _hotCues = updated);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Deck $deckId hot cue ${slot + 1} saved at ${_formatCue(deck.position)}.'),
+        content: Text('Deck $deckId hot cue ${slot + 1} saved at ${_formatCue(cuePosition)}.'),
       ));
     } catch (error) {
       if (!mounted) return;
@@ -115,21 +120,23 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
   }
 
   Future<void> _seekToHotCue(String deckId, PlaybackDeckSnapshot? deck, int slot) async {
-    final trackId = deck?.mediaId;
-    if (trackId == null || trackId.isEmpty || slot < 0 || slot >= DjCuePointStore.slotCount) return;
-    final cues = _hotCues[trackId];
+    final expectedTrackId = deck?.mediaId;
+    if (expectedTrackId == null || expectedTrackId.isEmpty || slot < 0 || slot >= DjCuePointStore.slotCount) return;
+    final cues = _hotCues[expectedTrackId];
     if (cues == null || slot >= cues.length || cues[slot] == null) return;
     final cue = cues[slot]!;
-    if (deck!.duration != null && cue > deck.duration!) {
+    final music = context.read<MusicProvider>();
+    final latestState = music.media3ShadowState;
+    final latestDeck = deckId == 'A' ? latestState?.deckA : latestState?.deckB;
+    if (latestState?.djDualDeckMode != true || latestDeck?.mediaId != expectedTrackId) return;
+    if (latestDeck!.duration != null && cue > latestDeck.duration!) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Saved hot cue is beyond this track duration. Set that pad again.'),
       ));
       return;
     }
     try {
-      await context.read<MusicProvider>().seekDjDeck(
-        deckId: deckId, position: cue, expectedMediaId: trackId,
-      );
+      await music.seekDjDeck(deckId: deckId, position: cue, expectedMediaId: expectedTrackId);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -951,7 +958,6 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
               );
             }),
           ),
-          const SizedBox(height: 5),
           const SizedBox(height: 5),
           Row(
             children: [
