@@ -419,6 +419,16 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackStandbyCue
         expectedMediaId: expectedMediaId,
       );
 
+  @override
+  Future<void> setDjDeckEq({
+    required String deckId,
+    required List<double> gainsDb,
+  }) => _runtime.setDjDeckEq(deckId: deckId, gainsDb: gainsDb);
+
+  @override
+  Future<void> clearDjDeckEq({required String deckId}) =>
+      _runtime.clearDjDeckEq(deckId: deckId);
+
   void _ensureAlive() {
     if (_disposed) throw StateError('Media3ProviderSession is disposed.');
   }
