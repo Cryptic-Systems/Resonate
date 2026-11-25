@@ -767,6 +767,34 @@ class DspEngineRegistryTest {
 
 
     @Test
+    fun dj_eq_boost_reserves_preamp_headroom_per_physical_deck_and_restores_it() {
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        assertTrue(DspEngineRegistry.register(2, 2002L, "B"))
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.setDjEqOverlay(
+            "A",
+            doubleArrayOf(80.0, 1000.0, 12000.0),
+            doubleArrayOf(6.0, 0.0, 0.0),
+        ))
+        val expectedCompensation = Math.pow(10.0, -7.0 / 20.0)
+        val applied = fake.calls.last { it.startsWith("preamp:1001:") }
+            .substringAfterLast(":").toDouble()
+        assertEquals(expectedCompensation, applied, 0.000001)
+        assertFalse(fake.calls.any { it.startsWith("preamp:2002:") })
+
+        fake.calls.clear()
+        DspEngineRegistry.applyPreampAll(1.5)
+        val updated = fake.calls.last { it.startsWith("preamp:1001:") }
+            .substringAfterLast(":").toDouble()
+        assertEquals(1.5 * expectedCompensation, updated, 0.000001)
+
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.clearDjEqOverlay("A"))
+        assertTrue(fake.calls.any { it == "preamp:1001:1.5" })
+    }
+
+    @Test
     fun dj_eq_is_bound_to_physical_deck_not_active_standby_role() {
         assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
         assertTrue(DspEngineRegistry.register(2, 2002L, "B"))
