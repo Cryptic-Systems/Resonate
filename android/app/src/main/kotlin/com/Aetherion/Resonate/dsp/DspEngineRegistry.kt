@@ -954,6 +954,27 @@ object DspEngineRegistry {
         clearTemporaryEqOverlay("standby")
     }
 
+    /**
+     * Service teardown is not a normal DJ-session exit: remove process-local
+     * DJ overlays even if a native processor is already failing or retiring.
+     * Reapply the non-DJ sticky curve to any still-registered physical deck.
+     */
+    @JvmStatic
+    @Synchronized
+    fun resetDjDeckOverlaysForServiceTeardown() {
+        val state = stickyState
+        for (deckId in listOf("A", "B")) {
+            djEqOverlays.remove(deckId)
+            djDeckFilters.remove(deckId)
+            handles.values.filter { it.deckId == deckId }.forEach { engine ->
+                runCatching { applyEqForEngine(engine.handle, deckId, state) }
+                    .onFailure { error ->
+                        Log.w(TAG, "resetDjDeckOverlaysForServiceTeardown failed deck=$deckId handle=${engine.handle}", error)
+                    }
+            }
+        }
+    }
+
     private fun applyEqForEngine(handle: Long, deckId: String, state: StickyState) {
         val base = state.gainsDb
         val temporaryOverlay = temporaryEqOverlays[deckId]
