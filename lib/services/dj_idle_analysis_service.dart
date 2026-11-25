@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/song.dart';
 import 'database_helper.dart';
 import 'dj_analysis_service.dart';
+import 'dj_analysis_foreground_service.dart';
 import 'dj_waveform_chunk_analysis_service.dart';
 import 'resonate_diagnostics.dart';
 
@@ -30,6 +31,8 @@ class DjIdleAnalysisService {
 
   bool _running = false;
   bool _stopRequested = false;
+  bool _backgroundServiceStarting = false;
+  bool _backgroundServiceStarted = false;
   int _scanned = 0;
   int _updated = 0;
   int _failed = 0;
@@ -37,6 +40,8 @@ class DjIdleAnalysisService {
   static const Duration _retryCooldown = Duration(hours: 6);
 
   bool get isRunning => _running;
+  bool get canContinueInBackground =>
+      _backgroundServiceStarting || _backgroundServiceStarted;
   int get scanned => _scanned;
   int get updated => _updated;
   int get failed => _failed;
@@ -53,10 +58,21 @@ class DjIdleAnalysisService {
     _updated = 0;
     _failed = 0;
     try {
+      // Start while the Activity is foregrounded. Android then keeps the
+      // process eligible for background execution with a visible notification.
+      _backgroundServiceStarting = true;
+      try {
+        _backgroundServiceStarted = await DjAnalysisForegroundService.start();
+      } finally {
+        _backgroundServiceStarting = false;
+      }
       await ResonateDiagnostics.recordDj(
         stage: 'idle_scan_start',
         outcome: 'started',
-        extra: {'maxSongs': maxSongs},
+        extra: {
+          'maxSongs': maxSongs,
+          'backgroundExecution': _backgroundServiceStarted,
+        },
       );
       final songs = await _db.getAllSongs();
       for (final song in songs) {
@@ -233,6 +249,9 @@ class DjIdleAnalysisService {
       );
     } finally {
       _running = false;
+      await DjAnalysisForegroundService.stop();
+      _backgroundServiceStarted = false;
+      _backgroundServiceStarting = false;
     }
   }
 
