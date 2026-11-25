@@ -508,6 +508,20 @@ class Media3PlaybackBridge(
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_DSP_UNAVAILABLE", "DJ deck EQ could not be reset.", null)
                 }
+                "setDjDeckFilter" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val type = call.argument<Number>("type")?.toInt()
+                    val cutoffHz = call.argument<Number>("cutoffHz")?.toDouble()
+                    if (deckId !in setOf("A", "B") || type !in setOf(0, 3, 4) ||
+                        cutoffHz == null || !cutoffHz.isFinite() || cutoffHz !in 40.0..18000.0
+                    ) {
+                        result.error("INVALID_DJ_DECK_FILTER", "Physical deck A/B, filter type 0/3/4 and cutoff 40–18000 Hz are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDjDeckFilter(deckId!!, type!!, cutoffHz) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_DSP_UNAVAILABLE", "DJ deck filter could not be applied.", null)
+                }
                 "previewTransition" -> {
                     val outRaw = call.argument<String>("outgoingUri")
                     val inRaw = call.argument<String>("incomingUri")
