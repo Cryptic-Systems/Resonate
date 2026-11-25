@@ -409,6 +409,10 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
       _client.clearDjDeckEq(deckId: deckId);
 
   @override
+  Future<void> setDjDeckFilter({required String deckId, required int type, required double cutoffHz}) =>
+      _client.setDjDeckFilter(deckId: deckId, type: type, cutoffHz: cutoffHz);
+
+  @override
   Future<PlaybackSnapshot> currentState() async =>
       _snapshotFromMedia3(await _client.getState());
 
