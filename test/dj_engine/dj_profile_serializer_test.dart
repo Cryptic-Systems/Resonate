@@ -105,6 +105,33 @@ void main() {
     expect(decoded.transitions.riskyPoints.single.timeMs, 60000);
   });
 
+
+  test('Psychic background report persists with the DJ profile', () {
+    const original = DjTrackProfile(
+      songId: 'psychic-round-trip',
+      durationMs: 180000,
+      psychicAnalysis: {
+        'engine': 'Psychic',
+        'version': '0.6.1',
+        'cacheHit': false,
+        'sampledDurationSeconds': 28.0,
+        'sufficientData': true,
+        'findings': [
+          {'trait': 3, 'confidence': 0.82},
+        ],
+      },
+    );
+    const serializer = DjProfileSerializer();
+    final decoded = serializer.decode(serializer.encode(original));
+    expect(decoded.psychicAnalysis?['engine'], 'Psychic');
+    expect(decoded.psychicAnalysis?['version'], '0.6.1');
+    expect(decoded.psychicAnalysis?['sufficientData'], isTrue);
+    expect(
+      (decoded.psychicAnalysis?['findings'] as List).single['confidence'],
+      0.82,
+    );
+  });
+
   test('waveform segments round-trip with their sparse time coverage', () {
     const original = DjTrackProfile(
       songId: 'waveform-round-trip',
