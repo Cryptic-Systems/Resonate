@@ -175,6 +175,7 @@ class DjTransitionBrain {
     final phrase = _phraseScore(a, b, inPos);
     final structure = _structureScore(a, b, outPos, inPos);
     final silence = _outgoingSilenceScore(a, outPos);
+    final psychic = _psychicPairScore(a, b);
     return {
       'tempo': tempo,
       'harmonic': harmonic,
@@ -183,20 +184,61 @@ class DjTransitionBrain {
       'phrase': (phrase * phraseWeight).clamp(0.0, 1.0).toDouble(),
       'structure': (structure * structureWeight).clamp(0.0, 1.0).toDouble(),
       'silence': silence,
+      'psychic': psychic,
       'confidence': _analysisConfidence(a, b),
     };
+  }
+
+  /// Compares measured Psychic loudness, bass prominence and transient shape.
+  /// Missing/low-confidence reports remain neutral and never penalize a track.
+  double _psychicPairScore(DjTrackProfile a, DjTrackProfile b) {
+    Map<String, dynamic>? usable(DjTrackProfile profile) {
+      final report = profile.psychicAnalysis;
+      if (report == null || report['sufficientData'] != true) return null;
+      final duration = report['sampledDurationSeconds'];
+      if (duration is! num || !duration.isFinite || duration < 8.0) return null;
+      return report;
+    }
+
+    final x = usable(a);
+    final y = usable(b);
+    if (x == null || y == null) return 0.5;
+
+    double? metric(Map<String, dynamic> report, String key) {
+      final value = report[key];
+      return value is num && value.isFinite ? value.toDouble() : null;
+    }
+
+    final loudnessA = metric(x, 'integratedRmsDb');
+    final loudnessB = metric(y, 'integratedRmsDb');
+    final bassA = metric(x, 'bassProminenceDb');
+    final bassB = metric(y, 'bassProminenceDb');
+    final crestA = metric(x, 'crestP90Db');
+    final crestB = metric(y, 'crestP90Db');
+    if ([loudnessA, loudnessB, bassA, bassB, crestA, crestB].any((v) => v == null)) {
+      return 0.5;
+    }
+
+    final loudnessMatch = (1.0 - (loudnessA! - loudnessB!).abs() / 12.0)
+        .clamp(0.0, 1.0).toDouble();
+    final bassMatch = (1.0 - (bassA! - bassB!).abs() / 10.0)
+        .clamp(0.0, 1.0).toDouble();
+    final transientMatch = (1.0 - (crestA! - crestB!).abs() / 12.0)
+        .clamp(0.0, 1.0).toDouble();
+    return loudnessMatch * 0.40 + bassMatch * 0.35 + transientMatch * 0.25;
   }
 
   double _weightedScore(Map<String, double> s, {DjPolicy policy = DjPolicy.balanced}) {
     final phraseBoost = policy.phraseWeightBoost;
     return (s['tempo'] ?? 0.5) * 0.22 +
         (s['harmonic'] ?? 0.5) * 0.18 +
-        (s['energy'] ?? 0.5) * 0.14 +
-        (s['spectrum'] ?? 0.5) * 0.09 +
+        (s['energy'] ?? 0.5) * 0.13 +
+        (s['spectrum'] ?? 0.5) * 0.08 +
         (s['phrase'] ?? 0.5) * (0.14 + phraseBoost) +
         (s['structure'] ?? 0.5) * 0.10 +
         (s['silence'] ?? 0.5) * 0.06 +
-        (s['confidence'] ?? 0.5) * 0.07;
+        (s['confidence'] ?? 0.5) * 0.06 +
+        (s['psychic'] ?? 0.5) * 0.08;
   }
 
 
