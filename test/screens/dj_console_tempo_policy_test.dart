@@ -74,6 +74,20 @@ void main() {
       expect(DjConsoleTempoPolicy.roleForPhysicalDeck(physicalDeckId: 'A', activeDeckId: null), DjConsoleTempoDeckRole.unavailable);
     });
 
+    test('calculates bounded BPM sync rate and rejects unsafe pairs', () {
+      expect(
+        DjConsoleTempoPolicy.syncSpeed(sourceBpm: 126, targetBpm: 120),
+        closeTo(1.05, 0.000001),
+      );
+      expect(
+        DjConsoleTempoPolicy.syncSpeed(sourceBpm: 114, targetBpm: 120),
+        closeTo(0.95, 0.000001),
+      );
+      expect(DjConsoleTempoPolicy.syncSpeed(sourceBpm: 130, targetBpm: 120), isNull);
+      expect(DjConsoleTempoPolicy.syncSpeed(sourceBpm: 120, targetBpm: 0), isNull);
+      expect(DjConsoleTempoPolicy.syncSpeed(sourceBpm: double.nan, targetBpm: 120), isNull);
+    });
+
     test('maps the fader percentage to playback speed', () {
       final slower = DjConsoleTempoPolicy.parametersFor(percent: -6, keyLockEnabled: true);
       final faster = DjConsoleTempoPolicy.parametersFor(percent: 6, keyLockEnabled: true);
