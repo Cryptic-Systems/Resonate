@@ -972,10 +972,12 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
           Expanded(
             child: LayoutBuilder(
               builder: (context, stageConstraints) {
+                final availableWheelWidth =
+                    (stageConstraints.maxWidth - 116).clamp(1.0, 320.0);
                 final diameter = math.min(
                   stageConstraints.maxHeight,
-                  stageConstraints.maxWidth * .62,
-                ).clamp(76.0, 320.0).toDouble();
+                  availableWheelWidth,
+                ).clamp(1.0, 320.0).toDouble();
                 return Stack(
                   alignment: Alignment.center,
                   children: [
