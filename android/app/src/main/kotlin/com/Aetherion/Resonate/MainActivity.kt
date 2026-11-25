@@ -46,6 +46,9 @@ class MainActivity : FlutterActivity() {
                         result.error("DJ_ANALYSIS_SERVICE_START_FAILED", error.message, null)
                     }
                 }
+                "refreshDjAnalysisForegroundService" -> {
+                    result.success(DjAnalysisForegroundService.heartbeat())
+                }
                 "stopDjAnalysisForegroundService" -> {
                     try {
                         stopService(Intent(this, DjAnalysisForegroundService::class.java))
