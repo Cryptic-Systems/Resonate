@@ -24,6 +24,20 @@ class DjAnalysisForegroundService {
     }
   }
 
+  static Future<bool> heartbeat() async {
+    if (!Platform.isAndroid) return false;
+    try {
+      return await _channel.invokeMethod<bool>(
+            'refreshDjAnalysisForegroundService',
+          ) ??
+          false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   static Future<void> stop() async {
     if (!Platform.isAndroid) return;
     try {
