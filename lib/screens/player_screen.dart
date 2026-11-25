@@ -684,7 +684,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const DjWorkspaceScreen(playerFacing: true),
+                    builder: (_) => const PlayerMixMonitorScreen(),
                   ),
                 );
               },
@@ -1292,7 +1292,7 @@ class _PlayerSideDrawer extends StatelessWidget {
               leading: const Icon(Icons.graphic_eq_rounded),
               title: const Text('Mix Monitor'),
               subtitle: const Text('Live transitions, incoming preparation and underruns'),
-              onTap: () => onOpen(const DjWorkspaceScreen(playerFacing: true)),
+              onTap: () => onOpen(const PlayerMixMonitorScreen()),
             ),
             ListTile(
               leading: const Icon(Icons.notifications_outlined),
