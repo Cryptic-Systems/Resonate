@@ -1278,6 +1278,14 @@ class _PlayerSideDrawer extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
               child: Text('PLAYER TOOLS', style: theme.textTheme.labelLarge),
             ),
+            ListTile(
+              leading: const Icon(Icons.graphic_eq_rounded),
+              title: const Text('Mix Monitor · Engine A/B'),
+              subtitle: const Text('Automatic playback, standby preparation and transition health'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => onOpen(const PlayerMixMonitorScreen()),
+            ),
+            const Divider(),
             Consumer<ModeProvider>(
               builder: (_, modes, __) => ListTile(
                 leading: const Icon(Icons.tune_rounded),
@@ -1286,13 +1294,6 @@ class _PlayerSideDrawer extends StatelessWidget {
                 trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () => onOpen(ModesScreen(folderPicker: const ResonateModeFolderPickerPort())),
               ),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.graphic_eq_rounded),
-              title: const Text('Mix Monitor'),
-              subtitle: const Text('Live transitions, incoming preparation and underruns'),
-              onTap: () => onOpen(const PlayerMixMonitorScreen()),
             ),
             ListTile(
               leading: const Icon(Icons.notifications_outlined),
