@@ -104,8 +104,117 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
     }
   }
 
+  Widget _buildToolsWorkspace(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      backgroundColor: theme.colorScheme.surface,
+      appBar: AppBar(
+        title: const Text('DJ Workspace'),
+        leading: Builder(
+          builder: (context) => IconButton(
+            tooltip: 'Switch experience',
+            icon: const Icon(Icons.menu_rounded),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+      ),
+      drawer: _DjModeDrawer(onSwitchToPlayer: widget.onSwitchToPlayer),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 32),
+          children: [
+            Row(
+              children: [
+                Icon(Icons.graphic_eq_rounded, color: theme.colorScheme.primary, size: 30),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Your creative workspace', style: theme.textTheme.titleLarge),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Build, analyze and shape transitions. Live playback monitoring stays in Resonate Player.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Text('TRANSITION TOOLS', style: theme.textTheme.labelLarge),
+            const SizedBox(height: 10),
+            _WorkspaceAction(
+              icon: Icons.compare_arrows_rounded,
+              title: 'Transition Studio',
+              subtitle: 'Analyze a pair of tracks, edit Mix-In / Mix-Out cues and inspect transition plans.',
+              onTap: _openTransitionStudio,
+            ),
+            const SizedBox(height: 12),
+            _WorkspaceAction(
+              icon: Icons.queue_music_rounded,
+              title: 'Prepare a DJ set',
+              subtitle: 'Build a reviewable library sequence with track-pair transition plans.',
+              loading: _buildingMix,
+              onTap: _buildingMix ? null : _buildLibraryMix,
+            ),
+            const SizedBox(height: 24),
+            Text('WORKSPACE', style: theme.textTheme.labelLarge),
+            const SizedBox(height: 10),
+            ResonateGlassCard(
+              blurEnabled: false,
+              margin: EdgeInsets.zero,
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.add_circle_outline_rounded, color: theme.colorScheme.primary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('More creative tools belong here', style: theme.textTheme.titleMedium),
+                        const SizedBox(height: 5),
+                        Text(
+                          'This space is reserved for performance tools, transition analysis, cue editing and future DJ workflows — not a duplicate playback display.',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            ResonateGlassCard(
+              blurEnabled: false,
+              margin: EdgeInsets.zero,
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.shield_outlined, color: theme.colorScheme.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Playback safety: DJ Workspace prepares and reviews DJ decisions; it does not create a second player. Media3 remains the only playback authority.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!widget.playerFacing) return _buildToolsWorkspace(context);
     final theme = Theme.of(context);
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
