@@ -132,13 +132,13 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
+        selectedIndex: _selectedIndex == _libraryTab ? 2 : 0,
         onDestinationSelected: (index) {
-          if (index == _consoleTab) {
+          if (index == 1) {
             unawaited(_openConsole());
             return;
           }
-          _selectPage(index);
+          _selectPage(index == 0 ? _workspaceTab : _libraryTab);
         },
         destinations: const [
           NavigationDestination(
@@ -147,14 +147,14 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
             label: 'Workspace',
           ),
           NavigationDestination(
-            icon: Icon(Icons.library_music_outlined),
-            selectedIcon: Icon(Icons.library_music_rounded),
-            label: 'Library',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.album_outlined),
             selectedIcon: Icon(Icons.album_rounded),
             label: 'Console',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.library_music_outlined),
+            selectedIcon: Icon(Icons.library_music_rounded),
+            label: 'Library',
           ),
         ],
       ),
