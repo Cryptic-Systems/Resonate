@@ -921,12 +921,16 @@ object DspEngineRegistry {
         val temporaryOverlay = temporaryEqOverlays[deckId]
         val djOverlay = djEqOverlays[deckId]
         if (temporaryOverlay == null && djOverlay == null) {
-            val count = base?.size ?: 0
+            // Keep a valid neutral curve installed when no Player EQ is saved;
+            // this also prevents a cleared DJ/transition overlay from leaving
+            // stale native filter coefficients behind.
+            val count = base?.size?.takeIf { it > 0 } ?: 31
+            val centers = state.centersHz?.takeIf { base != null && it.size >= count }
+                ?.copyOf(count) ?: defaultCenters(count)
             nativeApi.setParametricEqBands(
                 handle,
-                state.centersHz?.map { it.toFloat() }?.toFloatArray()
-                    ?: defaultCenters(count).map { it.toFloat() }.toFloatArray(),
-                base?.map { it.toFloat() }?.toFloatArray() ?: FloatArray(0),
+                centers.map { it.toFloat() }.toFloatArray(),
+                base?.map { it.toFloat() }?.toFloatArray() ?: FloatArray(count),
                 state.eqQ ?: defaultEqQ(count),
                 state.eqTypes ?: IntArray(count),
                 true,
