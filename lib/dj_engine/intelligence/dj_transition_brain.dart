@@ -176,7 +176,7 @@ class DjTransitionBrain {
     final structure = _structureScore(a, b, outPos, inPos);
     final silence = _outgoingSilenceScore(a, outPos);
     final psychic = _psychicPairScore(a, b);
-    return {
+    final scores = <String, double>{
       'tempo': tempo,
       'harmonic': harmonic,
       'energy': energy.clamp(0.0, 1.0).toDouble(),
@@ -184,10 +184,10 @@ class DjTransitionBrain {
       'phrase': (phrase * phraseWeight).clamp(0.0, 1.0).toDouble(),
       'structure': (structure * structureWeight).clamp(0.0, 1.0).toDouble(),
       'silence': silence,
-      // Negative sentinel keeps legacy scoring bit-for-bit when either report is absent.
-      'psychic': psychic ?? -1.0,
       'confidence': _analysisConfidence(a, b),
     };
+    if (psychic != null) scores['psychic'] = psychic;
+    return scores;
   }
 
   /// Compares measured Psychic loudness, bass prominence and transient shape.
