@@ -14,41 +14,34 @@ void main() {
       store = DjCuePointStore();
     });
 
-    test('persists independent cue points by track identity', () async {
-      await store.saveAll(<String, Duration>{
-        'track-a': const Duration(seconds: 31, milliseconds: 250),
-        'track-b': const Duration(minutes: 1, seconds: 4),
+    test('persists four independent hot-cue slots per track', () async {
+      await store.saveAll(<String, List<Duration?>>{
+        'track-a': <Duration?>[const Duration(seconds: 12), const Duration(seconds: 48), null, const Duration(minutes: 2)],
       });
-
-      final loaded = await store.load();
-      expect(loaded['track-a'], const Duration(seconds: 31, milliseconds: 250));
-      expect(loaded['track-b'], const Duration(minutes: 1, seconds: 4));
+      expect(await store.load(), <String, List<Duration?>>{
+        'track-a': <Duration?>[const Duration(seconds: 12), const Duration(seconds: 48), null, const Duration(minutes: 2)],
+      });
     });
 
-    test('ignores malformed or negative cue values', () async {
+    test('migrates legacy single cue into hot-cue slot one', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'resonate_dj_cue_points_v1': '{"track-old":37500,"negative":-1,"bad":"nope"}',
+      });
+      expect(await store.load(), <String, List<Duration?>>{
+        'track-old': <Duration?>[const Duration(milliseconds: 37500), null, null, null],
+      });
       final preferences = await SharedPreferences.getInstance();
-      await preferences.setString(
-        'resonate_dj_cue_points_v1',
-        '{"valid":12000,"negative":-1,"bad":"not-a-number","":"3000"}',
-      );
-
-      expect(
-        await store.load(),
-        <String, Duration>{'valid': const Duration(seconds: 12)},
-      );
+      expect(preferences.getString('resonate_dj_hot_cues_v2'), isNotNull);
     });
 
-    test('drops empty identities and negative positions on save', () async {
-      await store.saveAll(<String, Duration>{
-        'track-a': const Duration(seconds: 8),
-        ' ': const Duration(seconds: 4),
-        'track-b': const Duration(milliseconds: -1),
+    test('normalizes slot count and drops empty identities and negative positions', () async {
+      await store.saveAll(<String, List<Duration?>>{
+        'track-a': <Duration?>[const Duration(seconds: 8), const Duration(milliseconds: -1)],
+        ' ': <Duration?>[const Duration(seconds: 4)],
       });
-
-      expect(
-        await store.load(),
-        <String, Duration>{'track-a': const Duration(seconds: 8)},
-      );
+      expect(await store.load(), <String, List<Duration?>>{
+        'track-a': <Duration?>[const Duration(seconds: 8), null, null, null],
+      });
     });
   });
 }
