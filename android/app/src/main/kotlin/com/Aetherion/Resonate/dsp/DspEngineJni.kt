@@ -108,6 +108,18 @@ object DspEngineJni {
         shelfFreqHz: Float, ceilingDb: Float, marginDb: Float,
     ): Float
 
+    external fun nativeAnalyzeTrackMetrics(
+        stableId: String,
+        fileSizeBytes: Long,
+        modifiedTimeNs: Long,
+        rmsValues: FloatArray,
+        peakValues: FloatArray,
+        bassValues: FloatArray,
+        durations: FloatArray,
+    ): FloatArray?
+
+    external fun nativeGetTrackCacheStats(): LongArray?
+
     external fun nativeResetStats(handle: Long)
 
 }
