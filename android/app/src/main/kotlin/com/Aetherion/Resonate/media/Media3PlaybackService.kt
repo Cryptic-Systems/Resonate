@@ -1327,6 +1327,13 @@ class Media3PlaybackService : MediaSessionService() {
      */
     fun restorePrimaryDeckForNewSelection(): Boolean {
         if (!::activePlayer.isInitialized) return false
+        // Player selection can bypass the explicit DJ-mode exit action. Clear
+        // all DJ-only processing before either physical deck returns to the
+        // ordinary Player lifecycle.
+        if (!DspEngineRegistry.clearDjEqOverlay("A") ||
+            !DspEngineRegistry.clearDjEqOverlay("B") ||
+            !DspEngineRegistry.clearDjDeckFilter("A") ||
+            !DspEngineRegistry.clearDjDeckFilter("B")) return false
         // A new Player selection exits DJ's persistent pair and restores the
         // ordinary single-user-deck lifecycle before loading its queue.
         djDualDeckMode = false
@@ -1524,6 +1531,10 @@ class Media3PlaybackService : MediaSessionService() {
         isDestroyed = true
         cancelCrossfade()
         mainHandler.removeCallbacksAndMessages(null)
+        // Clear process-local DJ EQ/filter state even if teardown bypassed the
+        // normal mode-exit command. This prevents stale overlays from leaking
+        // into the next Media3 service instance or ordinary Player session.
+        DspEngineRegistry.resetDjDeckOverlaysForServiceTeardown()
         mediaSession?.release()
         mediaSession = null
         DspEngineSinkHook.suspendDeck("A")
