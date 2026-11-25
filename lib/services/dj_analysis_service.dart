@@ -97,6 +97,15 @@ class DjAnalysisService {
     return profile != null && profile.waveformSegments.isNotEmpty;
   }
 
+  /// True only when Psychic has a usable, persisted report for this track.
+  /// Insufficient sampled coverage remains eligible for a later idle retry.
+  Future<bool> hasPsychicAnalysis(String songId) async {
+    final report = await getPsychicAnalysis(songId);
+    if (report == null || report['sufficientData'] != true) return false;
+    final sampled = report['sampledDurationSeconds'];
+    return sampled is num && sampled.isFinite && sampled >= 8.0;
+  }
+
   bool _profileIsValid(DjTrackProfile profile, DjAnalysis? analysis) {
     if (profile.analysisVersion < DjAnalysis.currentVersion) return false;
     if (analysis != null) {
