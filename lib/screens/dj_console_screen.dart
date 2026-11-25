@@ -874,6 +874,54 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
   }
 
+  Widget _buildCuePad(int index, Color accent) {
+    final cue = index < widget.hotCuePositions.length
+        ? widget.hotCuePositions[index]
+        : null;
+    return SizedBox(
+      width: 52,
+      height: 42,
+      child: GestureDetector(
+        onLongPress: widget.onSetHotCue == null
+            ? null
+            : () => widget.onSetHotCue!(index),
+        child: OutlinedButton(
+          onPressed: cue == null || widget.onHotCue == null
+              ? null
+              : () => widget.onHotCue!(index),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+            minimumSize: Size.zero,
+            side: BorderSide(
+              color: cue == null ? Colors.white24 : accent.withValues(alpha: .7),
+            ),
+            foregroundColor: cue == null ? Colors.white38 : accent,
+            backgroundColor: cue == null
+                ? Colors.white.withValues(alpha: .025)
+                : accent.withValues(alpha: .10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(9),
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'CUE ${index + 1}',
+                style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w900),
+              ),
+              Text(
+                cue == null ? '—' : _format(cue),
+                style: const TextStyle(fontSize: 8),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -921,117 +969,151 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(color: Colors.white60)),
-          SizedBox(
-            height: compact ? 58 : 86,
-            child: Center(
-              child: AspectRatio(
-                aspectRatio: 1,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: compact ? 290 : 350,
-                    maxHeight: compact ? 290 : 350,
-                  ),
-                  child: AnimatedBuilder(
-                    animation: _platterRotation,
-                    builder: (context, child) => Transform.rotate(
-                      angle: _platterRotation.value * math.pi * 2,
-                      child: child,
-                    ),
-                    child: LayoutBuilder(
-                      builder: (context, platterConstraints) {
-                        final center = Offset(
-                          platterConstraints.maxWidth / 2,
-                          platterConstraints.maxHeight / 2,
-                        );
-                        return GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onPanStart: widget.jogSeekEnabled
-                              ? (details) => _beginJog(details.localPosition, center)
-                              : null,
-                          onPanUpdate: widget.jogSeekEnabled
-                              ? (details) => _updateJog(details.localPosition, center)
-                              : null,
-                          onPanEnd: widget.jogSeekEnabled ? (_) => _finishJog() : null,
-                          onPanCancel: _cancelJog,
-                          child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Container(decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: const RadialGradient(colors: [
-                            Color(0xFF344353), Color(0xFF111923), Color(0xFF080D13),
-                          ]),
-                          border: Border.all(color: accent.withValues(alpha: .35), width: 2),
-                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .4), blurRadius: 18)],
-                        )),
-                        Positioned.fill(
-                          child: CustomPaint(
-                            painter: _ConsoleRecordDetailPainter(accent: accent),
-                          ),
-                        ),
-                        Container(
-                          width: compact ? 54 : 72, height: compact ? 54 : 72,
-                          decoration: BoxDecoration(shape: BoxShape.circle,
-                            color: const Color(0xFF182431),
-                            border: Border.all(color: accent.withValues(alpha: .7), width: 2)),
-                          child: Icon(Icons.album, color: accent, size: compact ? 28 : 36),
-                        ),
-                        Positioned(bottom: 18, child: Text(
-                          _jogPreviewPosition == null
-                              ? (widget.jogSeekEnabled ? 'TOUCH · DRAG TO SEEK' : 'PLATTER')
-                              : 'SEEK ${_time(_jogPreviewPosition!)}',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: _jogPreviewPosition == null
-                                ? Colors.white38 : accent,
-                            letterSpacing: 1.4,
-                          ),
-                        )),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, stageConstraints) {
+                final diameter = math.min(
+                  stageConstraints.maxHeight,
+                  stageConstraints.maxWidth * .62,
+                ).clamp(76.0, 320.0).toDouble();
+                return Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 52,
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildCuePad(0, accent),
+                            const SizedBox(height: 8),
+                            _buildCuePad(1, accent),
                           ],
-                          ),
-                        );
-                      },
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ),
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 52,
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildCuePad(2, accent),
+                            const SizedBox(height: 8),
+                            _buildCuePad(3, accent),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Center(
+                      child: SizedBox.square(
+                        dimension: diameter,
+                        child: AnimatedBuilder(
+                          animation: _platterRotation,
+                          builder: (context, child) => Transform.rotate(
+                            angle: _platterRotation.value * math.pi * 2,
+                            child: child,
+                          ),
+                          child: LayoutBuilder(
+                            builder: (context, platterConstraints) {
+                              final center = Offset(
+                                platterConstraints.maxWidth / 2,
+                                platterConstraints.maxHeight / 2,
+                              );
+                              return GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onPanStart: widget.jogSeekEnabled
+                                    ? (details) => _beginJog(details.localPosition, center)
+                                    : null,
+                                onPanUpdate: widget.jogSeekEnabled
+                                    ? (details) => _updateJog(details.localPosition, center)
+                                    : null,
+                                onPanEnd: widget.jogSeekEnabled
+                                    ? (_) => _finishJog()
+                                    : null,
+                                onPanCancel: _cancelJog,
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        gradient: const RadialGradient(
+                                          colors: [
+                                            Color(0xFF344353),
+                                            Color(0xFF111923),
+                                            Color(0xFF080D13),
+                                          ],
+                                        ),
+                                        border: Border.all(
+                                          color: accent.withValues(alpha: .48),
+                                          width: 2,
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(alpha: .4),
+                                            blurRadius: 18,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Positioned.fill(
+                                      child: CustomPaint(
+                                        painter: _ConsoleRecordDetailPainter(accent: accent),
+                                      ),
+                                    ),
+                                    Container(
+                                      width: diameter * .34,
+                                      height: diameter * .34,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: const Color(0xFF182431),
+                                        border: Border.all(
+                                          color: accent.withValues(alpha: .7),
+                                          width: 2,
+                                        ),
+                                      ),
+                                      child: Icon(
+                                        Icons.album,
+                                        color: accent,
+                                        size: diameter * .18,
+                                      ),
+                                    ),
+                                    Positioned(
+                                      bottom: diameter * .12,
+                                      child: Text(
+                                        _jogPreviewPosition == null
+                                            ? (widget.jogSeekEnabled ? 'DRAG TO SEEK' : 'PLATTER')
+                                            : 'SEEK ${_time(_jogPreviewPosition!)}',
+                                        style: theme.textTheme.labelSmall?.copyWith(
+                                          color: _jogPreviewPosition == null
+                                              ? Colors.white38
+                                              : accent,
+                                          fontSize: compact ? 7 : 9,
+                                          letterSpacing: 1.0,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
-          const SizedBox(height: 7),
-          const SizedBox(height: 3),
-          Row(
-            children: List<Widget>.generate(DjCuePointStore.slotCount, (index) {
-              final cue = index < widget.hotCuePositions.length ? widget.hotCuePositions[index] : null;
-              return Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(right: index == DjCuePointStore.slotCount - 1 ? 0 : 5),
-                  child: GestureDetector(
-                    onLongPress: widget.onSetHotCue == null
-                        ? null
-                        : () => widget.onSetHotCue!(index),
-                    child: OutlinedButton(
-                      onPressed: cue == null || widget.onHotCue == null
-                          ? null
-                          : () => widget.onHotCue!(index),
-                      style: OutlinedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(vertical: compact ? 3 : 6, horizontal: 2),
-                        side: BorderSide(color: cue == null ? Colors.white24 : accent.withValues(alpha: .65)),
-                        foregroundColor: cue == null ? Colors.white38 : accent,
-                        backgroundColor: cue == null ? Colors.white.withValues(alpha: .025) : accent.withValues(alpha: .09),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text('CUE ${index + 1}', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900)),
-                          const SizedBox(height: 2),
-                          Text(cue == null ? '—' : _format(cue), style: const TextStyle(fontSize: 9)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ),
+          const SizedBox(height: compact ? 2 : 5),
           const SizedBox(height: 5),
           Row(
             children: [
