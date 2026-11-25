@@ -827,6 +827,15 @@ class Media3PlaybackRuntime {
         await (backend as PlaybackDjDeckBackend).clearDjDeckEq(deckId: deckId);
       });
 
+  Future<void> setDjDeckFilter({required String deckId, required int type, required double cutoffHz}) => _run(() async {
+    if ((deckId != 'A' && deckId != 'B') || !const [0, 3, 4].contains(type) || !cutoffHz.isFinite || cutoffHz < 40 || cutoffHz > 18000) {
+      throw ArgumentError('DJ filter requires physical deck A/B, type 0/3/4 and cutoff 40–18000 Hz.');
+    }
+    final backend = _backend;
+    if (backend is! PlaybackDjDeckBackend) throw UnsupportedError('The active backend does not support DJ filters.');
+    await (backend as PlaybackDjDeckBackend).setDjDeckFilter(deckId: deckId, type: type, cutoffHz: cutoffHz);
+  });
+
   Future<void> seekDjDeck({
     required String deckId,
     required Duration position,
