@@ -106,11 +106,17 @@ abstract final class DjConsoleTempoPolicy {
     required List<int> targetBeatMs,
     required int sourcePositionMs,
     required int targetPositionMs,
-    required double effectiveBpm,
+    required double sourceBpm,
+    required double targetBpm,
+    required double sourceSpeed,
+    required double targetSpeed,
     int maxCorrectionMs = 120,
   }) {
     if (sourcePositionMs < 0 || targetPositionMs < 0 ||
-        !effectiveBpm.isFinite || effectiveBpm <= 0 ||
+        !sourceBpm.isFinite || sourceBpm <= 0 ||
+        !targetBpm.isFinite || targetBpm <= 0 ||
+        !sourceSpeed.isFinite || sourceSpeed <= 0 ||
+        !targetSpeed.isFinite || targetSpeed <= 0 ||
         maxCorrectionMs < 0 ||
         sourceBeatMs.length < 2 || targetBeatMs.length < 2) {
       return null;
@@ -127,15 +133,19 @@ abstract final class DjConsoleTempoPolicy {
     final sourceAnchor = precedingBeat(sourceBeatMs, sourcePositionMs);
     final targetAnchor = precedingBeat(targetBeatMs, targetPositionMs);
     if (sourceAnchor == null || targetAnchor == null) return null;
-    final beatDurationMs = 60000.0 / effectiveBpm;
-    final sourcePhase = (sourcePositionMs - sourceAnchor) % beatDurationMs;
-    final targetPhase = (targetPositionMs - targetAnchor) % beatDurationMs;
-    var correction = sourcePhase - targetPhase;
-    final halfBeat = beatDurationMs / 2;
-    if (correction > halfBeat) correction -= beatDurationMs;
-    if (correction < -halfBeat) correction += beatDurationMs;
-    if (!correction.isFinite || correction.abs() > maxCorrectionMs) return null;
-    return correction.round();
+    final sourcePhaseWallMs =
+        (sourcePositionMs - sourceAnchor) * sourceSpeed;
+    final targetPhaseWallMs =
+        (targetPositionMs - targetAnchor) * targetSpeed;
+    final beatDurationWallMs = 60000.0 / (sourceBpm * sourceSpeed);
+    var correctionWallMs = sourcePhaseWallMs - targetPhaseWallMs;
+    final halfBeat = beatDurationWallMs / 2;
+    if (correctionWallMs > halfBeat) correctionWallMs -= beatDurationWallMs;
+    if (correctionWallMs < -halfBeat) correctionWallMs += beatDurationWallMs;
+    final correctionTargetMs = correctionWallMs / targetSpeed;
+    if (!correctionTargetMs.isFinite ||
+        correctionTargetMs.abs() > maxCorrectionMs) return null;
+    return correctionTargetMs.round();
   }
 
   static const double minPercent = -6.0;
