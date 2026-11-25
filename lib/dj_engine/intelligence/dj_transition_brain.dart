@@ -413,8 +413,13 @@ class DjTransitionBrain {
       (a.analysisConfidence * 0.5 + b.analysisConfidence * 0.5).clamp(0.0, 1.0).toDouble();
 
   double _confidence(DjTrackProfile a, DjTrackProfile b, Map<String, double> s) {
-    final known = s.values.where((v) => v > 0).length;
-    return ((known / s.length) * _analysisConfidence(a, b)).clamp(0.0, 1.0).toDouble();
+    final evidence = s.entries
+        .where((entry) => entry.key != 'psychic' || entry.value >= 0)
+        .map((entry) => entry.value)
+        .toList(growable: false);
+    final known = evidence.where((value) => value > 0).length;
+    return ((known / evidence.length) * _analysisConfidence(a, b))
+        .clamp(0.0, 1.0).toDouble();
   }
 
   List<DjRiskType> _risks(DjTrackProfile a, DjTrackProfile b, int outPos, int inPos) {
