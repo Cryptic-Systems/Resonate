@@ -7,13 +7,7 @@ import '../ui/resonate_glass.dart';
 import '../widgets/autopilot_home_card.dart';
 import '../widgets/resonate_logo.dart';
 import 'discovery_screen.dart';
-import 'settings_screen.dart';
-import 'listening_history_screen.dart';
-import 'notification_center_screen.dart';
 import '../widgets/resonate_main_drawer.dart';
-import '../modes/screens/modes_screen.dart';
-import '../modes/integration/resonate_mode_ports.dart';
-import '../experience/experience_provider.dart';
 
 class HomeDashboard extends StatelessWidget {
   const HomeDashboard();
