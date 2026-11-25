@@ -221,7 +221,6 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
           final djReady = state?.djDualDeckMode == true;
           final screenSize = MediaQuery.sizeOf(context);
           final compact = screenSize.width < 820;
-          final portraitLayout = false;
 
           Widget buildDeck({
             required String id,
@@ -354,11 +353,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                         deckBIsPlaying: deckB?.isPlaying == true,
                       );
                       final mixer = SizedBox(
-                        width: portraitLayout
-                            ? double.infinity
-                            : compact
-                                ? 146
-                                : 204,
+                        width: compact ? 146 : 204,
                         child: _DjConsoleMixer(
                           enabled: DjConsoleManualControlsPolicy.canAdjustCrossfader(
                             djModeEnabled: djReady && music.media3ProviderSessionActive,
@@ -749,7 +744,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
           Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(color: Colors.white60)),
           SizedBox(
-            height: compact ? 112 : 142,
+            height: compact ? 84 : 112,
             child: Center(
               child: AspectRatio(
                 aspectRatio: 1,
@@ -984,7 +979,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Container(
-                        height: compact ? 30 : 38,
+                        height: compact ? 26 : 34,
                         decoration: BoxDecoration(
                           color: const Color(0xFF080E15),
                           borderRadius: BorderRadius.circular(9),
