@@ -88,6 +88,39 @@ void main() {
       expect(DjConsoleTempoPolicy.syncSpeed(sourceBpm: double.nan, targetBpm: 120), isNull);
     });
 
+    test('computes only small, bounded beat-phase trims', () {
+      expect(
+        DjConsoleTempoPolicy.phaseCorrectionMs(
+          sourceBeatMs: [0, 500, 1000, 1500, 2000, 2500, 3000, 3500],
+          targetBeatMs: [0, 500, 1000, 1500, 2000, 2500, 3000, 3500],
+          sourcePositionMs: 1120,
+          targetPositionMs: 1080,
+          effectiveBpm: 120,
+        ),
+        40,
+      );
+      expect(
+        DjConsoleTempoPolicy.phaseCorrectionMs(
+          sourceBeatMs: [0, 500, 1000, 1500, 2000, 2500, 3000, 3500],
+          targetBeatMs: [0, 500, 1000, 1500, 2000, 2500, 3000, 3500],
+          sourcePositionMs: 1120,
+          targetPositionMs: 1300,
+          effectiveBpm: 120,
+        ),
+        isNull,
+      );
+      expect(
+        DjConsoleTempoPolicy.phaseCorrectionMs(
+          sourceBeatMs: [0],
+          targetBeatMs: [0, 500],
+          sourcePositionMs: 100,
+          targetPositionMs: 100,
+          effectiveBpm: 120,
+        ),
+        isNull,
+      );
+    });
+
     test('maps the fader percentage to playback speed', () {
       final slower = DjConsoleTempoPolicy.parametersFor(percent: -6, keyLockEnabled: true);
       final faster = DjConsoleTempoPolicy.parametersFor(percent: 6, keyLockEnabled: true);
