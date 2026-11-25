@@ -35,6 +35,7 @@ import 'artist_screen.dart';
 import 'lyrics_screen.dart';
 import 'audio_leveling_settings_screen.dart';
 import 'settings_screen.dart';
+import 'notification_center_screen.dart';
 import 'crossfade_screen.dart';
 import 'dj_mode_settings_screen.dart';
 import '../modes/screens/modes_screen.dart';
@@ -1292,6 +1293,12 @@ class _PlayerSideDrawer extends StatelessWidget {
               title: const Text('Mix Monitor'),
               subtitle: const Text('Live transitions, incoming preparation and underruns'),
               onTap: () => onOpen(const DjWorkspaceScreen(playerFacing: true)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.notifications_outlined),
+              title: const Text('Notifications'),
+              subtitle: const Text('Driving alerts and Resonate updates'),
+              onTap: () => onOpen(const NotificationCenterScreen()),
             ),
             ListTile(
               leading: const Icon(Icons.queue_music_rounded),
