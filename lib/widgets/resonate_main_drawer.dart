@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../experience/experience_provider.dart';
 import '../modes/integration/resonate_mode_ports.dart';
+import '../modes/models/resonate_mode.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/screens/modes_screen.dart';
 import '../screens/audio_leveling_settings_screen.dart';
