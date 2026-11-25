@@ -504,23 +504,25 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                 final activeGain = deckState?.activeDeckVolume;
                 final standbyGain = deckState?.standbyDeckVolume;
                 if (widget.playerFacing) {
-                  return _PlayerMixMonitorCard(
-                    currentSong: song,
-                    incomingSong: standbySong,
-                    currentProgress: progress,
-                    currentPosition: music.currentPosition,
-                    currentDuration: duration,
+                  return _DeckPerformancePanel(
+                    activeSong: song,
+                    standbySong: standbySong,
+                    activeDeckId: activeDeckId,
+                    standbyIdentityLabel: incomingIdentityAmbiguous
+                        ? 'Duplicate incoming ID · occurrence ambiguous'
+                        : incomingMediaId != null && standbySong == null
+                            ? 'Incoming identity unverified'
+                            : null,
+                    activeProgress: progress,
+                    activePosition: music.currentPosition,
+                    activeDuration: duration,
+                    standbyPosition: incomingIdentityMatches
+                        ? (deckState?.incomingPosition ?? Duration.zero)
+                        : Duration.zero,
+                    standbyReady: standbyDeckReady,
                     isPlaying: music.isPlaying,
-                    transitionInProgress: music.transitionInProgress,
-                    incomingReady: standbyDeckReady,
-                    incomingPreparing: incomingStatus == 'preparing',
-                    incomingIdentityAmbiguous: incomingIdentityAmbiguous,
-                    incomingUnverified: incomingMediaId != null && standbySong == null,
+                    transitionActive: music.transitionInProgress,
                     liveSpectrum: null,
-                    outgoingGain: activeGain,
-                    incomingGain: standbyGain,
-                    outgoingEngine: activeDeckId,
-                    incomingEngine: standbyDeckId,
                   );
                 }
                 if (deckState?.djDualDeckMode == true) {
@@ -707,6 +709,17 @@ margin: EdgeInsets.zero,
       ),
     );
   }
+}
+
+
+/// Dedicated Player-side destination for the two-engine automatic mix monitor.
+/// The DJ Workspace remains a separate tools-only surface.
+class PlayerMixMonitorScreen extends StatelessWidget {
+  const PlayerMixMonitorScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) =>
+      const DjWorkspaceScreen(playerFacing: true);
 }
 
 class _DjModeDrawer extends StatelessWidget {
@@ -1246,7 +1259,7 @@ class _DeckPerformancePanel extends StatelessWidget {
         Row(children: [
           const Icon(Icons.graphic_eq_rounded, color: Color(0xFF8FE5FF), size: 18),
           const SizedBox(width: 8),
-          Text('DECK ARRAY', style: theme.textTheme.labelLarge?.copyWith(
+          Text('ENGINE ARRAY', style: theme.textTheme.labelLarge?.copyWith(
             color: Colors.white, letterSpacing: 1.5, fontWeight: FontWeight.w800)),
           const Spacer(),
           _DeckLiveBadge(active: isPlaying, transitioning: transitionActive),
@@ -1255,7 +1268,7 @@ class _DeckPerformancePanel extends StatelessWidget {
         LayoutBuilder(
           builder: (context, constraints) {
             final activeDeck = _DeckVisualTile(
-              deckLabel: 'DECK ${activeDeckId ?? '—'}',
+              deckLabel: 'ENGINE ${activeDeckId ?? '—'}',
               role: activeDeckId == null ? 'IDENTITY UNKNOWN' : 'ON AIR',
               song: activeSong,
               accent: activeColor,
@@ -1268,7 +1281,7 @@ class _DeckPerformancePanel extends StatelessWidget {
               spectrum: liveSpectrum,
             );
             final standbyDeck = _DeckVisualTile(
-              deckLabel: 'DECK ${standbyId ?? '—'}',
+              deckLabel: 'ENGINE ${standbyId ?? '—'}',
               role: standbyId == null ? 'IDENTITY UNKNOWN' : 'STANDBY',
               song: standbySong,
               accent: standbyColor,
@@ -1389,7 +1402,6 @@ class _DeckVisualTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final liveSpectrum = spectrum;
     final title = song?.title ?? (isActive ? 'No active track' : unresolvedIdentityLabel ?? 'Awaiting incoming track');
     final artist = song?.artist ?? (isActive ? 'Start playback to activate' : unresolvedIdentityLabel != null ? 'Track occurrence not verified' : 'Media3 standby monitor');
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
