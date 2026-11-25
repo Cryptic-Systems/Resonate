@@ -1049,9 +1049,34 @@ object DspEngineRegistry {
     private fun effectivePreampForEngine(state: StickyState, deckId: String): Double {
         val djOverlay = djEqOverlays[deckId]
             ?: return effectivePreamp(state)
-        val maxBoostDb = djOverlay.gainsDb.maxOrNull()?.coerceAtLeast(0.0) ?: 0.0
-        val safetyMarginDb = if (maxBoostDb > 0.0) 1.0 else 0.0
-        val headroomLinear = Math.pow(10.0, -(maxBoostDb + safetyMarginDb) / 20.0)
+
+        // Headroom must cover the curve the DSP actually receives, not just
+        // the three DJ knob values. Player EQ and a live transition overlay
+        // are summed into the same 31-band bank before the DJ overlay is added.
+        val base = state.gainsDb
+        val count = base?.size?.takeIf { it > 0 } ?: 31
+        val centers = state.centersHz?.takeIf { base != null && it.size >= count }
+            ?.copyOf(count) ?: defaultCenters(count)
+        val temporaryOverlay = temporaryEqOverlays[deckId]
+        var maxCompositeBoostDb = 0.0
+        for (index in 0 until count) {
+            val frequencyHz = centers[index]
+            val compositeGainDb = (
+                (base?.getOrNull(index) ?: 0.0) +
+                    (temporaryOverlay?.let { interpolateDb(it, frequencyHz) } ?: 0.0) +
+                    (interpolateDb(djOverlay, frequencyHz))
+                ).coerceIn(-24.0, 24.0)
+            maxCompositeBoostDb = maxOf(maxCompositeBoostDb, compositeGainDb)
+        }
+
+        // Keep 1 dB of inter-sample margin above the largest combined band
+        // gain. The calculation is per physical deck and never touches the
+        // normal Player path when no DJ EQ overlay is installed.
+        val safetyMarginDb = if (maxCompositeBoostDb > 0.0) 1.0 else 0.0
+        val headroomLinear = Math.pow(
+            10.0,
+            -(maxCompositeBoostDb + safetyMarginDb) / 20.0,
+        )
         return (effectivePreamp(state) * headroomLinear).coerceIn(0.0, 4.0)
     }
 
