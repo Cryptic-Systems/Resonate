@@ -33,6 +33,27 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             when (call.method) {
+                "startDjAnalysisForegroundService" -> {
+                    try {
+                        val serviceIntent = Intent(this, DjAnalysisForegroundService::class.java)
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            startForegroundService(serviceIntent)
+                        } else {
+                            startService(serviceIntent)
+                        }
+                        result.success(true)
+                    } catch (error: Throwable) {
+                        result.error("DJ_ANALYSIS_SERVICE_START_FAILED", error.message, null)
+                    }
+                }
+                "stopDjAnalysisForegroundService" -> {
+                    try {
+                        stopService(Intent(this, DjAnalysisForegroundService::class.java))
+                        result.success(true)
+                    } catch (error: Throwable) {
+                        result.error("DJ_ANALYSIS_SERVICE_STOP_FAILED", error.message, null)
+                    }
+                }
                 "requestAudioPermission" -> permissionHelper.requestAudioPermission(result)
                 "requestVisualizationPermission" -> permissionHelper.requestVisualizationPermission(result)
                 "requestNotificationPermission" -> permissionHelper.requestNotificationPermission(result)
