@@ -12,6 +12,7 @@ class DjProfileSerializer {
         'fingerprint': profile.fingerprint,
         'analysisVersion': profile.analysisVersion,
         'analysisConfidence': profile.analysisConfidence,
+        'psychicAnalysis': profile.psychicAnalysis,
         'beatGrid': {
           'bpm': profile.beatGrid.bpm,
           'confidence': profile.beatGrid.confidence,
@@ -107,6 +108,9 @@ class DjProfileSerializer {
       fingerprint: map['fingerprint'] as String?,
       analysisVersion: (map['analysisVersion'] as num?)?.toInt() ?? 1,
       analysisConfidence: _unit(map['analysisConfidence'], fallback: 0),
+      psychicAnalysis: map['psychicAnalysis'] is Map
+          ? Map<String, dynamic>.from(map['psychicAnalysis'] as Map)
+          : null,
       beatGrid: DjBeatGrid(
         bpm: _bpm(beat['bpm']),
         confidence: _unit(beat['confidence'], fallback: 0),
