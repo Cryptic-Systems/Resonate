@@ -139,6 +139,27 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
         },
       ),
+      actions: [
+        Consumer<MusicProvider>(
+          builder: (_, music, __) => Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Center(
+              child: Tooltip(
+                message: 'Engine ${music.activeEngineLabel} is the active playback deck',
+                child: Chip(
+                  avatar: Icon(
+                    music.activeEngineLabel == 'A'
+                        ? Icons.looks_one_rounded
+                        : Icons.looks_two_rounded,
+                    size: 17,
+                  ),
+                  label: Text('Engine ${music.activeEngineLabel}'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
       body: Consumer2<MusicProvider, ModeProvider>(
         builder: (context, music, modes, _) {
           final activeSong = music.currentSong;
