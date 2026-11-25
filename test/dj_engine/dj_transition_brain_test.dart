@@ -13,6 +13,7 @@ void main() {
     DjSectionType section = DjSectionType.outro,
     List<DjSilenceRegion> silenceRegions = const [],
     List<DjEnergyPoint>? energyCurve,
+    Map<String, dynamic>? psychicAnalysis,
   }) {
     return DjTrackProfile(
       songId: id,
@@ -36,6 +37,7 @@ void main() {
       transitions: const DjTransitionMarkers(bestIntroMs: 0, bestOutroMs: 220000),
       silenceRegions: silenceRegions,
       analysisConfidence: 0.9,
+      psychicAnalysis: psychicAnalysis,
     );
   }
 
@@ -78,6 +80,51 @@ void main() {
     expect(harmonicSafe.score, greaterThan(neutralSafe.score));
   });
 
+
+  test('Psychic measured loudness, bass and transient metrics influence DJ compatibility', () {
+    Map<String, dynamic> psychic({
+      required double rms,
+      required double bass,
+      required double crest,
+    }) => {
+      'engine': 'Psychic',
+      'version': '0.6.1',
+      'sufficientData': true,
+      'sampledDurationSeconds': 24.0,
+      'integratedRmsDb': rms,
+      'bassProminenceDb': bass,
+      'crestP90Db': crest,
+    };
+
+    final outgoing = track(
+      id: 'psychic-out',
+      psychicAnalysis: psychic(rms: -12, bass: 3, crest: 8),
+    );
+    final matchedIncoming = track(
+      id: 'psychic-match',
+      section: DjSectionType.intro,
+      psychicAnalysis: psychic(rms: -13, bass: 4, crest: 9),
+    );
+    final mismatchedIncoming = track(
+      id: 'psychic-mismatch',
+      section: DjSectionType.intro,
+      psychicAnalysis: psychic(rms: -25, bass: -8, crest: 22),
+    );
+
+    final matched = engine.brain.generate(
+      outgoing: outgoing,
+      incoming: matchedIncoming,
+      outgoingPositionMs: 220000,
+    ).firstWhere((candidate) => candidate.kind == DjTransitionKind.safeCrossfade);
+    final mismatched = engine.brain.generate(
+      outgoing: outgoing,
+      incoming: mismatchedIncoming,
+      outgoingPositionMs: 220000,
+    ).firstWhere((candidate) => candidate.kind == DjTransitionKind.safeCrossfade);
+
+    expect(matched.scores['psychic'], greaterThan(mismatched.scores['psychic']!));
+    expect(matched.score, greaterThan(mismatched.score));
+  });
 
   test('requires phrase and bar confidence before proposing phrase blends', () {
     final reliable = track(id: 'reliable');
