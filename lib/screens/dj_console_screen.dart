@@ -409,6 +409,11 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                 channelGain: deck?.channelGain ?? 1.0,
                 onChannelGainChanged: (gain) =>
                     music.setDjDeckChannelGain(deckId: id, gain: gain),
+                eqGains: music.djDeckEqGains(id),
+                onEqChanged: (gains) => music.setDjDeckEq(
+                  deckId: id,
+                  gainsDb: gains,
+                ),
                 onJogSeek: (target) => music.seekDjDeck(
                   deckId: id,
                   position: target,
