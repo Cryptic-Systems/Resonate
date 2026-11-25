@@ -797,6 +797,27 @@ class Media3PlaybackClient {
     });
   }
 
+  Future<void> setDjDeckEq({
+    required String deckId,
+    required List<double> gainsDb,
+  }) async {
+    _validatePhysicalDeck(deckId);
+    if (gainsDb.length != 3 ||
+        gainsDb.any((gain) => !gain.isFinite || gain < -12.0 || gain > 12.0)) {
+      throw ArgumentError('DJ EQ requires three finite gains from -12 to +12 dB.');
+    }
+    await _invokeAccepted('setDjDeckEq', <String, Object>{
+      'deckId': deckId,
+      'centersHz': const [80.0, 1000.0, 12000.0],
+      'gainsDb': gainsDb,
+    });
+  }
+
+  Future<void> clearDjDeckEq({required String deckId}) async {
+    _validatePhysicalDeck(deckId);
+    await _invokeAccepted('clearDjDeckEq', <String, Object>{'deckId': deckId});
+  }
+
   void _validatePhysicalDeck(String deckId) {
     if (deckId != 'A' && deckId != 'B') {
       throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
