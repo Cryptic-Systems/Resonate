@@ -70,13 +70,13 @@ class DjIdleAnalysisService {
           final hasSectionProfile = existing?.sectionHint != null &&
               existing?.sectionHint != 'unknown';
           final hasWaveformProfile = await _analysis.hasWaveformProfile(song.id);
-          final hasPsychicAnalysis = await _analysis.hasPsychicAnalysis(song.id);
+          final hasPsychicReport = await _analysis.hasPsychicReport(song.id);
           if (existing != null &&
               !existing.isStale &&
               hasUsableTags &&
               hasSectionProfile &&
               hasWaveformProfile &&
-              hasPsychicAnalysis) {
+              hasPsychicReport) {
             continue;
           }
 
@@ -85,11 +85,6 @@ class DjIdleAnalysisService {
               !hasWaveformProfile &&
               existing.analyzedAt != null &&
               now.difference(existing.analyzedAt!) < _retryCooldown) {
-            continue;
-          }
-          if (!hasPsychicAnalysis &&
-              existing?.analyzedAt != null &&
-              now.difference(existing!.analyzedAt!) < _retryCooldown) {
             continue;
           }
           final lastAttempt = _lastProfileAttemptAt[song.id];
@@ -114,7 +109,7 @@ class DjIdleAnalysisService {
               !hasUsableTags ||
               !hasSectionProfile ||
               !hasWaveformProfile ||
-              !hasPsychicAnalysis;
+              !hasPsychicReport;
 
           // Do not wrap this in Future.timeout: Dart timeout only stops waiting,
           // not the native decode. Keep the scan serial until the analyzer
