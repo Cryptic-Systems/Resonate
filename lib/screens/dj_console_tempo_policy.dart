@@ -82,6 +82,22 @@ abstract final class DjConsoleTempoPolicy {
     );
   }
 
+  /// Return the playback-rate multiplier needed to match targetBpm to
+  /// sourceBpm, but only when the correction remains inside the Console's
+  /// conservative ±6% range. Null means the BPM pair is unsafe or unusable.
+  static double? syncSpeed({
+    required double sourceBpm,
+    required double targetBpm,
+  }) {
+    if (!sourceBpm.isFinite || !targetBpm.isFinite ||
+        sourceBpm <= 0 || targetBpm <= 0) {
+      return null;
+    }
+    final speed = sourceBpm / targetBpm;
+    if (!speed.isFinite || speed < 0.94 || speed > 1.06) return null;
+    return speed;
+  }
+
   static const double minPercent = -6.0;
   static const double maxPercent = 6.0;
 
