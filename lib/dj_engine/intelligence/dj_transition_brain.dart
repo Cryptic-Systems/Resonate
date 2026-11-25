@@ -184,14 +184,15 @@ class DjTransitionBrain {
       'phrase': (phrase * phraseWeight).clamp(0.0, 1.0).toDouble(),
       'structure': (structure * structureWeight).clamp(0.0, 1.0).toDouble(),
       'silence': silence,
-      'psychic': psychic,
+      // Negative sentinel keeps legacy scoring bit-for-bit when either report is absent.
+      'psychic': psychic ?? -1.0,
       'confidence': _analysisConfidence(a, b),
     };
   }
 
   /// Compares measured Psychic loudness, bass prominence and transient shape.
   /// Missing/low-confidence reports remain neutral and never penalize a track.
-  double _psychicPairScore(DjTrackProfile a, DjTrackProfile b) {
+  double? _psychicPairScore(DjTrackProfile a, DjTrackProfile b) {
     Map<String, dynamic>? usable(DjTrackProfile profile) {
       final report = profile.psychicAnalysis;
       if (report == null || report['sufficientData'] != true) return null;
@@ -202,7 +203,7 @@ class DjTransitionBrain {
 
     final x = usable(a);
     final y = usable(b);
-    if (x == null || y == null) return 0.5;
+    if (x == null || y == null) return null;
 
     double? metric(Map<String, dynamic> report, String key) {
       final value = report[key];
@@ -216,7 +217,7 @@ class DjTransitionBrain {
     final crestA = metric(x, 'crestP90Db');
     final crestB = metric(y, 'crestP90Db');
     if ([loudnessA, loudnessB, bassA, bassB, crestA, crestB].any((v) => v == null)) {
-      return 0.5;
+      return null;
     }
 
     final loudnessMatch = (1.0 - (loudnessA! - loudnessB!).abs() / 12.0)
@@ -230,6 +231,19 @@ class DjTransitionBrain {
 
   double _weightedScore(Map<String, double> s, {DjPolicy policy = DjPolicy.balanced}) {
     final phraseBoost = policy.phraseWeightBoost;
+    final psychic = s['psychic'];
+    if (psychic == null || psychic < 0) {
+      // Preserve the established recommendation weights until both tracks
+      // have a sufficiently sampled Psychic report.
+      return (s['tempo'] ?? 0.5) * 0.22 +
+          (s['harmonic'] ?? 0.5) * 0.18 +
+          (s['energy'] ?? 0.5) * 0.14 +
+          (s['spectrum'] ?? 0.5) * 0.09 +
+          (s['phrase'] ?? 0.5) * (0.14 + phraseBoost) +
+          (s['structure'] ?? 0.5) * 0.10 +
+          (s['silence'] ?? 0.5) * 0.06 +
+          (s['confidence'] ?? 0.5) * 0.07;
+    }
     return (s['tempo'] ?? 0.5) * 0.20 +
         (s['harmonic'] ?? 0.5) * 0.16 +
         (s['energy'] ?? 0.5) * 0.12 +
@@ -238,7 +252,7 @@ class DjTransitionBrain {
         (s['structure'] ?? 0.5) * 0.10 +
         (s['silence'] ?? 0.5) * 0.06 +
         (s['confidence'] ?? 0.5) * 0.07 +
-        (s['psychic'] ?? 0.5) * 0.08;
+        psychic * 0.08;
   }
 
 
