@@ -540,7 +540,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                         deckBIsPlaying: deckB?.isPlaying == true,
                       );
                       final mixer = SizedBox(
-                        width: compact ? 146 : 204,
+                        width: compact ? 128 : 188,
                         child: _DjConsoleMixer(
                           enabled: DjConsoleManualControlsPolicy.canAdjustCrossfader(
                             djModeEnabled: djReady && music.media3ProviderSessionActive,
@@ -963,7 +963,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
         ? widget.hotCuePositions[index]
         : null;
     return SizedBox(
-      width: 52,
+      width: 48,
       height: 42,
       child: GestureDetector(
         onLongPress: widget.onSetHotCue == null
@@ -1057,11 +1057,11 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             child: LayoutBuilder(
               builder: (context, stageConstraints) {
                 final availableWheelWidth =
-                    (stageConstraints.maxWidth - 116).clamp(1.0, 320.0);
+                    (stageConstraints.maxWidth - 104).clamp(1.0, 360.0);
                 final diameter = math.min(
                   stageConstraints.maxHeight,
                   availableWheelWidth,
-                ).clamp(1.0, 320.0).toDouble();
+                ).clamp(1.0, 360.0).toDouble();
                 return Stack(
                   alignment: Alignment.center,
                   children: [
@@ -1069,7 +1069,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                       left: 0,
                       top: 0,
                       bottom: 0,
-                      width: 52,
+                      width: 48,
                       child: Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -1085,7 +1085,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                       right: 0,
                       top: 0,
                       bottom: 0,
-                      width: 52,
+                      width: 48,
                       child: Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
