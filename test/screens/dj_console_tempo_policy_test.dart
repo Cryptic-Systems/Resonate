@@ -95,7 +95,10 @@ void main() {
           targetBeatMs: [0, 500, 1000, 1500, 2000, 2500, 3000, 3500],
           sourcePositionMs: 1120,
           targetPositionMs: 1080,
-          effectiveBpm: 120,
+          sourceBpm: 120,
+          targetBpm: 120,
+          sourceSpeed: 1.0,
+          targetSpeed: 1.0,
         ),
         40,
       );
@@ -105,7 +108,10 @@ void main() {
           targetBeatMs: [0, 500, 1000, 1500, 2000, 2500, 3000, 3500],
           sourcePositionMs: 1120,
           targetPositionMs: 1300,
-          effectiveBpm: 120,
+          sourceBpm: 120,
+          targetBpm: 120,
+          sourceSpeed: 1.0,
+          targetSpeed: 1.0,
         ),
         isNull,
       );
