@@ -1,6 +1,4 @@
-import '../modes/screens/modes_screen.dart';
 import '../modes/providers/mode_provider.dart';
-import '../modes/integration/resonate_mode_ports.dart';
 import 'package:flutter/material.dart';
 import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
@@ -14,14 +12,8 @@ import 'dj_mode_settings_screen.dart';
 import 'diagnostics_screen.dart';
 import 'audio_automation_settings_screen.dart';
 import 'audio_leveling_settings_screen.dart';
-import 'equalizer_screen.dart';
 import 'intelligence_settings_screen.dart';
 import 'library_management_screen.dart';
-import 'liked_songs_screen.dart';
-import 'listening_history_screen.dart';
-import 'playlists_screen.dart';
-import 'queue_screen.dart';
-import 'dj_workspace_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -34,18 +26,13 @@ class SettingsScreen extends StatelessWidget {
           children: [
             const SizedBox(height: 10),
             _section(context, 'Playback', Icons.play_circle_outline, [
-              _item(context, 'Queue', 'View and manage upcoming songs', Icons.queue_music_rounded, const QueueScreen()),
               _item(context, 'Crossfade', 'Transitions + seamless Repeat one loop', Icons.compare_arrows_rounded, const CrossfadeScreen()),
               _item(context, 'Audio automation', 'Audio focus, interruption response and EQ headroom', Icons.settings_suggest_rounded, const AudioAutomationSettingsScreen()),
               _item(context, 'Audio leveling', 'Analyze track loudness and review a conservative gain recommendation', Icons.graphic_eq_rounded, const AudioLevelingSettingsScreen()),
-              _item(context, 'Modes', 'Listening context — Driving, Podcast, Running, Work', Icons.tune_rounded, ModesScreen(folderPicker: const ResonateModeFolderPickerPort())),
               _item(context, 'Automatic mixing', 'Optional beat-aware transitions and harmonic blending', Icons.auto_awesome_rounded, const DjModeSettingsScreen(playerFacing: true)),
-              _item(context, 'Mix monitoring', 'View automatic transition activity and incoming-track preparation', Icons.graphic_eq_rounded, const DjWorkspaceScreen(playerFacing: true)),
               // Effects remain grouped under Equalizer; track analysis has its own entry above.
             ], initiallyExpanded: true),
             _section(context, 'Audio', Icons.equalizer_rounded, [
-              _item(context, 'Equalizer', 'Tone, preamp, bass, width & reverb', Icons.equalizer_rounded, const EqualizerScreen()),
-              _item(context, 'Per-song EQ', 'Individual song profiles', Icons.music_note_rounded, const EqualizerScreen()),
             ]),
             Consumer<ModeProvider>(
               builder: (context, modes, _) => _section(
@@ -68,8 +55,6 @@ class SettingsScreen extends StatelessWidget {
               _item(context, 'Device controls', 'Media buttons, notification and connection behavior', Icons.settings_input_component_rounded, const BluetoothSettingsScreen()),
             ]),
             _section(context, 'Library', Icons.library_music_rounded, [
-              _item(context, 'Liked Songs', 'Your personal collection of favorites', Icons.favorite_rounded, const LikedSongsScreen()),
-              _item(context, 'Playlists', 'Create and manage personal and smart playlists', Icons.queue_music_rounded, const PlaylistsScreen()),
               _item(context, 'Scan & folders', 'Scan now or choose folders', Icons.folder_open_rounded, const LibraryManagementScreen()),
             ]),
             _section(context, 'Appearance', Icons.palette_outlined, [
@@ -96,7 +81,6 @@ class SettingsScreen extends StatelessWidget {
             _section(context, 'Privacy', Icons.lock_outline_rounded, [
               const ListTile(leading: Icon(Icons.phone_android_rounded), title: Text('Local-only learning'), subtitle: Text('Intelligence uses on-device listening data.')),
               _item(context, 'Privacy & Diagnostics', 'Crash capture, technical events, feedback and report export', Icons.health_and_safety_rounded, const DiagnosticsScreen()),
-              _item(context, 'Listening history', 'Browse, understand or clear playback events', Icons.history_rounded, const ListeningHistoryScreen()),
               _confirmItem(context, 'Delete Intelligence history', 'Erase recommendation feedback', Icons.delete_outline_rounded, 'Clear recommendation feedback now?', Icons.delete_outline_rounded, () => context.read<IntelligenceProvider>().clearRecommendationFeedback()),
             ]),
             _section(context, 'About', Icons.info_outline_rounded, [
