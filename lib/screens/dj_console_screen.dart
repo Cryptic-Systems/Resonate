@@ -250,7 +250,6 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
             final position = deck?.position ?? Duration.zero;
             return _ConsoleDeck(
                 deck: 'DECK $id',
-                allowInternalScroll: !portraitLayout,
                 active: loaded,
                 onAir: state?.activeDeckId == id,
                 compact: compact,
@@ -319,76 +318,29 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
           }
 
           return Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
             child: Column(
               children: [
                 SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () async => context.read<ShellNav>().switchToPlayer(),
-                    icon: const Icon(Icons.arrow_back_rounded, size: 20),
-                    label: const Text(
-                      'RETURN TO RESONATE PLAYER',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: .7,
+                  height: 38,
+                  child: Row(
+                    children: [
+                      IconButton(
+                        tooltip: 'Back to DJ Workspace',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        icon: const Icon(Icons.arrow_back_rounded),
                       ),
-                    ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: theme.colorScheme.primary,
-                      foregroundColor: theme.colorScheme.onPrimary,
-                      minimumSize: const Size.fromHeight(48),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
+                      const SizedBox(width: 4),
+                      Text('DJ CONSOLE', style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                      const Spacer(),
+                      if (!djReady)
+                        const Tooltip(message: 'DJ deck session is not active',
+                          child: Icon(Icons.warning_amber_rounded, size: 18)),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 10),
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: [
-                    const Text(
-                      'DJ CONSOLE',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                    _ConsoleStatus(
-                      label: djReady ? 'DUAL DECK SESSION' : 'SESSION OFF',
-                      active: djReady,
-                    ),
-                    _ConsoleStatus(
-                      label: (deckA?.isPlaying == true || deckB?.isPlaying == true)
-                          ? 'OUTPUT ACTIVE'
-                          : 'OUTPUT STOPPED',
-                      active: deckA?.isPlaying == true || deckB?.isPlaying == true,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                if (!djReady)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: MaterialBanner(
-                      content: const Text(
-                        'The persistent DJ deck session is not active. Return to the DJ Workspace and initialize the session before using the Console.',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(context).maybePop(),
-                          child: const Text('WORKSPACE'),
-                        ),
-                      ],
-                    ),
-                  ),
                 Expanded(
                   child: Builder(
                     builder: (context) {
@@ -464,30 +416,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                     },
                   ),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(Icons.info_outline,
-                        size: 15,
-                        color: theme.colorScheme.onSurfaceVariant),
-                    const SizedBox(width: 7),
-                    Expanded(
-                      child: Text(
-                        'Each deck owns its queue, transport, cue position and tempo. The crossfader is operator-controlled; Player Autopilot cannot move it. Jog drag seeks the selected physical deck once on release.',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      icon: const Icon(Icons.dashboard_outlined, size: 17),
-                      label: const Text('Workspace'),
-                    ),
-                  ],
-                ),
+
               ],
             ),
           );
@@ -502,7 +431,6 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
 class _ConsoleDeck extends StatefulWidget {
   const _ConsoleDeck({
     required this.deck, required this.active, required this.onAir,
-    required this.allowInternalScroll,
     required this.compact,
     required this.isPlaying,
     required this.canPlay,
@@ -525,7 +453,6 @@ class _ConsoleDeck extends StatefulWidget {
 
   final String deck, status, title, artist;
   final bool active, onAir, compact, isPlaying, canPlay, jogSeekEnabled;
-  final bool allowInternalScroll;
   final Future<void> Function() onPlayPause;
   final VoidCallback? onLoad;
   final List<Duration?> hotCuePositions;
@@ -808,7 +735,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     final expectedSongId = widget.expectedSongId;
     final waveformFuture = _waveformFuture;
     return Container(
-      padding: EdgeInsets.all(compact ? 10 : 16),
+      padding: EdgeInsets.all(compact ? 6 : 9),
       decoration: BoxDecoration(
         color: const Color(0xFF101923),
         borderRadius: BorderRadius.circular(18),
@@ -820,12 +747,9 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             ? [BoxShadow(color: accent.withValues(alpha: .14), blurRadius: 22)]
             : null,
       ),
-      child: ListView(
-        padding: EdgeInsets.zero,
-        shrinkWrap: !widget.allowInternalScroll,
-        physics: widget.allowInternalScroll
-            ? null
-            : const NeverScrollableScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(children: [
             Text(deck, style: theme.textTheme.labelLarge?.copyWith(
@@ -833,13 +757,13 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             const Spacer(),
             _ConsoleStatus(label: status, active: onAir),
           ]),
-          const SizedBox(height: 10),
+          const SizedBox(height: 4),
           Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(color: Colors.white60)),
           SizedBox(
-            height: compact ? 218 : 286,
+            height: compact ? 112 : 142,
             child: Center(
               child: AspectRatio(
                 aspectRatio: 1,
@@ -914,16 +838,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             ),
           ),
           const SizedBox(height: 7),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'HOT CUES · TAP TO RECALL · HOLD TO SET',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: Colors.white38, letterSpacing: .8, fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 3),
           Row(
             children: List<Widget>.generate(DjCuePointStore.slotCount, (index) {
               final cue = index < widget.hotCuePositions.length ? widget.hotCuePositions[index] : null;
@@ -962,7 +877,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
           Row(
             children: [
               Text(
-                'CHANNEL GAIN',
+                'GAIN',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: Colors.white70,
                   letterSpacing: .8,
@@ -1087,7 +1002,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Container(
-                        height: compact ? 42 : 58,
+                        height: compact ? 30 : 38,
                         decoration: BoxDecoration(
                           color: const Color(0xFF080E15),
                           borderRadius: BorderRadius.circular(9),
@@ -1353,7 +1268,7 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
                 letterSpacing: 1.4,
                 fontWeight: FontWeight.w900,
               )),
-          const SizedBox(height: 18),
+          const SizedBox(height: 5),
           Row(
             children: [
               Text('A', style: theme.textTheme.labelLarge),
@@ -1430,7 +1345,7 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
           const Divider(height: 1, color: Colors.white12),
           const SizedBox(height: 8),
           Text(
-            'MIXER RACK · PLANNED',
+            'CROSSFADE',
             style: theme.textTheme.labelSmall?.copyWith(
               color: Colors.white38,
               letterSpacing: .7,
@@ -1439,18 +1354,7 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
             ),
           ),
           const SizedBox(height: 5),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 3,
-            runSpacing: 3,
-            children: const [
-              _ConsolePlaceholderControl(label: 'EQ', icon: Icons.equalizer_rounded),
-              _ConsolePlaceholderControl(label: 'FILTER', icon: Icons.tune_rounded),
-              _ConsolePlaceholderControl(label: 'PFL', icon: Icons.headphones_rounded),
-              _ConsolePlaceholderControl(label: 'MASTER', icon: Icons.volume_up_rounded),
-              _ConsolePlaceholderControl(label: 'REC', icon: Icons.fiber_manual_record_rounded),
-            ],
-          ),
+
         ],
       ),
     );
@@ -1624,38 +1528,6 @@ class _DjTrackPickerSheetState extends State<_DjTrackPickerSheet> {
                 ),
               ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ConsolePlaceholderControl extends StatelessWidget {
-  const _ConsolePlaceholderControl({required this.label, required this.icon});
-
-  final String label;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: Tooltip(
-        message: '$label control is planned but not wired yet',
-        child: OutlinedButton.icon(
-          onPressed: null,
-          icon: Icon(icon, size: 13),
-          label: Text(label),
-          style: OutlinedButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            minimumSize: const Size(0, 30),
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-            textStyle: const TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w800,
-              letterSpacing: .3,
-            ),
-          ),
         ),
       ),
     );
