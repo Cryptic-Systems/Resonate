@@ -184,9 +184,13 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
       final sourceBpm = sourceGrid.bpm;
       if (targetBpm == null || sourceBpm == null ||
           !targetBpm.isFinite || !sourceBpm.isFinite ||
-          targetBpm <= 0 || sourceBpm <= 0) return;
+          targetBpm <= 0 || sourceBpm <= 0 ||
+          !source.speed.isFinite || source.speed <= 0) return;
+      // Match effective tempo, not just analyzed base BPM: the source deck
+      // may already have a manual tempo-fader adjustment.
+      final sourceEffectiveBpm = sourceBpm * source.speed;
       final speed = DjConsoleTempoPolicy.syncSpeed(
-        sourceBpm: sourceBpm,
+        sourceBpm: sourceEffectiveBpm,
         targetBpm: targetBpm,
       );
       if (speed == null) {
@@ -202,14 +206,58 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
           latestTarget?.mediaId != targetId ||
           latestSource?.mediaId != sourceId ||
           music.transitionInProgress) return;
+      final phaseCorrection = source.isPlaying && target.isPlaying
+          ? DjConsoleTempoPolicy.phaseCorrectionMs(
+              sourceBeatMs: sourceGrid.beatMs,
+              targetBeatMs: targetGrid.beatMs,
+              sourcePositionMs: source.position.inMilliseconds,
+              targetPositionMs: target.position.inMilliseconds,
+              effectiveBpm: sourceEffectiveBpm,
+            )
+          : null;
+      final latest = music.media3ShadowState;
+      final latestTarget = deckId == 'A' ? latest?.deckA : latest?.deckB;
+      final latestSource = deckId == 'A' ? latest?.deckB : latest?.deckA;
+      if (latest?.djDualDeckMode != true ||
+          latestTarget?.mediaId != targetId ||
+          latestSource?.mediaId != sourceId ||
+          music.transitionInProgress) return;
       await music.setDjDeckPlaybackParameters(
         deckId: deckId,
         speed: speed,
         pitch: 1.0,
       );
+      if (phaseCorrection != null && phaseCorrection != 0) {
+        final alignedPosition = target.position +
+            Duration(milliseconds: phaseCorrection);
+        if (alignedPosition.isNegative ||
+            (target.duration != null && alignedPosition > target.duration!)) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Tempo synced; phase trim was skipped at the track boundary.'),
+          ));
+          return;
+        }
+        final afterTempo = music.media3ShadowState;
+        final afterTarget = deckId == 'A' ? afterTempo?.deckA : afterTempo?.deckB;
+        if (afterTempo?.djDualDeckMode == true &&
+            afterTarget?.mediaId == targetId &&
+            !music.transitionInProgress) {
+          await music.seekDjDeck(
+            deckId: deckId,
+            position: alignedPosition,
+            expectedMediaId: targetId,
+          );
+        }
+      }
       if (!mounted) return;
+      final phaseMessage = !source.isPlaying || !target.isPlaying
+          ? ' Start both decks for phase alignment.'
+          : phaseCorrection == null
+              ? ' Phase offset is too large for a safe automatic trim; align manually.'
+              : ' Beat phase aligned.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Deck $deckId tempo synced to ${sourceBpm.toStringAsFixed(1)} BPM.'),
+        content: Text('Deck $deckId tempo synced to ${sourceEffectiveBpm.toStringAsFixed(1)} BPM.$phaseMessage'),
       ));
     } catch (error) {
       if (!mounted) return;
