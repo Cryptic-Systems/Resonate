@@ -184,6 +184,10 @@ struct DspEngine {
     float silence_thresh_db = -60.f;
     float silence_hold_ms = 300.f;
     float silence_hold_acc_ms = 0.f;
+    /* Keep auto-gain in recovery briefly after a long silence, so returning
+       audio is not immediately amplified while the RMS envelope re-settles. */
+    bool silence_recovery_latched = false;
+    float silence_resume_acc_ms = 0.f;
 
     sample_t lim_env[kMaxChannels]{};
     sample_t lim_gain[kMaxChannels]{};
@@ -976,7 +980,9 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
             ? (1000.f * static_cast<float>(frames) / eng->sample_rate) : 10.f;
         if (source_silent) {
             eng->silence_hold_acc_ms += block_ms_f;
+            eng->silence_resume_acc_ms = 0.f;
             if (eng->silence_hold_acc_ms >= eng->silence_hold_ms) {
+                eng->silence_recovery_latched = true;
                 silence_recovery_active = true;
                 bass_target_db = 0.f;
                 preamp_target_db = 0.f;
@@ -990,6 +996,18 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
             }
         } else {
             eng->silence_hold_acc_ms = 0.f;
+            if (eng->silence_recovery_latched) {
+                /* Require a full second of stable source before resuming AGC.
+                   Short gaps reset this timer and remain in recovery. */
+                eng->silence_resume_acc_ms += block_ms_f;
+                const float resume_stable_ms = std::max(1000.f, eng->silence_hold_ms);
+                if (eng->silence_resume_acc_ms < resume_stable_ms) {
+                    silence_recovery_active = true;
+                } else {
+                    eng->silence_recovery_latched = false;
+                    eng->silence_resume_acc_ms = 0.f;
+                }
+            }
         }
     }
 
