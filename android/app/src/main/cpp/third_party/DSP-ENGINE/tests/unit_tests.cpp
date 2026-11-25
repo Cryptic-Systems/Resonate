@@ -442,18 +442,18 @@ TEST(stats_api) {
 }
 
 
-TEST(eq_31_bands_full_params) {
-    /* Regression: engine must accept DSP_EQ_MAX_BANDS (31) full DspEqBand entries
+TEST(eq_32_bands_full_params) {
+    /* Regression: engine must accept DSP_EQ_MAX_BANDS (32) full DspEqBand entries
      * without dropping q or type, then process without NaNs. */
     DspEngine* eng = create_engine();
     EXPECT_TRUE(eng != nullptr);
-    EXPECT_EQ(DSP_EQ_MAX_BANDS, 31);
+    EXPECT_EQ(DSP_EQ_MAX_BANDS, 32);
 
     DspEqBand bands[DSP_EQ_MAX_BANDS];
-    static const float kHz[31] = {
+    static const float kHz[32] = {
         20, 25, 32, 40, 50, 63, 80, 100, 125, 160,
         200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600,
-        2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000
+        2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000, 18000
     };
     for (int i = 0; i < DSP_EQ_MAX_BANDS; ++i) {
         bands[i].freq_hz = kHz[i];
