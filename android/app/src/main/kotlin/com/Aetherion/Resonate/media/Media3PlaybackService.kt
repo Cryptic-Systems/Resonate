@@ -163,7 +163,9 @@ class Media3PlaybackService : MediaSessionService() {
         if (crossfadeStatus in setOf("starting", "fading")) return false
         // DJ channel EQ must never leak into the canonical Player after exit.
         if (!DspEngineRegistry.clearDjEqOverlay("A") ||
-            !DspEngineRegistry.clearDjEqOverlay("B")) return false
+            !DspEngineRegistry.clearDjEqOverlay("B") ||
+            !DspEngineRegistry.clearDjDeckFilter("A") ||
+            !DspEngineRegistry.clearDjDeckFilter("B")) return false
         djDualDeckMode = false
         djDeckGainA = 1f
         djDeckGainB = 1f
@@ -713,6 +715,10 @@ class Media3PlaybackService : MediaSessionService() {
 
     fun clearDjDeckEq(deckId: String): Boolean =
         DspEngineRegistry.clearDjEqOverlay(deckId)
+
+    /** Independent per-deck low-pass/high-pass filter; type 0 bypasses. */
+    fun setDjDeckFilter(deckId: String, type: Int, cutoffHz: Double): Boolean =
+        djDualDeckMode && DspEngineRegistry.setDjDeckFilter(deckId, type, cutoffHz)
 
     fun setGainFactors(
         trackLevel: Float,
