@@ -21,7 +21,6 @@ class DjExperienceShell extends StatefulWidget {
 class _DjExperienceShellState extends State<DjExperienceShell> {
   static const int _workspaceTab = 0;
   static const int _libraryTab = 1;
-  static const int _consoleTab = 2;
 
   late final PageController _pageController;
   late final MusicProvider _music;
