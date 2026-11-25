@@ -478,6 +478,36 @@ class Media3PlaybackBridge(
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_DSP_UNAVAILABLE", "The deck EQ overlay could not be cleared.", null)
                 }
+                "setDjDeckEq" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val centers = call.argument<List<Number>>("centersHz")?.map { it.toDouble() }
+                    val gains = call.argument<List<Number>>("gainsDb")?.map { it.toDouble() }
+                    if (deckId !in setOf("A", "B") ||
+                        centers == null || centers.size != 3 ||
+                        gains == null || gains.size != 3 ||
+                        centers.any { !it.isFinite() || it !in 20.0..20000.0 } ||
+                        gains.any { !it.isFinite() || it !in -12.0..12.0 } ||
+                        centers.zipWithNext().any { it.first >= it.second }
+                    ) {
+                        result.error("INVALID_DJ_DECK_EQ", "Physical deck A/B and three ordered EQ bands with gains -12 to +12 dB are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDjDeckEq(
+                        deckId!!, centers.toDoubleArray(), gains.toDoubleArray(),
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_DSP_UNAVAILABLE", "DJ deck EQ could not be applied.", null)
+                }
+                "clearDjDeckEq" -> {
+                    val deckId = call.argument<String>("deckId")
+                    if (deckId !in setOf("A", "B")) {
+                        result.error("INVALID_DJ_DECK_EQ", "deckId must be A or B.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.clearDjDeckEq(deckId!!) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_DSP_UNAVAILABLE", "DJ deck EQ could not be reset.", null)
+                }
                 "previewTransition" -> {
                     val outRaw = call.argument<String>("outgoingUri")
                     val inRaw = call.argument<String>("incomingUri")
