@@ -218,14 +218,19 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
               targetSpeed: speed,
             )
           : null;
+      final syncClock = Stopwatch()..start();
       await music.setDjDeckPlaybackParameters(
         deckId: deckId,
         speed: speed,
         pitch: 1.0,
       );
       if (phaseCorrection != null && phaseCorrection != 0) {
+        // Compensate for command latency so the absolute seek does not rewind
+        // by the time spent applying the tempo command.
+        final elapsedTrackMs =
+            (syncClock.elapsedMilliseconds * speed).round();
         final alignedPosition = target.position +
-            Duration(milliseconds: phaseCorrection);
+            Duration(milliseconds: phaseCorrection + elapsedTrackMs);
         if (alignedPosition.isNegative ||
             (target.duration != null && alignedPosition > target.duration!)) {
           if (!mounted) return;
