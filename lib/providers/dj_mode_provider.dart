@@ -189,7 +189,8 @@ class DjModeProvider extends ChangeNotifier {
   bool _isAnalysisStillIdle() =>
       !music.isPlaying && !music.transitionInProgress;
 
-  /// Foreground eligibility is supplied only by the app's lifecycle observer.
+  /// A new scan must be started while the Activity is foregrounded. An
+  /// already-running foreground service may continue the scan in background.
   /// Console visibility and route changes are not treated as foreground proof.
   void setAppForeground(bool foreground) {
     if (_appForeground == foreground) return;
