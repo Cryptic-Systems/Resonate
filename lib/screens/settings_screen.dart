@@ -32,8 +32,6 @@ class SettingsScreen extends StatelessWidget {
               _item(context, 'Automatic mixing', 'Optional beat-aware transitions and harmonic blending', Icons.auto_awesome_rounded, const DjModeSettingsScreen(playerFacing: true)),
               // Effects remain grouped under Equalizer; track analysis has its own entry above.
             ], initiallyExpanded: true),
-            _section(context, 'Audio', Icons.equalizer_rounded, [
-            ]),
             Consumer<ModeProvider>(
               builder: (context, modes, _) => _section(
                 context,
