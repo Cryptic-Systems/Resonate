@@ -40,7 +40,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
   final Map<String, Future<DjTrackProfile?>> _profileFutures = {};
   final DjWaveformRangeReader _waveformReader = DjWaveformRangeReader();
   final DjCuePointStore _cuePointStore = DjCuePointStore();
-  Map<String, Duration> _cuePoints = <String, Duration>{};
+  Map<String, List<Duration?>> _hotCues = <String, List<Duration?>>{};
 
   Future<DjTrackProfile?>? _profileFutureFor(
     BuildContext context,
@@ -86,69 +86,57 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
     try {
       final loaded = await _cuePointStore.load();
       if (!mounted) return;
-      setState(() => _cuePoints = loaded);
+      setState(() => _hotCues = loaded);
     } catch (error) {
       debugPrint('DJ cue points could not be loaded: $error');
     }
   }
 
-  Future<void> _setCuePoint(
-    String deckId,
-    PlaybackDeckSnapshot? deck,
-  ) async {
-    final currentDeck = deck;
-    final trackId = currentDeck?.mediaId;
-    if (trackId == null || trackId.isEmpty) return;
-    final updated = Map<String, Duration>.from(_cuePoints)
-      ..[trackId] = currentDeck!.position;
+  Future<void> _setHotCue(String deckId, PlaybackDeckSnapshot? deck, int slot) async {
+    final trackId = deck?.mediaId;
+    if (trackId == null || trackId.isEmpty || slot < 0 || slot >= DjCuePointStore.slotCount) return;
+    final updated = <String, List<Duration?>>{
+      for (final entry in _hotCues.entries) entry.key: List<Duration?>.from(entry.value),
+    };
+    final slots = updated.putIfAbsent(trackId, () => List<Duration?>.filled(DjCuePointStore.slotCount, null));
+    while (slots.length < DjCuePointStore.slotCount) { slots.add(null); }
+    slots[slot] = deck!.position;
     try {
       await _cuePointStore.saveAll(updated);
       if (!mounted) return;
-      setState(() => _cuePoints = updated);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Deck $deckId cue saved at ${_formatCue(currentDeck.position)}.'),
-        ),
-      );
+      setState(() => _hotCues = updated);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Deck $deckId hot cue ${slot + 1} saved at ${_formatCue(deck.position)}.'),
+      ));
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Cue point could not be saved: $error')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Hot cue could not be saved: $error')));
     }
   }
 
-  Future<void> _seekToCue(
-    String deckId,
-    PlaybackDeckSnapshot? deck,
-  ) async {
-    final currentDeck = deck;
-    final trackId = currentDeck?.mediaId;
-    if (trackId == null || trackId.isEmpty) return;
-    final cue = _cuePoints[trackId];
-    if (cue == null) return;
-    final duration = currentDeck!.duration;
-    if (duration != null && cue > duration) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saved cue is beyond this track duration. Set a new cue point.')),
-      );
+  Future<void> _seekToHotCue(String deckId, PlaybackDeckSnapshot? deck, int slot) async {
+    final trackId = deck?.mediaId;
+    if (trackId == null || trackId.isEmpty || slot < 0 || slot >= DjCuePointStore.slotCount) return;
+    final cues = _hotCues[trackId];
+    if (cues == null || slot >= cues.length || cues[slot] == null) return;
+    final cue = cues[slot]!;
+    if (deck!.duration != null && cue > deck.duration!) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Saved hot cue is beyond this track duration. Set that pad again.'),
+      ));
       return;
     }
-    if (!mounted) return;
     try {
       await context.read<MusicProvider>().seekDjDeck(
-        deckId: deckId,
-        position: cue,
-        expectedMediaId: trackId,
+        deckId: deckId, position: cue, expectedMediaId: trackId,
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Deck $deckId cue seek was not applied: $error')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Deck $deckId hot cue seek was not applied: $error'),
+      ));
     }
   }
-
   String _formatCue(Duration value) {
     final seconds = value.inSeconds.clamp(0, 1 << 30);
     return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
@@ -239,12 +227,16 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
             final loaded = deck?.mediaId != null;
             final isPlaying = deck?.isPlaying == true;
             final trackId = deck?.mediaId;
-            final storedCue = trackId == null ? null : _cuePoints[trackId];
-            final cuePosition = storedCue != null &&
-                    deck?.duration != null &&
-                    storedCue > deck!.duration!
-                ? null
-                : storedCue;
+            final storedCues = List<Duration?>.generate(
+              DjCuePointStore.slotCount,
+              (index) {
+                final slots = trackId == null ? null : _hotCues[trackId];
+                final value = slots != null && index < slots.length ? slots[index] : null;
+                return value != null && deck?.duration != null && value > deck!.duration!
+                    ? null
+                    : value;
+              },
+            );
             final title = deck?.title ?? song?.title ?? 'Empty deck';
             final artist = deck?.artist ?? song?.artist ??
                 'Load a track from the shared library';
@@ -279,7 +271,9 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                           _chooseTrackForDeck(context, id, music, library),
                         )
                     : null,
-                cuePosition: cuePosition,
+                hotCuePositions: storedCues,
+                onSetHotCue: (slot) => unawaited(_setHotCue(id, deck, slot)),
+                onHotCue: (slot) => unawaited(_seekToHotCue(id, deck, slot)),
                 channelGain: deck?.channelGain ?? 1.0,
                 onChannelGainChanged: (gain) =>
                     music.setDjDeckChannelGain(deckId: id, gain: gain),
@@ -509,7 +503,9 @@ class _ConsoleDeck extends StatefulWidget {
     required this.canPlay,
     required this.onPlayPause,
     required this.onLoad,
-    required this.cuePosition,
+    required this.hotCuePositions,
+    required this.onSetHotCue,
+    required this.onHotCue,
     required this.channelGain,
     required this.canAdjustChannelGain,
     required this.onChannelGainChanged,
@@ -529,7 +525,9 @@ class _ConsoleDeck extends StatefulWidget {
   final bool allowInternalScroll;
   final Future<void> Function() onPlayPause;
   final VoidCallback? onLoad;
-  final Duration? cuePosition;
+  final List<Duration?> hotCuePositions;
+  final ValueChanged<int> onSetHotCue;
+  final ValueChanged<int> onHotCue;
   final double channelGain;
   final bool canAdjustChannelGain;
   final Future<void> Function(double gain) onChannelGainChanged;
@@ -918,55 +916,44 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'PERFORMANCE CONTROLS',
+              'HOT CUES · TAP TO RECALL · HOLD TO SET',
               style: theme.textTheme.labelSmall?.copyWith(
-                color: Colors.white38,
-                letterSpacing: 1.0,
-                fontWeight: FontWeight.w800,
+                color: Colors.white38, letterSpacing: .8, fontWeight: FontWeight.w800,
               ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: const [
-                _ConsolePlaceholderControl(label: 'VINYL', icon: Icons.album_outlined),
-                _ConsolePlaceholderControl(label: 'SLIP', icon: Icons.motion_photos_on_outlined),
-                _ConsolePlaceholderControl(label: 'SYNC', icon: Icons.sync_rounded),
-                _ConsolePlaceholderControl(label: 'LOOP', icon: Icons.loop_rounded),
-                _ConsolePlaceholderControl(label: 'HOT CUE', icon: Icons.bookmark_outline_rounded),
-                _ConsolePlaceholderControl(label: 'FX', icon: Icons.auto_awesome_outlined),
-                _ConsolePlaceholderControl(label: 'SAMPLES', icon: Icons.grid_view_rounded),
-              ],
             ),
           ),
           const SizedBox(height: 5),
           Row(
-            children: [
-              Expanded(
-                child: Text(
-                  widget.cuePosition == null
-                      ? 'NO CUE'
-                      : 'CUE ${_format(widget.cuePosition!)}',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: Colors.white70,
-                    letterSpacing: .7,
+            children: List<Widget>.generate(DjCuePointStore.slotCount, (index) {
+              final cue = index < widget.hotCuePositions.length ? widget.hotCuePositions[index] : null;
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: index == DjCuePointStore.slotCount - 1 ? 0 : 5),
+                  child: GestureDetector(
+                    onLongPress: widget.active ? () => widget.onSetHotCue(index) : null,
+                    child: OutlinedButton(
+                      onPressed: cue == null ? null : () => widget.onHotCue(index),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+                        side: BorderSide(color: cue == null ? Colors.white24 : accent.withValues(alpha: .65)),
+                        foregroundColor: cue == null ? Colors.white38 : accent,
+                        backgroundColor: cue == null ? Colors.white.withValues(alpha: .025) : accent.withValues(alpha: .09),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('CUE ${index + 1}', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900)),
+                          const SizedBox(height: 2),
+                          Text(cue == null ? '—' : _format(cue), style: const TextStyle(fontSize: 9)),
+                        ],
+                      ),
+                    ),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              TextButton(
-                onPressed: widget.onCue,
-                child: const Text('CUE'),
-              ),
-              TextButton(
-                onPressed: widget.onSetCue,
-                child: const Text('SET'),
-              ),
-            ],
+              );
+            }),
           ),
+          const SizedBox(height: 5),
           const SizedBox(height: 5),
           Row(
             children: [
