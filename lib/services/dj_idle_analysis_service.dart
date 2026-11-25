@@ -87,6 +87,11 @@ class DjIdleAnalysisService {
               now.difference(existing.analyzedAt!) < _retryCooldown) {
             continue;
           }
+          if (!hasPsychicAnalysis &&
+              existing?.analyzedAt != null &&
+              now.difference(existing!.analyzedAt!) < _retryCooldown) {
+            continue;
+          }
           final lastAttempt = _lastProfileAttemptAt[song.id];
           if (lastAttempt != null &&
               now.difference(lastAttempt) < _retryCooldown) {
