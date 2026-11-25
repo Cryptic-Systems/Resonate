@@ -148,10 +148,6 @@ abstract interface class PlaybackDjDeckBackend {
     required String deckId,
     required List<double> gainsDb,
   });
-  Future<void> clearDjDeckEq({required String deckId});  Future<void> setDjDeckEq({
-    required String deckId,
-    required List<double> gainsDb,
-  });
   Future<void> clearDjDeckEq({required String deckId});
 
 }
