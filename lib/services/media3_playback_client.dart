@@ -818,6 +818,14 @@ class Media3PlaybackClient {
     await _invokeAccepted('clearDjDeckEq', <String, Object>{'deckId': deckId});
   }
 
+  Future<void> setDjDeckFilter({required String deckId, required int type, required double cutoffHz}) async {
+    _validatePhysicalDeck(deckId);
+    if (!const [0, 3, 4].contains(type) || !cutoffHz.isFinite || cutoffHz < 40 || cutoffHz > 18000) {
+      throw ArgumentError('DJ filter requires bypass/low-pass/high-pass and cutoff from 40 to 18000 Hz.');
+    }
+    await _invokeAccepted('setDjDeckFilter', <String, Object>{'deckId': deckId, 'type': type, 'cutoffHz': cutoffHz});
+  }
+
   void _validatePhysicalDeck(String deckId) {
     if (deckId != 'A' && deckId != 'B') {
       throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
