@@ -156,14 +156,15 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
     final initial = music.media3ShadowState;
     final target = deckId == 'A' ? initial?.deckA : initial?.deckB;
     final source = deckId == 'A' ? initial?.deckB : initial?.deckA;
-    final targetId = target?.mediaId;
-    final sourceId = source?.mediaId;
     if (initial?.djDualDeckMode != true ||
         !music.media3ProviderSessionActive ||
         music.transitionInProgress ||
-        targetId == null || sourceId == null || targetId == sourceId) {
+        target == null || source == null) {
       return;
     }
+    final targetId = target.mediaId;
+    final sourceId = source.mediaId;
+    if (targetId == null || sourceId == null || targetId == sourceId) return;
     try {
       final profiles = await Future.wait<DjTrackProfile?>([
         _profileFutureFor(context, targetId)!,
