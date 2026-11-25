@@ -149,6 +149,72 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
     return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
   }
 
+  Future<void> _syncDeckToOther(String deckId) async {
+    if (deckId != 'A' && deckId != 'B') return;
+    final music = context.read<MusicProvider>();
+    final initial = music.media3ShadowState;
+    final target = deckId == 'A' ? initial?.deckA : initial?.deckB;
+    final source = deckId == 'A' ? initial?.deckB : initial?.deckA;
+    final targetId = target?.mediaId;
+    final sourceId = source?.mediaId;
+    if (initial?.djDualDeckMode != true ||
+        !music.media3ProviderSessionActive ||
+        music.transitionInProgress ||
+        targetId == null || sourceId == null || targetId == sourceId) {
+      return;
+    }
+    try {
+      final profiles = await Future.wait<DjTrackProfile?>([
+        _profileFutureFor(context, targetId)!,
+        _profileFutureFor(context, sourceId)!,
+      ]);
+      if (!mounted) return;
+      final targetGrid = profiles[0]?.beatGrid;
+      final sourceGrid = profiles[1]?.beatGrid;
+      if (targetGrid == null || sourceGrid == null ||
+          !DjConsoleOverlayPolicy.hasTrustedTempo(targetGrid) ||
+          !DjConsoleOverlayPolicy.hasTrustedTempo(sourceGrid)) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('SYNC needs a trusted BPM analysis on both decks.'),
+        ));
+        return;
+      }
+      final targetBpm = targetGrid.bpm;
+      final sourceBpm = sourceGrid.bpm;
+      if (targetBpm == null || sourceBpm == null ||
+          !targetBpm.isFinite || !sourceBpm.isFinite ||
+          targetBpm <= 0 || sourceBpm <= 0) return;
+      final speed = sourceBpm / targetBpm;
+      if (!speed.isFinite || speed < 0.94 || speed > 1.06) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('SYNC is outside the ±6% tempo range. Adjust the tempo manually first.'),
+        ));
+        return;
+      }
+      final latest = music.media3ShadowState;
+      final latestTarget = deckId == 'A' ? latest?.deckA : latest?.deckB;
+      final latestSource = deckId == 'A' ? latest?.deckB : latest?.deckA;
+      if (latest?.djDualDeckMode != true ||
+          latestTarget?.mediaId != targetId ||
+          latestSource?.mediaId != sourceId ||
+          music.transitionInProgress) return;
+      await music.setDjDeckPlaybackParameters(
+        deckId: deckId,
+        speed: speed,
+        pitch: 1.0,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Deck $deckId tempo synced to ${sourceBpm.toStringAsFixed(1)} BPM.'),
+      ));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Deck $deckId SYNC was not applied: $error'),
+      ));
+    }
+  }
+
   Future<void> _chooseTrackForDeck(
     BuildContext context,
     String deckId,
@@ -263,6 +329,10 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                 jogSeekEnabled: djReady && loaded &&
                     music.media3ProviderSessionActive &&
                     !music.transitionInProgress,
+                onSync: djReady && loaded &&
+                        (id == 'A' ? deckB?.mediaId : deckA?.mediaId) != null
+                    ? () => unawaited(_syncDeckToOther(id))
+                    : null,
                 onPlayPause: () async {
                   if (isPlaying) {
                     await music.pauseDjDeck(id);
@@ -417,6 +487,7 @@ class _ConsoleDeck extends StatefulWidget {
     required this.canPlay,
     required this.onPlayPause,
     required this.onLoad,
+    this.onSync,
     required this.hotCuePositions,
     required this.onSetHotCue,
     required this.onHotCue,
@@ -436,6 +507,7 @@ class _ConsoleDeck extends StatefulWidget {
   final bool active, onAir, compact, isPlaying, canPlay, jogSeekEnabled;
   final Future<void> Function() onPlayPause;
   final VoidCallback? onLoad;
+  final VoidCallback? onSync;
   final List<Duration?> hotCuePositions;
   final ValueChanged<int>? onSetHotCue;
   final ValueChanged<int>? onHotCue;
@@ -1037,9 +1109,21 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             Text(duration > Duration.zero ? _time(duration) : '--:--',
               style: theme.textTheme.labelSmall?.copyWith(color: Colors.white54)),
           ]),
-          DjConsoleDeckTempoControl(
-            physicalDeckId: deck.endsWith('A') ? 'A' : 'B',
-            compact: compact,
+          Row(
+            children: [
+              Expanded(child: DjConsoleDeckTempoControl(
+                physicalDeckId: deck.endsWith('A') ? 'A' : 'B',
+                compact: compact,
+              )),
+              const SizedBox(width: 3),
+              IconButton(
+                tooltip: 'Sync tempo to the other deck',
+                visualDensity: VisualDensity.compact,
+                onPressed: widget.onSync,
+                icon: const Icon(Icons.sync_rounded, size: 19),
+                color: accent,
+              ),
+            ],
           ),
         ],
       ),
