@@ -795,6 +795,60 @@ class DspEngineRegistryTest {
     }
 
     @Test
+    fun dj_headroom_covers_player_eq_and_transition_boosts_on_the_same_deck() {
+        val centers = doubleArrayOf(80.0, 1000.0, 12000.0)
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        assertTrue(DspEngineRegistry.register(2, 2002L, "B"))
+        assertTrue(DspEngineRegistry.setActiveDeck("A"))
+
+        // Player EQ already contributes +6 dB at 80 Hz before DJ EQ is added.
+        DspEngineRegistry.applyEqBandsAll(
+            centers,
+            doubleArrayOf(6.0, 0.0, 0.0),
+            true,
+        )
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.setDjEqOverlay(
+            "A",
+            centers,
+            doubleArrayOf(6.0, 0.0, 0.0),
+        ))
+        val playerAndDjExpected = Math.pow(10.0, -13.0 / 20.0)
+        val playerAndDjApplied = fake.calls.last { it.startsWith("preamp:1001:") }
+            .substringAfterLast(":").toDouble()
+        assertEquals(playerAndDjExpected, playerAndDjApplied, 0.000001)
+        assertFalse(fake.calls.any { it.startsWith("preamp:2002:") })
+
+        // Transition EQ is summed into the same native curve and must also
+        // participate in headroom while the DJ overlay is active.
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            centers,
+            doubleArrayOf(3.0, 0.0, 0.0),
+        ))
+        val allThreeExpected = Math.pow(10.0, -16.0 / 20.0)
+        val allThreeApplied = fake.calls.last { it.startsWith("preamp:1001:") }
+            .substringAfterLast(":").toDouble()
+        assertEquals(allThreeExpected, allThreeApplied, 0.000001)
+
+        fake.calls.clear()
+        DspEngineRegistry.applyPreampAll(1.5)
+        val updated = fake.calls.last { it.startsWith("preamp:1001:") }
+            .substringAfterLast(":").toDouble()
+        assertEquals(1.5 * allThreeExpected, updated, 0.000001)
+
+        assertTrue(DspEngineRegistry.clearTemporaryEqOverlay("active"))
+        val afterTransitionClear = fake.calls.last { it.startsWith("preamp:1001:") }
+            .substringAfterLast(":").toDouble()
+        assertEquals(1.5 * playerAndDjExpected, afterTransitionClear, 0.000001)
+
+        assertTrue(DspEngineRegistry.clearDjEqOverlay("A"))
+        assertTrue(fake.calls.any { it == "preamp:1001:1.5" })
+    }
+
+    @Test
     fun dj_eq_is_bound_to_physical_deck_not_active_standby_role() {
         assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
         assertTrue(DspEngineRegistry.register(2, 2002L, "B"))
