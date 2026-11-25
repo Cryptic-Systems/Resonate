@@ -1264,7 +1264,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             child: Slider(
               value: (math.log(_filterCutoffHz / 40.0) / math.log(18000.0 / 40.0)).clamp(0.0, 1.0),
               min: 0, max: 1, divisions: 100,
-              onChanged: widget.canAdjustEq && _filterType != 0 ? (value) => setState(() { _filterDragging = true; _filterCutoffHz = 40.0 * math.pow(18000.0 / 40.0, value); }) : null,
+              onChanged: widget.canAdjustEq && _filterType != 0 ? (value) => setState(() { _filterDragging = true; _filterCutoffHz = (40.0 * math.pow(18000.0 / 40.0, value)).toDouble(); }) : null,
               onChangeEnd: widget.canAdjustEq && _filterType != 0 ? (_) => unawaited(_commitFilter()) : null,
             ),
           ),
