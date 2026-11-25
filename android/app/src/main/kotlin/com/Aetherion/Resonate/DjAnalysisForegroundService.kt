@@ -31,7 +31,7 @@ class DjAnalysisForegroundService : Service() {
             startForeground(
                 NOTIFICATION_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)
@@ -48,8 +48,7 @@ class DjAnalysisForegroundService : Service() {
             "Resonate:DJLibraryAnalysis",
         ).apply {
             setReferenceCounted(false)
-            // Android places platform limits on long-running dataSync work.
-            // Release automatically even if the Dart side fails to stop us.
+            // Bounded fail-safe: release even if the Dart side fails to stop us.
             acquire(MAX_WAKE_LOCK_MS)
         }
     }
@@ -107,7 +106,7 @@ class DjAnalysisForegroundService : Service() {
     companion object {
         private const val CHANNEL_ID = "resonate_dj_library_analysis"
         private const val NOTIFICATION_ID = 4817
-        private const val MAX_WAKE_LOCK_MS = 6L * 60L * 60L * 1000L
+        private const val MAX_WAKE_LOCK_MS = 12L * 60L * 60L * 1000L
 
         fun stop(context: android.content.Context) {
             context.stopService(Intent(context, DjAnalysisForegroundService::class.java))
