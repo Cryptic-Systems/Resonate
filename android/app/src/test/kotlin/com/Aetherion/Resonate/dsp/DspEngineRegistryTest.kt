@@ -195,7 +195,7 @@ class DspEngineRegistryTest {
         assertTrue(fake.calls.any { it == "dvc:11011:false:-6.0:false:28.0" })
         assertTrue(fake.calls.any { it == "limiter-config:11011:true:3:-2.0" })
         assertTrue(fake.calls.any { it == "dither:11011:true:2" })
-        assertTrue(fake.calls.any { it == "parametric:11011:3:0.8:1" })
+        assertTrue(fake.calls.any { it.startsWith("parametric:11011:3:0.8:") && it.endsWith(":1,0,2") })
     }
 
     @Test
@@ -280,7 +280,7 @@ class DspEngineRegistryTest {
             true,
         )
         assertTrue(DspEngineRegistry.register(31, 31031L))
-        assertTrue(fake.calls.any { it == "parametric:31031:31:4.3:0" })
+        assertTrue(fake.calls.any { it.startsWith("parametric:31031:31:4.3:") && it.endsWith(":" + List(31) { 0 }.joinToString(",")) })
 
         DspEngineRegistry.unregister(31)
         fake.calls.clear()
@@ -290,7 +290,7 @@ class DspEngineRegistryTest {
             true,
         )
         assertTrue(DspEngineRegistry.register(10, 10010L))
-        assertTrue(fake.calls.any { it == "parametric:10010:10:1.4:0" })
+        assertTrue(fake.calls.any { it.startsWith("parametric:10010:10:1.4:") && it.endsWith(":" + List(10) { 0 }.joinToString(",")) })
     }
 
     @Test
@@ -859,7 +859,10 @@ class DspEngineRegistryTest {
         fake.calls.clear()
 
         assertTrue(DspEngineRegistry.setDjDeckFilter("A", 3, 900.0))
-        assertTrue(fake.calls.any { it.startsWith("parametric:1001:32:") && it.endsWith(":0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3") })
+        assertTrue(fake.calls.any { call ->
+            call.startsWith("parametric:1001:32:") &&
+                call.substringAfterLast(":").split(",").map { it.toInt() } == List(31) { 0 } + 3
+        })
         assertFalse(fake.calls.any { it.startsWith("parametric:2002:") })
 
         fake.calls.clear()
