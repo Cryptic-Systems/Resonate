@@ -795,6 +795,38 @@ class Media3PlaybackRuntime {
         );
       });
 
+  Future<void> setDjDeckEq({
+    required String deckId,
+    required List<double> gainsDb,
+  }) => _run(() async {
+        if (deckId != 'A' && deckId != 'B') {
+          throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
+        }
+        if (gainsDb.length != 3 ||
+            gainsDb.any((gain) => !gain.isFinite || gain < -12.0 || gain > 12.0)) {
+          throw ArgumentError('DJ EQ requires three finite gains from -12 to +12 dB.');
+        }
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support physical DJ deck EQ.');
+        }
+        await (backend as PlaybackDjDeckBackend).setDjDeckEq(
+          deckId: deckId,
+          gainsDb: List<double>.unmodifiable(gainsDb),
+        );
+      });
+
+  Future<void> clearDjDeckEq({required String deckId}) => _run(() async {
+        if (deckId != 'A' && deckId != 'B') {
+          throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
+        }
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support physical DJ deck EQ.');
+        }
+        await (backend as PlaybackDjDeckBackend).clearDjDeckEq(deckId: deckId);
+      });
+
   Future<void> seekDjDeck({
     required String deckId,
     required Duration position,
