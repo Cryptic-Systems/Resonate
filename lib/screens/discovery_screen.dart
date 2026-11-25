@@ -128,17 +128,32 @@ class _DiscoveryRecommendationTileState
           maxLines: 3,
           overflow: TextOverflow.ellipsis,
         ),
-        trailing: _loading
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : IconButton(
-                tooltip: 'Play recommendation',
-                icon: const Icon(Icons.play_arrow_rounded),
-                onPressed: _play,
-              ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Consumer<LibraryProvider>(
+              builder: (_, library, __) {
+                final liked = library.isFavoriteSync(widget.song.id);
+                return IconButton(
+                  tooltip: liked ? 'Unlike' : 'Like',
+                  icon: Icon(liked ? Icons.favorite_rounded : Icons.favorite_border_rounded),
+                  onPressed: _loading ? null : () => library.toggleFavorite(widget.song),
+                );
+              },
+            ),
+            _loading
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : IconButton(
+                    tooltip: 'Play recommendation',
+                    icon: const Icon(Icons.play_arrow_rounded),
+                    onPressed: _play,
+                  ),
+          ],
+        ),
         onTap: _loading ? null : _play,
       ),
     );
