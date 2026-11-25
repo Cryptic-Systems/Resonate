@@ -98,6 +98,46 @@ abstract final class DjConsoleTempoPolicy {
     return speed;
   }
 
+  /// Finds a small, safe phase trim that makes [targetPositionMs] share the
+  /// source deck's beat phase. A null result means the grids/positions are
+  /// insufficient or the required seek would be an audible jump.
+  static int? phaseCorrectionMs({
+    required List<int> sourceBeatMs,
+    required List<int> targetBeatMs,
+    required int sourcePositionMs,
+    required int targetPositionMs,
+    required double effectiveBpm,
+    int maxCorrectionMs = 120,
+  }) {
+    if (sourcePositionMs < 0 || targetPositionMs < 0 ||
+        !effectiveBpm.isFinite || effectiveBpm <= 0 ||
+        maxCorrectionMs < 0 ||
+        sourceBeatMs.length < 2 || targetBeatMs.length < 2) {
+      return null;
+    }
+    int? precedingBeat(List<int> beats, int position) {
+      int? result;
+      for (final beat in beats) {
+        if (beat < 0) continue;
+        if (beat > position) break;
+        result = beat;
+      }
+      return result;
+    }
+    final sourceAnchor = precedingBeat(sourceBeatMs, sourcePositionMs);
+    final targetAnchor = precedingBeat(targetBeatMs, targetPositionMs);
+    if (sourceAnchor == null || targetAnchor == null) return null;
+    final beatDurationMs = 60000.0 / effectiveBpm;
+    final sourcePhase = (sourcePositionMs - sourceAnchor) % beatDurationMs;
+    final targetPhase = (targetPositionMs - targetAnchor) % beatDurationMs;
+    var correction = sourcePhase - targetPhase;
+    final halfBeat = beatDurationMs / 2;
+    if (correction > halfBeat) correction -= beatDurationMs;
+    if (correction < -halfBeat) correction += beatDurationMs;
+    if (!correction.isFinite || correction.abs() > maxCorrectionMs) return null;
+    return correction.round();
+  }
+
   static const double minPercent = -6.0;
   static const double maxPercent = 6.0;
 
