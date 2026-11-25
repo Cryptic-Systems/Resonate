@@ -522,16 +522,18 @@ object DspEngineRegistry {
         val g = linearGain.coerceIn(0.0, 4.0)
         stickyState = stickyState.copy(preamp = g)
         val state = stickyState
-        val effective = effectivePreamp(state)
-        val list = snapshotHandles()
-        for (h in list) {
+        val engines = handles.values.toList()
+        for (engine in engines) {
             try {
-                nativeApi.setPreamp(h, effective)
+                nativeApi.setPreamp(
+                    engine.handle,
+                    effectivePreampForEngine(state, engine.deckId),
+                )
             } catch (t: Throwable) {
-                Log.w(TAG, "setPreamp failed handle=$h", t)
+                Log.w(TAG, "setPreamp failed handle=${engine.handle}", t)
             }
         }
-        Log.i(TAG, "applyPreampAll gain=$g targets=${list.size}")
+        Log.i(TAG, "applyPreampAll gain=$g targets=${engines.size}")
     }
 
     @JvmStatic
@@ -569,19 +571,22 @@ object DspEngineRegistry {
         val g = linearGain.coerceIn(0.0, 4.0)
         stickyState = stickyState.copy(linearGain = g, dvcDb = (20.0 * kotlin.math.log10(g.coerceAtLeast(1.0e-6))).toFloat())
         val state = stickyState
-        val list = snapshotHandles()
-        for (h in list) {
+        val engines = handles.values.toList()
+        for (engine in engines) {
             try {
                 if (state.dvcEnabled) {
-                    nativeApi.setVolume(h, g)
+                    nativeApi.setVolume(engine.handle, g)
                 } else {
-                    nativeApi.setPreamp(h, effectivePreamp(state))
+                    nativeApi.setPreamp(
+                        engine.handle,
+                        effectivePreampForEngine(state, engine.deckId),
+                    )
                 }
             } catch (t: Throwable) {
-                Log.w(TAG, "setVolume failed handle=$h", t)
+                Log.w(TAG, "setVolume failed handle=${engine.handle}", t)
             }
         }
-        Log.i(TAG, "applyVolumeAll gain=$g targets=${list.size}")
+        Log.i(TAG, "applyVolumeAll gain=$g targets=${engines.size}")
     }
 
     @JvmStatic
@@ -598,7 +603,7 @@ object DspEngineRegistry {
         handles.values.forEach { engine ->
             runCatching {
                 nativeApi.setDvc(engine.handle, state.dvcEnabled, state.dvcDb, state.dvcSmoothing, state.dvcSmoothingMs)
-                nativeApi.setPreamp(engine.handle, effectivePreamp(state))
+                nativeApi.setPreamp(engine.handle, effectivePreampForEngine(state, engine.deckId))
             }.onFailure { Log.w(TAG, "setDvc failed handle=${engine.handle}", it) }
         }
     }
@@ -921,6 +926,7 @@ object DspEngineRegistry {
         val temporaryOverlay = temporaryEqOverlays[deckId]
         val djOverlay = djEqOverlays[deckId]
         if (temporaryOverlay == null && djOverlay == null) {
+            nativeApi.setPreamp(handle, effectivePreampForEngine(state, deckId))
             // Keep a valid neutral curve installed when no Player EQ is saved;
             // this also prevents a cleared DJ/transition overlay from leaving
             // stale native filter coefficients behind.
@@ -941,6 +947,7 @@ object DspEngineRegistry {
         // Compose the persistent Player curve, temporary transition overlay and
         // persistent physical-deck DJ EQ in dB. Clearing one owner cannot erase
         // another owner's contribution.
+        nativeApi.setPreamp(handle, effectivePreampForEngine(state, deckId))
         val count = base?.size?.takeIf { it > 0 } ?: 31
         val centers = state.centersHz?.takeIf { base != null && it.size >= count }
             ?.copyOf(count) ?: defaultCenters(count)
@@ -988,6 +995,21 @@ object DspEngineRegistry {
     private fun effectivePreamp(state: StickyState): Double =
         (state.preamp * if (state.dvcEnabled) 1.0 else state.linearGain).coerceIn(0.0, 4.0)
 
+    /**
+     * DJ EQ is a boost-capable filter stage. Reserve 1 dB of additional
+     * inter-sample margin and attenuate the deck preamp by the largest positive
+     * DJ-band gain before the EQ stage. This keeps bass boosts from exceeding
+     * digital full scale without relying on the optional peak limiter.
+     */
+    private fun effectivePreampForEngine(state: StickyState, deckId: String): Double {
+        val djOverlay = djEqOverlays[deckId]
+            ?: return effectivePreamp(state)
+        val maxBoostDb = djOverlay.gainsDb.maxOrNull()?.coerceAtLeast(0.0) ?: 0.0
+        val safetyMarginDb = if (maxBoostDb > 0.0) 1.0 else 0.0
+        val headroomLinear = Math.pow(10.0, -(maxBoostDb + safetyMarginDb) / 20.0)
+        return (effectivePreamp(state) * headroomLinear).coerceIn(0.0, 4.0)
+    }
+
     private fun applyStickyToHandle(handle: Long, deckId: String): Boolean {
         val state = stickyState
         try {
@@ -1017,7 +1039,7 @@ object DspEngineRegistry {
             }
             nativeApi.setSpeakerMode(handle, state.speakerMode)
             nativeApi.setVirtualBass(handle, state.virtualBass)
-            nativeApi.setPreamp(handle, effectivePreamp(state))
+            nativeApi.setPreamp(handle, effectivePreampForEngine(state, deckId))
             nativeApi.setLimiterCeiling(handle, state.limiterHigh, state.limiterLow)
             nativeApi.setCrossoverHz(handle, state.crossoverHz)
             nativeApi.setLimiterConfig(handle, state.limiterEnabled, state.limiterMode, state.limiterThresholdDb, state.limiterReleaseMs, state.limiterAttackMs, state.limiterLookaheadMs, state.limiterKneeDb)
