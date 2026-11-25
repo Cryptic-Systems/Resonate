@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/dj_analysis.dart';
 import '../models/song.dart';
 import 'database_helper.dart';
+import 'psychic_track_analysis_bridge.dart';
 import 'dj_bpm_estimator.dart';
 import '../dj_engine/analysis/dj_pcm_profile_analyzer.dart';
 import '../dj_engine/analysis/dj_profile_serializer.dart';
@@ -370,7 +371,11 @@ class DjAnalysisService {
       maxSafeBassDb: maxSafeBassDb,
       analysisVersion: DjAnalysis.currentVersion,
     );
-    await saveProfile(profile);
+    final psychicAnalysis = await PsychicTrackAnalysisBridge.analyze(song, windows);
+    final enrichedProfile = psychicAnalysis == null
+        ? profile
+        : profile.copyWith(psychicAnalysis: psychicAnalysis);
+    await saveProfile(enrichedProfile);
 
     final bpm = profile.beatGrid.bpm ?? legacy?.bpm ?? 0;
     final bpmConfidence = profile.hasTempo
