@@ -35,6 +35,11 @@ import 'album_screen.dart';
 import 'artist_screen.dart';
 import 'lyrics_screen.dart';
 import 'audio_leveling_settings_screen.dart';
+import 'settings_screen.dart';
+import 'crossfade_screen.dart';
+import 'dj_mode_settings_screen.dart';
+import '../modes/screens/modes_screen.dart';
+import '../modes/integration/resonate_mode_ports.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -122,30 +127,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   Widget build(BuildContext context) {
     return ResonateGlassScaffold(
       title: const Text('Now Playing'),
-      actions: [
-        const ExperienceModeChip(dense: true),
-        Consumer<MusicProvider>(
-          builder: (_, music, __) {
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Center(
-                child: Tooltip(
-                  message: 'Engine ${music.activeEngineLabel} is the active playback deck',
-                  child: Chip(
-                    avatar: Icon(
-                      music.activeEngineLabel == 'A'
-                          ? Icons.looks_one_rounded
-                          : Icons.looks_two_rounded,
-                      size: 17,
-                    ),
-                    label: Text('Engine ${music.activeEngineLabel}'),
-                  ),
-                ),
-              ),
-            );
-          },
+      leading: Builder(
+        builder: (context) => IconButton(
+          tooltip: 'Player menu',
+          icon: const Icon(Icons.menu_rounded),
+          onPressed: () => Scaffold.of(context).openDrawer(),
         ),
-      ],
+      ),
+      drawer: _PlayerSideDrawer(
+        onOpen: (screen) {
+          Navigator.of(context).pop();
+          Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+        },
+      ),
       body: Consumer2<MusicProvider, ModeProvider>(
         builder: (context, music, modes, _) {
           final activeSong = music.currentSong;
@@ -1239,6 +1233,77 @@ class _SwipeTutorialDialogState extends State<_SwipeTutorialDialog>
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class _PlayerSideDrawer extends StatelessWidget {
+  const _PlayerSideDrawer({required this.onOpen});
+  final void Function(Widget screen) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Drawer(
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Text('PLAYER TOOLS', style: theme.textTheme.labelLarge),
+            ),
+            Consumer<ModeProvider>(
+              builder: (_, modes, __) => ListTile(
+                leading: const Icon(Icons.tune_rounded),
+                title: const Text('Listening modes'),
+                subtitle: Text('Current: ${modes.mode.label}'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => onOpen(ModesScreen(folderPicker: const ResonateModeFolderPickerPort())),
+              ),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.graphic_eq_rounded),
+              title: const Text('Mix Monitor'),
+              subtitle: const Text('Live transitions, incoming preparation and underruns'),
+              onTap: () => onOpen(const DjWorkspaceScreen(playerFacing: true)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.queue_music_rounded),
+              title: const Text('Queue'),
+              onTap: () => onOpen(const QueueScreen()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.equalizer_rounded),
+              title: const Text('Equalizer'),
+              onTap: () => onOpen(const EqualizerScreen()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.compare_arrows_rounded),
+              title: const Text('Crossfade'),
+              onTap: () => onOpen(const CrossfadeScreen()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.graphic_eq_rounded),
+              title: const Text('Audio leveling'),
+              onTap: () => onOpen(const AudioLevelingSettingsScreen()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome_rounded),
+              title: const Text('Automatic mixing'),
+              onTap: () => onOpen(const DjModeSettingsScreen(playerFacing: true)),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.settings_outlined),
+              title: const Text('Settings'),
+              onTap: () => onOpen(const SettingsScreen()),
+            ),
+          ],
         ),
       ),
     );
