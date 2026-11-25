@@ -851,6 +851,36 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeAnalyzeTrackMetrics(
     env->ReleaseStringUTFChars(stableId, chars);
     if (!identity.valid()) return nullptr;
 
+    std::vector<jfloat> rms(static_cast<size_t>(count));
+    std::vector<jfloat> peak(static_cast<size_t>(count));
+    std::vector<jfloat> bass(static_cast<size_t>(count));
+    std::vector<jfloat> duration(static_cast<size_t>(count));
+    env->GetFloatArrayRegion(rmsValues, 0, count, rms.data());
+    env->GetFloatArrayRegion(peakValues, 0, count, peak.data());
+    env->GetFloatArrayRegion(bassValues, 0, count, bass.data());
+    env->GetFloatArrayRegion(durations, 0, count, duration.data());
+
+    // Include measured PCM values in the revision key. This still detects
+    // changed content when MediaStore does not expose filesystem timestamps.
+    uint64_t fingerprint = 1469598103934665603ULL;
+    const std::vector<jfloat>* metricArrays[] = {&rms, &peak, &bass, &duration};
+    for (const auto* values : metricArrays) {
+        const auto* bytes = reinterpret_cast<const unsigned char*>(values->data());
+        const size_t byteCount = values->size() * sizeof(jfloat);
+        for (size_t i = 0; i < byteCount; ++i) {
+            fingerprint ^= bytes[i];
+            fingerprint *= 1099511628211ULL;
+        }
+    }
+    identity.content_fingerprint = std::to_string(fingerprint);
+    for (jsize i = 0; i < count; ++i) {
+        if (!std::isfinite(duration[static_cast<size_t>(i)]) ||
+            duration[static_cast<size_t>(i)] <= 0.f ||
+            !std::isfinite(rms[static_cast<size_t>(i)]) ||
+            !std::isfinite(peak[static_cast<size_t>(i)]) ||
+            !std::isfinite(bass[static_cast<size_t>(i)])) return nullptr;
+    }
+
     dsp::TrackScanSnapshot snapshot{};
     bool cacheHit = false;
     {
@@ -858,14 +888,6 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeAnalyzeTrackMetrics(
         cacheHit = gTrackAnalysisCache.lookup(identity, snapshot);
     }
     if (!cacheHit) {
-        std::vector<jfloat> rms(static_cast<size_t>(count));
-        std::vector<jfloat> peak(static_cast<size_t>(count));
-        std::vector<jfloat> bass(static_cast<size_t>(count));
-        std::vector<jfloat> duration(static_cast<size_t>(count));
-        env->GetFloatArrayRegion(rmsValues, 0, count, rms.data());
-        env->GetFloatArrayRegion(peakValues, 0, count, peak.data());
-        env->GetFloatArrayRegion(bassValues, 0, count, bass.data());
-        env->GetFloatArrayRegion(durations, 0, count, duration.data());
         dsp::AdaptiveTrackScanSession session;
         double expectedSeconds = 0.0;
         for (jsize i = 0; i < count; ++i) {
