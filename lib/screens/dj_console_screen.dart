@@ -380,6 +380,8 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                   transitionInProgress: music.transitionInProgress,
                   deckHasMedia: loaded,
                 ),
+                canAdjustEq: djReady && loaded &&
+                    music.media3ProviderSessionActive,
                 jogSeekEnabled: djReady && loaded &&
                     music.media3ProviderSessionActive &&
                     !music.transitionInProgress,
@@ -552,7 +554,10 @@ class _ConsoleDeck extends StatefulWidget {
     required this.onHotCue,
     required this.channelGain,
     required this.canAdjustChannelGain,
+    required this.canAdjustEq,
     required this.onChannelGainChanged,
+    required this.eqGains,
+    required this.onEqChanged,
     required this.jogSeekEnabled,
     required this.onJogSeek,
     required this.status, required this.title, required this.artist, required this.progress,
@@ -571,8 +576,10 @@ class _ConsoleDeck extends StatefulWidget {
   final ValueChanged<int>? onSetHotCue;
   final ValueChanged<int>? onHotCue;
   final double channelGain;
-  final bool canAdjustChannelGain;
+  final bool canAdjustChannelGain, canAdjustEq;
   final Future<void> Function(double gain) onChannelGainChanged;
+  final List<double> eqGains;
+  final Future<void> Function(List<double> gains) onEqChanged;
   final Future<void> Function(Duration position) onJogSeek;
   final double progress;
   final Duration position, duration;
@@ -596,6 +603,8 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   bool _resetWaveformScrollPending = false;
   double _channelGain = 1.0;
   bool _channelGainDragging = false;
+  late List<double> _eqGains;
+  final List<bool> _eqDragging = <bool>[false, false, false];
   double? _jogLastAngle;
   double _jogAccumulatedRadians = 0;
   Duration? _jogStartPosition;
@@ -613,6 +622,12 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
       duration: const Duration(milliseconds: 1800),
     );
     _channelGain = widget.channelGain.clamp(0.0, 1.0).toDouble();
+    _eqGains = List<double>.generate(
+      3,
+      (index) => index < widget.eqGains.length
+          ? widget.eqGains[index].clamp(-12.0, 12.0).toDouble()
+          : 0.0,
+    );
     _syncPlatterMotion();
     _waveformScroll.addListener(_onWaveformScroll);
   }
@@ -620,6 +635,15 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   @override
   void didUpdateWidget(covariant _ConsoleDeck oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.eqGains != widget.eqGains &&
+        !_eqDragging.any((dragging) => dragging)) {
+      _eqGains = List<double>.generate(
+        3,
+        (index) => index < widget.eqGains.length
+            ? widget.eqGains[index].clamp(-12.0, 12.0).toDouble()
+            : 0.0,
+      );
+    }
     if (!widget.canAdjustChannelGain) {
       // Drop a local preview if a native transition takes ownership of gain.
       _channelGainDragging = false;
@@ -787,6 +811,29 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Channel gain was not applied: $error')),
+      );
+    }
+  }
+
+  Future<void> _commitEq(int band, double value) async {
+    if (band < 0 || band >= 3 || !widget.canAdjustEq) return;
+    final next = List<double>.of(_eqGains);
+    next[band] = value.clamp(-12.0, 12.0).toDouble();
+    try {
+      await widget.onEqChanged(next);
+      if (!mounted) return;
+      setState(() {
+        _eqGains = next;
+        _eqDragging[band] = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _eqGains = List<double>.of(widget.eqGains);
+        _eqDragging[band] = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Deck EQ was not applied: $error')),
       );
     }
   }
@@ -1023,7 +1070,61 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                 : null,
             ),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 1),
+          Row(
+            children: List<Widget>.generate(3, (index) {
+              const labels = ['LOW', 'MID', 'HIGH'];
+              final value = _eqGains[index].clamp(-12.0, 12.0).toDouble();
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: index == 2 ? 0 : 3),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(labels[index], style: theme.textTheme.labelSmall?.copyWith(
+                            color: Colors.white60, fontSize: 7, fontWeight: FontWeight.w800)),
+                          const SizedBox(width: 3),
+                          Text('${value > 0 ? '+' : ''}${value.toStringAsFixed(1)}',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: value == 0 ? Colors.white54 : accent,
+                              fontSize: 7, fontFeatures: const [FontFeature.tabularFigures()])),
+                        ],
+                      ),
+                      SizedBox(
+                        height: compact ? 18 : 22,
+                        child: SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 1.5,
+                            overlayShape: SliderComponentShape.noOverlay,
+                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
+                          ),
+                          child: Slider(
+                            value: value,
+                            min: -12,
+                            max: 12,
+                            divisions: 48,
+                            onChanged: widget.canAdjustEq
+                                ? (next) => setState(() {
+                                      _eqDragging[index] = true;
+                                      _eqGains[index] = next;
+                                    })
+                                : null,
+                            onChangeEnd: widget.canAdjustEq
+                                ? (next) => unawaited(_commitEq(index, next))
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 2),
           Row(
             children: [
               IconButton.filledTonal(
