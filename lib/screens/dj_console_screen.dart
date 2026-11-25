@@ -272,17 +272,15 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                         )
                     : null,
                 hotCuePositions: storedCues,
-                onSetHotCue: (slot) => unawaited(_setHotCue(id, deck, slot)),
-                onHotCue: (slot) => unawaited(_seekToHotCue(id, deck, slot)),
+                onSetHotCue: djReady && loaded
+                    ? (slot) => unawaited(_setHotCue(id, deck, slot))
+                    : null,
+                onHotCue: djReady && loaded
+                    ? (slot) => unawaited(_seekToHotCue(id, deck, slot))
+                    : null,
                 channelGain: deck?.channelGain ?? 1.0,
                 onChannelGainChanged: (gain) =>
                     music.setDjDeckChannelGain(deckId: id, gain: gain),
-                onSetCue: djReady && loaded
-                    ? () => unawaited(_setCuePoint(id, deck))
-                    : null,
-                onCue: djReady && loaded && cuePosition != null
-                    ? () => unawaited(_seekToCue(id, deck))
-                    : null,
                 onJogSeek: (target) => music.seekDjDeck(
                   deckId: id,
                   position: target,
@@ -509,8 +507,6 @@ class _ConsoleDeck extends StatefulWidget {
     required this.channelGain,
     required this.canAdjustChannelGain,
     required this.onChannelGainChanged,
-    required this.onSetCue,
-    required this.onCue,
     required this.jogSeekEnabled,
     required this.onJogSeek,
     required this.status, required this.title, required this.artist, required this.progress,
@@ -526,13 +522,11 @@ class _ConsoleDeck extends StatefulWidget {
   final Future<void> Function() onPlayPause;
   final VoidCallback? onLoad;
   final List<Duration?> hotCuePositions;
-  final ValueChanged<int> onSetHotCue;
-  final ValueChanged<int> onHotCue;
+  final ValueChanged<int>? onSetHotCue;
+  final ValueChanged<int>? onHotCue;
   final double channelGain;
   final bool canAdjustChannelGain;
   final Future<void> Function(double gain) onChannelGainChanged;
-  final VoidCallback? onSetCue;
-  final VoidCallback? onCue;
   final Future<void> Function(Duration position) onJogSeek;
   final double progress;
   final Duration position, duration;
@@ -930,9 +924,13 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                 child: Padding(
                   padding: EdgeInsets.only(right: index == DjCuePointStore.slotCount - 1 ? 0 : 5),
                   child: GestureDetector(
-                    onLongPress: widget.active ? () => widget.onSetHotCue(index) : null,
+                    onLongPress: widget.onSetHotCue == null
+                        ? null
+                        : () => widget.onSetHotCue!(index),
                     child: OutlinedButton(
-                      onPressed: cue == null ? null : () => widget.onHotCue(index),
+                      onPressed: cue == null || widget.onHotCue == null
+                          ? null
+                          : () => widget.onHotCue!(index),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
                         side: BorderSide(color: cue == null ? Colors.white24 : accent.withValues(alpha: .65)),
