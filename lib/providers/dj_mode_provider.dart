@@ -174,7 +174,9 @@ class DjModeProvider extends ChangeNotifier {
   }
 
   void _maybeStartIdleScan() {
-    if (!_loaded || !_isAnalysisStillIdle()) return;
+    // Start the Android foreground service while the Activity is visible.
+    // Once started, the current serial scan may continue after backgrounding.
+    if (!_loaded || !_appForeground || !_isAnalysisStillIdle()) return;
     // One resumable pass covers the complete library. Each completed track is
     // persisted before advancing, so a process stop resumes by skipping it.
     unawaited(_idle.startIfNeeded(
@@ -185,7 +187,7 @@ class DjModeProvider extends ChangeNotifier {
   }
 
   bool _isAnalysisStillIdle() =>
-      _appForeground && !music.isPlaying && !music.transitionInProgress;
+      !music.isPlaying && !music.transitionInProgress;
 
   /// Foreground eligibility is supplied only by the app's lifecycle observer.
   /// Console visibility and route changes are not treated as foreground proof.
@@ -195,7 +197,9 @@ class DjModeProvider extends ChangeNotifier {
     if (!foreground) {
       _eventScanDebounce?.cancel();
       _eventScanDebounce = null;
-      _idle.stop();
+      // Do not cancel an already-started scan: its native foreground service
+      // and partial wake lock now support background execution.
+      if (!_idle.canContinueInBackground) _idle.stop();
     } else {
       _maybeStartIdleScan();
     }
@@ -204,7 +208,7 @@ class DjModeProvider extends ChangeNotifier {
   /// Called by app lifecycle and audio-route events. Work is intentionally
   /// small and rate-limited so unlock/BT event bursts do not start many scans.
   void onAnalysisOpportunity(String reason) {
-    if (!_loaded) return;
+    if (!_loaded || !_appForeground) return;
     _eventScanDebounce?.cancel();
     _eventScanDebounce = Timer(const Duration(seconds: 8), () {
       if (!_isAnalysisStillIdle() || _idle.isRunning) {
