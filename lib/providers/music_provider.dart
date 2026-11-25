@@ -105,6 +105,10 @@ class MusicProvider extends ChangeNotifier {
   StreamSubscription<Media3ProviderState>? _media3StateSub;
   Media3ProviderState? _media3ShadowState;
   bool _djDualDeckModeRequested = false;
+  final Map<String, List<double>> _djDeckEqGains = <String, List<double>>{
+    'A': <double>[0.0, 0.0, 0.0],
+    'B': <double>[0.0, 0.0, 0.0],
+  };
   _DjSessionReturnState? _djSessionReturnState;
   Future<void> _djSessionLifecycleTail = Future<void>.value();
   final Set<Future<void>> _djDeckCommandsInFlight = <Future<void>>{};
@@ -135,6 +139,8 @@ class MusicProvider extends ChangeNotifier {
   bool _manualDjPreparationInvalidated = false;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
   bool get media3ProviderSessionActive => _media3ProviderSessionActive;
+  List<double> djDeckEqGains(String deckId) =>
+      List<double>.unmodifiable(_djDeckEqGains[deckId] ?? const [0.0, 0.0, 0.0]);
   bool get _djDualDeckSessionActive =>
       _djDualDeckModeRequested || _media3ShadowState?.djDualDeckMode == true;
   bool get isDjDualDeckSessionActive => _djDualDeckSessionActive;
