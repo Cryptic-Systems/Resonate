@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.1] — 2026-11-25
+
+### Psychic adaptive intelligence
+- Adaptive per-block headroom allocation across bass, preamp and gain
+- Content-aware gain-cut confidence and section-transition anticipation
+- Atomic decision telemetry for adaptive control explanations
+- Background-only track scanning, loudness/crest analysis and deterministic track intelligence
+- Bounded revision-aware track-analysis cache and validated playback-hint adapter
+- Preserve the existing `dsp_*` C ABI for Resonate compatibility
+
 ## [0.6.0] — 2026-11-20
 
 ### Full intelligent stack
