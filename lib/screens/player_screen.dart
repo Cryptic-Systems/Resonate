@@ -24,7 +24,6 @@ import '../widgets/mode_artwork_banner.dart';
 import 'mode_shelf_screen.dart';
 import '../widgets/mode_guarded_action.dart';
 import '../modes/models/mode_action.dart';
-import '../modes/models/resonate_mode.dart';
 import '../modes/providers/mode_provider.dart';
 import '../widgets/autopilot_takeover_card.dart';
 import 'equalizer_screen.dart';
@@ -34,13 +33,7 @@ import 'album_screen.dart';
 import 'artist_screen.dart';
 import 'lyrics_screen.dart';
 import 'audio_leveling_settings_screen.dart';
-import 'settings_screen.dart';
-import 'notification_center_screen.dart';
 import 'crossfade_screen.dart';
-import 'dj_mode_settings_screen.dart';
-import '../modes/screens/modes_screen.dart';
-import '../modes/integration/resonate_mode_ports.dart';
-import '../experience/experience_provider.dart';
 import '../widgets/resonate_main_drawer.dart';
 
 class PlayerScreen extends StatefulWidget {
