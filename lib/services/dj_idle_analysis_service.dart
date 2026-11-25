@@ -104,10 +104,16 @@ class DjIdleAnalysisService {
             continue;
           }
 
-          if (existing != null &&
-              !hasWaveformProfile &&
-              existing.analyzedAt != null &&
-              now.difference(existing.analyzedAt!) < _retryCooldown) {
+          // Persisted attempt timestamps provide a retry backoff across process
+          // death. In particular, a missing Psychic report must not trigger
+          // an immediate full decode on every app launch.
+          final recentlyAttempted = existing?.analyzedAt != null &&
+              now.difference(existing!.analyzedAt!) < _retryCooldown;
+          if (recentlyAttempted &&
+              (!hasPsychicReport ||
+                  !hasWaveformProfile ||
+                  !hasUsableTags ||
+                  !hasSectionProfile)) {
             continue;
           }
           final lastAttempt = _lastProfileAttemptAt[song.id];
