@@ -110,6 +110,7 @@ class DjIdleAnalysisService {
           final recentlyAttempted = existing?.analyzedAt != null &&
               now.difference(existing!.analyzedAt!) < _retryCooldown;
           if (recentlyAttempted &&
+              existing?.isStale != true &&
               (!hasPsychicReport ||
                   !hasWaveformProfile ||
                   !hasUsableTags ||
