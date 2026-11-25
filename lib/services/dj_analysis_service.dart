@@ -82,6 +82,14 @@ class DjAnalysisService {
     }
   }
 
+  /// Psychic's advisory whole-track report persisted alongside the DJ profile.
+  /// Null means the profile predates Psychic integration or the scan lacked data.
+  Future<Map<String, dynamic>?> getPsychicAnalysis(String songId) async {
+    final profile = await getProfile(songId);
+    final report = profile?.psychicAnalysis;
+    return report == null ? null : Map<String, dynamic>.from(report);
+  }
+
   /// Whether the persisted profile contains measured waveform coverage.
   /// Missing segments are a cache capability gap, not evidence of silence.
   Future<bool> hasWaveformProfile(String songId) async {
