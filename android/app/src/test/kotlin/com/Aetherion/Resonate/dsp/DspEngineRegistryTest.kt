@@ -765,4 +765,72 @@ class DspEngineRegistryTest {
         ))
     }
 
+
+    @Test
+    fun dj_eq_is_bound_to_physical_deck_not_active_standby_role() {
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        assertTrue(DspEngineRegistry.register(2, 2002L, "B"))
+        DspEngineRegistry.setActiveDeck("A")
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.setDjEqOverlay(
+            "B",
+            doubleArrayOf(80.0, 1000.0, 12000.0),
+            doubleArrayOf(-4.0, 2.0, 5.0),
+        ))
+        assertTrue(fake.calls.any { it.startsWith("eq:2002:") })
+        assertFalse(fake.calls.any { it.startsWith("eq:1001:") })
+
+        DspEngineRegistry.setActiveDeck("B")
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.setDjEqOverlay(
+            "B",
+            doubleArrayOf(80.0, 1000.0, 12000.0),
+            doubleArrayOf(-2.0, 1.0, 3.0),
+        ))
+        assertTrue(fake.calls.any { it.startsWith("eq:2002:") })
+        assertFalse(fake.calls.any { it.startsWith("eq:1001:") })
+    }
+
+    @Test
+    fun dj_eq_composes_with_transition_overlay_and_clear_preserves_transition() {
+        assertTrue(DspEngineRegistry.register(1, 1001L, "A"))
+        DspEngineRegistry.setActiveDeck("A")
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.setTemporaryEqOverlay(
+            "active",
+            doubleArrayOf(100.0, 1000.0, 10000.0),
+            doubleArrayOf(-2.0, 0.0, 2.0),
+        ))
+        assertTrue(DspEngineRegistry.setDjEqOverlay(
+            "A",
+            doubleArrayOf(100.0, 1000.0, 10000.0),
+            doubleArrayOf(1.0, 2.0, 3.0),
+        ))
+        assertTrue(fake.calls.any { it.startsWith("eq:1001:") })
+
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.clearDjEqOverlay("A"))
+        // The temporary transition overlay remains after DJ EQ is reset.
+        assertTrue(fake.calls.any { it.startsWith("eq:1001:") })
+        assertFalse(fake.calls.any { it == "eq:1001:0.0,0.0,0.0:true" })
+    }
+
+    @Test
+    fun dj_eq_rejects_invalid_physical_deck_or_curve() {
+        assertFalse(DspEngineRegistry.setDjEqOverlay(
+            "active", doubleArrayOf(80.0, 1000.0, 12000.0),
+            doubleArrayOf(0.0, 0.0, 0.0),
+        ))
+        assertFalse(DspEngineRegistry.setDjEqOverlay(
+            "A", doubleArrayOf(80.0, 1000.0),
+            doubleArrayOf(0.0, 0.0),
+        ))
+        assertFalse(DspEngineRegistry.setDjEqOverlay(
+            "A", doubleArrayOf(80.0, 1000.0, 12000.0),
+            doubleArrayOf(0.0, 13.0, 0.0),
+        ))
+    }
+
 }
