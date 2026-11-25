@@ -1,15 +1,17 @@
 /**
- * DSP ENGINE — Core processor
+ * Psychic — Core processor (`dsp_*` C ABI)
  *
  * Pipeline: EQ → auto-bass shelf → speaker/VB → preamp → DVC → limiter → dither
  * Optional SRC via dsp_process_src then full pipeline.
  * Control mailbox applied at start of each process block.
- * v0.6.0: level meters, offline analyze/probe, online auto-bass, auto-DVC (RMS).
+ * v0.6.0: level meters, offline analyze/probe, online auto-bass, auto-DVC (RMS),
+ * headroom budget, auto-preamp/VB, crest hint, silence hygiene.
  */
 
 #include "dsp_engine.h"
 #include "core/eq_biquad.h"
 #include "core/dvc.h"
+#include "core/adaptive_controller.h"
 #include "core/resampler.h"
 #include "core/resonate_ext.h"
 #include "utils/math_utils.h"
@@ -94,8 +96,14 @@ struct DspEngine {
     std::atomic<float> mb_auto_gain_target{-18.f};
     std::atomic<float> mb_auto_gain_bias{0.f};
     std::atomic<float> mb_auto_gain_max_boost{6.f};
-    std::atomic<float> mb_auto_gain_max_cut{12.f};
+    std::atomic<float> mb_auto_gain_max_cut{3.f};
     std::atomic<float> mb_auto_gain_window_ms{400.f};
+    /* bit17 analysis bass hint, bit18 crest hint, bit19 safe-bass value,
+       bit20 safe-bass availability */
+    std::atomic<float> mb_hint_bass_energy_db{-40.f};
+    std::atomic<float> mb_hint_crest_db{0.f};
+    std::atomic<float> mb_hint_max_safe_bass_db{24.f};
+    std::atomic<int>   mb_hint_has_max_safe{0};
 
     int64_t stats_calls = 0;
     int64_t stats_total_ns = 0;
@@ -110,30 +118,7 @@ struct DspEngine {
     float meter_bass_peak_db = -120.f;
     float meter_headroom_db = 0.f;
     float meter_short_term_rms_db = -120.f;
-    double bass_lp_z = 0.0; /* mono one-pole for bass-band peak */
-    double rms_env_ms = 0.0; /* mean-square envelope for short-term RMS */
-
-    /* Online auto-bass: dedicated low-shelf after user EQ. */
-    bool  auto_bass_enabled = false;
-    float auto_bass_target_db = 0.f;
-    float auto_bass_margin_db = 1.f;
-    float auto_bass_freq_hz = 75.f;
-    float auto_bass_applied_db = 0.f;
-    float auto_bass_smooth = 0.02f; /* ~ coeff toward target per block */
-    dsp::BiquadCoeffs auto_bass_c{};
-    dsp::BiquadState  auto_bass_st[kMaxChannels]{};
-    float auto_bass_last_gain = 0.f;
-
-    /* Online auto-DVC / auto-gain from short-term RMS. */
-    bool  auto_gain_enabled = false;
-    float auto_gain_target_rms_db = -18.f;
-    float auto_gain_bias_db = 0.f;
-    float auto_gain_max_boost_db = 6.f;
-    float auto_gain_max_cut_db = 12.f;
-    float auto_gain_window_ms = 400.f;
-    float auto_gain_applied_db = 0.f;
-    float auto_gain_smooth = 0.05f;
-    /* Lock-free snapshots read by diagnostics/UI; never used to control audio. */
+    /* Compatibility telemetry for Resonate's existing auto-gain meter API. */
     std::atomic<float> meter_auto_gain_pre_dvc_peak_db{-120.f};
     std::atomic<float> meter_auto_gain_target_rms_db{-18.f};
     std::atomic<float> meter_auto_gain_rms_error_db{0.f};
@@ -143,10 +128,38 @@ struct DspEngine {
     std::atomic<int> meter_auto_gain_peak_limited{0};
     std::atomic<int> meter_auto_gain_silence_gate{0};
 
+    float meter_control_rms_db = -120.f;
+    double rms_control_env_ms = 0.0;
+    double rms_control_bass_lp_z[kMaxChannels]{};
+    double bass_lp_z = 0.0; /* mono one-pole for bass-band peak */
+    double rms_env_ms = 0.0; /* mean-square envelope for short-term RMS */
+
+    /* Online auto-bass: dedicated low-shelf after user EQ. */
+    bool  auto_bass_enabled = false;
+    float auto_bass_target_db = 0.f;
+    float auto_bass_margin_db = 1.f;
+    float auto_bass_freq_hz = 75.f;
+    float auto_bass_applied_db = 0.f;
+    dsp::BiquadCoeffs auto_bass_c{};
+    dsp::BiquadState  auto_bass_st[kMaxChannels]{};
+    float auto_bass_last_gain = 0.f;
+
+    /* Online auto-DVC / auto-gain from short-term RMS. */
+    bool  auto_gain_enabled = false;
+    float auto_gain_target_rms_db = -18.f;
+    float auto_gain_bias_db = 0.f;
+    float auto_gain_max_boost_db = 6.f;
+    float auto_gain_max_cut_db = 3.f;
+    float auto_gain_window_ms = 400.f;
+    float auto_gain_applied_db = 0.f;
+
     /* Shared headroom budget (normalized in process). */
     float budget_bass = 0.50f;
     float budget_preamp = 0.20f;
     float budget_gain = 0.30f;
+    dsp::AdaptiveController adaptive_controller;
+    dsp::AdaptiveDecisionTelemetry adaptive_telemetry;
+    uint32_t adaptive_block_index = 0;
 
     /* Auto-preamp */
     bool  auto_preamp_enabled = false;
@@ -171,7 +184,6 @@ struct DspEngine {
     float silence_thresh_db = -60.f;
     float silence_hold_ms = 300.f;
     float silence_hold_acc_ms = 0.f;
-    bool  silence_gain_gate_active = false;
 
     sample_t lim_env[kMaxChannels]{};
     sample_t lim_gain[kMaxChannels]{};
@@ -265,19 +277,7 @@ struct DspEngine {
             static_cast<double>(auto_bass_freq_hz > 20.f ? auto_bass_freq_hz : 75.f),
             static_cast<double>(auto_bass_applied_db),
             0.707);
-        /* Keep filter state; gain changes are gradual. */
-        const double atk_ms = 30.0;
-        const double rel_ms = 400.0;
-        /* Per-sample coeffs not needed; we smooth applied_db per block. */
-        (void)atk_ms;
-        (void)rel_ms;
-        if (sample_rate > 0.f) {
-            /* ~150 ms time-constant toward desired applied_db */
-            auto_bass_smooth = static_cast<float>(
-                1.0 - std::exp(-1.0 / (0.15 * sample_rate / 64.0)));
-            if (auto_bass_smooth < 0.01f) auto_bass_smooth = 0.01f;
-            if (auto_bass_smooth > 0.5f) auto_bass_smooth = 0.5f;
-        }
+        /* Filter state is preserved while AACE smooths coefficient targets. */
     }
 
     void reset_level_meters() {
@@ -287,18 +287,13 @@ struct DspEngine {
         meter_bass_peak_db = -120.f;
         meter_headroom_db = limiter_ceiling_db + 120.f;
         meter_short_term_rms_db = -120.f;
+        meter_control_rms_db = -120.f;
+        rms_control_env_ms = 0.0;
+        std::memset(rms_control_bass_lp_z, 0, sizeof(rms_control_bass_lp_z));
         bass_lp_z = 0.0;
         rms_env_ms = 0.0;
     }
 
-    void update_auto_gain_smooth() {
-        if (sample_rate <= 0.f) return;
-        /* ~ block-rate smoothing toward target over ~window/4 */
-        const double tau_blocks = (auto_gain_window_ms * 0.001 * sample_rate) / 64.0;
-        auto_gain_smooth = static_cast<float>(1.0 - std::exp(-1.0 / std::max(2.0, tau_blocks)));
-        if (auto_gain_smooth < 0.01f) auto_gain_smooth = 0.01f;
-        if (auto_gain_smooth > 0.35f) auto_gain_smooth = 0.35f;
-    }
 };
 
 static sample_t true_peak_pair(sample_t a, sample_t b) {
@@ -641,8 +636,17 @@ static void apply_mailbox(DspEngine* eng) {
         eng->auto_gain_max_cut_db = eng->mb_auto_gain_max_cut.load(std::memory_order_relaxed);
     if (flags & 65536) {
         eng->auto_gain_window_ms = eng->mb_auto_gain_window_ms.load(std::memory_order_relaxed);
-        eng->update_auto_gain_smooth();
     }
+    if (flags & 131072)
+        eng->hint_bass_energy_db = eng->mb_hint_bass_energy_db.load(std::memory_order_relaxed);
+    if (flags & 262144) {
+        const float crest = eng->mb_hint_crest_db.load(std::memory_order_relaxed);
+        if (crest > 0.f) dsp_limiter_set_crest_hint(eng, crest);
+    }
+    if (flags & 524288)
+        eng->hint_max_safe_bass_db = eng->mb_hint_max_safe_bass_db.load(std::memory_order_relaxed);
+    if (flags & 1048576)
+        eng->hint_has_max_safe = eng->mb_hint_has_max_safe.load(std::memory_order_relaxed) != 0;
 }
 
 static void meter_hold(float& held_db, float instant_db, float decay) {
@@ -657,6 +661,15 @@ static void meter_hold(float& held_db, float instant_db, float decay) {
 static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
     apply_mailbox(eng);
     const int ch = eng->channels;
+    dsp::AdaptiveDecisionSnapshot decision{};
+    decision.block_index = ++eng->adaptive_block_index;
+    uint32_t bass_reasons = 0, preamp_reasons = 0;
+    uint32_t gain_reasons = 0, vb_reasons = 0;
+    bool silence_recovery_active = false;
+    float bass_target_db = eng->auto_bass_applied_db;
+    float preamp_target_db = eng->auto_preamp_applied_db;
+    float gain_target_db = eng->auto_gain_applied_db;
+    float vb_target = eng->auto_vb_applied;
 
     if (!eng->processing_enabled) {
         /* Pass-through (still sanitize non-finite). */
@@ -666,6 +679,24 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
                 interleaved[i * ch + c] = sample_finite(x) ? x : sample_t(0);
             }
         }
+        decision.bass_applied_db = eng->auto_bass_applied_db;
+        decision.preamp_applied_db = eng->auto_preamp_applied_db;
+        decision.gain_applied_db = eng->auto_gain_applied_db;
+        decision.virtual_bass_applied = eng->auto_vb_applied;
+        eng->meter_auto_gain_pre_dvc_peak_db.store(decision.source_peak_db, std::memory_order_relaxed);
+    eng->meter_auto_gain_target_rms_db.store(
+        eng->auto_gain_target_rms_db + eng->auto_gain_bias_db, std::memory_order_relaxed);
+    eng->meter_auto_gain_rms_error_db.store(
+        (eng->auto_gain_target_rms_db + eng->auto_gain_bias_db) - decision.control_rms_db,
+        std::memory_order_relaxed);
+    eng->meter_auto_gain_constrained_target_db.store(decision.gain_target_db, std::memory_order_relaxed);
+    eng->meter_auto_gain_peak_cap_db.store(decision.gain_budget_db, std::memory_order_relaxed);
+    eng->meter_auto_gain_applied_db.store(decision.gain_applied_db, std::memory_order_relaxed);
+    eng->meter_auto_gain_peak_limited.store(
+        (decision.gain_reasons & (dsp::kDecisionBudgetLimited | dsp::kDecisionTargetLimited)) ? 1 : 0,
+        std::memory_order_relaxed);
+    eng->meter_auto_gain_silence_gate.store(silence_recovery_active ? 1 : 0, std::memory_order_relaxed);
+    eng->adaptive_telemetry.publish(decision);
         return;
     }
 
@@ -729,31 +760,109 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
     }
 #endif
 
-    /* Shared headroom pool for bass / preamp / auto-gain. */
-    float gr_db = 0.f;
+    /*
+     * Control RMS is measured after user EQ but before adaptive bass,
+     * virtual bass and auto-preamp. This prevents those enhancements from
+     * making auto-gain counteract its own peers.
+     */
+    double control_bass_ms = 0.0;
     {
-        float g = static_cast<float>(eng->lim_gr);
-        if (g > 1e-12f && g < 1.f) gr_db = -20.f * std::log10(g);
+        double block_ms = 0.0;
+        const int n = frames * ch;
+        for (int c = 0; c < ch; ++c) {
+            double& bass_lp = eng->rms_control_bass_lp_z[c];
+            for (int i = 0; i < frames; ++i) {
+                const double x = static_cast<double>(eng->temp[c][i]);
+                bass_lp = (1.0 - bass_a) * x + bass_a * bass_lp;
+                const double low = bass_lp;
+                control_bass_ms += low * low;
+                // Preserve most mid/high energy while de-emphasizing sub/bass
+                // so a bass-heavy passage does not dominate global loudness gain.
+                const double weighted = (x - low) + 0.35 * low;
+                block_ms += weighted * weighted;
+            }
+        }
+        block_ms /= std::max(1, n);
+        control_bass_ms /= std::max(1, n);
+        const double win_sec = std::max(0.05, eng->auto_gain_window_ms * 0.001);
+        const double coeff = 1.0 - std::exp(
+            -static_cast<double>(frames) / (win_sec * eng->sample_rate));
+        eng->rms_control_env_ms += coeff * (block_ms - eng->rms_control_env_ms);
+        const double control_rms = std::sqrt(std::max(1e-30, eng->rms_control_env_ms));
+        eng->meter_control_rms_db = dsp::linear_to_db_f(static_cast<float>(control_rms));
     }
-    float pool = eng->meter_headroom_db - eng->auto_bass_margin_db - 0.5f * gr_db;
-    if (pool < 0.f) pool = 0.f;
-    float bw = eng->budget_bass, pw = eng->budget_preamp, gw = eng->budget_gain;
-    float wsum = bw + pw + gw;
-    if (wsum < 1e-6f) { bw = 0.5f; pw = 0.2f; gw = 0.3f; wsum = 1.f; }
-    const float bass_share = pool * (bw / wsum);
-    const float preamp_share = pool * (pw / wsum);
-    const float gain_share = pool * (gw / wsum);
+
+    /*
+     * AACE: estimate headroom from this block's post-user-EQ source peak,
+     * not the previous block's post-limiter meter. A transient-aware envelope
+     * prevents one peak or the limiter's own GR from collapsing every boost.
+     */
+    float source_peak = 0.f;
+    double source_ms = 0.0;
+    for (int c = 0; c < ch; ++c) {
+        for (int i = 0; i < frames; ++i) {
+            const float x = static_cast<float>(eng->temp[c][i]);
+            const float ax = x >= 0.f ? x : -x;
+            if (ax > source_peak) source_peak = ax;
+            source_ms += static_cast<double>(x) * static_cast<double>(x);
+        }
+    }
+    source_ms /= std::max(1, frames * ch);
+    const float source_peak_db = dsp::linear_to_db_f(source_peak);
+    const float source_rms_db = dsp::linear_to_db_f(
+        static_cast<float>(std::sqrt(std::max(1.0e-30, source_ms))));
+    decision.source_peak_db = source_peak_db;
+    decision.source_rms_db = source_rms_db;
+    const dsp::AdaptiveTrackState track_state =
+        eng->adaptive_controller.update_track_state(
+            source_ms, control_bass_ms, eng->sample_rate, frames);
+    decision.track_short_rms_db = track_state.short_rms_db;
+    decision.track_long_rms_db = track_state.long_rms_db;
+    decision.track_bass_rms_db = track_state.bass_rms_db;
+    decision.track_loudness_trend_db = track_state.loudness_trend_db;
+    decision.track_bass_prominence_db = track_state.bass_prominence_db;
+    decision.section_transition = track_state.section_transition;
+    decision.section_transition_confidence = track_state.section_transition_confidence;
+    decision.anticipatory_gain_hint_db = track_state.anticipatory_gain_hint_db;
+    decision.control_rms_db = eng->meter_control_rms_db;
+    const float gain_cut_confidence =
+        eng->adaptive_controller.update_gain_cut_confidence(
+            eng->meter_control_rms_db, eng->auto_gain_target_rms_db +
+                eng->auto_gain_bias_db, track_state.section_transition_confidence,
+            eng->sample_rate, frames);
+    const float gain_cut_limit_db =
+        eng->auto_gain_max_cut_db * gain_cut_confidence;
+    decision.gain_cut_confidence = gain_cut_confidence;
+    decision.gain_cut_limit_db = gain_cut_limit_db;
+    const dsp::AdaptiveHeadroomBudget adaptive_budget =
+        eng->adaptive_controller.allocate_headroom(
+            source_peak_db, source_rms_db, eng->limiter_ceiling_db, eng->auto_bass_margin_db,
+            eng->budget_bass, eng->budget_preamp, eng->budget_gain,
+            eng->sample_rate, frames);
+    const float bass_share = adaptive_budget.bass_db;
+    const float preamp_share = adaptive_budget.preamp_db;
+    const float gain_share = adaptive_budget.gain_boost_db;
+    decision.budget_peak_db = adaptive_budget.budget_peak_db;
+    decision.available_headroom_db = adaptive_budget.available_db;
+    decision.bass_budget_db = bass_share;
+    decision.preamp_budget_db = preamp_share;
+    decision.gain_budget_db = gain_share;
 
     /* Auto-bass servo (budget-capped). */
     if (eng->auto_bass_enabled) {
         float desired = eng->auto_bass_target_db;
-        if (eng->hint_has_max_safe && desired > eng->hint_max_safe_bass_db)
+        bass_reasons |= dsp::kDecisionActive;
+        if (eng->hint_has_max_safe && desired > eng->hint_max_safe_bass_db) {
             desired = eng->hint_max_safe_bass_db;
-        if (desired > bass_share) desired = bass_share;
-        if (desired < -12.f) desired = -12.f;
-        if (desired > 24.f) desired = 24.f;
-        const float a = eng->auto_bass_smooth;
-        eng->auto_bass_applied_db += a * (desired - eng->auto_bass_applied_db);
+            bass_reasons |= dsp::kDecisionSafetyHint;
+        }
+        if (desired > bass_share) { desired = bass_share; bass_reasons |= dsp::kDecisionBudgetLimited; }
+        if (desired < -12.f) { desired = -12.f; bass_reasons |= dsp::kDecisionTargetLimited; }
+        if (desired > 24.f) { desired = 24.f; bass_reasons |= dsp::kDecisionTargetLimited; }
+        bass_target_db = desired;
+        eng->auto_bass_applied_db = eng->adaptive_controller.smooth_parameter(
+            eng->auto_bass_applied_db, desired, eng->sample_rate, frames,
+            0.35f, 0.18f);
         if (std::fabs(eng->auto_bass_applied_db - eng->auto_bass_last_gain) > 0.05f) {
             eng->rebuild_auto_bass();
             eng->auto_bass_last_gain = eng->auto_bass_applied_db;
@@ -769,7 +878,11 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
             }
         }
     } else if (std::fabs(eng->auto_bass_applied_db) > 0.01f) {
-        eng->auto_bass_applied_db *= (1.f - eng->auto_bass_smooth);
+        bass_reasons |= dsp::kDecisionDisabledFade;
+        bass_target_db = 0.f;
+        eng->auto_bass_applied_db = eng->adaptive_controller.smooth_parameter(
+            eng->auto_bass_applied_db, 0.f, eng->sample_rate, frames,
+            0.35f, 0.18f);
         if (std::fabs(eng->auto_bass_applied_db) < 0.01f) {
             eng->auto_bass_applied_db = 0.f;
             for (int c = 0; c < ch; ++c) eng->auto_bass_st[c] = dsp::BiquadState{};
@@ -778,16 +891,22 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
 
     /* Content-aware virtual bass: reduce when track already has strong sub. */
     if (eng->auto_vb_enabled && eng->speaker_enabled) {
-        float content = eng->meter_bass_peak_db;
+        // Use rolling bass energy rather than a peak-hold meter so one kick
+        // cannot suppress virtual bass for the following passage.
+        float content = track_state.bass_rms_db;
         if (eng->hint_bass_energy_db > content) content = eng->hint_bass_energy_db;
         /* Map content peak: quiet bass (-40) → full target; loud (-6) → ~0 */
         float t = (content + 40.f) / 34.f; /* -40..-6 → 0..1 */
         if (t < 0.f) t = 0.f;
         if (t > 1.f) t = 1.f;
         float desired_vb = eng->auto_vb_target * (1.f - 0.85f * t);
+        vb_reasons |= dsp::kDecisionActive | dsp::kDecisionContentAware;
         if (desired_vb < 0.f) desired_vb = 0.f;
         if (desired_vb > 1.f) desired_vb = 1.f;
-        eng->auto_vb_applied += 0.08f * (desired_vb - eng->auto_vb_applied);
+        vb_target = desired_vb;
+        eng->auto_vb_applied = eng->adaptive_controller.smooth_parameter(
+            eng->auto_vb_applied, desired_vb, eng->sample_rate, frames,
+            0.45f, 0.25f);
         eng->virtual_bass = eng->auto_vb_applied;
         eng->speaker.configure(eng->sample_rate, eng->speaker_enabled, eng->virtual_bass);
     }
@@ -801,16 +920,23 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
     /* Auto-preamp (budget-capped) or manual preamp. */
     if (eng->auto_preamp_enabled) {
         float desired = eng->auto_preamp_target_db;
-        if (desired > preamp_share) desired = preamp_share;
-        if (desired < -12.f) desired = -12.f;
-        if (desired > 12.f) desired = 12.f;
-        eng->auto_preamp_applied_db += eng->auto_bass_smooth
-            * (desired - eng->auto_preamp_applied_db);
+        preamp_reasons |= dsp::kDecisionActive;
+        if (desired > preamp_share) { desired = preamp_share; preamp_reasons |= dsp::kDecisionBudgetLimited; }
+        if (desired < -12.f) { desired = -12.f; preamp_reasons |= dsp::kDecisionTargetLimited; }
+        if (desired > 12.f) { desired = 12.f; preamp_reasons |= dsp::kDecisionTargetLimited; }
+        preamp_target_db = desired;
+        eng->auto_preamp_applied_db = eng->adaptive_controller.smooth_parameter(
+            eng->auto_preamp_applied_db, desired, eng->sample_rate, frames,
+            0.35f, 0.18f);
         eng->preamp_linear = static_cast<float>(
             std::pow(10.0, eng->auto_preamp_applied_db * 0.05));
     } else if (std::fabs(eng->auto_preamp_applied_db) > 0.01f) {
+        preamp_reasons |= dsp::kDecisionDisabledFade;
+        preamp_target_db = 0.f;
         /* Fade out sticky auto-preamp when disabled (manual preamp can re-apply). */
-        eng->auto_preamp_applied_db *= (1.f - eng->auto_bass_smooth);
+        eng->auto_preamp_applied_db = eng->adaptive_controller.smooth_parameter(
+            eng->auto_preamp_applied_db, 0.f, eng->sample_rate, frames,
+            0.35f, 0.18f);
         if (std::fabs(eng->auto_preamp_applied_db) < 0.01f)
             eng->auto_preamp_applied_db = 0.f;
         eng->preamp_linear = static_cast<float>(
@@ -823,19 +949,14 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
                 eng->temp[c][i] *= g;
     }
 
-    /* Short-term RMS (mean-square one-pole) on pre-DVC signal. */
-    float pre_dvc_peak = 0.f;
+    /* Output-side RMS telemetry, after adaptive bass and preamp. */
     {
         double block_ms = 0.0;
         const int n = frames * ch;
         for (int c = 0; c < ch; ++c)
             for (int i = 0; i < frames; ++i) {
-                const float x = static_cast<float>(eng->temp[c][i]);
-                block_ms += static_cast<double>(x) * x;
-                if (eng->auto_gain_enabled) {
-                    const float ax = std::fabs(x);
-                    if (ax > pre_dvc_peak) pre_dvc_peak = ax;
-                }
+                const double x = static_cast<double>(eng->temp[c][i]);
+                block_ms += x * x;
             }
         block_ms /= std::max(1, n);
         const double win_sec = std::max(0.05, eng->auto_gain_window_ms * 0.001);
@@ -845,9 +966,6 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
         const double rms = std::sqrt(std::max(1e-30, eng->rms_env_ms));
         eng->meter_short_term_rms_db = dsp::linear_to_db_f(static_cast<float>(rms));
     }
-    const float pre_dvc_peak_db = eng->auto_gain_enabled
-        ? dsp::linear_to_db_f(pre_dvc_peak)
-        : -120.f;
 
     /* Silence hygiene: decay applied boosts across gaps. */
     if (eng->silence_hygiene) {
@@ -856,63 +974,42 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
         if (eng->meter_short_term_rms_db < eng->silence_thresh_db) {
             eng->silence_hold_acc_ms += block_ms_f;
             if (eng->silence_hold_acc_ms >= eng->silence_hold_ms) {
-                eng->silence_gain_gate_active = true;
+                silence_recovery_active = true;
+                bass_target_db = 0.f;
+                preamp_target_db = 0.f;
+                if (std::fabs(eng->auto_bass_applied_db) > 0.001f) bass_reasons |= dsp::kDecisionSilenceRecovery;
+                if (std::fabs(eng->auto_preamp_applied_db) > 0.001f) preamp_reasons |= dsp::kDecisionSilenceRecovery;
+                if (std::fabs(eng->auto_gain_applied_db) > 0.001f) gain_reasons |= dsp::kDecisionSilenceRecovery;
                 eng->auto_bass_applied_db *= 0.9f;
                 eng->auto_preamp_applied_db *= 0.9f;
+                eng->auto_gain_applied_db *= 0.9f;
                 eng->lim_gr_peak_db *= 0.85f;
             }
         } else {
             eng->silence_hold_acc_ms = 0.f;
-            /* Add 3 dB hysteresis so low-level noise cannot chatter the gate. */
-            if (eng->meter_short_term_rms_db > eng->silence_thresh_db + 3.f)
-                eng->silence_gain_gate_active = false;
         }
     }
 
-    /* Auto-DVC: short-term RMS → target, capped by gain budget share.
-       After sustained silence, ramp toward unity instead of learning silence
-       as a request for positive gain. The normal smoother controls recovery. */
+    /* Auto-DVC: short-term RMS → target, capped by gain budget share. */
     if (eng->auto_gain_enabled) {
-        const float target_rms_db =
-            eng->auto_gain_target_rms_db + eng->auto_gain_bias_db;
-        const float raw_rms_error_db =
-            target_rms_db - eng->meter_short_term_rms_db;
-        float err = eng->silence_gain_gate_active ? 0.f : raw_rms_error_db;
-        if (err > eng->auto_gain_max_boost_db) err = eng->auto_gain_max_boost_db;
-        if (err < -eng->auto_gain_max_cut_db) err = -eng->auto_gain_max_cut_db;
-        if (err > gain_share) err = gain_share;
-        /* Feed-forward peak guard: use this block's post-EQ/effects/pre-DVC
-           peak, not the previous block's headroom meter. Reserve 3 dB for
-           inter-sample peaks and downstream tolerance so RMS recovery cannot
-           build gain that a dense transient immediately forces the limiter to
-           remove. Keep the DVC's own smoothing for the resulting gain change. */
-        const float peak_headroom_db = eng->limiter_ceiling_db
-            - 3.f - pre_dvc_peak_db;
-        bool peak_limited = false;
-        if (err > peak_headroom_db) {
-            err = peak_headroom_db;
-            peak_limited = true;
+        float err = silence_recovery_active ? 0.f :
+            (eng->auto_gain_target_rms_db + eng->auto_gain_bias_db)
+                - eng->meter_control_rms_db;
+        gain_reasons |= dsp::kDecisionActive;
+        if (silence_recovery_active) gain_reasons |= dsp::kDecisionSilenceRecovery;
+        if (err > eng->auto_gain_max_boost_db) { err = eng->auto_gain_max_boost_db; gain_reasons |= dsp::kDecisionTargetLimited; }
+        if (err < -gain_cut_limit_db) {
+            err = -gain_cut_limit_db;
+            gain_reasons |= dsp::kDecisionTargetLimited;
+            if (gain_cut_confidence < 0.999f)
+                gain_reasons |= dsp::kDecisionContentAware;
         }
-        if (eng->auto_gain_applied_db > peak_headroom_db) {
-            eng->auto_gain_applied_db = peak_headroom_db;
-            peak_limited = true;
-        }
+        if (err > gain_share) { err = gain_share; gain_reasons |= dsp::kDecisionBudgetLimited; }
         if (err > 24.f) err = 24.f;
-        if (err < -24.f) err = -24.f;
-
-        eng->meter_auto_gain_pre_dvc_peak_db.store(pre_dvc_peak_db, std::memory_order_relaxed);
-        eng->meter_auto_gain_target_rms_db.store(target_rms_db, std::memory_order_relaxed);
-        eng->meter_auto_gain_rms_error_db.store(raw_rms_error_db, std::memory_order_relaxed);
-        eng->meter_auto_gain_constrained_target_db.store(err, std::memory_order_relaxed);
-        eng->meter_auto_gain_peak_cap_db.store(peak_headroom_db, std::memory_order_relaxed);
-        eng->meter_auto_gain_peak_limited.store(peak_limited ? 1 : 0, std::memory_order_relaxed);
-        eng->meter_auto_gain_silence_gate.store(
-            eng->silence_gain_gate_active ? 1 : 0, std::memory_order_relaxed);
-
-        eng->auto_gain_applied_db += eng->auto_gain_smooth
-            * (err - eng->auto_gain_applied_db);
-        eng->meter_auto_gain_applied_db.store(
-            eng->auto_gain_applied_db, std::memory_order_relaxed);
+        if (err < -24.f) { err = -24.f; gain_reasons |= dsp::kDecisionTargetLimited; }
+        gain_target_db = err;
+        eng->auto_gain_applied_db = eng->adaptive_controller.smooth_gain(
+            eng->auto_gain_applied_db, err, eng->sample_rate, frames);
         eng->dvc.set_enabled(true);
         eng->dvc.set_gain_db(eng->auto_gain_applied_db);
     }
@@ -953,6 +1050,22 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
             limiter_fast(eng, frames);
     }
 
+    decision.bass_reasons = bass_reasons;
+    decision.preamp_reasons = preamp_reasons;
+    decision.gain_reasons = gain_reasons;
+    decision.virtual_bass_reasons = vb_reasons;
+    decision.bass_target_db = bass_target_db;
+    decision.bass_applied_db = eng->auto_bass_applied_db;
+    decision.preamp_target_db = preamp_target_db;
+    decision.preamp_applied_db = eng->auto_preamp_applied_db;
+    decision.gain_target_db = gain_target_db;
+    decision.gain_applied_db = eng->auto_gain_applied_db;
+    decision.virtual_bass_target = vb_target;
+    decision.virtual_bass_applied = eng->auto_vb_applied;
+    decision.output_rms_db = eng->meter_short_term_rms_db;
+    decision.limiter_reduction_db = eng->lim_gr_peak_db;
+    eng->adaptive_telemetry.publish(decision);
+
     if (eng->dither_enabled && eng->dither_mode != DSP_DITHER_NONE) {
         constexpr float kScale = 32768.f;
         constexpr float kInv = 1.f / 32768.f;
@@ -985,7 +1098,7 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
 
 extern "C" {
 
-const char* dsp_version(void) { return "0.6.0"; }
+const char* dsp_version(void) { return "0.6.1"; }
 
 DspEngine* dsp_create(const DspConfig* cfg) {
     if (!cfg || cfg->channels < 1 || cfg->channels > kMaxChannels ||
@@ -1033,7 +1146,6 @@ DspEngine* dsp_create(const DspConfig* cfg) {
     eng->eq.set_enabled(eng->eq_enabled);
     eng->reset_level_meters();
     eng->rebuild_auto_bass();
-    eng->update_auto_gain_smooth();
     return eng;
 }
 
@@ -1056,17 +1168,23 @@ DspError dsp_reset(DspEngine* eng) {
     eng->auto_bass_applied_db = 0.f;
     eng->auto_bass_last_gain = 0.f;
     eng->auto_gain_applied_db = 0.f;
+    eng->adaptive_controller.reset();
+    eng->rms_control_env_ms = 0.0;
+    eng->meter_control_rms_db = -120.f;
     eng->auto_preamp_applied_db = 0.f;
     eng->silence_hold_acc_ms = 0.f;
-    eng->silence_gain_gate_active = false;
     eng->rebuild_auto_bass();
-    eng->update_auto_gain_smooth();
+    
     return DSP_OK;
 }
 
 DspError dsp_set_sample_rate(DspEngine* eng, float rate) {
     if (!eng || rate < 8000.f || rate > 384000.f) return DSP_ERR_INVALID_ARG;
     eng->sample_rate = rate;
+    eng->adaptive_controller.reset();
+    eng->rms_control_env_ms = 0.0;
+    std::memset(eng->rms_control_bass_lp_z, 0, sizeof(eng->rms_control_bass_lp_z));
+    eng->meter_control_rms_db = -120.f;
     eng->update_limiter_coeffs();
     eng->clear_lookahead_state();
     eng->dvc.set_sample_rate(rate);
@@ -1084,6 +1202,10 @@ DspError dsp_set_sample_rate(DspEngine* eng, float rate) {
 DspError dsp_set_channels(DspEngine* eng, int channels) {
     if (!eng || channels < 1 || channels > kMaxChannels) return DSP_ERR_INVALID_ARG;
     eng->channels = channels;
+    eng->adaptive_controller.reset();
+    eng->rms_control_env_ms = 0.0;
+    std::memset(eng->rms_control_bass_lp_z, 0, sizeof(eng->rms_control_bass_lp_z));
+    eng->meter_control_rms_db = -120.f;
     eng->clear_lookahead_state();
     eng->rebuild_eq();
     return DSP_OK;
@@ -1814,7 +1936,7 @@ DspError dsp_auto_gain_set_max_cut_db(DspEngine* eng, float max_cut_db) {
 }
 
 float dsp_auto_gain_get_max_cut_db(const DspEngine* eng) {
-    return eng ? eng->auto_gain_max_cut_db : 12.f;
+    return eng ? eng->auto_gain_max_cut_db : 3.f;
 }
 
 DspError dsp_auto_gain_set_window_ms(DspEngine* eng, float window_ms) {
@@ -1825,7 +1947,7 @@ DspError dsp_auto_gain_set_window_ms(DspEngine* eng, float window_ms) {
     eng->mb_flags.fetch_or(65536, std::memory_order_acq_rel);
     eng->ctrl_seq.fetch_add(1, std::memory_order_release);
     eng->auto_gain_window_ms = window_ms;
-    eng->update_auto_gain_smooth();
+    
     return DSP_OK;
 }
 
@@ -1956,25 +2078,20 @@ float dsp_limiter_get_crest_hint(const DspEngine* eng) {
 DspError dsp_apply_analysis_hint(DspEngine* eng, const DspAnalysisResult* analysis,
                                  float max_safe_bass_db) {
     if (!eng || !analysis) return DSP_ERR_INVALID_ARG;
-    eng->hint_bass_energy_db = analysis->bass_energy_db;
-    if (analysis->crest_db > 0.f)
-        dsp_limiter_set_crest_hint(eng, analysis->crest_db);
-    if (max_safe_bass_db < 24.f) {
-        eng->hint_max_safe_bass_db = max_safe_bass_db;
-        eng->hint_has_max_safe = true;
-    } else {
-        eng->hint_has_max_safe = false;
-    }
+    eng->mb_hint_bass_energy_db.store(analysis->bass_energy_db, std::memory_order_relaxed);
+    eng->mb_hint_crest_db.store(analysis->crest_db, std::memory_order_relaxed);
+    eng->mb_hint_max_safe_bass_db.store(max_safe_bass_db, std::memory_order_relaxed);
+    eng->mb_hint_has_max_safe.store(max_safe_bass_db < 24.f ? 1 : 0,
+                                    std::memory_order_relaxed);
+    eng->mb_flags.fetch_or(131072 | 262144 | 524288 | 1048576,
+                           std::memory_order_acq_rel);
+    eng->ctrl_seq.fetch_add(1, std::memory_order_release);
     return DSP_OK;
 }
 
 DspError dsp_silence_hygiene_enable(DspEngine* eng, int enable) {
     if (!eng) return DSP_ERR_INVALID_ARG;
     eng->silence_hygiene = enable != 0;
-    if (!eng->silence_hygiene) {
-        eng->silence_hold_acc_ms = 0.f;
-        eng->silence_gain_gate_active = false;
-    }
     return DSP_OK;
 }
 
@@ -1997,3 +2114,10 @@ DspError dsp_silence_hygiene_set_hold_ms(DspEngine* eng, float hold_ms) {
 }
 
 } // extern "C"
+
+
+// Internal offline-evaluation hook. Deliberately not part of the public C ABI.
+bool dsp_internal_read_adaptive_telemetry(
+    DspEngine* eng, dsp::AdaptiveDecisionSnapshot* out) noexcept {
+    return eng && out && eng->adaptive_telemetry.read(*out);
+}
