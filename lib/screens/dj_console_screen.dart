@@ -212,16 +212,12 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
               targetBeatMs: targetGrid.beatMs,
               sourcePositionMs: source.position.inMilliseconds,
               targetPositionMs: target.position.inMilliseconds,
-              effectiveBpm: sourceEffectiveBpm,
+              sourceBpm: sourceBpm,
+              targetBpm: targetBpm,
+              sourceSpeed: source.speed,
+              targetSpeed: speed,
             )
           : null;
-      final latest = music.media3ShadowState;
-      final latestTarget = deckId == 'A' ? latest?.deckA : latest?.deckB;
-      final latestSource = deckId == 'A' ? latest?.deckB : latest?.deckA;
-      if (latest?.djDualDeckMode != true ||
-          latestTarget?.mediaId != targetId ||
-          latestSource?.mediaId != sourceId ||
-          music.transitionInProgress) return;
       await music.setDjDeckPlaybackParameters(
         deckId: deckId,
         speed: speed,
