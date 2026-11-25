@@ -149,6 +149,7 @@ abstract interface class PlaybackDjDeckBackend {
     required List<double> gainsDb,
   });
   Future<void> clearDjDeckEq({required String deckId});
+  Future<void> setDjDeckFilter({required String deckId, required int type, required double cutoffHz});
 
 }
 
