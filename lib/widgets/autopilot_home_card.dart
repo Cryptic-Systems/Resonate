@@ -10,6 +10,7 @@ import '../providers/intelligence_provider.dart';
 import '../providers/music_provider.dart';
 import '../screens/intelligence_settings_screen.dart';
 import 'animated_companion_mark.dart';
+import 'resonate_logo.dart';
 
 /// Combined Intelligence surface for For you — hierarchy without mode picker
 /// (mode lives in Settings). Session flow + nudge live inside this card.
@@ -63,9 +64,22 @@ class AutopilotHomeCard extends StatelessWidget {
     return ResonateGlassCard(
       borderRadius: 24,
       padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
         children: [
+          Positioned(
+            top: 8,
+            right: 8,
+            child: IgnorePointer(
+              child: Opacity(
+                opacity: 0.085,
+                child: ResonateLogo(size: 156, full: true, showWord: false),
+              ),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
           // —— Level 1: identity ——
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 16, 14, 0),
@@ -309,6 +323,8 @@ class AutopilotHomeCard extends StatelessWidget {
               ),
               child: const Text('Intelligence settings'),
             ),
+          ),
+            ],
           ),
         ],
       ),
