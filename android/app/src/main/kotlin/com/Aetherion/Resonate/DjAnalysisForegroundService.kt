@@ -10,6 +10,9 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 
 /**
  * Keeps the app process eligible to continue its serial, non-playback DJ
@@ -19,9 +22,22 @@ import android.os.PowerManager
  */
 class DjAnalysisForegroundService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var lastHeartbeatMs = 0L
+    private val watchdog = object : Runnable {
+        override fun run() {
+            val idleFor = SystemClock.elapsedRealtime() - lastHeartbeatMs
+            if (idleFor >= WATCHDOG_TIMEOUT_MS) {
+                stopSelf()
+            } else {
+                handler.postDelayed(this, WATCHDOG_INTERVAL_MS)
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
+        runningInstance = this
         createNotificationChannel()
     }
 
@@ -37,7 +53,14 @@ class DjAnalysisForegroundService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
         acquireWakeLock()
+        refreshHeartbeat()
         return START_NOT_STICKY
+    }
+
+    private fun refreshHeartbeat() {
+        lastHeartbeatMs = SystemClock.elapsedRealtime()
+        handler.removeCallbacks(watchdog)
+        handler.postDelayed(watchdog, WATCHDOG_INTERVAL_MS)
     }
 
     private fun acquireWakeLock() {
@@ -48,8 +71,9 @@ class DjAnalysisForegroundService : Service() {
             "Resonate:DJLibraryAnalysis",
         ).apply {
             setReferenceCounted(false)
-            // Bounded fail-safe: release even if the Dart side fails to stop us.
-            acquire(MAX_WAKE_LOCK_MS)
+            // The heartbeat watchdog releases this lock if the Dart scanner
+            // disappears without sending its normal stop request.
+            acquire()
         }
     }
 
@@ -96,6 +120,8 @@ class DjAnalysisForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(watchdog)
+        if (runningInstance === this) runningInstance = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         super.onDestroy()
@@ -106,7 +132,17 @@ class DjAnalysisForegroundService : Service() {
     companion object {
         private const val CHANNEL_ID = "resonate_dj_library_analysis"
         private const val NOTIFICATION_ID = 4817
-        private const val MAX_WAKE_LOCK_MS = 12L * 60L * 60L * 1000L
+        private const val WATCHDOG_INTERVAL_MS = 60L * 1000L
+        private const val WATCHDOG_TIMEOUT_MS = 30L * 60L * 1000L
+
+        @Volatile
+        private var runningInstance: DjAnalysisForegroundService? = null
+
+        fun heartbeat(): Boolean {
+            val service = runningInstance ?: return false
+            service.refreshHeartbeat()
+            return true
+        }
 
         fun stop(context: android.content.Context) {
             context.stopService(Intent(context, DjAnalysisForegroundService::class.java))
