@@ -120,93 +120,140 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
       ),
       drawer: _DjModeDrawer(onSwitchToPlayer: widget.onSwitchToPlayer),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 32),
-          children: [
-            Row(
-              children: [
-                Icon(Icons.graphic_eq_rounded, color: theme.colorScheme.primary, size: 30),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Your creative workspace', style: theme.textTheme.titleLarge),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Build, analyze and shape transitions. Live playback monitoring stays in Resonate Player.',
-                        style: theme.textTheme.bodySmall,
-                      ),
+        child: Consumer<DjModeProvider>(
+          builder: (context, dj, _) => ListView(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      theme.colorScheme.primary.withValues(alpha: 0.16),
+                      theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.42),
                     ],
                   ),
+                  border: Border.all(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.20),
+                  ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Text('TRANSITION TOOLS', style: theme.textTheme.labelLarge),
-            const SizedBox(height: 10),
-            _WorkspaceAction(
-              icon: Icons.compare_arrows_rounded,
-              title: 'Transition Studio',
-              subtitle: 'Analyze a pair of tracks, edit Mix-In / Mix-Out cues and inspect transition plans.',
-              onTap: _openTransitionStudio,
-            ),
-            const SizedBox(height: 12),
-            _WorkspaceAction(
-              icon: Icons.queue_music_rounded,
-              title: 'Prepare a DJ set',
-              subtitle: 'Build a reviewable library sequence with track-pair transition plans.',
-              loading: _buildingMix,
-              onTap: _buildingMix ? null : _buildLibraryMix,
-            ),
-            const SizedBox(height: 24),
-            Text('WORKSPACE', style: theme.textTheme.labelLarge),
-            const SizedBox(height: 10),
-            ResonateGlassCard(
-              blurEnabled: false,
-              margin: EdgeInsets.zero,
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.add_circle_outline_rounded, color: theme.colorScheme.primary),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Text('More creative tools belong here', style: theme.textTheme.titleMedium),
-                        const SizedBox(height: 5),
-                        Text(
-                          'This space is reserved for performance tools, transition analysis, cue editing and future DJ workflows — not a duplicate playback display.',
-                          style: theme.textTheme.bodySmall,
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(13),
+                          ),
+                          child: Icon(
+                            Icons.graphic_eq_rounded,
+                            color: theme.colorScheme.primary,
+                            size: 25,
+                          ),
+                        ),
+                        const Spacer(),
+                        _StatusPill(
+                          label: dj.isEnabled ? 'DJ MODE ON' : 'DJ MODE OFF',
+                          active: dj.isEnabled,
                         ),
                       ],
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-            ResonateGlassCard(
-              blurEnabled: false,
-              margin: EdgeInsets.zero,
-              padding: const EdgeInsets.all(14),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.shield_outlined, color: theme.colorScheme.primary),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Playback safety: DJ Workspace prepares and reviews DJ decisions; it does not create a second player. Media3 remains the only playback authority.',
-                      style: theme.textTheme.bodySmall,
+                    const SizedBox(height: 16),
+                    Text(
+                      'Shape the next transition.',
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 6),
+                    Text(
+                      'Prepare sets, inspect track pairings and refine how your music moves. Take hands-on control in DJ Console when you are ready.',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 22),
+              Text('CREATE & PREPARE', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 10),
+              _WorkspaceAction(
+                icon: Icons.compare_arrows_rounded,
+                title: 'Transition Studio',
+                subtitle: 'Analyze two tracks, edit Mix-In / Mix-Out cues and review the transition plan.',
+                onTap: _openTransitionStudio,
+              ),
+              const SizedBox(height: 10),
+              _WorkspaceAction(
+                icon: Icons.queue_music_rounded,
+                title: 'Prepare a DJ set',
+                subtitle: 'Build a reviewable sequence from available tracks in your library.',
+                loading: _buildingMix,
+                onTap: _buildingMix ? null : _buildLibraryMix,
+              ),
+              const SizedBox(height: 22),
+              Text('YOUR DJ WORKFLOW', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 10),
+              ResonateGlassCard(
+                blurEnabled: false,
+                margin: EdgeInsets.zero,
+                padding: const EdgeInsets.all(15),
+                child: Column(
+                  children: [
+                    _WorkflowStep(
+                      number: '01',
+                      icon: Icons.library_music_rounded,
+                      title: 'Choose your music',
+                      detail: 'Use tracks already available in your library.',
+                    ),
+                    const SizedBox(height: 14),
+                    _WorkflowStep(
+                      number: '02',
+                      icon: Icons.tune_rounded,
+                      title: 'Shape the transition',
+                      detail: 'Review track compatibility and adjust cue points in Transition Studio.',
+                    ),
+                    const SizedBox(height: 14),
+                    _WorkflowStep(
+                      number: '03',
+                      icon: Icons.headphones_rounded,
+                      title: 'Perform in DJ Console',
+                      detail: 'Move to the Console for manual deck operation and live performance.',
+                      isLast: true,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              ResonateGlassCard(
+                blurEnabled: false,
+                margin: EdgeInsets.zero,
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.shield_outlined, color: theme.colorScheme.primary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Playback integrity: Workspace tools prepare and review DJ decisions. Media3 remains the sole playback authority; live deck controls stay in DJ Console.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1617,6 +1664,71 @@ class _TelemetryRow extends StatelessWidget {
             style: theme.textTheme.bodySmall?.copyWith(
               color: valueColor ?? theme.colorScheme.onSurface,
               fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _WorkflowStep extends StatelessWidget {
+  const _WorkflowStep({
+    required this.number,
+    required this.icon,
+    required this.title,
+    required this.detail,
+    this.isLast = false,
+  });
+
+  final String number;
+  final IconData icon;
+  final String title;
+  final String detail;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 28,
+          child: Text(
+            number,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        Column(
+          children: [
+            Icon(icon, size: 19, color: theme.colorScheme.primary),
+            if (!isLast) ...[
+              const SizedBox(height: 5),
+              Container(
+                width: 1,
+                height: 28,
+                color: theme.colorScheme.outlineVariant,
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                )),
+                const SizedBox(height: 3),
+                Text(detail, style: theme.textTheme.bodySmall),
+              ],
             ),
           ),
         ),
