@@ -967,11 +967,14 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
         eng->meter_short_term_rms_db = dsp::linear_to_db_f(static_cast<float>(rms));
     }
 
-    /* Silence hygiene: decay applied boosts across gaps. */
+    /* Silence hygiene uses the unprocessed source level so DVC cannot
+       raise its own meter and hide a silent input. */
+    const bool source_silent = eng->silence_hygiene &&
+        source_rms_db < eng->silence_thresh_db;
     if (eng->silence_hygiene) {
         const float block_ms_f = (eng->sample_rate > 0.f)
             ? (1000.f * static_cast<float>(frames) / eng->sample_rate) : 10.f;
-        if (eng->meter_short_term_rms_db < eng->silence_thresh_db) {
+        if (source_silent) {
             eng->silence_hold_acc_ms += block_ms_f;
             if (eng->silence_hold_acc_ms >= eng->silence_hold_ms) {
                 silence_recovery_active = true;
@@ -990,13 +993,19 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
         }
     }
 
-    /* Auto-DVC: short-term RMS → target, capped by gain budget share. */
+    /* Auto-DVC: suppress learning on source silence and apply a current-block
+       peak guard before smoothing. The guard is an immediate safety clamp;
+       normal gain changes retain the adaptive controller's attack/release. */
+    float peak_gain_cap_db = eng->limiter_ceiling_db - source_peak_db -
+        eng->auto_bass_applied_db - eng->auto_preamp_applied_db - 1.0f;
+    bool peak_guard_limited = false;
     if (eng->auto_gain_enabled) {
-        float err = silence_recovery_active ? 0.f :
+        float err = (silence_recovery_active || source_silent) ? 0.f :
             (eng->auto_gain_target_rms_db + eng->auto_gain_bias_db)
                 - eng->meter_control_rms_db;
         gain_reasons |= dsp::kDecisionActive;
-        if (silence_recovery_active) gain_reasons |= dsp::kDecisionSilenceRecovery;
+        if (silence_recovery_active || source_silent)
+            gain_reasons |= dsp::kDecisionSilenceRecovery;
         if (err > eng->auto_gain_max_boost_db) { err = eng->auto_gain_max_boost_db; gain_reasons |= dsp::kDecisionTargetLimited; }
         if (err < -gain_cut_limit_db) {
             err = -gain_cut_limit_db;
@@ -1007,9 +1016,24 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
         if (err > gain_share) { err = gain_share; gain_reasons |= dsp::kDecisionBudgetLimited; }
         if (err > 24.f) err = 24.f;
         if (err < -24.f) { err = -24.f; gain_reasons |= dsp::kDecisionTargetLimited; }
+        if (err > peak_gain_cap_db) {
+            err = peak_gain_cap_db;
+            peak_guard_limited = true;
+            gain_reasons |= dsp::kDecisionTargetLimited;
+        }
         gain_target_db = err;
-        eng->auto_gain_applied_db = eng->adaptive_controller.smooth_gain(
-            eng->auto_gain_applied_db, err, eng->sample_rate, frames);
+        if (source_silent) {
+            /* Silence is not a valid loudness target; let any previous boost
+               drain rather than integrate toward the target during a gap. */
+            eng->auto_gain_applied_db *= 0.85f;
+        } else {
+            eng->auto_gain_applied_db = eng->adaptive_controller.smooth_gain(
+                eng->auto_gain_applied_db, err, eng->sample_rate, frames);
+        }
+        if (eng->auto_gain_applied_db > peak_gain_cap_db) {
+            eng->auto_gain_applied_db = peak_gain_cap_db;
+            peak_guard_limited = true;
+        }
         eng->dvc.set_enabled(true);
         eng->dvc.set_gain_db(eng->auto_gain_applied_db);
     }
@@ -1064,6 +1088,21 @@ static void process_block(DspEngine* eng, sample_t* interleaved, int frames) {
     decision.virtual_bass_applied = eng->auto_vb_applied;
     decision.output_rms_db = eng->meter_short_term_rms_db;
     decision.limiter_reduction_db = eng->lim_gr_peak_db;
+
+    /* Publish the meter on every active block (not only bypass blocks). */
+    eng->meter_auto_gain_pre_dvc_peak_db.store(source_peak_db, std::memory_order_relaxed);
+    eng->meter_auto_gain_target_rms_db.store(
+        eng->auto_gain_target_rms_db + eng->auto_gain_bias_db, std::memory_order_relaxed);
+    eng->meter_auto_gain_rms_error_db.store(
+        (eng->auto_gain_target_rms_db + eng->auto_gain_bias_db) -
+            eng->meter_control_rms_db, std::memory_order_relaxed);
+    eng->meter_auto_gain_constrained_target_db.store(gain_target_db, std::memory_order_relaxed);
+    eng->meter_auto_gain_peak_cap_db.store(peak_gain_cap_db, std::memory_order_relaxed);
+    eng->meter_auto_gain_applied_db.store(eng->auto_gain_applied_db, std::memory_order_relaxed);
+    eng->meter_auto_gain_peak_limited.store(peak_guard_limited ? 1 : 0,
+                                             std::memory_order_relaxed);
+    eng->meter_auto_gain_silence_gate.store(
+        (silence_recovery_active || source_silent) ? 1 : 0, std::memory_order_relaxed);
     eng->adaptive_telemetry.publish(decision);
 
     if (eng->dither_enabled && eng->dither_mode != DSP_DITHER_NONE) {
@@ -2072,7 +2111,11 @@ DspError dsp_limiter_set_crest_hint(DspEngine* eng, float crest_db) {
 }
 
 float dsp_limiter_get_crest_hint(const DspEngine* eng) {
-    return eng ? eng->crest_hint_db : 0.f;
+    if (!eng) return 0.f;
+    /* Return the most recently accepted hint even before the audio thread
+       consumes the mailbox; the value itself remains audio-thread applied. */
+    const float pending = eng->mb_hint_crest_db.load(std::memory_order_relaxed);
+    return pending > 0.f ? pending : eng->crest_hint_db;
 }
 
 DspError dsp_apply_analysis_hint(DspEngine* eng, const DspAnalysisResult* analysis,
