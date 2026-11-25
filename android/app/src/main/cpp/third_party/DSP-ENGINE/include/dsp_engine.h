@@ -5,7 +5,7 @@
  * multi-band parametric EQ, true-peak / two-band limiter, preamp, speaker-mode
  * virtual bass, dither, sample-rate conversion, and optional platform backends.
  *
- * Version 0.6.0 — Full intelligent stack (budget, auto-VB, auto-preamp, crest, silence)
+ * Version 0.6.1 — Psychic adaptive control and track-analysis integration
  *
  * THREAD SAFETY
  * -------------
