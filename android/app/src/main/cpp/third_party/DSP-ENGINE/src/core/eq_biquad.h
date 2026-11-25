@@ -16,7 +16,7 @@
 
 namespace dsp {
 
-constexpr int kEqMaxBands = 31;
+constexpr int kEqMaxBands = 32;
 constexpr int kEqMaxChannels = 8;
 
 /** Matches DspEqBand.type in the public C header. */
