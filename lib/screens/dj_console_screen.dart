@@ -416,6 +416,11 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                   deckId: id,
                   gainsDb: gains,
                 ),
+                filterType: music.djDeckFilterType(id),
+                filterCutoffHz: music.djDeckFilterCutoff(id),
+                onFilterChanged: (type, cutoffHz) => music.setDjDeckFilter(
+                  deckId: id, type: type, cutoffHz: cutoffHz,
+                ),
                 onJogSeek: (target) => music.seekDjDeck(
                   deckId: id,
                   position: target,
@@ -558,6 +563,9 @@ class _ConsoleDeck extends StatefulWidget {
     required this.onChannelGainChanged,
     required this.eqGains,
     required this.onEqChanged,
+    required this.filterType,
+    required this.filterCutoffHz,
+    required this.onFilterChanged,
     required this.jogSeekEnabled,
     required this.onJogSeek,
     required this.status, required this.title, required this.artist, required this.progress,
@@ -580,6 +588,9 @@ class _ConsoleDeck extends StatefulWidget {
   final Future<void> Function(double gain) onChannelGainChanged;
   final List<double> eqGains;
   final Future<void> Function(List<double> gains) onEqChanged;
+  final int filterType;
+  final double filterCutoffHz;
+  final Future<void> Function(int type, double cutoffHz) onFilterChanged;
   final Future<void> Function(Duration position) onJogSeek;
   final double progress;
   final Duration position, duration;
@@ -604,6 +615,9 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   double _channelGain = 1.0;
   bool _channelGainDragging = false;
   late List<double> _eqGains;
+  int _filterType = 0;
+  double _filterCutoffHz = 1000.0;
+  bool _filterDragging = false;
   final List<bool> _eqDragging = <bool>[false, false, false];
   double? _jogLastAngle;
   double _jogAccumulatedRadians = 0;
@@ -622,6 +636,8 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
       duration: const Duration(milliseconds: 1800),
     );
     _channelGain = widget.channelGain.clamp(0.0, 1.0).toDouble();
+    _filterType = widget.filterType;
+    _filterCutoffHz = widget.filterCutoffHz;
     _eqGains = List<double>.generate(
       3,
       (index) => index < widget.eqGains.length
@@ -635,6 +651,8 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   @override
   void didUpdateWidget(covariant _ConsoleDeck oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.filterType != widget.filterType && !_filterDragging) _filterType = widget.filterType;
+    if (oldWidget.filterCutoffHz != widget.filterCutoffHz && !_filterDragging) _filterCutoffHz = widget.filterCutoffHz;
     if (oldWidget.eqGains != widget.eqGains &&
         !_eqDragging.any((dragging) => dragging)) {
       _eqGains = List<double>.generate(
@@ -835,6 +853,21 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Deck EQ was not applied: $error')),
       );
+    }
+  }
+
+  Future<void> _commitFilter({int? type, double? cutoffHz}) async {
+    final nextType = type ?? _filterType;
+    final nextCutoff = cutoffHz ?? _filterCutoffHz;
+    if (!widget.canAdjustEq) return;
+    try {
+      await widget.onFilterChanged(nextType, nextCutoff);
+      if (!mounted) return;
+      setState(() { _filterType = nextType; _filterCutoffHz = nextCutoff; _filterDragging = false; });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() { _filterType = widget.filterType; _filterCutoffHz = widget.filterCutoffHz; _filterDragging = false; });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Deck filter was not applied: $error')));
     }
   }
 
@@ -1207,6 +1240,33 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                 ),
               );
             }),
+          ),
+          const SizedBox(height: 2),
+          Row(
+            children: [
+              Text('FILTER', style: theme.textTheme.labelSmall?.copyWith(color: Colors.white60, fontWeight: FontWeight.w800)),
+              const Spacer(),
+              for (final option in const [(0, 'OFF'), (3, 'LP'), (4, 'HP')])
+                Padding(
+                  padding: const EdgeInsets.only(left: 3),
+                  child: TextButton(
+                    style: TextButton.styleFrom(minimumSize: const Size(34, 24), padding: const EdgeInsets.symmetric(horizontal: 7), visualDensity: VisualDensity.compact, foregroundColor: _filterType == option.$1 ? accent : Colors.white54, backgroundColor: _filterType == option.$1 ? accent.withValues(alpha: .12) : Colors.transparent),
+                    onPressed: widget.canAdjustEq ? () => unawaited(_commitFilter(type: option.$1)) : null,
+                    child: Text(option.$2, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900)),
+                  ),
+                ),
+              const SizedBox(width: 5),
+              Text(_filterType == 0 ? '—' : '${_filterCutoffHz.round()} Hz', style: theme.textTheme.labelSmall?.copyWith(color: Colors.white70, fontFeatures: const [FontFeature.tabularFigures()])),
+            ],
+          ),
+          SizedBox(
+            height: compact ? 18 : 22,
+            child: Slider(
+              value: (math.log(_filterCutoffHz / 40.0) / math.log(18000.0 / 40.0)).clamp(0.0, 1.0),
+              min: 0, max: 1, divisions: 100,
+              onChanged: widget.canAdjustEq && _filterType != 0 ? (value) => setState(() { _filterDragging = true; _filterCutoffHz = 40.0 * math.pow(18000.0 / 40.0, value); }) : null,
+              onChangeEnd: widget.canAdjustEq && _filterType != 0 ? (_) => unawaited(_commitFilter()) : null,
+            ),
           ),
           const SizedBox(height: 2),
           Row(
