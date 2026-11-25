@@ -109,6 +109,10 @@ class MusicProvider extends ChangeNotifier {
     'A': <double>[0.0, 0.0, 0.0],
     'B': <double>[0.0, 0.0, 0.0],
   };
+  final Map<String, int> _djDeckFilterTypes = <String, int>{'A': 0, 'B': 0};
+  final Map<String, double> _djDeckFilterCutoffs = <String, double>{'A': 1000.0, 'B': 1000.0};
+  int djDeckFilterType(String deckId) => _djDeckFilterTypes[deckId] ?? 0;
+  double djDeckFilterCutoff(String deckId) => _djDeckFilterCutoffs[deckId] ?? 1000.0;
   _DjSessionReturnState? _djSessionReturnState;
   Future<void> _djSessionLifecycleTail = Future<void>.value();
   final Set<Future<void>> _djDeckCommandsInFlight = <Future<void>>{};
