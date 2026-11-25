@@ -42,22 +42,7 @@ class HomeDashboard extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 34),
           children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                AutopilotHomeCard(songCount: songs.length),
-                Positioned(
-                  right: 10,
-                  bottom: 10,
-                  child: IgnorePointer(
-                    child: Opacity(
-                      opacity: 0.075,
-                      child: ResonateLogo(size: 148, full: true, showWord: false),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            AutopilotHomeCard(songCount: songs.length),
             const SizedBox(height: 16),
             ResonateGlassCard(
               blurEnabled: false,
