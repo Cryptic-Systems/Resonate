@@ -161,6 +161,9 @@ class Media3PlaybackService : MediaSessionService() {
     fun disableDjDualDeckMode(): Boolean {
         if (!djDualDeckMode) return true
         if (crossfadeStatus in setOf("starting", "fading")) return false
+        // DJ channel EQ must never leak into the canonical Player after exit.
+        if (!DspEngineRegistry.clearDjEqOverlay("A") ||
+            !DspEngineRegistry.clearDjEqOverlay("B")) return false
         djDualDeckMode = false
         djDeckGainA = 1f
         djDeckGainB = 1f
@@ -706,7 +709,7 @@ class Media3PlaybackService : MediaSessionService() {
 
     /** Physical-deck DJ EQ; independent of active/standby transition overlays. */
     fun setDjDeckEq(deckId: String, centersHz: DoubleArray, gainsDb: DoubleArray): Boolean =
-        DspEngineRegistry.setDjEqOverlay(deckId, centersHz, gainsDb)
+        djDualDeckMode && DspEngineRegistry.setDjEqOverlay(deckId, centersHz, gainsDb)
 
     fun clearDjDeckEq(deckId: String): Boolean =
         DspEngineRegistry.clearDjEqOverlay(deckId)
