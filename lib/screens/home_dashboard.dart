@@ -9,6 +9,7 @@ import '../widgets/resonate_logo.dart';
 import 'discovery_screen.dart';
 import 'settings_screen.dart';
 import 'listening_history_screen.dart';
+import 'notification_center_screen.dart';
 import '../modes/screens/modes_screen.dart';
 import '../modes/integration/resonate_mode_ports.dart';
 import '../experience/experience_provider.dart';
@@ -22,7 +23,7 @@ class HomeDashboard extends StatelessWidget {
     final intelligence = context.watch<IntelligenceProvider>();
     final songs = library.allSongs;
     return ResonateGlassScaffold(
-      title: const ResonateLogo(size: 58, full: true, showWord: false),
+      title: const ResonateLogo(size: 76, full: true, showWord: false),
       leading: Builder(
         builder: (context) => IconButton(
           tooltip: 'For You menu',
@@ -41,7 +42,22 @@ class HomeDashboard extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 34),
           children: [
-            AutopilotHomeCard(songCount: songs.length),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                AutopilotHomeCard(songCount: songs.length),
+                Positioned(
+                  right: 10,
+                  bottom: 10,
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: 0.075,
+                      child: ResonateLogo(size: 148, full: true, showWord: false),
+                    ),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 16),
             ResonateGlassCard(
               blurEnabled: false,
@@ -100,13 +116,16 @@ class _ForYouSideDrawer extends StatelessWidget {
   Widget build(BuildContext context) {
     return Drawer(
       child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
-              child: Text('RESONATE', style: Theme.of(context).textTheme.labelLarge),
-            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
+                    child: Text('RESONATE', style: Theme.of(context).textTheme.labelLarge),
+                  ),
             ListTile(
               leading: const Icon(Icons.explore_rounded),
               title: const Text('Discovery'),
@@ -122,6 +141,12 @@ class _ForYouSideDrawer extends StatelessWidget {
               title: const Text('Listening history'),
               onTap: () => onOpen(const ListeningHistoryScreen()),
             ),
+            ListTile(
+              leading: const Icon(Icons.notifications_outlined),
+              title: const Text('Notifications'),
+              subtitle: const Text('Driving alerts and Resonate updates'),
+              onTap: () => onOpen(const NotificationCenterScreen()),
+            ),
             const Divider(),
             ListTile(
               leading: const Icon(Icons.album_rounded),
@@ -133,10 +158,38 @@ class _ForYouSideDrawer extends StatelessWidget {
                     );
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.settings_outlined),
-              title: const Text('Settings'),
-              onTap: () => onOpen(const SettingsScreen()),
+                  ListTile(
+                    leading: const Icon(Icons.settings_outlined),
+                    title: const Text('Settings'),
+                    onTap: () => onOpen(const SettingsScreen()),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 12, 22, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Divider(color: Theme.of(context).colorScheme.outlineVariant),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Music should move with you — not the other way around.',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'RESONATE  ·  LISTEN YOUR WAY',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
