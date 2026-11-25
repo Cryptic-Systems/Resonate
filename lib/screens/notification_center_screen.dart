@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../modes/models/driving_intent.dart';
+import '../modes/models/resonate_mode.dart';
 import '../modes/providers/mode_provider.dart';
 import '../ui/resonate_glass.dart';
 
