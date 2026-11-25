@@ -704,6 +704,13 @@ class Media3PlaybackService : MediaSessionService() {
     fun clearDeckEqOverlay(deckRole: String): Boolean =
         DspEngineRegistry.clearTemporaryEqOverlay(deckRole)
 
+    /** Physical-deck DJ EQ; independent of active/standby transition overlays. */
+    fun setDjDeckEq(deckId: String, centersHz: DoubleArray, gainsDb: DoubleArray): Boolean =
+        DspEngineRegistry.setDjEqOverlay(deckId, centersHz, gainsDb)
+
+    fun clearDjDeckEq(deckId: String): Boolean =
+        DspEngineRegistry.clearDjEqOverlay(deckId)
+
     fun setGainFactors(
         trackLevel: Float,
         preamp: Float,
