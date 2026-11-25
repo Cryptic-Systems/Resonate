@@ -18,6 +18,7 @@ import '../providers/dj_mode_provider.dart';
 import '../dj_engine/core/dj_types.dart';
 import '../ui/resonate_glass.dart';
 import 'dj_console_deck_tempo_control.dart';
+import 'dj_console_tempo_policy.dart';
 import 'dj_console_manual_controls_policy.dart';
 import 'dj_console_jog_seek_policy.dart';
 import 'dj_console_overlay_policy.dart';
@@ -184,8 +185,11 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
       if (targetBpm == null || sourceBpm == null ||
           !targetBpm.isFinite || !sourceBpm.isFinite ||
           targetBpm <= 0 || sourceBpm <= 0) return;
-      final speed = sourceBpm / targetBpm;
-      if (!speed.isFinite || speed < 0.94 || speed > 1.06) {
+      final speed = DjConsoleTempoPolicy.syncSpeed(
+        sourceBpm: sourceBpm,
+        targetBpm: targetBpm,
+      );
+      if (speed == null) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('SYNC is outside the ±6% tempo range. Adjust the tempo manually first.'),
         ));
