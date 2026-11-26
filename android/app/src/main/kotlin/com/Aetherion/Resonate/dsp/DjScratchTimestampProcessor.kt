@@ -30,6 +30,7 @@ internal class DjScratchTimestampProcessor(
     // One bounded PCM history per physical deck. It is passive capture only;
     // normal Media3 output remains byte-for-byte pass-through at this stage.
     private var pcmRing: DjScratchPcmRingBuffer? = null
+    private val renderPolicy = DjScratchRenderPolicy()
 
     internal fun lastConsumedTimestampForTest(): DjScratchPcmTimestamp? =
         lastConsumedTimestamp
@@ -69,14 +70,22 @@ internal class DjScratchTimestampProcessor(
             pcmRing?.append(inputBuffer, timestamp.presentationTimeUs)
         }
         val output = replaceOutputBuffer(inputBuffer.remaining())
-        output.put(inputBuffer)
-        output.flip()
+        val ring = pcmRing
+        val rendered = timestamp != null && ring != null &&
+            renderPolicy.render(inputBuffer, output, ring, latestControlSnapshot)
+        if (!rendered) {
+            // A failed anchor/read must never emit a partially rendered block.
+            output.clear()
+            output.put(inputBuffer)
+            output.flip()
+        }
     }
 
     override fun onFlush() {
         lastConsumedTimestamp = null
         latestControlSnapshot = null
         pcmRing?.clear()
+        renderPolicy.reset()
     }
 
     override fun onReset() {
@@ -84,6 +93,7 @@ internal class DjScratchTimestampProcessor(
         latestControlSnapshot = null
         pcmRing?.clear()
         pcmRing = null
+        renderPolicy.reset()
         ledger.clear()
     }
 }
