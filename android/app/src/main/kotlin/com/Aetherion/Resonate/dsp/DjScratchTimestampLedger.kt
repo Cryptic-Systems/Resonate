@@ -12,6 +12,7 @@ import java.util.IdentityHashMap
  * can have equal contents/positions.
  */
 internal class DjScratchTimestampLedger {
+    private companion object { const val MAX_PENDING_BUFFERS = 64 }
     private val timestamps = IdentityHashMap<ByteBuffer, Long>()
 
     @Synchronized
@@ -19,6 +20,7 @@ internal class DjScratchTimestampLedger {
         if (presentationTimeUs < 0L || !buffer.hasRemaining()) return
         // A retry of the same Media3 buffer must not replace its original PTS.
         if (!timestamps.containsKey(buffer)) {
+            if (timestamps.size >= MAX_PENDING_BUFFERS) timestamps.clear()
             timestamps[buffer] = presentationTimeUs
         }
     }
