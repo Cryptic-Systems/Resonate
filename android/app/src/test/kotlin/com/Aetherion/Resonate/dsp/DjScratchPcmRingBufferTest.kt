@@ -80,14 +80,20 @@ class DjScratchPcmRingBufferTest {
     }
 
     @Test
-    fun clearInvalidatesAllFramesAndRestartsSequence() {
+    fun clearInvalidatesAllFramesWithoutReusingOldFrameIndices() {
         val ring = DjScratchPcmRingBuffer(48_000, 1, 8)
         ring.append(pcm16(1, 2), 100L)
         ring.clear()
 
-        assertEquals(0L, ring.nextWriteFrame)
+        assertEquals(2L, ring.nextWriteFrame)
+        assertEquals(2L, ring.oldestFrame)
         assertEquals(0, ring.availableFrames)
-        assertNull(ring.mediaTimeUsAtFrame(0L))
+        assertNull(ring.mediaTimeUsAtFrame(1L))
+
+        ring.append(pcm16(3), 200L)
+        assertEquals(3L, ring.nextWriteFrame)
+        assertEquals(200L, ring.mediaTimeUsAtFrame(2L))
+        assertNull(ring.mediaTimeUsAtFrame(1L))
     }
 
     @Test
