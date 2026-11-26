@@ -41,7 +41,10 @@ class DjIdleAnalysisService {
   int _failed = 0;
   final Map<String, DateTime> _lastProfileAttemptAt = <String, DateTime>{};
   final Map<String, Song> _priorityWaveformTracks = <String, Song>{};
+  final Map<String, Song> _priorityAnalysisTracks = <String, Song>{};
   bool _priorityWaveformDrainRunning = false;
+  bool _priorityAnalysisDrainRunning = false;
+  bool Function()? _priorityAnalysisAllowed;
   static const Duration _retryCooldown = Duration(hours: 6);
 
   bool get isRunning => _running;
@@ -107,6 +110,95 @@ class DjIdleAnalysisService {
     } finally {
       if (startedHere) await DjAnalysisForegroundService.stop();
       _priorityWaveformDrainRunning = false;
+    }
+  }
+
+  /// Queue analysis for a deck-loaded track. Unlike the library backlog,
+  /// this small priority queue may run while music is playing. It serializes
+  /// one track at a time and checks the safety predicate between PCM windows.
+  Future<void> ensureTrackAnalysis(
+    Song song, {
+    required bool Function() isSafeToAnalyze,
+    required bool Function() isStillIdle,
+  }) async {
+    if (song.id.trim().isEmpty || song.filePath.trim().isEmpty ||
+        song.duration <= Duration.zero) {
+      return;
+    }
+    _priorityAnalysisAllowed = isSafeToAnalyze;
+    _priorityAnalysisTracks[song.id] = song;
+    // Keep only the two decks and a short audition/preload tail.
+    while (_priorityAnalysisTracks.length > 4) {
+      _priorityAnalysisTracks.remove(_priorityAnalysisTracks.keys.first);
+    }
+    if (_running || _priorityAnalysisDrainRunning || !isSafeToAnalyze()) return;
+    await _drainPriorityAnalyses(
+      isSafeToAnalyze: isSafeToAnalyze,
+      isStillIdle: isStillIdle,
+    );
+  }
+
+  Future<void> _drainPriorityAnalyses({
+    required bool Function() isSafeToAnalyze,
+    required bool Function() isStillIdle,
+  }) async {
+    if (_priorityAnalysisDrainRunning || _priorityAnalysisTracks.isEmpty ||
+        !isSafeToAnalyze()) {
+      return;
+    }
+    _priorityAnalysisDrainRunning = true;
+    var startedHere = false;
+    try {
+      startedHere = await DjAnalysisForegroundService.start();
+      for (final entry in _priorityAnalysisTracks.entries.toList()) {
+        if (!isSafeToAnalyze()) break;
+        await DjAnalysisForegroundService.heartbeat();
+        final existing = await _analysis.getAnalysis(entry.key);
+        final profile = await _analysis.getProfile(entry.key);
+        if (!isSafeToAnalyze()) break;
+        if (existing == null || existing.isStale || profile == null) {
+          await _analysis.analyzeSong(
+            entry.value,
+            force: true,
+            shouldContinue: isSafeToAnalyze,
+          );
+        }
+        if (!isSafeToAnalyze()) break;
+        final updated = await _analysis.getAnalysis(entry.key);
+        final completedProfile = await _analysis.getProfile(entry.key);
+        if (updated != null && !updated.isStale && completedProfile != null) {
+          _priorityAnalysisTracks.remove(entry.key);
+          _onWaveformUpdated?.call();
+          await ResonateDiagnostics.recordDj(
+            stage: 'deck_priority_analysis',
+            songId: entry.key,
+            outcome: 'profile_ready',
+          );
+        } else {
+          await ResonateDiagnostics.recordDj(
+            stage: 'deck_priority_analysis',
+            songId: entry.key,
+            outcome: 'deferred_or_unsupported',
+          );
+          // A supported decode may be temporarily interrupted by a transition.
+          // Keep it queued for the next safe opportunity, but avoid spinning.
+          break;
+        }
+        // Never run a second deck decode back-to-back without yielding.
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        if (!isSafeToAnalyze()) break;
+      }
+      // Full-track waveform chunks remain lower priority and are only decoded
+      // while transport is idle. Playback analysis never competes with them.
+      if (isStillIdle() && _priorityWaveformTracks.isNotEmpty) {
+        await _drainPriorityWaveforms(
+          isStillIdle: isStillIdle,
+          serviceAlreadyStarted: true,
+        );
+      }
+    } finally {
+      if (startedHere) await DjAnalysisForegroundService.stop();
+      _priorityAnalysisDrainRunning = false;
     }
   }
 
@@ -343,6 +435,14 @@ class DjIdleAnalysisService {
       await DjAnalysisForegroundService.stop();
       _backgroundServiceStarted = false;
       _backgroundServiceStarting = false;
+      final priorityAllowed = _priorityAnalysisAllowed;
+      if (_priorityAnalysisTracks.isNotEmpty &&
+          priorityAllowed != null && priorityAllowed()) {
+        unawaited(_drainPriorityAnalyses(
+          isSafeToAnalyze: priorityAllowed,
+          isStillIdle: isStillIdle ?? () => false,
+        ));
+      }
     }
   }
 
@@ -351,6 +451,9 @@ class DjIdleAnalysisService {
   /// Native decoding does not currently expose cancellation, so this method
   /// must not pretend it can interrupt an in-flight platform operation.
   void stop() {
+    // Playback should stop the broad library scan, not the deck-priority
+    // analysis queue. Priority work is independently bounded and serialized.
+    if (!_running) return;
     _stopRequested = true;
     _analysis.cancelCurrentAnalysis();
     _waveformChunks.cancel();
