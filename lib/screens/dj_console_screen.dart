@@ -1048,6 +1048,58 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     }
   }
 
+  Future<void> _setLoopIn() async {
+    if (widget.onSetLoopRange == null) return;
+    if (widget.loopActive && widget.onClearLoop != null) {
+      try {
+        await widget.onClearLoop!();
+      } catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Existing loop could not be cleared: $error')),
+        );
+        return;
+      }
+    }
+    if (mounted) setState(() => _loopInPreview = widget.position);
+  }
+
+  Future<void> _setLoopOut() async {
+    final start = _loopInPreview;
+    final end = widget.position;
+    if (start == null || widget.onSetLoopRange == null) return;
+    if (end - start < const Duration(milliseconds: 120) ||
+        (widget.duration > Duration.zero &&
+            end >= widget.duration - const Duration(milliseconds: 40))) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Set LOOP OUT at least 120 ms after LOOP IN and before the track end.'),
+      ));
+      return;
+    }
+    try {
+      await widget.onSetLoopRange!(start, end);
+      if (mounted) setState(() => _loopInPreview = null);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Loop was not engaged: $error')),
+      );
+    }
+  }
+
+  Future<void> _exitLoop() async {
+    if (widget.onClearLoop == null) return;
+    try {
+      await widget.onClearLoop!();
+      if (mounted) setState(() => _loopInPreview = null);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Loop could not be cleared: $error')),
+      );
+    }
+  }
+
   void _showTrackAnalysis(DjTrackProfile? profile) {
     if (profile == null || profile.songId != widget.expectedSongId) return;
     final grid = profile.beatGrid;
@@ -1652,107 +1704,70 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             ),
           ),
           Row(
-            children: List<Widget>.generate(DjCuePointStore.slotCount, (index) =>
-              Expanded(child: Padding(
-                padding: EdgeInsets.only(right: index == DjCuePointStore.slotCount - 1 ? 0 : 4),
-                child: _buildCuePad(index, accent),
-              )),
-            ),
-          ),
-          const SizedBox(height: 5),
-          Row(
             children: [
+              ...List<Widget>.generate(DjCuePointStore.slotCount, (index) =>
+                Expanded(child: Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: _buildCuePad(index, accent),
+                )),
+              ),
               Expanded(
-                child: OutlinedButton(
-                  onPressed: widget.onSetLoopRange == null ? null : () {
-                    if (widget.loopActive) {
-                      unawaited(widget.onClearLoop?.call());
+                child: PopupMenuButton<String>(
+                  enabled: widget.onSetLoopRange != null || widget.loopActive,
+                  tooltip: 'A/B loop controls',
+                  onSelected: (action) {
+                    switch (action) {
+                      case 'in':
+                        unawaited(_setLoopIn());
+                      case 'out':
+                        unawaited(_setLoopOut());
+                      case 'exit':
+                        unawaited(_exitLoop());
                     }
-                    setState(() => _loopInPreview = widget.position);
                   },
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
-                    side: BorderSide(color: accent.withValues(alpha: .45)),
-                  ),
-                  child: Text(
-                    _loopInPreview != null
-                        ? 'IN ${_format(_loopInPreview!)}'
-                        : widget.loopActive && widget.loopStart != null
-                            ? 'IN ${_format(widget.loopStart!)}'
-                            : 'LOOP IN',
-                    style: TextStyle(color: accent, fontSize: 9, fontWeight: FontWeight.w900),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 5),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: widget.onSetLoopRange == null || _loopInPreview == null
-                      ? null
-                      : () async {
-                          final start = _loopInPreview!;
-                          final end = widget.position;
-                          if (end - start < const Duration(milliseconds: 120) ||
-                              (widget.duration > Duration.zero &&
-                                  end >= widget.duration - const Duration(milliseconds: 40))) {
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                              content: Text('Set LOOP OUT at least 120 ms after LOOP IN and before the track end.'),
-                            ));
-                            return;
-                          }
-                          try {
-                            await widget.onSetLoopRange!(start, end);
-                            if (mounted) setState(() => _loopInPreview = null);
-                          } catch (error) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Loop was not engaged: $error')),
-                            );
-                          }
-                        },
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
-                    side: BorderSide(color: accent.withValues(alpha: .45)),
-                  ),
-                  child: Text(
-                    widget.loopActive && widget.loopEnd != null
-                        ? 'OUT ${_format(widget.loopEnd!)}'
-                        : 'LOOP OUT',
-                    style: TextStyle(color: accent, fontSize: 9, fontWeight: FontWeight.w900),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 5),
-              Expanded(
-                child: FilledButton.tonal(
-                  onPressed: widget.loopActive && widget.onClearLoop != null
-                      ? () async {
-                          try {
-                            await widget.onClearLoop!();
-                            if (mounted) setState(() => _loopInPreview = null);
-                          } catch (error) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Loop could not be cleared: $error')),
-                            );
-                          }
-                        }
-                      : null,
-                  style: FilledButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
-                    backgroundColor: widget.loopActive
-                        ? accent.withValues(alpha: .20)
-                        : null,
-                  ),
-                  child: Text(
-                    widget.loopActive ? 'EXIT LOOP' : 'LOOP OFF',
-                    style: TextStyle(
-                      color: widget.loopActive ? accent : null,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w900,
+                  itemBuilder: (context) => [
+                    PopupMenuItem<String>(
+                      value: 'in',
+                      enabled: widget.onSetLoopRange != null,
+                      child: const Text('Set LOOP IN at playhead'),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'out',
+                      enabled: widget.onSetLoopRange != null && _loopInPreview != null,
+                      child: const Text('Set LOOP OUT and engage'),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'exit',
+                      enabled: widget.loopActive && widget.onClearLoop != null,
+                      child: const Text('Exit active loop'),
+                    ),
+                  ],
+                  child: Container(
+                    height: 42,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: widget.loopActive
+                          ? accent.withValues(alpha: .15)
+                          : const Color(0xFF080E15),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: accent.withValues(alpha: widget.loopActive ? .75 : .35),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('LOOP', style: TextStyle(
+                          color: accent, fontSize: 9, fontWeight: FontWeight.w900)),
+                        Text(
+                          widget.loopActive && widget.loopStart != null && widget.loopEnd != null
+                              ? '${_format(widget.loopStart!)}–${_format(widget.loopEnd!)}'
+                              : _loopInPreview != null
+                                  ? 'IN SET'
+                                  : 'A/B',
+                          style: const TextStyle(color: Colors.white70, fontSize: 8),
+                        ),
+                      ],
                     ),
                   ),
                 ),
