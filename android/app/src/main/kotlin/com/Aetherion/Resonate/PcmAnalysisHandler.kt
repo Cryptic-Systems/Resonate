@@ -138,11 +138,16 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
                     }
                     val sampleRate = if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) format.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 44100
                     val channelCount = if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
+                    // Decoder output can differ from the compressed source format
+                    // (for example, a codec may downmix or resample). Report the
+                    // actual PCM format consumed by all Dart-side analyzers.
+                    var outputSampleRate = sampleRate
+                    var outputChannelCount = channelCount
                     codec = MediaCodec.createDecoderByType(mime)
                     codec.configure(format, null, null, 0)
                     codec.start()
                     val maxUs = (maxSeconds.coerceIn(4.0, 25.0) * 1_000_000L).toLong()
-                    val maxPcmBytes = (sampleRate * channelCount * 2 * maxSeconds.coerceIn(4.0, 25.0)).toInt().coerceIn(64 * 1024, 3 * 1024 * 1024)
+                    val maxPcmBytes = (sampleRate * channelCount * 2 * maxSeconds.coerceIn(4.0, 25.0)).toInt().coerceIn(64 * 1024, 8 * 1024 * 1024)
                     val outBytes = java.io.ByteArrayOutputStream(maxPcmBytes.coerceAtMost(512 * 1024))
                     val info = MediaCodec.BufferInfo()
                     var inputDone = false
@@ -173,7 +178,15 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
                             }
                         }
                         val outIndex = codec.dequeueOutputBuffer(info, 100)
-                        if (outIndex >= 0) {
+                        if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                            val outputFormat = codec.outputFormat
+                            if (outputFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                                outputSampleRate = outputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                            }
+                            if (outputFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                                outputChannelCount = outputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                            }
+                        } else if (outIndex >= 0) {
                             if (info.size > 0 && isPcmTimestampWithinRequestedWindow(
                                     info.presentationTimeUs, startMs, maxUs,
                                 )) {
@@ -203,8 +216,8 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
                     if (pcm.size < sampleRate) { activity.runOnUiThread { result.success(null) }; return@execute }
                     activity.runOnUiThread {
                         result.success(hashMapOf(
-                            "sampleRate" to sampleRate,
-                            "channels" to channelCount,
+                            "sampleRate" to outputSampleRate,
+                            "channels" to outputChannelCount,
                             "startMs" to (firstOutputPresentationTimeUs?.div(1000L) ?: startMs),
                             "pcm" to pcm,
                         ))
