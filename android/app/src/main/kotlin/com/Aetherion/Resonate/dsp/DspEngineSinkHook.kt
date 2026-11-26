@@ -38,7 +38,7 @@ object DspEngineSinkHook {
 
     /** Media3-only chain: timestamp probe first, then the unchanged native DSP stage. */
     @JvmStatic
-    fun createProcessors(
+    internal fun createProcessors(
         deckId: String,
         timestampLedger: DjScratchTimestampLedger,
     ): Array<AudioProcessor> {
