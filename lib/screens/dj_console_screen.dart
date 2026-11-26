@@ -345,6 +345,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
     try {
       await music.loadDjDeck(deckId, <Song>[song]);
       if (!mounted) return;
+      unawaited(context.read<DjModeProvider>().ensureTrackWaveform(song));
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Loaded “${song.title}” into Deck $deckId.')),
       );
@@ -423,6 +424,9 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                 onAir: state?.activeDeckId == id,
                 compact: compact,
                 isPlaying: isPlaying,
+                onEnsureWaveform: song == null
+                    ? null
+                    : () => unawaited(context.read<DjModeProvider>().ensureTrackWaveform(song)),
                 canPlay: djReady && loaded && music.media3ProviderSessionActive,
                 canAdjustChannelGain:
                     DjConsoleManualControlsPolicy.canAdjustChannelGain(
@@ -603,6 +607,7 @@ class _ConsoleDeck extends StatefulWidget {
     required this.deck, required this.active, required this.onAir,
     required this.compact,
     required this.isPlaying,
+    required this.onEnsureWaveform,
     required this.canPlay,
     required this.onPlayPause,
     required this.onLoad,
@@ -630,6 +635,7 @@ class _ConsoleDeck extends StatefulWidget {
 
   final String deck, status, title, artist;
   final bool active, onAir, compact, isPlaying, canPlay, jogSeekEnabled;
+  final VoidCallback? onEnsureWaveform;
   final Future<void> Function() onPlayPause;
   final VoidCallback? onLoad;
   final VoidCallback? onSync;
@@ -1027,7 +1033,9 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
 
   Future<void> _togglePlayback() async {
     try {
+      final wasPlaying = widget.isPlaying;
       await widget.onPlayPause();
+      if (wasPlaying) widget.onEnsureWaveform?.call();
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
