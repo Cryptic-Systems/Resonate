@@ -61,7 +61,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
             content: Text(
               widget.playerFacing
                   ? 'Enable automatic mixing before preparing a DJ set.'
-                  : 'Enable DJ Mode before preparing a DJ set.',
+                  : 'Enable automatic mixing before preparing a DJ set.',
             ),
           ),
         );
@@ -160,7 +160,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                         ),
                         const Spacer(),
                         _StatusPill(
-                          label: dj.isEnabled ? 'DJ MODE ON' : 'DJ MODE OFF',
+                          label: dj.isEnabled ? 'AUTO MIX ON' : 'AUTO MIX OFF',
                           active: dj.isEnabled,
                         ),
                       ],
@@ -400,7 +400,7 @@ class _DjWorkspaceScreenState extends State<DjWorkspaceScreen> {
                               ? (dj.isEnabled ? 'Automatic mixing on' : 'Automatic mixing off')
                               : djDeckSession
                                   ? 'DJ session active'
-                                  : (dj.isEnabled ? 'DJ enabled' : 'DJ disabled'),
+                                  : (dj.isEnabled ? 'Automatic mixing on' : 'Automatic mixing off'),
                           active: djDeckSession || dj.isEnabled,
                         ),
                       ],
