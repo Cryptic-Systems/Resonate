@@ -31,8 +31,9 @@ internal class DjScratchPcmRingBuffer(
     var nextWriteFrame: Long = 0L
         private set
 
-    val oldestFrame: Long
-        get() = (nextWriteFrame - capacityFrames).coerceAtLeast(0L)
+    /** First absolute frame still valid after wrap or an explicit clear. */
+    var oldestFrame: Long = 0L
+        private set
 
     val availableFrames: Int
         get() = (nextWriteFrame - oldestFrame).toInt()
@@ -80,6 +81,7 @@ internal class DjScratchPcmRingBuffer(
                 frame.toLong() * 1_000_000L / sampleRate
         }
         nextWriteFrame += totalFrames.toLong()
+        oldestFrame = maxOf(oldestFrame, (nextWriteFrame - capacityFrames).coerceAtLeast(0L))
         return framesToCopy
     }
 
@@ -101,11 +103,11 @@ internal class DjScratchPcmRingBuffer(
         return mediaTimesUs[(absoluteFrame % capacityFrames).toInt()]
     }
 
-    /** Clears history without resetting the monotonic frame sequence. */
+    /** Clears history while preserving absolute frame-index monotonicity. */
     fun clear() {
         samples.fill(0)
         mediaTimesUs.fill(0L)
-        nextWriteFrame = 0L
+        oldestFrame = nextWriteFrame
     }
 }
 
