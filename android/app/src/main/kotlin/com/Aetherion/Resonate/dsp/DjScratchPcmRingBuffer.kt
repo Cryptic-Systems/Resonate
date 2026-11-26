@@ -11,9 +11,9 @@ import java.nio.ByteOrder
  * indices remain monotonic while storage wraps; timestamps are retained per
  * frame so discontinuous input blocks cannot be mistaken for contiguous media.
  *
- * This class is deliberately not connected to the live sink yet. The next
- * integration step must define the audio-thread control handoff and render
- * policy before it can replace normal Media3 output.
+ * The timestamp processor feeds this history passively before native DSP.
+ * It is not part of the output render path; a separate, validated audio-thread
+ * control handoff and render policy are required before it can affect output.
  */
 internal class DjScratchPcmRingBuffer(
     val sampleRate: Int,
@@ -67,8 +67,11 @@ internal class DjScratchPcmRingBuffer(
         val source = input.duplicate().order(ByteOrder.LITTLE_ENDIAN)
         source.position(source.position() + skippedFrames * bytesPerFrame)
 
-        val firstStoredPts = presentationTimeUs +
-            skippedFrames.toLong() * 1_000_000L / sampleRate
+        val skippedTimeNumerator = skippedFrames.toLong() * 1_000_000L
+        var framePtsUs = presentationTimeUs + skippedTimeNumerator / sampleRate
+        var ptsRemainder = skippedTimeNumerator % sampleRate
+        val ptsStepWholeUs = 1_000_000L / sampleRate
+        val ptsStepRemainder = 1_000_000L % sampleRate
         val firstAbsoluteFrame = nextWriteFrame + skippedFrames
         for (frame in 0 until framesToCopy) {
             val absoluteFrame = firstAbsoluteFrame + frame
@@ -77,8 +80,13 @@ internal class DjScratchPcmRingBuffer(
             for (channel in 0 until channelCount) {
                 samples[sampleOffset + channel] = source.short
             }
-            mediaTimesUs[slot] = firstStoredPts +
-                frame.toLong() * 1_000_000L / sampleRate
+            mediaTimesUs[slot] = framePtsUs
+            framePtsUs += ptsStepWholeUs
+            ptsRemainder += ptsStepRemainder
+            if (ptsRemainder >= sampleRate) {
+                framePtsUs += ptsRemainder / sampleRate
+                ptsRemainder %= sampleRate.toLong()
+            }
         }
         nextWriteFrame += totalFrames.toLong()
         oldestFrame = maxOf(oldestFrame, (nextWriteFrame - capacityFrames).coerceAtLeast(0L))
