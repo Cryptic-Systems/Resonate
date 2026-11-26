@@ -450,6 +450,21 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackStandbyCue
   Future<void> clearDjDeckLoop({required String deckId}) =>
       _runtime.clearDjDeckLoop(deckId: deckId);
 
+  @override
+  Future<void> setDjScratchControl({
+    required String deckId,
+    required String expectedMediaId,
+    required bool active,
+    required double velocity,
+    required Duration anchor,
+  }) => _runtime.setDjScratchControl(
+        deckId: deckId,
+        expectedMediaId: expectedMediaId,
+        active: active,
+        velocity: velocity,
+        anchor: anchor,
+      );
+
   void _ensureAlive() {
     if (_disposed) throw StateError('Media3ProviderSession is disposed.');
   }
