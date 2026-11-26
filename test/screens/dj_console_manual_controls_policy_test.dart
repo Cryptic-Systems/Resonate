@@ -137,6 +137,54 @@ void main() {
       expect(status(), 'MANUAL MIX READY');
     });
 
+    test('on-air state follows crossfader contribution, not selected deck', () {
+      bool onAir({
+        required String deck,
+        required double fader,
+        bool playing = true,
+        bool loaded = true,
+      }) => DjConsoleManualControlsPolicy.isDeckOnAir(
+        deckId: deck,
+        deckHasMedia: loaded,
+        isPlaying: playing,
+        crossfaderPosition: fader,
+      );
+
+      // 0 is hard-left (A), 1 is hard-right (B), and both decks
+      // contribute at the centre when both are playing.
+      expect(onAir(deck: 'A', fader: 0), isTrue);
+      expect(onAir(deck: 'B', fader: 0), isFalse);
+      expect(onAir(deck: 'A', fader: 1), isFalse);
+      expect(onAir(deck: 'B', fader: 1), isTrue);
+      expect(onAir(deck: 'A', fader: 0.5), isTrue);
+      expect(onAir(deck: 'B', fader: 0.5), isTrue);
+      expect(onAir(deck: 'B', fader: 0, playing: false), isFalse);
+      expect(onAir(deck: 'A', fader: 0, loaded: false), isFalse);
+      expect(onAir(deck: 'C', fader: 0.5), isFalse);
+      expect(onAir(deck: 'B', fader: double.nan), isFalse);
+    });
+
+    test('deck status separates selection, playback and audible routing', () {
+      String label({
+        bool selected = false,
+        bool playing = false,
+        bool onAir = false,
+        bool loaded = true,
+      }) => DjConsoleManualControlsPolicy.deckStatusLabel(
+        selected: selected,
+        isPlaying: playing,
+        onAir: onAir,
+        deckHasMedia: loaded,
+      );
+
+      expect(label(loaded: false), 'EMPTY');
+      expect(label(selected: true), 'SELECTED');
+      expect(label(playing: true), 'PLAYING');
+      expect(label(playing: true, onAir: true), 'ON AIR');
+      expect(label(selected: true, playing: true), 'PLAYING');
+      expect(label(), 'STANDBY');
+    });
+
     test('channel gain requires a loaded deck and an active safe DJ session', () {
       expect(
         DjConsoleManualControlsPolicy.canAdjustChannelGain(
