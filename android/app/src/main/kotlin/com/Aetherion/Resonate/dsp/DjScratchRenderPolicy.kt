@@ -116,8 +116,8 @@ internal class DjScratchRenderPolicy(
                 return false
             }
             val liveOffset = liveStartPosition + frame * bytesPerFrame
-            val alpha = 1.0f -
-                (releaseFramesRemaining - frame).toFloat() / releaseFramesTotal.toFloat()
+            val alpha = (releaseFramesTotal - releaseFramesRemaining + frame).toFloat() /
+                (releaseFramesTotal - 1).coerceAtLeast(1).toFloat()
             for (channel in 0 until ring.channelCount) {
                 val liveSample = source.getShort(liveOffset + channel * Short.SIZE_BYTES).toFloat()
                 val mixed = interpolated[channel] * (1.0f - alpha) + liveSample * alpha
