@@ -364,8 +364,8 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
       backgroundColor: Colors.transparent,
       body: ResonateGlassBackground(
         child: SafeArea(
-          child: Consumer2<MusicProvider, LibraryProvider>(
-        builder: (context, music, library, _) {
+          child: Consumer3<MusicProvider, LibraryProvider, DjModeProvider>(
+        builder: (context, music, library, djMode, _) {
           final state = music.media3ShadowState;
           final deckA = state?.deckA;
           final deckB = state?.deckB;
