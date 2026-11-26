@@ -12,13 +12,9 @@ class DjWaveformViewportRange {
 }
 
 class DjWaveformViewportPolicy {
-  const DjWaveformViewportPolicy({
-    this.chunkDurationMs = 8000,
-    this.pixelsPerSecond = 0.0,
-  });
+  const DjWaveformViewportPolicy();
 
-  final int chunkDurationMs;
-  final double pixelsPerSecond;
+  static const int chunkDurationMs = 8000;
 
   DjWaveformViewportRange? visibleRange({
     required int durationMs,
@@ -29,15 +25,13 @@ class DjWaveformViewportPolicy {
         viewportWidth <= 0 ||
         !viewportWidth.isFinite ||
         !scrollOffset.isFinite ||
-        chunkDurationMs <= 0 ||
-        pixelsPerSecond <= 0) {
+        chunkDurationMs <= 0) {
       return null;
     }
     // The deck overview always represents the complete track at once.
     // All persisted 8-second chunks are fetched and compressed into the
     // available width, just like a DJ overview waveform. Zoomed scrolling
     // waveforms can be added as a separate mode without hiding track sections.
-    const contentWidth = 0.0;
     return DjWaveformViewportRange(
       startMs: 0,
       endMs: durationMs,
