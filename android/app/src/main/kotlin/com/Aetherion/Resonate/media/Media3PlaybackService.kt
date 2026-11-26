@@ -428,7 +428,10 @@ class Media3PlaybackService : MediaSessionService() {
         clearDjDeckLoopInternal(deckId)
         val loop = DjLoopState(expectedMediaId, range)
         djLoops[deckId] = loop
-        armDjLoopBoundary(deckId, player, loop, allowPastEnd = true)
+        if (player.currentPosition < range.startMs || player.currentPosition >= range.endMs) {
+            player.seekTo(range.startMs)
+        }
+        armDjLoopBoundary(deckId, player, loop, allowPastEnd = false)
         return true
     }
 
@@ -458,9 +461,8 @@ class Media3PlaybackService : MediaSessionService() {
         if (player.currentPosition >= loop.range.endMs) {
             if (allowPastEnd && player.isPlaying) {
                 player.seekTo(loop.range.startMs)
-            } else {
-                return
             }
+            return
         }
         loop.boundaryMessage?.cancel()
         val target = object : PlayerMessage.Target {
