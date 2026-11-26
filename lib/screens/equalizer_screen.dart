@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../providers/audio_effects_provider.dart';
 import '../providers/equalizer_provider.dart';
 import '../models/resonate_sound_profile.dart';
 import '../services/audio_effects_bridge.dart';
@@ -426,7 +427,7 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
               ),
               const _HelpStep(
                 n: '3',
-                title: 'Fine-tune',
+                title: 'Understand your meters',
                 body:
                     'The live signal dials show measured input peak, post-EQ peak and short-term RMS. The supporting readouts show native headroom, limiter reduction and applied adaptive gains.',
               ),
@@ -447,8 +448,8 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
               const SizedBox(height: 6),
               Text(
                 'Resonate uses its own DSP Engine to shape audio while you listen. '
-                'A green Live badge means the engine is actively processing. '
-                'If music is paused, the engine may show Standby — that is normal.',
+                'The panel only displays readings supplied by the native engine. '
+                'When playback is idle, it waits rather than showing fabricated zero values.',
                 style: Theme.of(ctx).textTheme.bodyMedium,
               ),
             ],
@@ -654,8 +655,10 @@ class _LiveDspMeterPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final decks = snapshot?.decks.values.toList()
-      ..sort((a, b) => a.deckId.compareTo(b.deckId));
+    final decks = snapshot == null
+        ? <DspDeckMeterReading>[]
+        : snapshot.decks.values.toList()
+          ..sort((a, b) => a.deckId.compareTo(b.deckId));
     return _GlassCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
