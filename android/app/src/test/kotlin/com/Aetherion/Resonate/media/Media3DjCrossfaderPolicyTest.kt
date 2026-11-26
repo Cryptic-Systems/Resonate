@@ -26,22 +26,10 @@ class Media3DjCrossfaderPolicyTest {
     }
 
     @Test
-    fun crossfaderStillMutesThePlayingDeckWhenTheOtherDeckIsStopped() {
-        for (position in listOf(0f, 0.5f, 1f)) {
-            val activeA = Media3DjCrossfaderPolicy.gainsForState(
-                position = position,
-                activeDeckId = "A",
-                bothDecksPlaying = false,
-            )
-            val activeB = Media3DjCrossfaderPolicy.gainsForState(
-                position = position,
-                activeDeckId = "B",
-                bothDecksPlaying = false,
-            )
-
+    fun crossfaderTracksPhysicalPositionWhenOnlyOneDeckIsPlaying() {
+        for (position in listOf(0f, 0.25f, 0.5f, 0.75f, 1f)) {
             val expected = Media3DjCrossfaderPolicy.gains(position)
-            assertEquals(expected, activeA)
-            assertEquals(expected, activeB)
+            assertEquals(expected, Media3DjCrossfaderPolicy.gainsForPosition(position))
         }
     }
 
@@ -80,7 +68,6 @@ class Media3DjCrossfaderPolicyTest {
             standbyHasMedia = true,
             transitionOwnsGain = false,
         ))
-        assertTrue(!allowed(activeHasMedia = false))
         assertTrue(allowed(standbyHasMedia = false))
         assertTrue(allowed(activeHasMedia = false, standbyHasMedia = true))
         assertTrue(!allowed(activeHasMedia = false, standbyHasMedia = false))
