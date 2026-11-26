@@ -20,6 +20,7 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.aetherion.resonate.dsp.DspEngineSinkHook
 import com.aetherion.resonate.dsp.DjScratchTimestampLedger
+import com.aetherion.resonate.dsp.DjScratchControlMailbox
 import com.aetherion.resonate.dsp.DspEngineRegistry
 import com.Aetherion.Resonate.R
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -76,6 +77,11 @@ class Media3PlaybackService : MediaSessionService() {
 
     // Loop state follows physical A/B identity across canonical deck promotion.
     private val djLoops = mutableMapOf<String, DjLoopState>()
+    // Mailboxes follow physical A/B identity across canonical-player promotion.
+    private val djScratchMailboxes = mapOf(
+        "A" to DjScratchControlMailbox(),
+        "B" to DjScratchControlMailbox(),
+    )
     private fun standbyDeckId(): String = if (activeDeckId == "A") "B" else "A"
     // ExoPlayer focus handling is opt-in at the migration boundary. The legacy
     // audio_session owner remains untouched until an explicit provider cutover.
@@ -171,6 +177,7 @@ class Media3PlaybackService : MediaSessionService() {
             !DspEngineRegistry.clearDjDeckFilter("B")) return false
         clearDjDeckLoopInternal("A")
         clearDjDeckLoopInternal("B")
+        djScratchMailboxes.values.forEach { it.clear() }
         djDualDeckMode = false
         djDeckGainA = 1f
         djDeckGainB = 1f
@@ -261,6 +268,7 @@ class Media3PlaybackService : MediaSessionService() {
         ) return false
         val player = playerForPhysicalDeck(deckId) ?: return false
         clearDjDeckLoopInternal(deckId)
+        djScratchMailboxes[deckId]?.clear()
         val peerDeckId = if (deckId == "A") "B" else "A"
         val peer = playerForPhysicalDeck(peerDeckId)
         return try {
@@ -325,6 +333,9 @@ class Media3PlaybackService : MediaSessionService() {
         if (wasCanonical && player.playWhenReady) suppressDjPeerPauseDeckId = deckId
         return try {
             player.pause()
+            djScratchMailboxes[deckId]?.snapshot()?.let { snapshot ->
+                djScratchMailboxes[deckId]?.clear(snapshot.mediaId)
+            }
             DspEngineSinkHook.suspendDeck(deckId)
             if (wasCanonical && peer?.isPlaying == true) {
                 suppressDjPeerPauseDeckId = null
@@ -361,6 +372,7 @@ class Media3PlaybackService : MediaSessionService() {
         ) return false
         val player = playerForPhysicalDeck(deckId) ?: return false
         clearDjDeckLoopInternal(deckId)
+        djScratchMailboxes[deckId]?.clear()
         val wasCanonical = player === activePlayer
         val peerDeckId = if (deckId == "A") "B" else "A"
         val peer = playerForPhysicalDeck(peerDeckId)
@@ -407,6 +419,35 @@ class Media3PlaybackService : MediaSessionService() {
         } catch (_: Exception) {
             false
         }
+    }
+
+    /**
+     * Publish platter velocity to the mailbox owned by one physical deck.
+     * This is intentionally control-only: the processor remains PCM pass-through
+     * until the scratch cursor, renderer and release path are fully integrated.
+     */
+    fun setDjScratchControl(
+        deckId: String,
+        expectedMediaId: String,
+        active: Boolean,
+        velocity: Double,
+        anchorMediaTimeUs: Long,
+    ): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") ||
+            expectedMediaId.isBlank() || crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        val player = playerForPhysicalDeck(deckId) ?: return false
+        if (player.mediaItemCount == 0 ||
+            player.currentMediaItem?.mediaId != expectedMediaId ||
+            !player.isPlaying || anchorMediaTimeUs < 0L
+        ) return false
+        val mailbox = djScratchMailboxes[deckId] ?: return false
+        return mailbox.publish(
+            mediaId = expectedMediaId,
+            active = active,
+            velocity = velocity,
+            anchorMediaTimeUs = anchorMediaTimeUs,
+        )
     }
 
     /** Activate a native A/B loop on the selected physical deck. */
@@ -866,7 +907,13 @@ class Media3PlaybackService : MediaSessionService() {
             ): AudioSink {
                 val timestampLedger = DjScratchTimestampLedger()
                 val delegate = DefaultAudioSink.Builder(context)
-                    .setAudioProcessors(DspEngineSinkHook.createProcessors(deckId, timestampLedger))
+                    .setAudioProcessors(
+                        DspEngineSinkHook.createProcessors(
+                            deckId,
+                            timestampLedger,
+                            djScratchMailboxes[deckId] ?: DjScratchControlMailbox(),
+                        ),
+                    )
                     .setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioTrackPlaybackParams(enableAudioOutputPlaybackParams)
                     .build()
@@ -1689,6 +1736,7 @@ class Media3PlaybackService : MediaSessionService() {
         cancelCrossfade()
         djLoops.values.forEach { it.boundaryMessage?.cancel() }
         djLoops.clear()
+        djScratchMailboxes.values.forEach { it.clear() }
         mainHandler.removeCallbacksAndMessages(null)
         // Clear process-local DJ EQ/filter state even if teardown bypassed the
         // normal mode-exit command. This prevents stale overlays from leaking
