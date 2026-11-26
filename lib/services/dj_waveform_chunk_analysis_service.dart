@@ -51,7 +51,11 @@ class DjWaveformChunkAnalysisService {
       return false;
     }
     final analysis = await _db.getDjAnalysis(song.id);
-    final fingerprint = await _sourceFingerprint(song.filePath, analysis);
+    final fingerprint = await _sourceFingerprint(
+      song.filePath,
+      analysis,
+      durationMs,
+    );
     if (fingerprint == null) return false;
     final identity = DjWaveformIdentity(
       songId: song.id,
@@ -131,7 +135,7 @@ class DjWaveformChunkAnalysisService {
         // Decode a small preroll so codec seek rounding cannot leave a gap at
         // the left edge of a chunk. Persist only when measured PCM covers the
         // entire requested interval; overlap alone is not completion.
-        const seekPrerollMs = 250;
+        const seekPrerollMs = 2000;
         final decodeStart = (requestedStart - seekPrerollMs).clamp(0, durationMs);
         final seconds = (requestedEnd - decodeStart) / 1000.0;
         if (seconds <= 0) continue;
@@ -249,6 +253,7 @@ class DjWaveformChunkAnalysisService {
   Future<String?> _sourceFingerprint(
     String path,
     DjAnalysis? analysis,
+    int durationMs,
   ) async {
     if (!path.startsWith('content://')) {
       try {
@@ -261,9 +266,13 @@ class DjWaveformChunkAnalysisService {
         }
       } catch (_) {}
     }
-    // MediaStore-backed sources use the last indexed byte length. If it is
-    // unavailable, fail closed rather than persist chunks with weak identity.
+    // MediaStore and document-provider URIs are not filesystem paths, and
+    // their indexed size is often unavailable. Keep them analyzable by using
+    // the stable provider URI plus the strongest indexed identity we have.
+    // Duration is the final fallback so content:// tracks are not silently
+    // excluded from waveform generation just because SIZE is not exposed.
     final size = analysis?.fileSizeBytes;
-    return size == null || size <= 0 ? null : 'mediastore:$path:$size';
+    final identity = size != null && size > 0 ? 'size:$size' : 'duration:$durationMs';
+    return 'mediastore:$path:$identity:$durationMs';
   }
 }
