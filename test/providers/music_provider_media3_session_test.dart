@@ -447,6 +447,19 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   }
 
   @override
+  Future<void> setDjDeckEq({
+    required String deckId,
+    required List<double> gainsDb,
+  }) async {
+    calls.add('setDjDeckEq:$deckId:${gainsDb.join(',')}');
+  }
+
+  @override
+  Future<void> clearDjDeckEq({required String deckId}) async {
+    calls.add('clearDjDeckEq:$deckId');
+  }
+
+  @override
   Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0}) async {
     calls.add('loadDjDeck:$deckId');
     final gate = djDeckCommandGate;
@@ -4510,6 +4523,28 @@ void main() {
         await session.audioSessions.close();
         await session.states.close();
         await arbiter.close();
+      }
+    });
+
+    test('clearing a physical deck EQ resets its published control state', () async {
+      final session = _FakePlaybackSession();
+      final music = MusicProvider(media3ProviderSession: session);
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        await music.enableDjDualDeckMode();
+        await music.setDjDeckEq(deckId: 'A', gainsDb: const [4.0, -3.0, 1.5]);
+        expect(music.djDeckEqGains('A'), const [4.0, -3.0, 1.5]);
+
+        await music.clearDjDeckEq(deckId: 'A');
+
+        expect(music.djDeckEqGains('A'), const [0.0, 0.0, 0.0]);
+        expect(session.calls, contains('clearDjDeckEq:A'));
+      } finally {
+        music.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await session.audioSessions.close();
+        await session.states.close();
       }
     });
 
