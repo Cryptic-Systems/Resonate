@@ -298,3 +298,24 @@ The Console now exposes the native Media3-backed physical-deck workflow for A/B 
 The DJ Console now has native per-deck A/B loop-range commands and loop-state readback. The service validates the selected physical deck, exact current media ID, seekability, known duration, minimum loop span and a guard before track end. Boundary callbacks are scheduled against the Media3 player's media clock; loop state is retained by physical A/B identity across canonical promotion and cleaned up on deck/track replacement, mode exit or an explicit seek outside the range. Flutter owns only the A/B point selection and UI; all boundary execution remains native. This is a first loop-control implementation, not a claim of sample-perfect/gapless loop seams: verify local and content-provider media on physical devices before release.
 
 Scratch remains gated. The existing decoded-PCM processor does not receive media timestamps for every input buffer, so a safe scratch design must first solve frame-to-media-clock mapping and bounded bidirectional playback without issuing high-frequency decoder seeks.
+
+### 2026-11-26 — scratch audio-path investigation
+
+The first scratch engineering pass inspected the actual Media3 renderer and DSP sink wiring. No scratch gesture or audio effect has been enabled yet.
+
+**Verified current path**
+- Each physical ExoPlayer is built with a `DefaultAudioSink` whose processor chain is supplied by `DspEngineSinkHook.createProcessors(deckId)`.
+- The current chain contains one `DspEngineAudioProcessor`; it receives decoded PCM through `BaseAudioProcessor.queueInput(ByteBuffer)`, applies the deck's native DSP engine and fails open to the original PCM on processing errors.
+- `AudioProcessor.queueInput` itself carries no presentation timestamp. Decoder output can be queued ahead of audible playback, so reading `Player.currentPosition` from that callback would not provide a valid timestamp for the PCM block being processed.
+- The custom `DefaultAudioSink` construction point is a potential place to introduce a timestamp-aware sink adapter, because the `AudioSink.handleBuffer` contract carries a presentation timestamp. That is only a candidate integration point: it must be verified against Media3 1.5.1's buffering/retry and processor-drain behaviour before relying on a thread-local or side-channel timestamp association.
+
+**Implementation sequence required before enabling platter scratching**
+1. Verify the exact Media3 1.5.1 `AudioSink.handleBuffer` and `DefaultAudioSink` call lifecycle, including partial buffer consumption, processor drain, flush, discontinuity and playback-parameter changes.
+2. Add a per-physical-deck timestamp/frame ledger at the sink boundary. It must account for PCM frame offsets, sample rate, channel count, playback speed, partial writes and processor latency; stale mappings must be invalidated on seek, flush, format change, track replacement and deck retirement.
+3. Add a bounded PCM ring buffer and an audio-thread-owned read cursor. Platter movement may change cursor direction and rate only within buffered, timestamp-mapped media. The render path must remain bounded and allocation-free.
+4. On release, derive a deterministic media position from the actual scratch cursor and hand control back to normal Media3 decoding through one controlled seek/catch-up operation. Do not issue repeated decoder seeks during the gesture.
+5. Insert the scratch stage into the existing per-deck Media3 sink chain without creating a second player, AudioTrack or output path. Preserve the native DSP stage and fail-open behaviour.
+6. Add deterministic tests for ring bounds, cursor direction/rate, timestamp mapping, partial buffer retries, pause/resume, seek/flush invalidation, track replacement, cancellation, physical-deck independence and release/catch-up.
+7. Only expose the platter scratch gesture after CI and physical-device testing verify latency, pitch/rate response, reverse audio, clipping, crackle, underruns and seamless recovery.
+
+**Current status:** architecture investigation only. The existing platter gesture remains bounded one-shot seek; it is not scratch. No simulated scratch, reverse-speed shortcut or repeated-seek implementation has been added. The next code change must be the timestamp/frame ledger and its tests, after the Media3 1.5.1 sink lifecycle is verified.
