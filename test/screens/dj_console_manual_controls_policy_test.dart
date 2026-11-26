@@ -129,9 +129,11 @@ void main() {
       expect(status(dj: false), 'START DJ SESSION');
       expect(status(media3: false), 'MEDIA3 SESSION INACTIVE');
       expect(status(transition: true), 'TRANSITION IN PROGRESS');
-      expect(status(bLoaded: false), 'LOAD BOTH DECKS');
-      expect(status(aPlaying: false), 'FADER PRESET · PLAY BOTH DECKS');
-      expect(status(bPlaying: false), 'FADER PRESET · PLAY BOTH DECKS');
+      expect(status(bLoaded: false), 'ONE DECK PLAYING · FADER ACTIVE');
+      expect(status(aLoaded: false, bLoaded: false), 'LOAD A DECK');
+      expect(status(aPlaying: false, bPlaying: false), 'DECKS STOPPED');
+      expect(status(aPlaying: false), 'ONE DECK PLAYING · FADER ACTIVE');
+      expect(status(bPlaying: false), 'ONE DECK PLAYING · FADER ACTIVE');
       expect(status(), 'MANUAL MIX READY');
     });
 
@@ -183,7 +185,7 @@ void main() {
       );
     });
 
-    test('crossfader can be pre-positioned with two loaded decks in DJ mode', () {
+    test('crossfader remains active with either deck loaded in DJ mode', () {
       expect(
         DjConsoleManualControlsPolicy.canAdjustCrossfader(
           djModeEnabled: true,
@@ -209,7 +211,7 @@ void main() {
           deckAHasMedia: true,
           deckBHasMedia: false,
         ),
-        isFalse,
+        isTrue,
       );
       expect(
         DjConsoleManualControlsPolicy.canAdjustCrossfader(
