@@ -19,14 +19,31 @@ internal class DjScratchTimestampProcessor(
     @Volatile
     private var lastConsumedTimestamp: DjScratchPcmTimestamp? = null
 
+    // One bounded PCM history per physical deck. It is passive capture only;
+    // normal Media3 output remains byte-for-byte pass-through at this stage.
+    private var pcmRing: DjScratchPcmRingBuffer? = null
+
     internal fun lastConsumedTimestampForTest(): DjScratchPcmTimestamp? =
         lastConsumedTimestamp
+
+    internal fun pcmRingForTest(): DjScratchPcmRingBuffer? = pcmRing
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         // Timestamp mapping is valid only for the PCM16 path used by the native
         // DSP processor. Other formats are passed through without metadata.
-        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) {
-            lastConsumedTimestamp = null
+        lastConsumedTimestamp = null
+        pcmRing = if (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT &&
+            inputAudioFormat.sampleRate > 0 && inputAudioFormat.channelCount in 1..2
+        ) {
+            DjScratchPcmRingBuffer(
+                sampleRate = inputAudioFormat.sampleRate,
+                channelCount = inputAudioFormat.channelCount,
+                capacityFrames = (inputAudioFormat.sampleRate * 2L)
+                    .coerceAtMost(DjScratchPcmRingBuffer.MAX_CAPACITY_FRAMES.toLong())
+                    .toInt(),
+            )
+        } else {
+            null
         }
         return inputAudioFormat
     }
@@ -39,6 +56,9 @@ internal class DjScratchTimestampProcessor(
             inputAudioFormat.channelCount,
         )
         lastConsumedTimestamp = timestamp
+        if (timestamp != null) {
+            pcmRing?.append(inputBuffer, timestamp.presentationTimeUs)
+        }
         val output = replaceOutputBuffer(inputBuffer.remaining())
         output.put(inputBuffer)
         output.flip()
@@ -46,10 +66,13 @@ internal class DjScratchTimestampProcessor(
 
     override fun onFlush() {
         lastConsumedTimestamp = null
+        pcmRing?.clear()
     }
 
     override fun onReset() {
         lastConsumedTimestamp = null
+        pcmRing?.clear()
+        pcmRing = null
         ledger.clear()
     }
 }
