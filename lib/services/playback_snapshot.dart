@@ -19,6 +19,9 @@ class PlaybackDeckSnapshot {
     this.speed = 1,
     this.pitch = 1,
     this.audioSessionId,
+    this.loopActive = false,
+    this.loopStart,
+    this.loopEnd,
   });
   final String deckId;
   final String? mediaId;
@@ -38,6 +41,9 @@ class PlaybackDeckSnapshot {
   final double speed;
   final double pitch;
   final int? audioSessionId;
+  final bool loopActive;
+  final Duration? loopStart;
+  final Duration? loopEnd;
 }
 
 /// Engine-neutral playback state consumed by Resonate's provider and UI.
