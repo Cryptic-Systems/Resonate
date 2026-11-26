@@ -1313,6 +1313,11 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                   final segments = measuredSegments.isNotEmpty
                       ? measuredSegments
                       : legacySegments;
+                  final overviewSegments = _viewportPolicy.overviewSegments(
+                    segments: segments,
+                    durationMs: duration.inMilliseconds,
+                    viewportWidth: waveformConstraints.maxWidth,
+                  );
                   final waveformState = DjConsoleWaveformStatus.classify(
                     snapshot: waveformSnapshot,
                     expectedSongId: expectedSongId,
@@ -1355,7 +1360,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                                   painter: _ConsoleWavePainter(
                                     progress: progress,
                                     color: accent,
-                                    segments: segments,
+                                    segments: overviewSegments,
                                     beatGrid: beatGrid,
                                     sections: sections,
                                     durationMs: duration.inMilliseconds,
