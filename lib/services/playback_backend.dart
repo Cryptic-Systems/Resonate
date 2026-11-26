@@ -150,6 +150,13 @@ abstract interface class PlaybackDjDeckBackend {
   });
   Future<void> clearDjDeckEq({required String deckId});
   Future<void> setDjDeckFilter({required String deckId, required int type, required double cutoffHz});
+  Future<void> setDjDeckLoopRange({
+    required String deckId,
+    required Duration start,
+    required Duration end,
+    required String expectedMediaId,
+  });
+  Future<void> clearDjDeckLoop({required String deckId});
 
 }
 
