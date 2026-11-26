@@ -515,13 +515,17 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                   position: target,
                   expectedMediaId: deck!.mediaId!,
                 ),
-                status: !loaded
-                    ? 'EMPTY'
-                    : state?.activeDeckId == id
-                        ? 'ACTIVE'
-                        : isPlaying
-                            ? 'PLAYING'
-                            : 'STANDBY',
+                status: DjConsoleManualControlsPolicy.deckStatusLabel(
+                  selected: state?.activeDeckId == id,
+                  isPlaying: isPlaying,
+                  onAir: DjConsoleManualControlsPolicy.isDeckOnAir(
+                    deckId: id,
+                    deckHasMedia: loaded,
+                    isPlaying: isPlaying,
+                    crossfaderPosition: state?.djCrossfaderPosition ?? 0.5,
+                  ),
+                  deckHasMedia: loaded,
+                ),
                 title: title,
                 artist: artist,
                 progress: progress,
@@ -639,7 +643,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
 
 class _ConsoleDeck extends StatefulWidget {
   const _ConsoleDeck({
-    required this.deck, required this.active, required this.onAir,
+    required this.deck, required this.active, required this.selected, required this.onAir,
     required this.compact,
     required this.isPlaying,
     required this.onEnsureWaveform,
@@ -669,7 +673,7 @@ class _ConsoleDeck extends StatefulWidget {
   });
 
   final String deck, status, title, artist;
-  final bool active, onAir, compact, isPlaying, canPlay, jogSeekEnabled;
+  final bool active, selected, onAir, compact, isPlaying, canPlay, jogSeekEnabled;
   final VoidCallback? onEnsureWaveform;
   final int waveformRevision;
   final Future<void> Function() onPlayPause;
@@ -1794,16 +1798,27 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
                 fontWeight: FontWeight.w900,
               )),
           const SizedBox(height: 3),
+          const SizedBox(height: 4),
+          Text(
+            'TRACK LIBRARY',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: const Color(0xFFD4DEE9),
+              fontSize: widget.compact ? 8 : 9,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.0,
+            ),
+          ),
           Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
             IconButton(
-              tooltip: 'Load Deck A',
+              tooltip: 'Load Deck A from Track Library',
               visualDensity: VisualDensity.compact,
               constraints: const BoxConstraints.tightFor(width: 42, height: 34),
               onPressed: widget.onLoadA,
               icon: const Icon(Icons.library_music_rounded, size: 18),
             ),
             IconButton(
-              tooltip: 'Load Deck B',
+              tooltip: 'Load Deck B from Track Library',
               visualDensity: VisualDensity.compact,
               constraints: const BoxConstraints.tightFor(width: 42, height: 34),
               onPressed: widget.onLoadB,
