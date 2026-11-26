@@ -53,7 +53,7 @@ class DjScratchTimestampLedgerTest {
     @Test
     fun mapsFrameOffsetsToMediaTimeAndRejectsOutOfRangeOffsets() {
         val ledger = DjScratchTimestampLedger()
-        val buffer = ByteBuffer.allocateDirect(400)
+        val buffer = ByteBuffer.allocateDirect(800)
         ledger.record(buffer, 1_000_000L)
         val block = ledger.consume(buffer, 48_000, 2)!!
 
