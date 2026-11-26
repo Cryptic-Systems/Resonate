@@ -87,6 +87,40 @@ class DjScratchPcmRingBufferTest {
     }
 
     @Test
+    fun mapsMediaTimeToFractionalFrameAndRejectsOutsideHistory() {
+        val ring = DjScratchPcmRingBuffer(1_000, 1, 8)
+        ring.append(pcm16(0, 1_000, 2_000, 3_000), 10_000L)
+
+        assertEquals(0.0, ring.framePositionAtMediaTimeUs(10_000L)!!, 0.0)
+        assertEquals(1.5, ring.framePositionAtMediaTimeUs(11_500L)!!, 0.0)
+        assertEquals(3.0, ring.framePositionAtMediaTimeUs(13_000L)!!, 0.0)
+        assertNull(ring.framePositionAtMediaTimeUs(9_999L))
+        assertNull(ring.framePositionAtMediaTimeUs(13_001L))
+    }
+
+    @Test
+    fun rejectsMediaTimeAnchorsThatWouldCrossTimestampGaps() {
+        val ring = DjScratchPcmRingBuffer(1_000, 1, 8)
+        ring.append(pcm16(0, 1_000, 2_000), 10_000L)
+        ring.append(pcm16(3_000, 4_000), 90_000L)
+
+        assertNull(ring.framePositionAtMediaTimeUs(50_000L))
+        assertEquals(3.0, ring.framePositionAtMediaTimeUs(90_000L)!!, 0.0)
+    }
+
+    @Test
+    fun rejectsMediaTimeLookupAfterBackwardTimestampDiscontinuityUntilClear() {
+        val ring = DjScratchPcmRingBuffer(1_000, 1, 8)
+        ring.append(pcm16(0, 1_000), 10_000L)
+        ring.append(pcm16(2_000, 3_000), 5_000L)
+
+        assertNull(ring.framePositionAtMediaTimeUs(10_000L))
+        ring.clear()
+        ring.append(pcm16(4_000, 5_000), 20_000L)
+        assertEquals(1.0, ring.framePositionAtMediaTimeUs(21_000L)!!, 0.0)
+    }
+
+    @Test
     fun rejectsMalformedAndNegativeTimestampBlocks() {
         val ring = DjScratchPcmRingBuffer(48_000, 2, 8)
         assertEquals(0, ring.append(ByteBuffer.allocate(3), 1_000L))
