@@ -72,6 +72,21 @@ class DjScratchPcmRingBufferTest {
     }
 
     @Test
+    fun interpolatesFractionalFramesAndRejectsMediaDiscontinuities() {
+        val ring = DjScratchPcmRingBuffer(1_000, 1, 8)
+        ring.append(pcm16(0, 1_000, 2_000), 10_000L)
+        val sample = FloatArray(1)
+        assertTrue(ring.readInterpolatedFrame(0.5, sample))
+        assertEquals(500.0, sample[0].toDouble(), 0.0)
+        assertTrue(ring.readInterpolatedFrame(2.0, sample))
+        assertEquals(2_000.0, sample[0].toDouble(), 0.0)
+        assertFalse(ring.readInterpolatedFrame(2.5, sample))
+
+        ring.append(pcm16(3_000), 90_000L)
+        assertFalse(ring.readInterpolatedFrame(2.5, sample))
+    }
+
+    @Test
     fun rejectsMalformedAndNegativeTimestampBlocks() {
         val ring = DjScratchPcmRingBuffer(48_000, 2, 8)
         assertEquals(0, ring.append(ByteBuffer.allocate(3), 1_000L))
