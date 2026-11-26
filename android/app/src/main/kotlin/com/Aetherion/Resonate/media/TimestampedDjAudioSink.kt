@@ -1,4 +1,4 @@
-package com.aetherion.resonate.media
+package com.Aetherion.Resonate.media
 
 import androidx.media3.exoplayer.audio.AudioSink
 import com.aetherion.resonate.dsp.DjScratchTimestampLedger
