@@ -922,6 +922,67 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     }
   }
 
+  void _showTrackAnalysis(DjTrackProfile? profile) {
+    if (profile == null || profile.songId != widget.expectedSongId) return;
+    final grid = profile.beatGrid;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF101923),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(children: [
+                Text('${widget.deck} · BEATGRID & TRACK ANALYSIS',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w900, letterSpacing: .8)),
+                const Spacer(),
+                IconButton(
+                  onPressed: () => Navigator.of(sheetContext).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ]),
+              _ConsoleAnalysisStrip(
+                profile: profile,
+                positionMs: widget.position.inMilliseconds,
+                compact: false,
+              ),
+              const SizedBox(height: 12),
+              _analysisDetailRow('BEATGRID CONFIDENCE',
+                '${(grid.confidence * 100).round()}%'),
+              _analysisDetailRow('FIRST BEAT',
+                grid.firstBeatMs == null ? '—' : '${(grid.firstBeatMs! / 1000).toStringAsFixed(2)} s'),
+              _analysisDetailRow('BEATS PER BAR', '${grid.beatsPerBar}'),
+              _analysisDetailRow('DOWNBEAT CONFIDENCE',
+                '${(grid.downbeatConfidence * 100).round()}%'),
+              _analysisDetailRow('BAR / PHRASE CONFIDENCE',
+                '${(grid.barConfidence * 100).round()}% / ${(grid.phraseConfidence * 100).round()}%'),
+              _analysisDetailRow('DETECTED SECTIONS', '${profile.sections.length}'),
+              _analysisDetailRow('WAVEFORM CHUNKS', '${profile.waveformSegments.length} profile segments'),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _analysisDetailRow(String label, String value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 5),
+    child: Row(children: [
+      Expanded(child: Text(label, style: const TextStyle(
+        color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w800))),
+      Text(value, style: const TextStyle(
+        color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+    ]),
+  );
+
   Future<void> _showDeckTools() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -1268,14 +1329,23 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                               chunkCount: measuredSegments.length,
                             ),
                           ),
+                          Positioned(
+                            right: 2,
+                            top: 0,
+                            child: IconButton(
+                              tooltip: 'Beatgrid and track analysis',
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints.tightFor(width: 30, height: 28),
+                              padding: EdgeInsets.zero,
+                              onPressed: verifiedProfile == null
+                                  ? null
+                                  : () => _showTrackAnalysis(verifiedProfile),
+                              icon: const Icon(Icons.analytics_outlined, size: 16),
+                            ),
+                          ),
                         ]),
                       ),
-                      const SizedBox(height: 2),
-                      _ConsoleAnalysisStrip(
-                        profile: verifiedProfile,
-                        positionMs: position.inMilliseconds,
-                        compact: compact,
-                      ),
+
                     ],
                   );
                 },
