@@ -7,10 +7,10 @@ import java.nio.ByteBuffer
 
 /**
  * First processor in the DJ sink chain. It binds each PCM block to the PTS
- * recorded by TimestampedDjAudioSink, then passes the PCM through unchanged.
- *
- * It passively captures timestamped PCM into a bounded per-deck history, then
- * passes the same PCM onward unchanged. It does not alter audible playback.
+ * recorded by TimestampedDjAudioSink, captures bounded per-deck PCM history,
+ * and applies scratch rendering only while a valid deck control is active.
+ * Normal playback remains byte-for-byte pass-through; invalid scratch state
+ * fails closed to the untouched Media3 input block.
  */
 internal class DjScratchTimestampProcessor(
     private val ledger: DjScratchTimestampLedger,
@@ -19,16 +19,14 @@ internal class DjScratchTimestampProcessor(
     @Volatile
     private var lastConsumedTimestamp: DjScratchPcmTimestamp? = null
 
-    // Snapshot observed by the processor thread. It is control telemetry only
-    // until the bounded scratch renderer is integrated; PCM remains pass-through.
+    // Immutable control snapshot sampled once per input block on the audio thread.
     @Volatile
     private var latestControlSnapshot: DjScratchControlMailbox.Snapshot? = null
 
     internal fun latestControlSnapshotForTest(): DjScratchControlMailbox.Snapshot? =
         latestControlSnapshot
 
-    // One bounded PCM history per physical deck. It is passive capture only;
-    // normal Media3 output remains byte-for-byte pass-through at this stage.
+    // One bounded PCM history and render cursor per physical deck.
     private var pcmRing: DjScratchPcmRingBuffer? = null
     private val renderPolicy = DjScratchRenderPolicy()
 
