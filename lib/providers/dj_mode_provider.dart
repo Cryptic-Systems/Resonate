@@ -17,7 +17,10 @@ import 'music_provider.dart';
 class DjModeProvider extends ChangeNotifier {
   DjModeProvider({required this.music, DjAnalysisService? analysis})
       : _analysis = analysis ?? DjAnalysisService() {
-    _idle = DjIdleAnalysisService(analysis: _analysis);
+    _idle = DjIdleAnalysisService(
+      analysis: _analysis,
+      onWaveformUpdated: _onWaveformUpdated,
+    );
     _lastObservedPlaying = music.isPlaying;
     music.addListener(_onMusicChanged);
     ready = _load();
@@ -40,9 +43,11 @@ class DjModeProvider extends ChangeNotifier {
   late final Future<void> ready;
   bool _lastObservedPlaying = false;
   bool _appForeground = false;
+  int _waveformRevision = 0;
   Timer? _eventScanDebounce;
 
   bool get isLoaded => _loaded;
+  int get waveformRevision => _waveformRevision;
   bool get isEnabled => _enabled;
 
   /// Effective gates: always false when master is off (like Intelligence).
@@ -172,6 +177,11 @@ class DjModeProvider extends ChangeNotifier {
     notifyListeners();
     await DjModeSettingsStore.setAnalyzeIdle(true);
     _maybeStartIdleScan();
+  }
+
+  void _onWaveformUpdated() {
+    _waveformRevision++;
+    notifyListeners();
   }
 
   /// Builds the full-track waveform for a deck-loaded song. If playback is
