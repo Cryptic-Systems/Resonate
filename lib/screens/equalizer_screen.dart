@@ -655,9 +655,10 @@ class _LiveDspMeterPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final decks = snapshot == null
+    final currentSnapshot = snapshot;
+    final decks = currentSnapshot == null
         ? <DspDeckMeterReading>[]
-        : snapshot.decks.values.toList()
+        : currentSnapshot.decks.values.toList()
           ..sort((a, b) => a.deckId.compareTo(b.deckId));
     return _GlassCard(
       child: Column(
@@ -701,7 +702,7 @@ class _LiveDspMeterPanel extends StatelessWidget {
               if (i > 0) const SizedBox(height: 12),
               _DeckSignalInstrument(
                 reading: decks[i],
-                isActive: snapshot!.activeDeckId == decks[i].deckId,
+                isActive: currentSnapshot?.activeDeckId == decks[i].deckId,
               ),
             ],
         ],
