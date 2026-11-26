@@ -424,6 +424,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                 onAir: state?.activeDeckId == id,
                 compact: compact,
                 isPlaying: isPlaying,
+                waveformRevision: djMode.waveformRevision,
                 onEnsureWaveform: song == null
                     ? null
                     : () => unawaited(context.read<DjModeProvider>().ensureTrackWaveform(song)),
@@ -603,6 +604,7 @@ class _ConsoleDeck extends StatefulWidget {
     required this.compact,
     required this.isPlaying,
     required this.onEnsureWaveform,
+    required this.waveformRevision,
     required this.canPlay,
     required this.onPlayPause,
     this.onSync,
@@ -630,6 +632,7 @@ class _ConsoleDeck extends StatefulWidget {
   final String deck, status, title, artist;
   final bool active, onAir, compact, isPlaying, canPlay, jogSeekEnabled;
   final VoidCallback? onEnsureWaveform;
+  final int waveformRevision;
   final Future<void> Function() onPlayPause;
   final VoidCallback? onSync;
   final List<Duration?> hotCuePositions;
@@ -725,6 +728,14 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             oldWidget.waveformSourceKey != widget.waveformSourceKey ||
             oldWidget.duration != widget.duration)) {
       _clearJog();
+    }
+    if (oldWidget.waveformRevision != widget.waveformRevision) {
+      _requestedStartMs = null;
+      _requestedEndMs = null;
+      _waveformFuture = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _requestVisibleWaveform();
+      });
     }
     if (oldWidget.expectedSongId != widget.expectedSongId) {
       _platterRotation.value = 0;
