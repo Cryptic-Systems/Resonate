@@ -321,3 +321,16 @@ The first scratch engineering pass inspected the actual Media3 renderer and DSP 
 **Current status:** architecture investigation only. The existing platter gesture remains bounded one-shot seek; it is not scratch. No simulated scratch, reverse-speed shortcut or repeated-seek implementation has been added. The next code change must be the timestamp/frame ledger and its tests, after the Media3 1.5.1 sink lifecycle is verified.
 
 **Media3 1.5.1 source verification:** the pinned `AudioSink.handleBuffer(ByteBuffer, presentationTimeUs, encodedAccessUnitCount)` API does expose the input buffer's media presentation timestamp. In the pinned `DefaultAudioSink`, a new input buffer is accepted once, then `processBuffers(presentationTimeUs)` drains any prior processor output before queueing the current input into the `AudioProcessingPipeline`. The same input buffer is retained across back-pressure retries; `handleDiscontinuity()` marks media-time resynchronization, and `flush()` resets sink state. This confirms a sink-boundary timestamp/frame ledger is technically plausible, but not that a simple thread-local timestamp is sufficient: the implementation must prove one-to-one association between each processor input block and its originating timestamp, including processor output buffering and drain calls. The verified source is the exact Media3 1.5.1 `AudioSink.java` and `DefaultAudioSink.java` used by the Android dependency.
+
+### 2026-11-26 — scratch timestamp/frame-ledger foundation
+
+Implemented the first runtime foundation on the existing Media3 output path:
+
+- Each physical deck's `DefaultAudioSink` is now wrapped by `TimestampedDjAudioSink`, which records the media PTS against the exact `ByteBuffer` identity passed to `AudioSink.handleBuffer`.
+- The wrapper delegates all other `AudioSink` operations unchanged. `flush()` and `reset()` invalidate pending timestamp associations; ordinary discontinuity notifications do not discard earlier queued-buffer mappings.
+- A first-in-chain `DjScratchTimestampProcessor` consumes the matching timestamp when Media3's processor pipeline queues that exact PCM input buffer, then passes the PCM through unchanged before the existing native DSP processor.
+- The ledger derives frame count from PCM16 channel layout and maps frame offsets to media time using the configured sample rate. It rejects unsupported channel layouts, invalid rates and non-frame-aligned buffers.
+- The identity map is capped at 64 outstanding entries to bound memory if an input path bypasses processor consumption.
+- Unit tests cover identity vs content equality, repeated handleBuffer retries, one-time consumption, frame/time mapping, malformed PCM and invalidation.
+
+**Scope and limits:** this is a timestamp/frame association layer, not the scratch engine. It does not alter audio, change playback speed, reverse samples, or expose a scratch gesture. The probe retains the most recently consumed block metadata only; no PCM ring buffer/cursor exists yet. Before building the ring, validate the adapter against the real Media3 sink lifecycle and add processor-level tests for format changes, partial writes and flush/drain ordering. Device latency and audible behaviour remain unverified.
