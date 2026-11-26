@@ -154,6 +154,7 @@ class IntelligenceMixController extends ChangeNotifier {
           eligibleTrackCount: coveragePlan.eligibleTrackCount,
           excludedSongIds: coveragePlan.excludedSongIds,
           reason: coveragePlan.reason ?? finalPlan.reason,
+          exclusionCounts: coveragePlan.exclusionCounts,
         );
         _lastQueuePlan = plan;
         mix = IntelligenceMix(
@@ -264,6 +265,7 @@ class IntelligenceMixController extends ChangeNotifier {
           eligibleTrackCount: coverage.eligibleTrackCount,
           excludedSongIds: coverage.excludedSongIds,
           reason: coverage.reason ?? finalPlan.reason,
+          exclusionCounts: coverage.exclusionCounts,
         );
         mix = IntelligenceMix(
           id: generated.id,
