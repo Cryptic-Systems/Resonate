@@ -121,6 +121,10 @@ abstract interface class PlaybackDjDeckSession {
     required String expectedMediaId,
   });
   Future<void> clearDjDeckLoop({required String deckId});
+}
+
+/// Optional physical-deck scratch control capability.
+abstract interface class PlaybackDjScratchSession {
   Future<void> setDjScratchControl({
     required String deckId,
     required String expectedMediaId,
