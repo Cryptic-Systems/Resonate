@@ -396,6 +396,7 @@ class DjAnalysisService {
       );
     }
 
+    if (isCancelled?.call() ?? false) return null;
     final profile = _profileAnalyzer.analyze(
       songId: song.id,
       durationMs: durationMs,
@@ -403,7 +404,10 @@ class DjAnalysisService {
       maxSafeBassDb: maxSafeBassDb,
       analysisVersion: DjAnalysis.currentVersion,
     );
-    final psychicAnalysis = await PsychicTrackAnalysisBridge.analyze(song, windows);
+    if (isCancelled?.call() ?? false) return null;
+    final psychicAnalysis =
+        await PsychicTrackAnalysisBridge.analyze(song, windows);
+    if (isCancelled?.call() ?? false) return null;
     final enrichedProfile = psychicAnalysis == null
         ? profile
         : profile.copyWith(psychicAnalysis: psychicAnalysis);
