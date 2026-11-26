@@ -281,11 +281,16 @@ class Media3PlaybackService : MediaSessionService() {
             isCommunicationActive() || crossfadeStatus in setOf("starting", "fading")
         ) return false
         val target = playerForPhysicalDeck(deckId) ?: return false
-        if (target.mediaItemCount == 0 || target.playbackState != Player.STATE_READY) return false
+        if (target.mediaItemCount == 0 ||
+            !Media3DeckTransportPolicy.canStart(target.playbackState)
+        ) return false
         if (!promoteDjCanonicalDeck(deckId) || !setAudioFocusHandling(true)) return false
         val player = activePlayer
         DspEngineSinkHook.activateDeck(deckId)
         return try {
+            if (Media3DeckTransportPolicy.shouldRestartFromBeginning(player.playbackState)) {
+                player.seekTo(0L)
+            }
             player.play()
             true
         } catch (_: Exception) {
