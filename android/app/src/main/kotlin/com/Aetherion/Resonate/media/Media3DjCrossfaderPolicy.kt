@@ -26,8 +26,7 @@ internal object Media3DjCrossfaderPolicy {
         position.isFinite() &&
             position in 0f..1f &&
             djDualDeckMode &&
-            activeHasMedia &&
-            standbyHasMedia &&
+            (activeHasMedia || standbyHasMedia) &&
             !transitionOwnsGain
 
     /**
