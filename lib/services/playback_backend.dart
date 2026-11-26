@@ -157,6 +157,11 @@ abstract interface class PlaybackDjDeckBackend {
     required String expectedMediaId,
   });
   Future<void> clearDjDeckLoop({required String deckId});
+
+}
+
+/// Optional low-latency control channel for native DJ scratch.
+abstract interface class PlaybackDjScratchBackend {
   Future<void> setDjScratchControl({
     required String deckId,
     required String expectedMediaId,
@@ -164,7 +169,6 @@ abstract interface class PlaybackDjDeckBackend {
     required double velocity,
     required Duration anchor,
   });
-
 }
 
 /// Repeat behavior shared by backend implementations.
