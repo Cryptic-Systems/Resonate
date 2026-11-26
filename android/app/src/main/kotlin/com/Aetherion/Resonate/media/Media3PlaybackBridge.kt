@@ -720,6 +720,34 @@ class Media3PlaybackBridge(
                     if (accepted) result.success(true)
                     else result.error("DJ_DECK_SEEK_REJECTED", "The deck identity changed or the requested position is invalid.", null)
                 }
+                "setDjScratchControl" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val expectedMediaId = call.argument<String>("expectedMediaId")
+                    val active = call.argument<Boolean>("active")
+                    val velocity = call.argument<Number>("velocity")?.toDouble()
+                    val anchorMediaTimeUs = call.argument<Number>("anchorMediaTimeUs")?.toLong()
+                    if (deckId !in setOf("A", "B") || expectedMediaId.isNullOrBlank() ||
+                        active == null || velocity == null || !velocity.isFinite() ||
+                        kotlin.math.abs(velocity) > 4.0 || anchorMediaTimeUs == null ||
+                        anchorMediaTimeUs < 0L
+                    ) {
+                        result.error(
+                            "INVALID_DJ_SCRATCH_CONTROL",
+                            "A physical deck, media identity, finite velocity within ±4x and nonnegative anchor are required.",
+                            null,
+                        )
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDjScratchControl(
+                        deckId!!, expectedMediaId, active, velocity, anchorMediaTimeUs,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "DJ_SCRATCH_CONTROL_REJECTED",
+                        "The physical deck is not playing the expected track or DJ scratch control is unavailable.",
+                        null,
+                    )
+                }
                 "setDjDeckLoopRange" -> {
                     val deckId = call.argument<String>("deckId")
                     val startMs = call.argument<Number>("startMs")?.toLong()
