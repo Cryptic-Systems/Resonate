@@ -1296,9 +1296,23 @@ class Media3PlaybackService : MediaSessionService() {
         ) return false
         pendingCrossfadeDurationMs = null
         cancelCrossfade(clearOverlays = false, resetStandbySpeed = false)
-        // A crossfade owns both outputs; retire any in-flight platter motion
-        // before either deck enters the transition ramp.
-        djScratchMailboxes.values.forEach { it.clear() }
+        // A crossfade owns both outputs; release active platters through
+        // their short native fade before either deck enters the transition.
+        for (deckId in listOf("A", "B")) {
+            val player = playerForPhysicalDeck(deckId)
+            val mediaId = player?.currentMediaItem?.mediaId
+            val mailbox = djScratchMailboxes[deckId] ?: continue
+            if (player != null && !mediaId.isNullOrBlank()) {
+                mailbox.publish(
+                    mediaId = mediaId,
+                    active = false,
+                    velocity = 1.0,
+                    anchorMediaTimeUs = player.currentPosition.coerceAtLeast(0L) * 1_000L,
+                )
+            } else {
+                mailbox.clear()
+            }
+        }
         val generation = ++fadeGeneration
         startingCrossfadeDurationMs = durationMs
         crossfadeStatus = "starting"
