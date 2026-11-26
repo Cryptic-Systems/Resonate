@@ -459,7 +459,13 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
             return _ConsoleDeck(
                 deck: 'DECK $id',
                 active: loaded,
-                onAir: state?.activeDeckId == id,
+                selected: state?.activeDeckId == id,
+                onAir: DjConsoleManualControlsPolicy.isDeckOnAir(
+                  deckId: id,
+                  deckHasMedia: loaded,
+                  isPlaying: isPlaying,
+                  crossfaderPosition: state?.djCrossfaderPosition ?? 0.5,
+                ),
                 compact: compact,
                 isPlaying: isPlaying,
                 waveformRevision: djMode.waveformRevision,
