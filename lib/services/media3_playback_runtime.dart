@@ -859,6 +859,31 @@ class Media3PlaybackRuntime {
         );
       });
 
+  Future<void> setDjScratchControl({
+    required String deckId,
+    required String expectedMediaId,
+    required bool active,
+    required double velocity,
+    required Duration anchor,
+  }) => _run(() async {
+        if ((deckId != 'A' && deckId != 'B') ||
+            expectedMediaId.trim().isEmpty || !velocity.isFinite ||
+            velocity.abs() > 4.0 || anchor.isNegative) {
+          throw ArgumentError('Scratch control requires a physical deck, track identity, finite velocity within ±4x and a nonnegative anchor.');
+        }
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support native DJ scratch control.');
+        }
+        await (backend as PlaybackDjDeckBackend).setDjScratchControl(
+          deckId: deckId,
+          expectedMediaId: expectedMediaId,
+          active: active,
+          velocity: velocity,
+          anchor: anchor,
+        );
+      });
+
   Future<void> clearDjDeckLoop({required String deckId}) => _run(() async {
         if (deckId != 'A' && deckId != 'B') {
           throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
