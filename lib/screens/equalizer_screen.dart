@@ -694,7 +694,7 @@ class _LiveDspMeterPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          if (decks == null || decks.isEmpty)
+          if (decks.isEmpty)
             const _NoLiveDspSignal()
           else
             for (var i = 0; i < decks.length; i++) ...[
