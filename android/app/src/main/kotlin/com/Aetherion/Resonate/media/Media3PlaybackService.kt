@@ -402,9 +402,6 @@ class Media3PlaybackService : MediaSessionService() {
                 loop.boundaryMessage = null
             }
             player.seekTo(positionMs)
-            if (loop != null && djLoops[deckId] === loop) {
-                mainHandler.post { armDjLoopBoundary(deckId, player, loop, allowPastEnd = true) }
-            }
             true
         } catch (_: Exception) {
             false
@@ -482,12 +479,9 @@ class Media3PlaybackService : MediaSessionService() {
                         endMs = loop.range.endMs,
                     )
                 ) {
+                    // The player's seek-discontinuity callback re-arms the
+                    // next native boundary after the playback thread accepts it.
                     player.seekTo(loop.range.startMs)
-                    // Queue the next boundary after the seek on the same
-                    // application looper; this avoids a stale-end re-trigger.
-                    mainHandler.post {
-                        armDjLoopBoundary(deckId, player, loop, allowPastEnd = false)
-                    }
                 } else {
                     armDjLoopBoundary(deckId, player, loop, allowPastEnd = true)
                 }
@@ -914,6 +908,25 @@ class Media3PlaybackService : MediaSessionService() {
                 } ?: return
                 val loop = djLoops[physicalDeckId] ?: return
                 armDjLoopBoundary(physicalDeckId, deck, loop, allowPastEnd = true)
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                if (reason != Player.DISCONTINUITY_REASON_SEEK || !djDualDeckMode) return
+                val physicalDeckId = when {
+                    deck === activePlayer -> activeDeckId
+                    deck === standbyPlayer -> standbyDeckId()
+                    else -> null
+                } ?: return
+                val loop = djLoops[physicalDeckId] ?: return
+                if (playerForPhysicalDeck(physicalDeckId) === deck &&
+                    deck.currentMediaItem?.mediaId == loop.expectedMediaId
+                ) {
+                    armDjLoopBoundary(physicalDeckId, deck, loop, allowPastEnd = false)
+                }
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
