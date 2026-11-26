@@ -81,6 +81,7 @@ internal class DjScratchTimestampProcessor(
 
     override fun onReset() {
         lastConsumedTimestamp = null
+        latestControlSnapshot = null
         pcmRing?.clear()
         pcmRing = null
         ledger.clear()
