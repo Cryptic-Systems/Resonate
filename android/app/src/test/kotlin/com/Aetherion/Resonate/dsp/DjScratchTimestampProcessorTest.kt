@@ -86,6 +86,32 @@ class DjScratchTimestampProcessorTest {
     }
 
     @Test
+    fun activeDeckControlRendersAnchoredPcmInsideMedia3Processor() {
+        val ledger = DjScratchTimestampLedger()
+        val mailbox = DjScratchControlMailbox()
+        val processor = DjScratchTimestampProcessor(ledger, mailbox)
+        processor.configure(AudioProcessor.AudioFormat(1_000, 1, C.ENCODING_PCM_16BIT))
+        processor.flush()
+        val input = ByteBuffer.allocateDirect(8).order(ByteOrder.LITTLE_ENDIAN).apply {
+            putShort(0)
+            putShort(1_000)
+            putShort(2_000)
+            putShort(3_000)
+            flip()
+        }
+        ledger.record(input, 10_000L)
+        assertTrue(mailbox.publish("track-1", true, 1.0, 11_000L))
+
+        processor.queueInput(input)
+
+        val rendered = processor.output.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+        assertEquals(1_000, rendered.short.toInt())
+        assertEquals(2_000, rendered.short.toInt())
+        assertEquals(3_000, rendered.short.toInt())
+        assertEquals(3, processor.pcmRingForTest()!!.availableFrames)
+    }
+
+    @Test
     fun unsupportedPcmLayoutDoesNotAllocateScratchHistory() {
         val processor = DjScratchTimestampProcessor(DjScratchTimestampLedger())
         processor.configure(AudioProcessor.AudioFormat(48_000, 6, C.ENCODING_PCM_16BIT))
