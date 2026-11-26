@@ -424,7 +424,10 @@ extension MusicProviderDjHandoff on MusicProvider {
     return _runDjDeckCommand<void>(
       'eq_reset_$deckId',
       (session) => session.clearDjDeckEq(deckId: deckId),
-    );
+    ).then((_) {
+      _djDeckEqGains[deckId] = const [0.0, 0.0, 0.0];
+      notifyListeners();
+    });
   }
 
   Future<void> setDjDeckFilter({required String deckId, required int type, required double cutoffHz}) {
