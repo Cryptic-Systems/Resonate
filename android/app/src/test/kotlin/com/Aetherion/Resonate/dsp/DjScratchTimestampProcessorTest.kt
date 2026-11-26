@@ -100,11 +100,12 @@ class DjScratchTimestampProcessorTest {
             flip()
         }
         ledger.record(input, 10_000L)
-        assertTrue(mailbox.publish("track-1", true, 1.0, 11_000L))
+        assertTrue(mailbox.publish("track-1", true, 1.0, 10_000L))
 
         processor.queueInput(input)
 
         val rendered = processor.output.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+        assertEquals(0, rendered.short.toInt())
         assertEquals(1_000, rendered.short.toInt())
         assertEquals(2_000, rendered.short.toInt())
         assertEquals(3_000, rendered.short.toInt())
