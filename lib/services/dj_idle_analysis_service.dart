@@ -42,6 +42,7 @@ class DjIdleAnalysisService {
   final Map<String, DateTime> _lastProfileAttemptAt = <String, DateTime>{};
   final Map<String, Song> _priorityWaveformTracks = <String, Song>{};
   final Map<String, Song> _priorityAnalysisTracks = <String, Song>{};
+  final Map<String, DateTime> _lastPriorityAttemptAt = <String, DateTime>{};
   bool _priorityWaveformDrainRunning = false;
   bool _priorityAnalysisDrainRunning = false;
   bool Function()? _priorityAnalysisAllowed;
@@ -153,6 +154,11 @@ class DjIdleAnalysisService {
       for (final entry in _priorityAnalysisTracks.entries.toList()) {
         if (!isSafeToAnalyze()) break;
         await DjAnalysisForegroundService.heartbeat();
+        final lastAttempt = _lastPriorityAttemptAt[entry.key];
+        if (lastAttempt != null &&
+            DateTime.now().difference(lastAttempt) < _retryCooldown) {
+          continue;
+        }
         final existing = await _analysis.getAnalysis(entry.key);
         final profile = await _analysis.getProfile(entry.key);
         if (!isSafeToAnalyze()) break;
@@ -162,8 +168,9 @@ class DjIdleAnalysisService {
             force: true,
             shouldContinue: isSafeToAnalyze,
           );
+          if (!isSafeToAnalyze()) break;
+          _lastPriorityAttemptAt[entry.key] = DateTime.now();
         }
-        if (!isSafeToAnalyze()) break;
         final updated = await _analysis.getAnalysis(entry.key);
         final completedProfile = await _analysis.getProfile(entry.key);
         if (updated != null && !updated.isStale && completedProfile != null) {
@@ -180,9 +187,9 @@ class DjIdleAnalysisService {
             songId: entry.key,
             outcome: 'deferred_or_unsupported',
           );
-          // A supported decode may be temporarily interrupted by a transition.
-          // Keep it queued for the next safe opportunity, but avoid spinning.
-          break;
+          // Keep unsupported/temporarily unavailable files queued for a later
+          // retry, but let the other loaded deck proceed in this pass.
+          continue;
         }
         // Never run a second deck decode back-to-back without yielding.
         await Future<void>.delayed(const Duration(milliseconds: 300));
