@@ -509,6 +509,21 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   }
 
   @override
+  Future<void> setDjDeckLoopRange({
+    required String deckId,
+    required Duration start,
+    required Duration end,
+    required String expectedMediaId,
+  }) async {
+    calls.add('setDjDeckLoopRange:$deckId:${start.inMilliseconds}:${end.inMilliseconds}:$expectedMediaId');
+  }
+
+  @override
+  Future<void> clearDjDeckLoop({required String deckId}) async {
+    calls.add('clearDjDeckLoop:$deckId');
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -4523,6 +4538,61 @@ void main() {
         await session.audioSessions.close();
         await session.states.close();
         await arbiter.close();
+      }
+    });
+
+    test('routes deck loop ranges and clear through the DJ session authority', () async {
+      final session = _FakePlaybackSession();
+      final music = MusicProvider(media3ProviderSession: session);
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        await music.enableDjDualDeckMode();
+        await music.setDjDeckLoopRange(
+          deckId: 'B',
+          start: const Duration(seconds: 12),
+          end: const Duration(seconds: 16),
+          expectedMediaId: 'loop-track-b',
+        );
+        await music.clearDjDeckLoop(deckId: 'B');
+
+        expect(
+          session.calls,
+          contains('setDjDeckLoopRange:B:12000:16000:loop-track-b'),
+        );
+        expect(session.calls, contains('clearDjDeckLoop:B'));
+      } finally {
+        music.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('rejects invalid loop range before sending a deck command', () async {
+      final session = _FakePlaybackSession();
+      final music = MusicProvider(media3ProviderSession: session);
+      try {
+        await music.prepareMedia3ProviderSession();
+        await music.enableDjDualDeckMode();
+        await expectLater(
+          music.setDjDeckLoopRange(
+            deckId: 'A',
+            start: const Duration(seconds: 4),
+            end: const Duration(seconds: 4),
+            expectedMediaId: 'loop-track-a',
+          ),
+          throwsArgumentError,
+        );
+        expect(
+          session.calls.where((call) => call.startsWith('setDjDeckLoopRange:')),
+          isEmpty,
+        );
+      } finally {
+        music.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await session.audioSessions.close();
+        await session.states.close();
       }
     });
 
