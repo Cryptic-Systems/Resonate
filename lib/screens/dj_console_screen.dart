@@ -1164,6 +1164,124 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(color: Colors.white60)),
+          const SizedBox(height: 3),
+          FutureBuilder<DjTrackProfile?>(
+            future: profileFuture,
+            builder: (context, profileSnapshot) {
+              final profile = profileSnapshot.data;
+              final verifiedProfile = profile != null &&
+                      expectedSongId != null &&
+                      profile.songId == expectedSongId
+                  ? profile
+                  : null;
+              final legacySegments = verifiedProfile?.waveformSegments ??
+                  const <DjWaveformSegment>[];
+              final beatGrid = verifiedProfile?.beatGrid;
+              final sections = verifiedProfile?.sections ?? const <DjSection>[];
+              return LayoutBuilder(
+                builder: (context, waveformConstraints) {
+                  _viewportWidth = waveformConstraints.maxWidth;
+                  if (_requestedStartMs == null) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      if (_resetWaveformScrollPending) {
+                        _resetWaveformScrollPending = false;
+                        if (_waveformScroll.hasClients &&
+                            _waveformScroll.offset != 0) {
+                          _waveformScroll.jumpTo(0);
+                        }
+                      }
+                      _requestVisibleWaveform();
+                    });
+                  }
+                  final contentWidth = _viewportPolicy.visibleRange(
+                    durationMs: duration.inMilliseconds,
+                    viewportWidth: waveformConstraints.maxWidth,
+                    scrollOffset: 0,
+                  )?.contentWidth ?? waveformConstraints.maxWidth;
+                  return FutureBuilder<List<DjWaveformChunk>>(
+                key: ObjectKey(waveformFuture),
+                future: waveformFuture,
+                builder: (context, waveformSnapshot) {
+                  final chunks = (waveformSnapshot.data ?? const <DjWaveformChunk>[])
+                      .where((chunk) =>
+                          chunk.songId == expectedSongId &&
+                          chunk.durationMs == duration.inMilliseconds)
+                      .toList(growable: false);
+                  final measuredSegments = chunks
+                      .map((chunk) => DjWaveformSegment(
+                            startMs: chunk.actualStartMs,
+                            endMs: chunk.actualEndMs,
+                            peaks: chunk.peaks,
+                          ))
+                      .toList(growable: false);
+                  final segments = measuredSegments.isNotEmpty
+                      ? measuredSegments
+                      : legacySegments;
+                  final waveformState = DjConsoleWaveformStatus.classify(
+                    snapshot: waveformSnapshot,
+                    expectedSongId: expectedSongId,
+                    durationMs: duration.inMilliseconds,
+                    visibleStartMs: _requestedStartMs ?? 0,
+                    visibleEndMs: _requestedEndMs ?? duration.inMilliseconds,
+                    legacyAvailable: legacySegments.isNotEmpty,
+                    profileLoading: profileSnapshot.connectionState == ConnectionState.waiting,
+                    profileIdentityMismatch: profile != null && verifiedProfile == null,
+                  );
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        height: compact ? 22 : 30,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF080E15),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Stack(fit: StackFit.expand, children: [
+                          SingleChildScrollView(
+                            controller: _waveformScroll,
+                            scrollDirection: Axis.horizontal,
+                            child: SizedBox(
+                              width: contentWidth,
+                              height: compact ? 22 : 30,
+                              child: RepaintBoundary(
+                                child: CustomPaint(
+                                painter: _ConsoleWavePainter(
+                                  progress: progress,
+                                  color: accent,
+                                  segments: segments,
+                                  beatGrid: beatGrid,
+                                  sections: sections,
+                                  durationMs: duration.inMilliseconds,
+                                ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 7,
+                            top: 4,
+                            child: DjConsoleWaveformStatus(
+                              state: waveformState,
+                              chunkCount: measuredSegments.length,
+                            ),
+                          ),
+                        ]),
+                      ),
+                      const SizedBox(height: 2),
+                      _ConsoleAnalysisStrip(
+                        profile: verifiedProfile,
+                        positionMs: position.inMilliseconds,
+                        compact: compact,
+                      ),
+                    ],
+                  );
+                },
+              );
+                },
+              );
+            },
+          ),
           Expanded(
             child: LayoutBuilder(
               builder: (context, stageConstraints) {
@@ -1308,124 +1426,6 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                 fontSize: 9, fontWeight: FontWeight.w900)),
             )),
           ]),
-          const SizedBox(height: 3),
-          FutureBuilder<DjTrackProfile?>(
-            future: profileFuture,
-            builder: (context, profileSnapshot) {
-              final profile = profileSnapshot.data;
-              final verifiedProfile = profile != null &&
-                      expectedSongId != null &&
-                      profile.songId == expectedSongId
-                  ? profile
-                  : null;
-              final legacySegments = verifiedProfile?.waveformSegments ??
-                  const <DjWaveformSegment>[];
-              final beatGrid = verifiedProfile?.beatGrid;
-              final sections = verifiedProfile?.sections ?? const <DjSection>[];
-              return LayoutBuilder(
-                builder: (context, waveformConstraints) {
-                  _viewportWidth = waveformConstraints.maxWidth;
-                  if (_requestedStartMs == null) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (!mounted) return;
-                      if (_resetWaveformScrollPending) {
-                        _resetWaveformScrollPending = false;
-                        if (_waveformScroll.hasClients &&
-                            _waveformScroll.offset != 0) {
-                          _waveformScroll.jumpTo(0);
-                        }
-                      }
-                      _requestVisibleWaveform();
-                    });
-                  }
-                  final contentWidth = _viewportPolicy.visibleRange(
-                    durationMs: duration.inMilliseconds,
-                    viewportWidth: waveformConstraints.maxWidth,
-                    scrollOffset: 0,
-                  )?.contentWidth ?? waveformConstraints.maxWidth;
-                  return FutureBuilder<List<DjWaveformChunk>>(
-                key: ObjectKey(waveformFuture),
-                future: waveformFuture,
-                builder: (context, waveformSnapshot) {
-                  final chunks = (waveformSnapshot.data ?? const <DjWaveformChunk>[])
-                      .where((chunk) =>
-                          chunk.songId == expectedSongId &&
-                          chunk.durationMs == duration.inMilliseconds)
-                      .toList(growable: false);
-                  final measuredSegments = chunks
-                      .map((chunk) => DjWaveformSegment(
-                            startMs: chunk.actualStartMs,
-                            endMs: chunk.actualEndMs,
-                            peaks: chunk.peaks,
-                          ))
-                      .toList(growable: false);
-                  final segments = measuredSegments.isNotEmpty
-                      ? measuredSegments
-                      : legacySegments;
-                  final waveformState = DjConsoleWaveformStatus.classify(
-                    snapshot: waveformSnapshot,
-                    expectedSongId: expectedSongId,
-                    durationMs: duration.inMilliseconds,
-                    visibleStartMs: _requestedStartMs ?? 0,
-                    visibleEndMs: _requestedEndMs ?? duration.inMilliseconds,
-                    legacyAvailable: legacySegments.isNotEmpty,
-                    profileLoading: profileSnapshot.connectionState == ConnectionState.waiting,
-                    profileIdentityMismatch: profile != null && verifiedProfile == null,
-                  );
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Container(
-                        height: compact ? 22 : 30,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF080E15),
-                          borderRadius: BorderRadius.circular(9),
-                        ),
-                        child: Stack(fit: StackFit.expand, children: [
-                          SingleChildScrollView(
-                            controller: _waveformScroll,
-                            scrollDirection: Axis.horizontal,
-                            child: SizedBox(
-                              width: contentWidth,
-                              height: compact ? 22 : 30,
-                              child: RepaintBoundary(
-                                child: CustomPaint(
-                                painter: _ConsoleWavePainter(
-                                  progress: progress,
-                                  color: accent,
-                                  segments: segments,
-                                  beatGrid: beatGrid,
-                                  sections: sections,
-                                  durationMs: duration.inMilliseconds,
-                                ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            left: 7,
-                            top: 4,
-                            child: DjConsoleWaveformStatus(
-                              state: waveformState,
-                              chunkCount: measuredSegments.length,
-                            ),
-                          ),
-                        ]),
-                      ),
-                      const SizedBox(height: 2),
-                      _ConsoleAnalysisStrip(
-                        profile: verifiedProfile,
-                        positionMs: position.inMilliseconds,
-                        compact: compact,
-                      ),
-                    ],
-                  );
-                },
-              );
-                },
-              );
-            },
-          ),
           const SizedBox(height: 2),
           Row(children: [
             Text(_time(position), style: theme.textTheme.labelSmall?.copyWith(
