@@ -1719,10 +1719,13 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                     switch (action) {
                       case 'in':
                         unawaited(_setLoopIn());
+                        break;
                       case 'out':
                         unawaited(_setLoopOut());
+                        break;
                       case 'exit':
                         unawaited(_exitLoop());
+                        break;
                     }
                   },
                   itemBuilder: (context) => [
