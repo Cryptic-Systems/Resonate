@@ -64,6 +64,12 @@ class DjIdleAnalysisService {
       return 0;
     }
     _priorityWaveformTracks[song.id] = song;
+    // Only the currently relevant deck tracks and a small preload tail should
+    // survive an extended playback session; never let this queue grow with
+    // every track the operator auditions.
+    while (_priorityWaveformTracks.length > 4) {
+      _priorityWaveformTracks.remove(_priorityWaveformTracks.keys.first);
+    }
     if (_running || _priorityWaveformDrainRunning || !isStillIdle()) return 0;
     return _drainPriorityWaveforms(isStillIdle: isStillIdle);
   }
