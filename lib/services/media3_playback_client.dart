@@ -782,6 +782,31 @@ class Media3PlaybackClient {
     });
   }
 
+  Future<void> setDjDeckLoopRange({
+    required String deckId,
+    required Duration start,
+    required Duration end,
+    required String expectedMediaId,
+  }) async {
+    _validatePhysicalDeck(deckId);
+    if (start.isNegative || end <= start ||
+        end - start < const Duration(milliseconds: 120) ||
+        expectedMediaId.trim().isEmpty) {
+      throw ArgumentError('A DJ loop requires ordered points at least 120 ms apart and a track identity.');
+    }
+    await _invokeAccepted('setDjDeckLoopRange', <String, Object>{
+      'deckId': deckId,
+      'startMs': start.inMilliseconds,
+      'endMs': end.inMilliseconds,
+      'expectedMediaId': expectedMediaId,
+    });
+  }
+
+  Future<void> clearDjDeckLoop({required String deckId}) async {
+    _validatePhysicalDeck(deckId);
+    await _invokeAccepted('clearDjDeckLoop', <String, Object>{'deckId': deckId});
+  }
+
   Future<void> clearDjDeck(String deckId) async {
     _validatePhysicalDeck(deckId);
     await _invokeAccepted('clearDjDeck', <String, Object>{'deckId': deckId});
