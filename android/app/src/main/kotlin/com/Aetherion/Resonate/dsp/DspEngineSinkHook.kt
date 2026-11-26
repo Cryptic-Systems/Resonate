@@ -43,7 +43,7 @@ object DspEngineSinkHook {
         timestampLedger: DjScratchTimestampLedger,
     ): Array<AudioProcessor> {
         return try {
-            val timestampProcessor = DjScratchTimestampProcessor(deckId, timestampLedger)
+            val timestampProcessor = DjScratchTimestampProcessor(timestampLedger)
             val dspProcessor = createDspProcessor(deckId)
             arrayOf(timestampProcessor, dspProcessor)
         } catch (t: Throwable) {
