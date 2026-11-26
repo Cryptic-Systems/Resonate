@@ -18,6 +18,7 @@ import '../providers/dj_mode_provider.dart';
 import '../dj_engine/core/dj_types.dart';
 import '../ui/resonate_glass.dart';
 import 'dj_console_deck_tempo_control.dart';
+import 'dj_console_duration_policy.dart';
 import 'dj_console_tempo_policy.dart';
 import 'dj_console_manual_controls_policy.dart';
 import 'dj_console_jog_seek_policy.dart';
@@ -406,15 +407,26 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
 
           final songA = findSong(deckA?.mediaId);
           final songB = findSong(deckB?.mediaId);
-          final durationA = deckA?.duration ?? songA?.duration ?? Duration.zero;
-          final durationB = deckB?.duration ?? songB?.duration ?? Duration.zero;
+          const durationPolicy = DjConsoleDurationPolicy();
+          // Match the library duration used by persisted waveform chunks.
+          // Media3 duration is the fallback before the library item resolves.
+          final durationA = durationPolicy.resolve(
+            libraryDuration: songA?.duration,
+            mediaDuration: deckA?.duration,
+          );
+          final durationB = durationPolicy.resolve(
+            libraryDuration: songB?.duration,
+            mediaDuration: deckB?.duration,
+          );
           final progressA = durationA.inMilliseconds <= 0
               ? 0.0
-              : (deckA!.position.inMilliseconds / durationA.inMilliseconds)
+              : ((deckA?.position ?? Duration.zero).inMilliseconds /
+                      durationA.inMilliseconds)
                   .clamp(0.0, 1.0).toDouble();
           final progressB = durationB.inMilliseconds <= 0
               ? 0.0
-              : (deckB!.position.inMilliseconds / durationB.inMilliseconds)
+              : ((deckB?.position ?? Duration.zero).inMilliseconds /
+                      durationB.inMilliseconds)
                   .clamp(0.0, 1.0).toDouble();
           final djReady = state?.djDualDeckMode == true;
           final screenSize = MediaQuery.sizeOf(context);
