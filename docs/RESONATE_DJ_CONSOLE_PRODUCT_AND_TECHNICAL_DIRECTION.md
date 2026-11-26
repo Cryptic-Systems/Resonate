@@ -341,7 +341,7 @@ Implemented the first runtime foundation on the existing Media3 output path:
 The next scratch foundation is now implemented as an isolated, testable native component:
 
 - `DjScratchPcmRingBuffer` stores interleaved PCM16 samples in fixed-capacity arrays, with a hard maximum of 192,000 frames (four seconds at 48 kHz). It does not resize or allocate per frame.
-- Absolute frame indices remain monotonic across wrap and clear operations. The ring tracks the first still-valid frame explicitly, so a stale cursor cannot silently alias newly captured audio after a flush.
+- Absolute frame indices remain monotonic across wrap and clear operations. The ring tracks the first still-valid frame explicitly, so a stale cursor cannot silently alias newly captured audio after a flush; invalidation is O(1), with no large-array clear on the audio thread.
 - Each retained frame has its own source-media timestamp. This preserves timestamp discontinuities between input blocks rather than assuming decoder output is always contiguous.
 - Oversized input blocks retain only the newest frames; malformed, unaligned and negative-PTS blocks are rejected.
 - `DjScratchFrameCursor` provides bounded forward, hold and reverse cursor math with finite-value validation and a maximum velocity. It is control math only, not an audio renderer.
