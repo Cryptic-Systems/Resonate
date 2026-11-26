@@ -704,6 +704,10 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   int? _requestedStartMs;
   int? _requestedEndMs;
   double _viewportWidth = 0;
+  Object? _overviewSourceIdentity;
+  int? _overviewDurationMs;
+  double? _overviewWidth;
+  List<DjWaveformSegment> _overviewSegments = const <DjWaveformSegment>[];
   double _channelGain = 1.0;
   bool _channelGainDragging = false;
   late List<double> _eqGains;
@@ -1313,11 +1317,22 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                   final segments = measuredSegments.isNotEmpty
                       ? measuredSegments
                       : legacySegments;
-                  final overviewSegments = _viewportPolicy.overviewSegments(
-                    segments: segments,
-                    durationMs: duration.inMilliseconds,
-                    viewportWidth: waveformConstraints.maxWidth,
-                  );
+                  final overviewSourceIdentity = measuredSegments.isNotEmpty
+                      ? waveformSnapshot.data
+                      : verifiedProfile;
+                  if (!identical(_overviewSourceIdentity, overviewSourceIdentity) ||
+                      _overviewDurationMs != duration.inMilliseconds ||
+                      _overviewWidth != waveformConstraints.maxWidth) {
+                    _overviewSourceIdentity = overviewSourceIdentity;
+                    _overviewDurationMs = duration.inMilliseconds;
+                    _overviewWidth = waveformConstraints.maxWidth;
+                    _overviewSegments = _viewportPolicy.overviewSegments(
+                      segments: segments,
+                      durationMs: duration.inMilliseconds,
+                      viewportWidth: waveformConstraints.maxWidth,
+                    );
+                  }
+                  final overviewSegments = _overviewSegments;
                   final waveformState = DjConsoleWaveformStatus.classify(
                     snapshot: waveformSnapshot,
                     expectedSongId: expectedSongId,
