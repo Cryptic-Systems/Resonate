@@ -465,7 +465,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
               : ((deckB?.position ?? Duration.zero).inMilliseconds /
                       durationB.inMilliseconds)
                   .clamp(0.0, 1.0).toDouble();
-          final djReady = state?.djDualDeckMode == true;
+          final djSessionActive = state?.djDualDeckMode == true;
           final screenSize = MediaQuery.sizeOf(context);
           final compact = screenSize.width < 820 || screenSize.height < 520;
 
@@ -509,20 +509,20 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                 onEnsureWaveform: song == null
                     ? null
                     : () => unawaited(context.read<DjModeProvider>().ensureTrackWaveform(song)),
-                canPlay: djReady && loaded && music.media3ProviderSessionActive,
+                canPlay: djSessionActive && loaded && music.media3ProviderSessionActive,
                 canAdjustChannelGain:
                     DjConsoleManualControlsPolicy.canAdjustChannelGain(
-                  djModeEnabled: djReady,
+                  djSessionActive: djSessionActive,
                   media3SessionActive: music.media3ProviderSessionActive,
                   transitionInProgress: music.transitionInProgress,
                   deckHasMedia: loaded,
                 ),
-                canAdjustEq: djReady && loaded &&
+                canAdjustEq: djSessionActive && loaded &&
                     music.media3ProviderSessionActive,
-                jogSeekEnabled: djReady && loaded &&
+                jogSeekEnabled: djSessionActive && loaded &&
                     music.media3ProviderSessionActive &&
                     !music.transitionInProgress,
-                onSync: djReady && loaded &&
+                onSync: djSessionActive && loaded &&
                         (id == 'A' ? deckB?.mediaId : deckA?.mediaId) != null
                     ? () => unawaited(_syncDeckToOther(id))
                     : null,
@@ -534,13 +534,13 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                   }
                 },
                 hotCuePositions: storedCues,
-                onSetHotCue: djReady && loaded
+                onSetHotCue: djSessionActive && loaded
                     ? (slot) => unawaited(_setHotCue(id, deck, slot))
                     : null,
-                onClearHotCue: djReady && loaded
+                onClearHotCue: djSessionActive && loaded
                     ? (slot) => unawaited(_clearHotCue(id, deck, slot))
                     : null,
-                onHotCue: djReady && loaded
+                onHotCue: djSessionActive && loaded
                     ? (slot) => unawaited(_seekToHotCue(id, deck, slot))
                     : null,
                 channelGain: deck?.channelGain ?? 1.0,
@@ -608,7 +608,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                       Text('DJ CONSOLE', style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w900, letterSpacing: 1.2)),
                       const Spacer(),
-                      if (!djReady)
+                      if (!djSessionActive)
                         const Tooltip(message: 'DJ deck session is not active',
                           child: Icon(Icons.warning_amber_rounded, size: 18)),
                     ],
@@ -619,7 +619,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                     builder: (context) {
                       final mixerStatus =
                           DjConsoleManualControlsPolicy.crossfaderStatusText(
-                        djModeEnabled: djReady,
+                        djSessionActive: djSessionActive,
                         media3SessionActive: music.media3ProviderSessionActive,
                         transitionInProgress: music.transitionInProgress,
                         deckAHasMedia: deckA?.mediaId != null,
@@ -631,7 +631,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                         width: compact ? 148 : 188,
                         child: _DjConsoleMixer(
                           enabled: DjConsoleManualControlsPolicy.canAdjustCrossfader(
-                            djModeEnabled: djReady && music.media3ProviderSessionActive,
+                            djSessionActive: djSessionActive && music.media3ProviderSessionActive,
                             transitionInProgress: music.transitionInProgress,
                             deckAHasMedia: deckA?.mediaId != null,
                             deckBHasMedia: deckB?.mediaId != null,
@@ -640,8 +640,8 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                           compact: compact,
                           statusMessage: mixerStatus,
                           onChanged: music.setDjCrossfader,
-                          onLoadA: djReady ? () => unawaited(_chooseTrackForDeck(context, 'A', music, library)) : null,
-                          onLoadB: djReady ? () => unawaited(_chooseTrackForDeck(context, 'B', music, library)) : null,
+                          onLoadA: djSessionActive ? () => unawaited(_chooseTrackForDeck(context, 'A', music, library)) : null,
+                          onLoadB: djSessionActive ? () => unawaited(_chooseTrackForDeck(context, 'B', music, library)) : null,
                           onGestureStart: music.beginDjCrossfaderGesture,
                           onGestureEnd: music.endDjCrossfaderGesture,
                         ),
