@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../services/dj_analysis_service.dart';
+import '../models/song.dart';
 import '../services/dj_idle_analysis_service.dart';
 import '../services/dj_mode_settings_store.dart';
 import '../dj_engine/core/dj_policy.dart';
@@ -171,6 +172,20 @@ class DjModeProvider extends ChangeNotifier {
     notifyListeners();
     await DjModeSettingsStore.setAnalyzeIdle(true);
     _maybeStartIdleScan();
+  }
+
+  /// Builds the full-track waveform for a deck-loaded song. If playback is
+  /// active, the idle scanner retains the request and resumes after playback.
+  Future<void> ensureTrackWaveform(Song song) async {
+    if (!_loaded) return;
+    try {
+      await _idle.ensureTrackWaveform(
+        song,
+        isStillIdle: _isAnalysisStillIdle,
+      );
+    } catch (error) {
+      debugPrint('DJ waveform build deferred for ${song.id}: $error');
+    }
   }
 
   void _maybeStartIdleScan() {
