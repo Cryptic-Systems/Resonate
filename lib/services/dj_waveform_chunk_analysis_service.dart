@@ -96,7 +96,11 @@ class DjWaveformChunkAnalysisService {
     try {
       final analysis = await _db.getDjAnalysis(song.id);
       if (cancelled()) return 0;
-      final fingerprint = await _sourceFingerprint(song.filePath, analysis);
+      final fingerprint = await _sourceFingerprint(
+        song.filePath,
+        analysis,
+        durationMs,
+      );
       // Never persist resumable chunks without a usable source identity: a
       // later file replacement must not silently reuse old waveform data.
       if (fingerprint == null || cancelled()) return 0;
