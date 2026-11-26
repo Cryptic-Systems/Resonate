@@ -45,12 +45,15 @@ class DjIdleAnalysisService {
   final Map<String, DateTime> _lastPriorityAttemptAt = <String, DateTime>{};
   bool _priorityWaveformDrainRunning = false;
   bool _priorityAnalysisDrainRunning = false;
+  bool _priorityAnalysisServiceActive = false;
   bool Function()? _priorityAnalysisAllowed;
   static const Duration _retryCooldown = Duration(hours: 6);
 
   bool get isRunning => _running;
   bool get canContinueInBackground =>
-      _backgroundServiceStarting || _backgroundServiceStarted;
+      _backgroundServiceStarting ||
+      _backgroundServiceStarted ||
+      _priorityAnalysisServiceActive;
   int get scanned => _scanned;
   int get updated => _updated;
   int get failed => _failed;
@@ -151,6 +154,7 @@ class DjIdleAnalysisService {
     var startedHere = false;
     try {
       startedHere = await DjAnalysisForegroundService.start();
+      _priorityAnalysisServiceActive = startedHere;
       for (final entry in _priorityAnalysisTracks.entries.toList()) {
         if (!isSafeToAnalyze()) break;
         await DjAnalysisForegroundService.heartbeat();
@@ -205,6 +209,7 @@ class DjIdleAnalysisService {
       }
     } finally {
       if (startedHere) await DjAnalysisForegroundService.stop();
+      _priorityAnalysisServiceActive = false;
       _priorityAnalysisDrainRunning = false;
     }
   }
