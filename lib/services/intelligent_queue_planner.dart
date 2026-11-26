@@ -123,9 +123,10 @@ class IntelligentQueuePlanner {
     final coverage = analyzedCount / songs.length;
     if (candidates.isEmpty) {
       final insufficient = analyzedCount < songs.length;
+      final exclusionSummary = _exclusionSummary(exclusionCounts);
       final reason = insufficient
-          ? 'DJ analysis is still incomplete for this scope. This request was not replaced with ordinary shuffle.'
-          : 'No analyzed tracks meet this mix profile.';
+          ? 'DJ analysis is still incomplete for this scope. This request was not replaced with ordinary shuffle. $exclusionSummary'
+          : 'No analyzed tracks meet this mix profile. $exclusionSummary';
       return QueuePlan(
         intentId: intent.id, songs: const [],
         status: insufficient ? QueuePlanStatus.insufficientAnalysis
@@ -169,6 +170,25 @@ class IntelligentQueuePlanner {
           : 'Some tracks were excluded because DJ analysis was missing, stale, or outside this mix profile.',
       exclusionCounts: Map.unmodifiable(exclusionCounts),
     );
+  }
+
+  static String _exclusionSummary(Map<String, int> counts) {
+    const labels = <String, String>{
+      'missing_profile': 'no saved analysis',
+      'track_identity_or_duration_mismatch': 'track identity/duration mismatch',
+      'stale_analysis_version': 'outdated analysis',
+      'low_analysis_confidence': 'low analysis confidence',
+      'missing_beat_grid': 'missing beat grids',
+      'bpm_out_of_range': 'BPM outside the requested range',
+      'missing_energy_profile': 'missing energy profiles',
+      'energy_out_of_range': 'energy outside the requested range',
+    };
+    final details = counts.entries
+        .where((entry) => entry.value > 0)
+        .map((entry) => '${entry.value} ${labels[entry.key] ?? entry.key}')
+        .toList(growable: false);
+    return details.isEmpty ? 'No exclusion details were recorded.'
+        : 'Exclusion details: ${details.join(', ')}.';
   }
 
   static bool _profileMatchesSong(DjTrackProfile profile, Song song) {
