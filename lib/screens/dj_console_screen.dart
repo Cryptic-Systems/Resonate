@@ -959,19 +959,19 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     _jogLastAngle = angle;
     // One platter revolution represents 1.8 seconds at 33⅓ RPM. The
     // resulting source/output ratio is the signed scratch velocity.
-    const platterRevolutionMs = 1800.0;
-    final deltaMediaMs = deltaRadians / (math.pi * 2) * platterRevolutionMs;
+    const platterRevolutionUs = 1800000.0;
+    final deltaMediaUs =
+        deltaRadians / (math.pi * 2) * platterRevolutionUs;
     final elapsedUs = _scratchClock.elapsedMicroseconds;
     final deltaUs = elapsedUs - _jogLastUpdateUs;
     _jogLastUpdateUs = elapsedUs;
     final velocity = deltaUs <= 0
         ? 0.0
-        : (deltaMediaMs * 1000 / deltaUs).clamp(-4.0, 4.0).toDouble();
-    final totalMediaMs = (_jogAccumulatedRadians / (math.pi * 2) * platterRevolutionMs).round();
-    final next = Duration(
-      milliseconds: (start.inMilliseconds + totalMediaMs)
-          .clamp(0, widget.duration.inMilliseconds)
-          .toInt(),
+        : (deltaMediaUs / deltaUs).clamp(-4.0, 4.0).toDouble();
+    final next = DjConsoleJogSeekPolicy.scratchAnchorPosition(
+      start: start,
+      accumulatedRadians: _jogAccumulatedRadians,
+      duration: widget.duration,
     );
     _queueScratchControl(active: true, velocity: velocity, anchor: next);
     _scratchHoldTimer?.cancel();
