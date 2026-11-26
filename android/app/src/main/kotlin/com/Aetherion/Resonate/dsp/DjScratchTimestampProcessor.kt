@@ -38,7 +38,7 @@ internal class DjScratchTimestampProcessor(
             inputAudioFormat.sampleRate,
             inputAudioFormat.channelCount,
         )
-        if (timestamp != null) lastConsumedTimestamp = timestamp
+        lastConsumedTimestamp = timestamp
         val output = replaceOutputBuffer(inputBuffer.remaining())
         output.put(inputBuffer)
         output.flip()
