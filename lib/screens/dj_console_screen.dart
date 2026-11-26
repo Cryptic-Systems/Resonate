@@ -870,7 +870,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             oldWidget.expectedSongId != widget.expectedSongId ||
             oldWidget.waveformSourceKey != widget.waveformSourceKey ||
             oldWidget.duration != widget.duration)) {
-      _clearJog();
+      _abortJogScratch();
     }
     if (oldWidget.waveformRevision != widget.waveformRevision) {
       _requestedStartMs = null;
@@ -1047,6 +1047,17 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     _clearJog();
     _syncPlatterMotion();
     if (mounted) setState(() {});
+  }
+
+  void _abortJogScratch() {
+    // Pause, track replacement or transition invalidates the gesture. Drop
+    // debounced controls; native lifecycle/transition barriers retire the
+    // mailbox so a delayed active command cannot restart the old platter.
+    _scratchHoldTimer?.cancel();
+    _scratchDispatchTimer?.cancel();
+    _pendingScratchControl = null;
+    _scratchClock.stop();
+    _clearJog();
   }
 
   void _clearJog() {
