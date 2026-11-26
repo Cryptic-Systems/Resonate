@@ -121,6 +121,43 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
     }
   }
 
+  Future<void> _clearHotCue(String deckId, PlaybackDeckSnapshot? deck, int slot) async {
+    final expectedTrackId = deck?.mediaId;
+    if (expectedTrackId == null ||
+        expectedTrackId.isEmpty ||
+        slot < 0 ||
+        slot >= DjCuePointStore.slotCount) {
+      return;
+    }
+    final music = context.read<MusicProvider>();
+    final latestState = music.media3ShadowState;
+    final latestDeck = deckId == 'A' ? latestState?.deckA : latestState?.deckB;
+    if (latestState?.djDualDeckMode != true ||
+        latestDeck?.mediaId != expectedTrackId) {
+      return;
+    }
+    final updated = <String, List<Duration?>>{
+      for (final entry in _hotCues.entries)
+        entry.key: List<Duration?>.from(entry.value),
+    };
+    final slots = updated[expectedTrackId];
+    if (slots == null || slot >= slots.length || slots[slot] == null) return;
+    slots[slot] = null;
+    try {
+      await _cuePointStore.saveAll(updated);
+      if (!mounted) return;
+      setState(() => _hotCues = updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Deck $deckId cue ${slot + 1} cleared.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cue could not be cleared: $error')),
+      );
+    }
+  }
+
   Future<void> _seekToHotCue(String deckId, PlaybackDeckSnapshot? deck, int slot) async {
     final expectedTrackId = deck?.mediaId;
     if (expectedTrackId == null || expectedTrackId.isEmpty || slot < 0 || slot >= DjCuePointStore.slotCount) return;
@@ -500,6 +537,9 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                 onSetHotCue: djReady && loaded
                     ? (slot) => unawaited(_setHotCue(id, deck, slot))
                     : null,
+                onClearHotCue: djReady && loaded
+                    ? (slot) => unawaited(_clearHotCue(id, deck, slot))
+                    : null,
                 onHotCue: djReady && loaded
                     ? (slot) => unawaited(_seekToHotCue(id, deck, slot))
                     : null,
@@ -659,6 +699,7 @@ class _ConsoleDeck extends StatefulWidget {
     this.onSync,
     required this.hotCuePositions,
     required this.onSetHotCue,
+    required this.onClearHotCue,
     required this.onHotCue,
     required this.channelGain,
     required this.canAdjustChannelGain,
@@ -686,6 +727,7 @@ class _ConsoleDeck extends StatefulWidget {
   final VoidCallback? onSync;
   final List<Duration?> hotCuePositions;
   final ValueChanged<int>? onSetHotCue;
+  final ValueChanged<int>? onClearHotCue;
   final ValueChanged<int>? onHotCue;
   final double channelGain;
   final bool canAdjustChannelGain, canAdjustEq;
@@ -1185,6 +1227,43 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
   }
 
+  Future<void> _showCuePadActions(int index) async {
+    final cue = index < widget.hotCuePositions.length
+        ? widget.hotCuePositions[index]
+        : null;
+    if (cue == null) {
+      widget.onSetHotCue?.call(index);
+      return;
+    }
+    final action = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Cue ${index + 1} · ${_format(cue)}'),
+        content: const Text('Replace this cue with the current playhead or clear it?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, 'cancel'),
+            child: const Text('CANCEL'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, 'clear'),
+            child: const Text('CLEAR'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, 'replace'),
+            child: const Text('REPLACE'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'replace') {
+      widget.onSetHotCue?.call(index);
+    } else if (action == 'clear') {
+      widget.onClearHotCue?.call(index);
+    }
+  }
+
   Widget _buildCuePad(int index, Color accent) {
     final cue = index < widget.hotCuePositions.length
         ? widget.hotCuePositions[index]
@@ -1193,13 +1272,17 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
       width: 44,
       height: 42,
       child: GestureDetector(
-        onLongPress: widget.onSetHotCue == null
+        onLongPress: widget.onSetHotCue == null && widget.onClearHotCue == null
             ? null
-            : () => widget.onSetHotCue!(index),
+            : () => unawaited(_showCuePadActions(index)),
         child: OutlinedButton(
-          onPressed: cue == null || widget.onHotCue == null
-              ? null
-              : () => widget.onHotCue!(index),
+          onPressed: cue == null
+              ? (widget.onSetHotCue == null
+                  ? null
+                  : () => widget.onSetHotCue!(index))
+              : (widget.onHotCue == null
+                  ? null
+                  : () => widget.onHotCue!(index)),
           style: OutlinedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
             minimumSize: Size.zero,
