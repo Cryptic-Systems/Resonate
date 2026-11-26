@@ -37,6 +37,8 @@ class DjIdleAnalysisService {
   int _updated = 0;
   int _failed = 0;
   final Map<String, DateTime> _lastProfileAttemptAt = <String, DateTime>{};
+  final Map<String, Song> _priorityWaveformTracks = <String, Song>{};
+  bool _priorityWaveformDrainRunning = false;
   static const Duration _retryCooldown = Duration(hours: 6);
 
   bool get isRunning => _running;
@@ -45,6 +47,58 @@ class DjIdleAnalysisService {
   int get scanned => _scanned;
   int get updated => _updated;
   int get failed => _failed;
+
+  /// Queue a complete waveform build for a track loaded on a DJ deck.
+  /// Work waits until playback is idle, then drains in the same foreground
+  /// analysis service used by the library scanner.
+  Future<int> ensureTrackWaveform(
+    Song song, {
+    required bool Function() isStillIdle,
+  }) async {
+    if (song.id.trim().isEmpty ||
+        song.filePath.trim().isEmpty ||
+        song.duration <= Duration.zero) {
+      return 0;
+    }
+    _priorityWaveformTracks[song.id] = song;
+    if (_running || _priorityWaveformDrainRunning || !isStillIdle()) return 0;
+    return _drainPriorityWaveforms(isStillIdle: isStillIdle);
+  }
+
+  Future<int> _drainPriorityWaveforms({
+    required bool Function() isStillIdle,
+    bool serviceAlreadyStarted = false,
+  }) async {
+    if (_priorityWaveformDrainRunning ||
+        _priorityWaveformTracks.isEmpty ||
+        !isStillIdle()) {
+      return 0;
+    }
+    _priorityWaveformDrainRunning = true;
+    var startedHere = false;
+    var processed = 0;
+    try {
+      if (!serviceAlreadyStarted) {
+        startedHere = await DjAnalysisForegroundService.start();
+      }
+      for (final entry in _priorityWaveformTracks.entries.toList()) {
+        if (!isStillIdle()) break;
+        await DjAnalysisForegroundService.heartbeat();
+        processed += await _waveformChunks.processMissingChunks(
+          entry.value,
+          maxChunks: 128,
+          isStillIdle: isStillIdle,
+        );
+        if (await _analysis.hasWaveformProfile(entry.key)) {
+          _priorityWaveformTracks.remove(entry.key);
+        }
+      }
+      return processed;
+    } finally {
+      if (startedHere) await DjAnalysisForegroundService.stop();
+      _priorityWaveformDrainRunning = false;
+    }
+  }
 
   Future<void> startIfNeeded({
     int maxSongs = 40,
@@ -258,6 +312,14 @@ class DjIdleAnalysisService {
       );
     } finally {
       _running = false;
+      if (_priorityWaveformTracks.isNotEmpty &&
+          isStillIdle != null &&
+          isStillIdle()) {
+        await _drainPriorityWaveforms(
+          isStillIdle: isStillIdle,
+          serviceAlreadyStarted: _backgroundServiceStarted,
+        );
+      }
       await DjAnalysisForegroundService.stop();
       _backgroundServiceStarted = false;
       _backgroundServiceStarting = false;
