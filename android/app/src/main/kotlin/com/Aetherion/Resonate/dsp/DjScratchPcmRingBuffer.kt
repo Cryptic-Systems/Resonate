@@ -11,9 +11,9 @@ import java.nio.ByteOrder
  * indices remain monotonic while storage wraps; timestamps are retained per
  * frame so discontinuous input blocks cannot be mistaken for contiguous media.
  *
- * The timestamp processor feeds this history passively before native DSP.
- * It is not part of the output render path; a separate, validated audio-thread
- * control handoff and render policy are required before it can affect output.
+ * The timestamp processor appends each Media3 PCM block before native DSP.
+ * The per-deck render policy reads this bounded history when a validated
+ * platter control is active; normal playback remains pass-through.
  */
 internal class DjScratchPcmRingBuffer(
     val sampleRate: Int,
