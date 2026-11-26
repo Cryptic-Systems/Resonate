@@ -80,6 +80,9 @@ void main() {
           'speed': 1.02,
           'pitch': 1.0,
           'audioSessionId': 41,
+          'loopActive': true,
+          'loopStartMs': 12000,
+          'loopEndMs': 16000,
         },
         'deckB': <Object?, Object?>{
           'mediaId': 'track-b',
@@ -106,6 +109,9 @@ void main() {
       expect(state.deckA?.position, const Duration(milliseconds: 12500));
       expect(state.deckA?.audioSessionId, 41);
       expect(state.deckA?.channelGain, 0.82);
+      expect(state.deckA?.loopActive, isTrue);
+      expect(state.deckA?.loopStart, const Duration(milliseconds: 12000));
+      expect(state.deckA?.loopEnd, const Duration(milliseconds: 16000));
       expect(state.deckB?.mediaId, 'track-b');
       expect(state.deckB?.isPlaying, isFalse);
       expect(state.deckB?.speed, 0.98);
@@ -822,6 +828,32 @@ void main() {
       expect(gainArgs['gain'], 0.82);
     });
 
+    test('sends and clears native A/B loop ranges with track identity', () async {
+      final calls = <MethodCall>[];
+      channel.setMockMethodCallHandler((call) async {
+        calls.add(call);
+        return true;
+      });
+
+      await client.setDjDeckLoopRange(
+        deckId: 'B',
+        start: const Duration(seconds: 12),
+        end: const Duration(seconds: 16),
+        expectedMediaId: 'track-b',
+      );
+      await client.clearDjDeckLoop(deckId: 'B');
+
+      expect(calls.map((call) => call.method), [
+        'setDjDeckLoopRange',
+        'clearDjDeckLoop',
+      ]);
+      final args = Map<Object?, Object?>.from(calls.first.arguments as Map);
+      expect(args['deckId'], 'B');
+      expect(args['startMs'], 12000);
+      expect(args['endMs'], 16000);
+      expect(args['expectedMediaId'], 'track-b');
+    });
+
     test('rejects invalid deck identities, queue indices and mixer values', () async {
       await expectLater(client.playDjDeck('C'), throwsArgumentError);
       await expectLater(client.clearDjDeck(''), throwsArgumentError);
@@ -870,6 +902,24 @@ void main() {
           deckId: 'B',
           position: const Duration(milliseconds: -1),
           expectedMediaId: 'track-b',
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setDjDeckLoopRange(
+          deckId: 'A',
+          start: const Duration(seconds: 2),
+          end: const Duration(seconds: 2),
+          expectedMediaId: 'track-a',
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setDjDeckLoopRange(
+          deckId: 'C',
+          start: const Duration(seconds: 2),
+          end: const Duration(seconds: 4),
+          expectedMediaId: 'track-a',
         ),
         throwsArgumentError,
       );
