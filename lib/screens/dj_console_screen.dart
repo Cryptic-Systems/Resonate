@@ -540,7 +540,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                         deckBIsPlaying: deckB?.isPlaying == true,
                       );
                       final mixer = SizedBox(
-                        width: compact ? 128 : 188,
+                        width: compact ? 148 : 188,
                         child: _DjConsoleMixer(
                           enabled: DjConsoleManualControlsPolicy.canAdjustCrossfader(
                             djModeEnabled: djReady && music.media3ProviderSessionActive,
@@ -552,6 +552,8 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                           compact: compact,
                           statusMessage: mixerStatus,
                           onChanged: music.setDjCrossfader,
+                          onLoadA: djReady ? () => unawaited(_chooseTrackForDeck(context, 'A', music, library)) : null,
+                          onLoadB: djReady ? () => unawaited(_chooseTrackForDeck(context, 'B', music, library)) : null,
                           onGestureStart: music.beginDjCrossfaderGesture,
                           onGestureEnd: music.endDjCrossfaderGesture,
                         ),
@@ -922,6 +924,115 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     }
   }
 
+  Future<void> _showDeckTools() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF101923),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, refreshSheet) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  Text('${widget.deck} · CHANNEL TOOLS',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w900, letterSpacing: 1.1)),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ]),
+                Row(children: [
+                  const SizedBox(width: 58, child: Text('GAIN')),
+                  Expanded(child: Slider(
+                    value: _channelGain.clamp(0.0, 1.0).toDouble(),
+                    min: 0, max: 1, divisions: 40,
+                    onChanged: widget.canAdjustChannelGain ? (value) {
+                      setState(() { _channelGainDragging = true; _channelGain = value; });
+                      refreshSheet(() {});
+                    } : null,
+                    onChangeEnd: widget.canAdjustChannelGain
+                        ? (value) => unawaited(_commitChannelGain(value)) : null,
+                  )),
+                  SizedBox(width: 42, child: Text('${(_channelGain * 100).round()}%',
+                    textAlign: TextAlign.end)),
+                ]),
+                const Divider(color: Colors.white12),
+                Row(children: List<Widget>.generate(3, (index) {
+                  const labels = ['LOW', 'MID', 'HIGH'];
+                  final value = _eqGains[index].clamp(-12.0, 12.0).toDouble();
+                  return Expanded(child: Padding(
+                    padding: EdgeInsets.only(right: index == 2 ? 0 : 8),
+                    child: Column(children: [
+                      Text(labels[index], style: const TextStyle(
+                        color: Colors.white70, fontWeight: FontWeight.w900)),
+                      Text('${value > 0 ? '+' : ''}${value.toStringAsFixed(1)} dB',
+                        style: TextStyle(color: value == 0 ? Colors.white54 : Theme.of(context).colorScheme.primary)),
+                      Slider(
+                        value: value, min: -12, max: 12, divisions: 48,
+                        onChanged: widget.canAdjustEq ? (next) {
+                          setState(() { _eqDragging[index] = true; _eqGains[index] = next; });
+                          refreshSheet(() {});
+                        } : null,
+                        onChangeEnd: widget.canAdjustEq
+                            ? (next) => unawaited(_commitEq(index, next)) : null,
+                      ),
+                    ]),
+                  ));
+                })),
+                const Divider(color: Colors.white12),
+                Row(children: [
+                  const Text('FILTER', style: TextStyle(fontWeight: FontWeight.w900)),
+                  const SizedBox(width: 12),
+                  for (final option in const [(0, 'OFF'), (3, 'LOW-PASS'), (4, 'HIGH-PASS')])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        label: Text(option.$2),
+                        selected: _filterType == option.$1,
+                        onSelected: widget.canAdjustEq ? (_) {
+                          unawaited(_commitFilter(type: option.$1));
+                          refreshSheet(() {});
+                        } : null,
+                      ),
+                    ),
+                ]),
+                Row(children: [
+                  const SizedBox(width: 58, child: Text('CUTOFF')),
+                  Expanded(child: Slider(
+                    value: (math.log(_filterCutoffHz / 40.0) /
+                        math.log(18000.0 / 40.0)).clamp(0.0, 1.0),
+                    min: 0, max: 1, divisions: 100,
+                    onChanged: widget.canAdjustEq && _filterType != 0 ? (value) {
+                      setState(() {
+                        _filterDragging = true;
+                        _filterCutoffHz = (40.0 * math.pow(18000.0 / 40.0, value)).toDouble();
+                      });
+                      refreshSheet(() {});
+                    } : null,
+                    onChangeEnd: widget.canAdjustEq && _filterType != 0
+                        ? (_) => unawaited(_commitFilter()) : null,
+                  )),
+                  SizedBox(width: 56, child: Text(
+                    _filterType == 0 ? '—' : '${_filterCutoffHz.round()} Hz',
+                    textAlign: TextAlign.end)),
+                ]),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _togglePlayback() async {
     try {
       await widget.onPlayPause();
@@ -1057,46 +1168,14 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             child: LayoutBuilder(
               builder: (context, stageConstraints) {
                 final availableWheelWidth =
-                    (stageConstraints.maxWidth - 96).clamp(1.0, 400.0);
+                    stageConstraints.maxWidth.clamp(1.0, 480.0);
                 final diameter = math.min(
                   stageConstraints.maxHeight,
                   availableWheelWidth,
-                ).clamp(1.0, 360.0).toDouble();
+                ).clamp(1.0, 420.0).toDouble();
                 return Stack(
                   alignment: Alignment.center,
                   children: [
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: 48,
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildCuePad(0, accent),
-                            const SizedBox(height: 8),
-                            _buildCuePad(1, accent),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: 48,
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildCuePad(2, accent),
-                            const SizedBox(height: 8),
-                            _buildCuePad(3, accent),
-                          ],
-                        ),
-                      ),
-                    ),
                     Center(
                       child: SizedBox.square(
                         dimension: diameter,
@@ -1199,252 +1278,36 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
               },
             ),
           ),
-          if (compact) ...[
-            Row(
-              children: [
-                Text('GAIN', style: theme.textTheme.labelSmall?.copyWith(
-                  color: Colors.white70, fontWeight: FontWeight.w800)),
-                const SizedBox(width: 6),
-                Expanded(child: SizedBox(height: 24, child: Slider(
-                  value: _channelGain.clamp(0.0, 1.0).toDouble(),
-                  min: 0, max: 1, divisions: 40,
-                  onChanged: widget.canAdjustChannelGain ? (value) => setState(() {
-                    _channelGainDragging = true; _channelGain = value;
-                  }) : null,
-                  onChangeEnd: widget.canAdjustChannelGain
-                      ? (value) => unawaited(_commitChannelGain(value)) : null,
-                ))),
-                SizedBox(width: 34, child: Text('${(_channelGain * 100).round()}%',
-                  textAlign: TextAlign.end, style: theme.textTheme.labelSmall?.copyWith(
-                    color: Colors.white70,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ))),
-              ],
+          Row(
+            children: List<Widget>.generate(DjCuePointStore.slotCount, (index) =>
+              Expanded(child: Padding(
+                padding: EdgeInsets.only(right: index == DjCuePointStore.slotCount - 1 ? 0 : 4),
+                child: _buildCuePad(index, accent),
+              )),
             ),
-            Row(children: List<Widget>.generate(3, (index) {
-              const labels = ['LOW', 'MID', 'HIGH'];
-              final value = _eqGains[index].clamp(-12.0, 12.0).toDouble();
-              return Expanded(child: Padding(
-                padding: EdgeInsets.only(right: index == 2 ? 0 : 4),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Text(labels[index], style: const TextStyle(
-                      color: Colors.white60, fontSize: 7, fontWeight: FontWeight.w800)),
-                    const SizedBox(width: 3),
-                    Text('${value > 0 ? '+' : ''}${value.toStringAsFixed(1)}',
-                      style: TextStyle(color: value == 0 ? Colors.white54 : accent,
-                        fontSize: 7, fontFeatures: const [FontFeature.tabularFigures()])),
-                  ]),
-                  SizedBox(height: 18, child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(trackHeight: 1.5,
-                      overlayShape: SliderComponentShape.noOverlay,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4)),
-                    child: Slider(value: value, min: -12, max: 12, divisions: 48,
-                      onChanged: widget.canAdjustEq ? (next) => setState(() {
-                        _eqDragging[index] = true; _eqGains[index] = next;
-                      }) : null,
-                      onChangeEnd: widget.canAdjustEq
-                          ? (next) => unawaited(_commitEq(index, next)) : null),
-                  )),
-                ]),
-              ));
-            })),
-            Row(children: [
-              Text('FILTER', style: theme.textTheme.labelSmall?.copyWith(
-                color: Colors.white60, fontWeight: FontWeight.w800)),
-              const SizedBox(width: 3),
-              for (final option in const [(0, 'OFF'), (3, 'LP'), (4, 'HP')])
-                Padding(padding: const EdgeInsets.only(right: 1), child: TextButton(
-                  style: TextButton.styleFrom(minimumSize: const Size(30, 24),
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    visualDensity: VisualDensity.compact,
-                    foregroundColor: _filterType == option.$1 ? accent : Colors.white54,
-                    backgroundColor: _filterType == option.$1
-                        ? accent.withValues(alpha: .12) : Colors.transparent),
-                  onPressed: widget.canAdjustEq
-                      ? () => unawaited(_commitFilter(type: option.$1)) : null,
-                  child: Text(option.$2, style: const TextStyle(
-                    fontSize: 8, fontWeight: FontWeight.w900)),
-                )),
-              Expanded(child: SizedBox(height: 22, child: Slider(
-                value: (math.log(_filterCutoffHz / 40.0) /
-                    math.log(18000.0 / 40.0)).clamp(0.0, 1.0),
-                min: 0, max: 1, divisions: 100,
-                onChanged: widget.canAdjustEq && _filterType != 0
-                    ? (value) => setState(() {
-                      _filterDragging = true;
-                      _filterCutoffHz = (40.0 * math.pow(18000.0 / 40.0, value)).toDouble();
-                    }) : null,
-                onChangeEnd: widget.canAdjustEq && _filterType != 0
-                    ? (_) => unawaited(_commitFilter()) : null,
-              ))),
-              SizedBox(width: 39, child: Text(
-                _filterType == 0 ? '—' : '${_filterCutoffHz.round()}',
-                textAlign: TextAlign.end, style: const TextStyle(
-                  color: Colors.white70, fontSize: 8,
-                  fontFeatures: [FontFeature.tabularFigures()]))),
-            ]),
-            Row(children: [
-              IconButton.filledTonal(
+          ),
+          const SizedBox(height: 4),
+          Row(children: [
+            IconButton.filledTonal(
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 42, height: 38),
+              onPressed: widget.canPlay ? _togglePlayback : null,
+              icon: Icon(widget.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
+              tooltip: widget.isPlaying ? 'Pause deck' : 'Play deck',
+            ),
+            const SizedBox(width: 5),
+            Expanded(child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(0, 38),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints.tightFor(width: 36, height: 32),
-                onPressed: widget.canPlay ? _togglePlayback : null,
-                icon: Icon(widget.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
-                tooltip: widget.isPlaying ? 'Pause deck' : 'Play deck'),
-              const SizedBox(width: 5),
-              Expanded(child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(minimumSize: const Size(0, 32),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  visualDensity: VisualDensity.compact),
-                onPressed: widget.onLoad,
-                icon: const Icon(Icons.library_music_rounded, size: 16),
-                label: const Text('LOAD TRACK', style: TextStyle(
-                  fontSize: 9, fontWeight: FontWeight.w800)))),
-            ]),
-          ] else ...[
-          SizedBox(height: compact ? 2 : 5),
-          const SizedBox(height: 5),
-          Row(
-            children: [
-              Text(
-                'GAIN',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: Colors.white70,
-                  letterSpacing: .8,
-                ),
               ),
-              const Spacer(),
-              Text(
-                '${(_channelGain * 100).round()}%',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: Colors.white70,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-            ],
-          ),
-          SizedBox(
-            height: compact ? 20 : 28,
-            child: Slider(
-            value: _channelGain.clamp(0.0, 1.0).toDouble(),
-            min: 0.0,
-            max: 1.0,
-            divisions: 40,
-            onChanged: widget.canAdjustChannelGain
-                ? (value) => setState(() {
-                      _channelGainDragging = true;
-                      _channelGain = value;
-                    })
-                : null,
-            onChangeEnd: widget.canAdjustChannelGain
-                ? (value) => unawaited(_commitChannelGain(value))
-                : null,
-            ),
-          ),
-          const SizedBox(height: 1),
-          Row(
-            children: List<Widget>.generate(3, (index) {
-              const labels = ['LOW', 'MID', 'HIGH'];
-              final value = _eqGains[index].clamp(-12.0, 12.0).toDouble();
-              return Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(right: index == 2 ? 0 : 3),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(labels[index], style: theme.textTheme.labelSmall?.copyWith(
-                            color: Colors.white60, fontSize: 7, fontWeight: FontWeight.w800)),
-                          const SizedBox(width: 3),
-                          Text('${value > 0 ? '+' : ''}${value.toStringAsFixed(1)}',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: value == 0 ? Colors.white54 : accent,
-                              fontSize: 7, fontFeatures: const [FontFeature.tabularFigures()])),
-                        ],
-                      ),
-                      SizedBox(
-                        height: compact ? 18 : 22,
-                        child: SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            trackHeight: 1.5,
-                            overlayShape: SliderComponentShape.noOverlay,
-                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
-                          ),
-                          child: Slider(
-                            value: value,
-                            min: -12,
-                            max: 12,
-                            divisions: 48,
-                            onChanged: widget.canAdjustEq
-                                ? (next) => setState(() {
-                                      _eqDragging[index] = true;
-                                      _eqGains[index] = next;
-                                    })
-                                : null,
-                            onChangeEnd: widget.canAdjustEq
-                                ? (next) => unawaited(_commitEq(index, next))
-                                : null,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }),
-          ),
-          const SizedBox(height: 2),
-          Row(
-            children: [
-              Text('FILTER', style: theme.textTheme.labelSmall?.copyWith(color: Colors.white60, fontWeight: FontWeight.w800)),
-              const Spacer(),
-              for (final option in const [(0, 'OFF'), (3, 'LP'), (4, 'HP')])
-                Padding(
-                  padding: const EdgeInsets.only(left: 3),
-                  child: TextButton(
-                    style: TextButton.styleFrom(minimumSize: const Size(34, 24), padding: const EdgeInsets.symmetric(horizontal: 7), visualDensity: VisualDensity.compact, foregroundColor: _filterType == option.$1 ? accent : Colors.white54, backgroundColor: _filterType == option.$1 ? accent.withValues(alpha: .12) : Colors.transparent),
-                    onPressed: widget.canAdjustEq ? () => unawaited(_commitFilter(type: option.$1)) : null,
-                    child: Text(option.$2, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900)),
-                  ),
-                ),
-              const SizedBox(width: 5),
-              Text(_filterType == 0 ? '—' : '${_filterCutoffHz.round()} Hz', style: theme.textTheme.labelSmall?.copyWith(color: Colors.white70, fontFeatures: const [FontFeature.tabularFigures()])),
-            ],
-          ),
-          SizedBox(
-            height: compact ? 18 : 22,
-            child: Slider(
-              value: (math.log(_filterCutoffHz / 40.0) / math.log(18000.0 / 40.0)).clamp(0.0, 1.0),
-              min: 0, max: 1, divisions: 100,
-              onChanged: widget.canAdjustEq && _filterType != 0 ? (value) => setState(() { _filterDragging = true; _filterCutoffHz = (40.0 * math.pow(18000.0 / 40.0, value)).toDouble(); }) : null,
-              onChangeEnd: widget.canAdjustEq && _filterType != 0 ? (_) => unawaited(_commitFilter()) : null,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Row(
-            children: [
-              IconButton.filledTonal(
-                visualDensity: VisualDensity.compact,
-                onPressed: widget.canPlay ? _togglePlayback : null,
-                icon: Icon(widget.isPlaying
-                    ? Icons.pause_rounded
-                    : Icons.play_arrow_rounded),
-                tooltip: widget.isPlaying ? 'Pause deck' : 'Play deck',
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: IconButton.outlined(
-                  tooltip: 'Load track',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: widget.onLoad,
-                  icon: const Icon(Icons.library_music_rounded, size: 18),
-                ),
-              ),
-            ],
-          ),
-          ],
+              onPressed: widget.active ? _showDeckTools : null,
+              icon: const Icon(Icons.tune_rounded, size: 16),
+              label: const Text('CHANNEL TOOLS', style: TextStyle(
+                fontSize: 9, fontWeight: FontWeight.w900)),
+            )),
+          ]),
           const SizedBox(height: 3),
           FutureBuilder<DjTrackProfile?>(
             future: profileFuture,
@@ -1599,6 +1462,8 @@ class _DjConsoleMixer extends StatefulWidget {
     required this.compact,
     required this.statusMessage,
     required this.onChanged,
+    required this.onLoadA,
+    required this.onLoadB,
     required this.onGestureStart,
     required this.onGestureEnd,
   });
@@ -1607,6 +1472,8 @@ class _DjConsoleMixer extends StatefulWidget {
   final double position;
   final bool compact;
   final String statusMessage;
+  final VoidCallback? onLoadA;
+  final VoidCallback? onLoadB;
   final Future<void> Function(double position) onChanged;
   final Future<bool> Function() onGestureStart;
   final Future<void> Function() onGestureEnd;
@@ -1791,7 +1658,24 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
                 letterSpacing: 1.4,
                 fontWeight: FontWeight.w900,
               )),
-          const SizedBox(height: 5),
+          const SizedBox(height: 3),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+            IconButton(
+              tooltip: 'Load Deck A',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 42, height: 34),
+              onPressed: widget.onLoadA,
+              icon: const Icon(Icons.library_music_rounded, size: 18),
+            ),
+            IconButton(
+              tooltip: 'Load Deck B',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 42, height: 34),
+              onPressed: widget.onLoadB,
+              icon: const Icon(Icons.library_music_rounded, size: 18),
+            ),
+          ]),
+          const SizedBox(height: 3),
           Row(
             children: [
               Text('A', style: theme.textTheme.labelLarge),
