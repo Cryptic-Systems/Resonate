@@ -19,7 +19,7 @@ class DjScratchTimestampLedgerTest {
 
         val block = ledger.consume(first, 48_000, 2)
         assertEquals(1_250_000L, block?.presentationTimeUs)
-        assertEquals(512, block?.frameCount)
+        assertEquals(1024, block?.frameCount)
         assertEquals(48_000, block?.sampleRate)
         assertEquals(2, block?.channelCount)
         assertNull(ledger.consume(first, 48_000, 2))
