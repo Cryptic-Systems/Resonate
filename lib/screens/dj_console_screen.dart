@@ -495,7 +495,6 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                 'Load a track from the shared library';
             final position = deck?.position ?? Duration.zero;
             return _ConsoleDeck(
-                deckId: id,
                 deck: 'DECK $id',
                 active: loaded,
                 selected: state?.activeDeckId == id,
@@ -720,7 +719,6 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
 
 class _ConsoleDeck extends StatefulWidget {
   const _ConsoleDeck({
-    required this.deckId,
     required this.deck, required this.active, required this.selected, required this.onAir,
     required this.compact,
     required this.isPlaying,
@@ -757,7 +755,7 @@ class _ConsoleDeck extends StatefulWidget {
     required this.waveformLoader,
   });
 
-  final String deckId, deck, status, title, artist;
+  final String deck, status, title, artist;
   final bool active, selected, onAir, compact, isPlaying, canPlay, jogSeekEnabled;
   final VoidCallback? onEnsureWaveform;
   final int waveformRevision;
@@ -868,7 +866,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
       _channelGain = widget.channelGain.clamp(0.0, 1.0).toDouble();
     }
     if (_jogStartPosition != null &&
-        (!widget.jogSeekEnabled || !widget.active ||
+        (!widget.jogSeekEnabled || !widget.active || !widget.isPlaying ||
             oldWidget.expectedSongId != widget.expectedSongId ||
             oldWidget.waveformSourceKey != widget.waveformSourceKey ||
             oldWidget.duration != widget.duration)) {
