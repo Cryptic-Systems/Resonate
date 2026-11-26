@@ -20,12 +20,12 @@ class DjConsoleManualControlsPolicy {
   /// essential for cutting a playing deck to silence while the opposite deck
   /// is empty or paused; transitions retain exclusive gain ownership.
   static bool canAdjustCrossfader({
-    required bool djModeEnabled,
+    required bool djSessionActive,
     required bool transitionInProgress,
     required bool deckAHasMedia,
     required bool deckBHasMedia,
   }) =>
-      djModeEnabled &&
+      djSessionActive &&
       !transitionInProgress &&
       (deckAHasMedia || deckBHasMedia);
 
@@ -33,7 +33,7 @@ class DjConsoleManualControlsPolicy {
   /// informed of the next actionable prerequisite instead of using one
   /// generic disabled-state message.
   static String crossfaderStatusText({
-    required bool djModeEnabled,
+    required bool djSessionActive,
     required bool media3SessionActive,
     required bool transitionInProgress,
     required bool deckAHasMedia,
@@ -41,7 +41,7 @@ class DjConsoleManualControlsPolicy {
     required bool deckAIsPlaying,
     required bool deckBIsPlaying,
   }) {
-    if (!djModeEnabled) return 'START DJ SESSION';
+    if (!djSessionActive) return 'START DJ SESSION';
     if (!media3SessionActive) return 'MEDIA3 SESSION INACTIVE';
     if (transitionInProgress) return 'TRANSITION IN PROGRESS';
     if (!deckAHasMedia && !deckBHasMedia) return 'LOAD A DECK';
@@ -98,12 +98,12 @@ class DjConsoleManualControlsPolicy {
   /// Channel gain can be adjusted on a loaded deck, including while paused,
   /// but never while the native transition controller owns deck gain.
   static bool canAdjustChannelGain({
-    required bool djModeEnabled,
+    required bool djSessionActive,
     required bool media3SessionActive,
     required bool transitionInProgress,
     required bool deckHasMedia,
   }) =>
-      djModeEnabled &&
+      djSessionActive &&
       media3SessionActive &&
       !transitionInProgress &&
       deckHasMedia;
