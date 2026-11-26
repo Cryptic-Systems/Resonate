@@ -29,6 +29,7 @@ class DjScratchTimestampProcessorTest {
         val ledger = DjScratchTimestampLedger()
         val processor = DjScratchTimestampProcessor(ledger)
         processor.configure(AudioProcessor.AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+        processor.flush() // Activate the configured format before queueInput.
         val input = stereoPcm()
         val original = bytes(input)
         ledger.record(input, 1_000_000L)
@@ -36,7 +37,7 @@ class DjScratchTimestampProcessorTest {
         processor.queueInput(input)
 
         assertTrue(bytes(processor.output).contentEquals(original))
-        assertEquals(0, input.position())
+        assertEquals(input.limit(), input.position())
         assertEquals(1_000_000L, processor.lastConsumedTimestampForTest()?.presentationTimeUs)
         val ring = processor.pcmRingForTest()!!
         assertEquals(2, ring.availableFrames)
@@ -52,11 +53,13 @@ class DjScratchTimestampProcessorTest {
         val ledger = DjScratchTimestampLedger()
         val processor = DjScratchTimestampProcessor(ledger)
         processor.configure(AudioProcessor.AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+        processor.flush()
         val input = stereoPcm()
+        val original = bytes(input)
 
         processor.queueInput(input)
 
-        assertTrue(bytes(processor.output).contentEquals(bytes(input)))
+        assertTrue(bytes(processor.output).contentEquals(original))
         assertEquals(0, processor.pcmRingForTest()!!.availableFrames)
         assertNull(processor.lastConsumedTimestampForTest())
     }
@@ -66,6 +69,7 @@ class DjScratchTimestampProcessorTest {
         val ledger = DjScratchTimestampLedger()
         val processor = DjScratchTimestampProcessor(ledger)
         processor.configure(AudioProcessor.AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+        processor.flush()
         val input = stereoPcm()
         ledger.record(input, 1_000L)
         processor.queueInput(input)
@@ -85,6 +89,7 @@ class DjScratchTimestampProcessorTest {
     fun unsupportedPcmLayoutDoesNotAllocateScratchHistory() {
         val processor = DjScratchTimestampProcessor(DjScratchTimestampLedger())
         processor.configure(AudioProcessor.AudioFormat(48_000, 6, C.ENCODING_PCM_16BIT))
+        processor.flush()
 
         assertNull(processor.pcmRingForTest())
     }
