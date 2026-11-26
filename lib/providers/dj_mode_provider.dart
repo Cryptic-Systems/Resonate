@@ -22,6 +22,7 @@ class DjModeProvider extends ChangeNotifier {
       onWaveformUpdated: _onWaveformUpdated,
     );
     _lastObservedPlaying = music.isPlaying;
+    _lastObservedTransition = music.transitionInProgress;
     music.addListener(_onMusicChanged);
     ready = _load();
   }
@@ -42,6 +43,7 @@ class DjModeProvider extends ChangeNotifier {
   bool _loaded = false;
   late final Future<void> ready;
   bool _lastObservedPlaying = false;
+  bool _lastObservedTransition = false;
   bool _appForeground = false;
   bool _disposed = false;
   int _waveformRevision = 0;
@@ -186,18 +188,34 @@ class DjModeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Builds the full-track waveform for a deck-loaded song. If playback is
-  /// active, the idle scanner retains the request and resumes after playback.
+  /// Prioritizes analysis for a deck-loaded song immediately, including during
+  /// playback. Full waveform chunk decoding remains idle-only.
   Future<void> ensureTrackWaveform(Song song) async {
     if (!_loaded || _disposed) return;
     try {
+      await _idle.ensureTrackAnalysis(
+        song,
+        isSafeToAnalyze: _isDeckAnalysisSafe,
+        isStillIdle: _isAnalysisStillIdle,
+      );
       await _idle.ensureTrackWaveform(
         song,
         isStillIdle: _isAnalysisStillIdle,
       );
     } catch (error) {
-      debugPrint('DJ waveform build deferred for ${song.id}: $error');
+      debugPrint('DJ deck analysis deferred for ${song.id}: $error');
     }
+  }
+
+  bool _isDeckAnalysisSafe() =>
+      !_disposed && _appForeground && !music.transitionInProgress;
+
+  void _resumePriorityAnalysis() {
+    if (!_loaded || _disposed || !_isDeckAnalysisSafe()) return;
+    unawaited(_idle.resumePriorityAnalysis(
+      isSafeToAnalyze: _isDeckAnalysisSafe,
+      isStillIdle: _isAnalysisStillIdle,
+    ));
   }
 
   void _maybeStartIdleScan() {
@@ -231,6 +249,7 @@ class DjModeProvider extends ChangeNotifier {
     } else {
       _maybeStartIdleScan();
     }
+    _resumePriorityAnalysis();
   }
 
   /// Called by app lifecycle and audio-route events. Work is intentionally
@@ -258,14 +277,20 @@ class DjModeProvider extends ChangeNotifier {
 
   void _onMusicChanged() {
     final playing = music.isPlaying;
-    if (playing == _lastObservedPlaying) return;
+    final transitioning = music.transitionInProgress;
+    final playbackChanged = playing != _lastObservedPlaying;
+    final transitionEnded = _lastObservedTransition && !transitioning;
     _lastObservedPlaying = playing;
-    if (playing) {
-      _eventScanDebounce?.cancel();
-      _idle.stop();
-    } else {
-      _maybeStartIdleScan();
+    _lastObservedTransition = transitioning;
+    if (playbackChanged) {
+      if (playing) {
+        _eventScanDebounce?.cancel();
+        _idle.stop();
+      } else {
+        _maybeStartIdleScan();
+      }
     }
+    if (transitionEnded || !transitioning) _resumePriorityAnalysis();
   }
 
   @override
