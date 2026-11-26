@@ -111,6 +111,46 @@ internal class DjScratchPcmRingBuffer(
         return mediaTimesUs[(absoluteFrame % capacityFrames).toInt()]
     }
 
+    /**
+     * Linearly interpolates a fractional source-frame position into [destination].
+     * Interpolation is rejected across a media-time discontinuity, so a scratch
+     * reader cannot blend unrelated blocks after a seek or decoder timestamp jump.
+     */
+    fun readInterpolatedFrame(
+        framePosition: Double,
+        destination: FloatArray,
+        offset: Int = 0,
+    ): Boolean {
+        if (!framePosition.isFinite() || offset < 0 ||
+            offset + channelCount > destination.size ||
+            nextWriteFrame <= oldestFrame
+        ) return false
+        val lowerFrame = kotlin.math.floor(framePosition).toLong()
+        val fraction = framePosition - lowerFrame
+        val upperFrame = if (fraction == 0.0) lowerFrame else lowerFrame + 1L
+        if (lowerFrame !in oldestFrame until nextWriteFrame ||
+            upperFrame !in oldestFrame until nextWriteFrame
+        ) return false
+
+        if (upperFrame != lowerFrame) {
+            val lowerPts = mediaTimeUsAtFrame(lowerFrame) ?: return false
+            val upperPts = mediaTimeUsAtFrame(upperFrame) ?: return false
+            val expectedStep = 1_000_000.0 / sampleRate
+            if (kotlin.math.abs((upperPts - lowerPts) - expectedStep) > 1.5) {
+                return false
+            }
+        }
+
+        val lowerSlot = (lowerFrame % capacityFrames).toInt() * channelCount
+        val upperSlot = (upperFrame % capacityFrames).toInt() * channelCount
+        for (channel in 0 until channelCount) {
+            val first = samples[lowerSlot + channel].toFloat()
+            val second = samples[upperSlot + channel].toFloat()
+            destination[offset + channel] = first + (second - first) * fraction.toFloat()
+        }
+        return true
+    }
+
     /** Invalidates history in O(1), preserving absolute frame-index monotonicity. */
     fun clear() {
         oldestFrame = nextWriteFrame
