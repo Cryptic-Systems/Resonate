@@ -14,7 +14,7 @@ import java.nio.ByteBuffer
  */
 internal class DjScratchTimestampProcessor(
     private val ledger: DjScratchTimestampLedger,
-    private val controlMailbox: DjScratchControlMailbox,
+    private val controlMailbox: DjScratchControlMailbox = DjScratchControlMailbox(),
 ) : BaseAudioProcessor() {
     @Volatile
     private var lastConsumedTimestamp: DjScratchPcmTimestamp? = null
