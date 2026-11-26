@@ -836,6 +836,40 @@ class Media3PlaybackRuntime {
     await (backend as PlaybackDjDeckBackend).setDjDeckFilter(deckId: deckId, type: type, cutoffHz: cutoffHz);
   });
 
+  Future<void> setDjDeckLoopRange({
+    required String deckId,
+    required Duration start,
+    required Duration end,
+    required String expectedMediaId,
+  }) => _run(() async {
+        if ((deckId != 'A' && deckId != 'B') || start.isNegative ||
+            end <= start || end - start < const Duration(milliseconds: 120) ||
+            expectedMediaId.trim().isEmpty) {
+          throw ArgumentError('DJ loop requires a physical deck, ordered points at least 120 ms apart and a track identity.');
+        }
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support native DJ looping.');
+        }
+        await (backend as PlaybackDjDeckBackend).setDjDeckLoopRange(
+          deckId: deckId,
+          start: start,
+          end: end,
+          expectedMediaId: expectedMediaId,
+        );
+      });
+
+  Future<void> clearDjDeckLoop({required String deckId}) => _run(() async {
+        if (deckId != 'A' && deckId != 'B') {
+          throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
+        }
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support native DJ looping.');
+        }
+        await (backend as PlaybackDjDeckBackend).clearDjDeckLoop(deckId: deckId);
+      });
+
   Future<void> seekDjDeck({
     required String deckId,
     required Duration position,
