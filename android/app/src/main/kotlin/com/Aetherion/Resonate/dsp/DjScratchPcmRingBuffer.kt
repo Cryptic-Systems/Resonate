@@ -26,6 +26,8 @@ internal class DjScratchPcmRingBuffer(
 
     private val samples: ShortArray
     private val mediaTimesUs: LongArray
+    // Media-time lookup is safe only while retained frame timestamps are monotonic.
+    private var mediaTimesMonotonic = true
 
     /** Absolute index assigned to the next appended frame. */
     var nextWriteFrame: Long = 0L
@@ -69,6 +71,10 @@ internal class DjScratchPcmRingBuffer(
 
         val skippedTimeNumerator = skippedFrames.toLong() * 1_000_000L
         var framePtsUs = presentationTimeUs + skippedTimeNumerator / sampleRate
+        if (skippedFrames == 0 && totalFrames > 0 && nextWriteFrame > oldestFrame) {
+            val previousPts = mediaTimesUs[((nextWriteFrame - 1L) % capacityFrames).toInt()]
+            if (framePtsUs <= previousPts) mediaTimesMonotonic = false
+        }
         var ptsRemainder = skippedTimeNumerator % sampleRate
         val ptsStepWholeUs = 1_000_000L / sampleRate
         val ptsStepRemainder = 1_000_000L % sampleRate
@@ -79,6 +85,10 @@ internal class DjScratchPcmRingBuffer(
             val sampleOffset = slot * channelCount
             for (channel in 0 until channelCount) {
                 samples[sampleOffset + channel] = source.short
+            }
+            if (frame > 0) {
+                val previousPts = mediaTimesUs[((absoluteFrame - 1L) % capacityFrames).toInt()]
+                if (framePtsUs <= previousPts) mediaTimesMonotonic = false
             }
             mediaTimesUs[slot] = framePtsUs
             framePtsUs += ptsStepWholeUs
@@ -109,6 +119,45 @@ internal class DjScratchPcmRingBuffer(
     fun mediaTimeUsAtFrame(absoluteFrame: Long): Long? {
         if (absoluteFrame !in oldestFrame until nextWriteFrame) return null
         return mediaTimesUs[(absoluteFrame % capacityFrames).toInt()]
+    }
+
+    /**
+     * Resolves a media-time anchor to a fractional absolute PCM frame.
+     *
+     * Lookup is logarithmic and rejects out-of-window anchors, non-monotonic
+     * timestamp history, and gaps larger than one sample interval. This keeps
+     * a platter anchor from silently snapping across a seek/discontinuity.
+     */
+    fun framePositionAtMediaTimeUs(mediaTimeUs: Long): Double? {
+        if (mediaTimeUs < 0L || !mediaTimesMonotonic ||
+            nextWriteFrame <= oldestFrame
+        ) return null
+        val firstPts = mediaTimeUsAtFrame(oldestFrame) ?: return null
+        val lastPts = mediaTimeUsAtFrame(nextWriteFrame - 1L) ?: return null
+        if (mediaTimeUs < firstPts || mediaTimeUs > lastPts) return null
+
+        var low = oldestFrame
+        var high = nextWriteFrame - 1L
+        while (low < high) {
+            val middle = low + (high - low) / 2L
+            val pts = mediaTimeUsAtFrame(middle) ?: return null
+            if (pts < mediaTimeUs) low = middle + 1L else high = middle
+        }
+
+        val upperFrame = low
+        val upperPts = mediaTimeUsAtFrame(upperFrame) ?: return null
+        if (upperPts == mediaTimeUs || upperFrame == oldestFrame) {
+            return upperFrame.toDouble()
+        }
+        val lowerFrame = upperFrame - 1L
+        val lowerPts = mediaTimeUsAtFrame(lowerFrame) ?: return null
+        val intervalUs = upperPts - lowerPts
+        val expectedIntervalUs = 1_000_000.0 / sampleRate
+        if (intervalUs <= 0L ||
+            kotlin.math.abs(intervalUs - expectedIntervalUs) > 1.5
+        ) return null
+        val fraction = (mediaTimeUs - lowerPts).toDouble() / intervalUs.toDouble()
+        return lowerFrame.toDouble() + fraction.coerceIn(0.0, 1.0)
     }
 
     /**
@@ -154,6 +203,7 @@ internal class DjScratchPcmRingBuffer(
     /** Invalidates history in O(1), preserving absolute frame-index monotonicity. */
     fun clear() {
         oldestFrame = nextWriteFrame
+        mediaTimesMonotonic = true
     }
 }
 
