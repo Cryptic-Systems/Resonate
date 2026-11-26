@@ -451,11 +451,6 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                     await music.playDjDeck(id);
                   }
                 },
-                onLoad: djReady
-                    ? () => unawaited(
-                          _chooseTrackForDeck(context, id, music, library),
-                        )
-                    : null,
                 hotCuePositions: storedCues,
                 onSetHotCue: djReady && loaded
                     ? (slot) => unawaited(_setHotCue(id, deck, slot))
@@ -610,7 +605,6 @@ class _ConsoleDeck extends StatefulWidget {
     required this.onEnsureWaveform,
     required this.canPlay,
     required this.onPlayPause,
-    required this.onLoad,
     this.onSync,
     required this.hotCuePositions,
     required this.onSetHotCue,
@@ -637,7 +631,6 @@ class _ConsoleDeck extends StatefulWidget {
   final bool active, onAir, compact, isPlaying, canPlay, jogSeekEnabled;
   final VoidCallback? onEnsureWaveform;
   final Future<void> Function() onPlayPause;
-  final VoidCallback? onLoad;
   final VoidCallback? onSync;
   final List<Duration?> hotCuePositions;
   final ValueChanged<int>? onSetHotCue;
