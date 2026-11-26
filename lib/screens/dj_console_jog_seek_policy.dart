@@ -1,12 +1,33 @@
 import 'dart:math' as math;
 
-/// Maps platter rotation to a bounded seek preview. One complete revolution
-/// represents eight seconds of track movement; this is deliberately a seek
-/// gesture, not platter-speed control or scratch emulation.
+/// Maps platter rotation to bounded seek previews and native scratch anchors.
+/// Seek previews retain their millisecond UI contract; scratch anchors preserve
+/// microsecond precision so frequent control updates do not quantize the audio cursor.
 class DjConsoleJogSeekPolicy {
   const DjConsoleJogSeekPolicy._();
 
   static const double millisecondsPerRevolution = 8000;
+
+  /// Maps the accumulated platter rotation to a track-time anchor without
+  /// millisecond quantization. One revolution represents 1.8 seconds at
+  /// 33⅓ RPM, matching the native scratch velocity mapping.
+  static Duration scratchAnchorPosition({
+    required Duration start,
+    required double accumulatedRadians,
+    required Duration duration,
+  }) {
+    final maximumUs = math.max(0, duration.inMicroseconds).toInt();
+    final safeStartUs = start.inMicroseconds.clamp(0, maximumUs).toInt();
+    if (!accumulatedRadians.isFinite) {
+      return Duration(microseconds: safeStartUs);
+    }
+    const microsecondsPerRevolution = 1800000.0;
+    final deltaUs =
+        (accumulatedRadians / (math.pi * 2) * microsecondsPerRevolution)
+            .round();
+    final targetUs = (safeStartUs + deltaUs).clamp(0, maximumUs).toInt();
+    return Duration(microseconds: targetUs);
+  }
 
   static double normalizedAngleDelta(double radians) {
     if (!radians.isFinite) return 0;
