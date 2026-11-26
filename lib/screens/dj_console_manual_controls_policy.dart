@@ -16,9 +16,9 @@ class DjConsoleManualControlsPolicy {
         index,
   ];
 
-  /// The native crossfader accepts pre-positioning once both physical decks
-  /// have media. Native gain policy preserves unity on the sole playing deck
-  /// until both decks are audible; transitions retain exclusive gain ownership.
+  /// The crossfader remains active with either physical deck loaded. This is
+  /// essential for cutting a playing deck to silence while the opposite deck
+  /// is empty or paused; transitions retain exclusive gain ownership.
   static bool canAdjustCrossfader({
     required bool djModeEnabled,
     required bool transitionInProgress,
@@ -27,8 +27,7 @@ class DjConsoleManualControlsPolicy {
   }) =>
       djModeEnabled &&
       !transitionInProgress &&
-      deckAHasMedia &&
-      deckBHasMedia;
+      (deckAHasMedia || deckBHasMedia);
 
   /// Explain why the manual crossfader is unavailable. Keep the operator
   /// informed of the next actionable prerequisite instead of using one
@@ -45,10 +44,9 @@ class DjConsoleManualControlsPolicy {
     if (!djModeEnabled) return 'START DJ SESSION';
     if (!media3SessionActive) return 'MEDIA3 SESSION INACTIVE';
     if (transitionInProgress) return 'TRANSITION IN PROGRESS';
-    if (!deckAHasMedia || !deckBHasMedia) return 'LOAD BOTH DECKS';
-    if (!deckAIsPlaying || !deckBIsPlaying) {
-      return 'FADER PRESET · PLAY BOTH DECKS';
-    }
+    if (!deckAHasMedia && !deckBHasMedia) return 'LOAD A DECK';
+    if (!deckAIsPlaying && !deckBIsPlaying) return 'DECKS STOPPED';
+    if (!deckAIsPlaying || !deckBIsPlaying) return 'ONE DECK PLAYING · FADER ACTIVE';
     return 'MANUAL MIX READY';
   }
 
