@@ -57,6 +57,44 @@ class DjConsoleManualControlsPolicy {
     return 'MANUAL MIX READY';
   }
 
+  /// Whether a physical deck is actually audible through the manual
+  /// crossfader. Position 0 routes to A, position 1 routes to B; at the
+  /// midpoint both playing decks are on air. A tiny residual contribution
+  /// at an endpoint is treated as effectively silent for status display.
+  static bool isDeckOnAir({
+    required String deckId,
+    required bool deckHasMedia,
+    required bool isPlaying,
+    required double crossfaderPosition,
+    double audibleThreshold = 0.01,
+  }) {
+    if (!deckHasMedia || !isPlaying || !crossfaderPosition.isFinite) {
+      return false;
+    }
+    final position = crossfaderPosition.clamp(0.0, 1.0);
+    final contribution = switch (deckId) {
+      'A' => 1.0 - position,
+      'B' => position,
+      _ => 0.0,
+    };
+    return contribution > audibleThreshold;
+  }
+
+  /// Keep selection, transport and audible routing as separate concepts.
+  /// On-air takes precedence; a selected paused deck remains visibly selected.
+  static String deckStatusLabel({
+    required bool selected,
+    required bool isPlaying,
+    required bool onAir,
+    required bool deckHasMedia,
+  }) {
+    if (!deckHasMedia) return 'EMPTY';
+    if (onAir) return 'ON AIR';
+    if (isPlaying) return 'PLAYING';
+    if (selected) return 'SELECTED';
+    return 'STANDBY';
+  }
+
   /// Channel gain can be adjusted on a loaded deck, including while paused,
   /// but never while the native transition controller owns deck gain.
   static bool canAdjustChannelGain({
