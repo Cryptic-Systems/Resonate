@@ -130,7 +130,7 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
                     extractor.selectTrack(audioTrack)
                     if (startMs > 0L) {
                         try {
-                            extractor.seekTo(startMs * 1000L, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                            extractor.seekTo(startMs * 1000L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
                         } catch (_: Exception) {}
                     }
                     val mime = format.getString(MediaFormat.KEY_MIME) ?: run {
