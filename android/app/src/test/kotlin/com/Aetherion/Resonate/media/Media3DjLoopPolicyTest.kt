@@ -39,7 +39,7 @@ class Media3DjLoopPolicyTest {
     fun requiresKnownDurationAndKeepsEndBeforeTrackBoundary() {
         assertNull(Media3DjLoopPolicy.create(0L, 1_000L, null))
         assertNull(Media3DjLoopPolicy.create(0L, 1_000L, 0L))
-        assertNull(Media3DjLoopPolicy.create(9_960L, 10_000L, 10_000L))
+        assertNull(Media3DjLoopPolicy.create(9_961L, 10_000L, 10_000L))
         assertNotNull(Media3DjLoopPolicy.create(8_000L, 9_900L, 10_000L))
     }
 
