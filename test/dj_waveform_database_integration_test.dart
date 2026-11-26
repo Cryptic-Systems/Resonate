@@ -331,6 +331,58 @@ void main() {
     );
   });
 
+  test('full-track waveform query is not capped by the 96-chunk LRU budget', () async {
+    const chunkCount = 100;
+    const identity = DjWaveformIdentity(
+      songId: 'song-long-range',
+      analysisVersion: 3,
+      sourceFingerprint: 'long-range-fingerprint',
+      durationMs: chunkCount * 8000,
+      schemaVersion: 1,
+    );
+    await db.insert('songs', {
+      'id': identity.songId,
+      'title': 'Long track',
+      'file_path': '/long-track.mp3',
+    });
+    await helper.prepareDjWaveformManifest(
+      identity: identity,
+      expectedChunkCount: chunkCount,
+    );
+    for (var index = 0; index < chunkCount; index++) {
+      final start = index * 8000;
+      await helper.upsertDjWaveformChunk(
+        chunk: DjWaveformChunk(
+          songId: identity.songId,
+          analysisVersion: identity.analysisVersion,
+          chunkIndex: index,
+          requestedStartMs: start,
+          requestedEndMs: start + 8000,
+          actualStartMs: start,
+          actualEndMs: start + 8000,
+          sourceFingerprint: identity.sourceFingerprint,
+          durationMs: identity.durationMs,
+          schemaVersion: identity.schemaVersion,
+          sampleRate: 44100,
+          channels: 2,
+          peaks: const [0.2, 0.4],
+          completedAt: DateTime.utc(2026, 11, 23),
+        ),
+        expectedChunkCount: chunkCount,
+      );
+    }
+
+    final fullTrack = await helper.getDjWaveformChunksInRange(
+      identity: identity,
+      startMs: 0,
+      endMs: identity.durationMs,
+      overscanChunks: 0,
+    );
+    expect(fullTrack, hasLength(chunkCount));
+    expect(fullTrack.first.chunkIndex, 0);
+    expect(fullTrack.last.chunkIndex, chunkCount - 1);
+  });
+
   test('waveform retention evicts oldest chunks and repairs manifests only', () async {
     for (final id in ['song-old', 'song-new']) {
       await db.insert('songs', {
