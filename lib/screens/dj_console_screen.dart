@@ -359,8 +359,34 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
+    final appTheme = Theme.of(context);
+    // The performance console uses dark glass surfaces regardless of the
+    // app-wide appearance. Pin its foreground palette so light-mode theme
+    // text cannot disappear against the deck and mixer panels.
+    final theme = appTheme.copyWith(
+      brightness: Brightness.dark,
+      colorScheme: appTheme.colorScheme.copyWith(
+        brightness: Brightness.dark,
+        surface: const Color(0xFF101923),
+        onSurface: Colors.white,
+        onSurfaceVariant: const Color(0xFFCBD5E1),
+      ),
+      textTheme: appTheme.textTheme.apply(
+        bodyColor: Colors.white,
+        displayColor: Colors.white,
+      ),
+      primaryTextTheme: appTheme.primaryTextTheme.apply(
+        bodyColor: Colors.white,
+        displayColor: Colors.white,
+      ),
+      iconTheme: appTheme.iconTheme.copyWith(
+        color: const Color(0xFFE6EDF5),
+      ),
+      scaffoldBackgroundColor: const Color(0xFF080E15),
+    );
+    return Theme(
+      data: theme,
+      child: Scaffold(
       backgroundColor: Colors.transparent,
       body: ResonateGlassBackground(
         child: SafeArea(
@@ -593,6 +619,7 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
         },
           ),
         ),
+      ),
       ),
     );
   }
@@ -981,7 +1008,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     padding: const EdgeInsets.symmetric(vertical: 5),
     child: Row(children: [
       Expanded(child: Text(label, style: const TextStyle(
-        color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w800))),
+        color: Colors.white72, fontSize: 11, fontWeight: FontWeight.w800))),
       Text(value, style: const TextStyle(
         color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
     ]),
@@ -1038,7 +1065,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                       Text(labels[index], style: const TextStyle(
                         color: Colors.white70, fontWeight: FontWeight.w900)),
                       Text('${value > 0 ? '+' : ''}${value.toStringAsFixed(1)} dB',
-                        style: TextStyle(color: value == 0 ? Colors.white54 : Theme.of(context).colorScheme.primary)),
+                        style: TextStyle(color: value == 0 ? Colors.white72 : Theme.of(context).colorScheme.primary)),
                       Slider(
                         value: value, min: -12, max: 12, divisions: 48,
                         onChanged: widget.canAdjustEq ? (next) {
@@ -1153,7 +1180,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             side: BorderSide(
               color: cue == null ? Colors.white24 : accent.withValues(alpha: .7),
             ),
-            foregroundColor: cue == null ? Colors.white38 : accent,
+            foregroundColor: cue == null ? Colors.white70 : accent,
             backgroundColor: cue == null
                 ? Colors.white.withValues(alpha: .025)
                 : accent.withValues(alpha: .10),
@@ -1226,7 +1253,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
           Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall?.copyWith(color: Colors.white60)),
+            style: theme.textTheme.bodySmall?.copyWith(color: Colors.white75)),
           const SizedBox(height: 3),
           FutureBuilder<DjTrackProfile?>(
             future: profileFuture,
@@ -1452,7 +1479,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                                             : 'SEEK ${_time(_jogPreviewPosition!)}',
                                         style: theme.textTheme.labelSmall?.copyWith(
                                           color: _jogPreviewPosition == null
-                                              ? Colors.white38
+                                              ? Colors.white70
                                               : accent,
                                           fontSize: compact ? 7 : 9,
                                           letterSpacing: 1.0,
@@ -1508,7 +1535,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
               fontFeatures: const [FontFeature.tabularFigures()])),
             const Spacer(),
             Text(duration > Duration.zero ? _time(duration) : '--:--',
-              style: theme.textTheme.labelSmall?.copyWith(color: Colors.white54)),
+              style: theme.textTheme.labelSmall?.copyWith(color: Colors.white72)),
           ]),
           Row(
             children: [
@@ -1820,7 +1847,7 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
             widget.statusMessage,
             textAlign: TextAlign.center,
             style: theme.textTheme.labelSmall?.copyWith(
-              color: Colors.white54,
+              color: Colors.white72,
               fontSize: widget.compact ? 8 : 9,
             ),
           ),
@@ -1830,7 +1857,7 @@ class _DjConsoleMixerState extends State<_DjConsoleMixer> {
           Text(
             'CROSSFADE',
             style: theme.textTheme.labelSmall?.copyWith(
-              color: Colors.white38,
+              color: Colors.white70,
               letterSpacing: .7,
               fontSize: 8,
               fontWeight: FontWeight.w800,
@@ -2173,7 +2200,7 @@ class _ConsoleAnalysisStrip extends StatelessWidget {
                     style: TextStyle(
                       fontSize: compact ? 6 : 7,
                       letterSpacing: .8,
-                      color: Colors.white38,
+                      color: Colors.white70,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -2211,7 +2238,7 @@ class _ConsoleStatus extends StatelessWidget {
       border: Border.all(color: (active ? const Color(0xFF55D6BE) : Colors.white24).withValues(alpha: .4)),
     ),
     child: Text(label, style: TextStyle(fontSize: 9, letterSpacing: .7,
-      color: active ? const Color(0xFF55D6BE) : Colors.white60,
+      color: active ? const Color(0xFF55D6BE) : Colors.white75,
       fontWeight: FontWeight.w800)),
   );
 }
