@@ -9,9 +9,8 @@ import java.nio.ByteBuffer
  * First processor in the DJ sink chain. It binds each PCM block to the PTS
  * recorded by TimestampedDjAudioSink, then passes the PCM through unchanged.
  *
- * This is the timestamp foundation for the bounded scratch ring buffer; it
- * deliberately does not alter playback until cursor/buffer semantics are
- * implemented and verified.
+ * It passively captures timestamped PCM into a bounded per-deck history, then
+ * passes the same PCM onward unchanged. It does not alter audible playback.
  */
 internal class DjScratchTimestampProcessor(
     private val ledger: DjScratchTimestampLedger,
