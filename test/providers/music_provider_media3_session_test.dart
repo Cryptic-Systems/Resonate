@@ -4575,8 +4575,8 @@ void main() {
       try {
         await music.prepareMedia3ProviderSession();
         await music.enableDjDualDeckMode();
-        await expectLater(
-          music.setDjDeckLoopRange(
+        expect(
+          () => music.setDjDeckLoopRange(
             deckId: 'A',
             start: const Duration(seconds: 4),
             end: const Duration(seconds: 4),
