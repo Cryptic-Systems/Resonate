@@ -157,6 +157,13 @@ abstract interface class PlaybackDjDeckBackend {
     required String expectedMediaId,
   });
   Future<void> clearDjDeckLoop({required String deckId});
+  Future<void> setDjScratchControl({
+    required String deckId,
+    required String expectedMediaId,
+    required bool active,
+    required double velocity,
+    required Duration anchor,
+  });
 
 }
 
