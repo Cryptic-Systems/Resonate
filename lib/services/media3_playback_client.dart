@@ -26,6 +26,9 @@ class Media3DjDeckSnapshot {
     this.speed = 1,
     this.pitch = 1,
     this.audioSessionId,
+    this.loopActive = false,
+    this.loopStart,
+    this.loopEnd,
   });
 
   final String deckId;
@@ -46,6 +49,9 @@ class Media3DjDeckSnapshot {
   final double speed;
   final double pitch;
   final int? audioSessionId;
+  final bool loopActive;
+  final Duration? loopStart;
+  final Duration? loopEnd;
 
   factory Media3DjDeckSnapshot.fromMap(
     String deckId,
@@ -58,6 +64,9 @@ class Media3DjDeckSnapshot {
     String? string(Object? value) => value is String ? value : null;
     final rawDuration = map['durationMs'];
     final sessionId = integer(map['audioSessionId']);
+    Duration? optionalDuration(Object? value) => value is num && value.isFinite && value >= 0
+        ? Duration(milliseconds: value.toInt().clamp(0, 0x7fffffff))
+        : null;
     return Media3DjDeckSnapshot(
       deckId: deckId,
       mediaId: string(map['mediaId']),
@@ -79,6 +88,9 @@ class Media3DjDeckSnapshot {
       speed: decimal(map['speed'], 1.0),
       pitch: decimal(map['pitch'], 1.0),
       audioSessionId: sessionId > 0 ? sessionId : null,
+      loopActive: map['loopActive'] == true,
+      loopStart: optionalDuration(map['loopStartMs']),
+      loopEnd: optionalDuration(map['loopEndMs']),
     );
   }
 }
