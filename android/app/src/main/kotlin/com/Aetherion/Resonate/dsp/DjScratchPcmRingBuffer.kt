@@ -111,10 +111,8 @@ internal class DjScratchPcmRingBuffer(
         return mediaTimesUs[(absoluteFrame % capacityFrames).toInt()]
     }
 
-    /** Clears history while preserving absolute frame-index monotonicity. */
+    /** Invalidates history in O(1), preserving absolute frame-index monotonicity. */
     fun clear() {
-        samples.fill(0)
-        mediaTimesUs.fill(0L)
         oldestFrame = nextWriteFrame
     }
 }
