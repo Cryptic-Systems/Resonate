@@ -5,7 +5,6 @@ import androidx.media3.common.audio.AudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -88,6 +87,5 @@ class DjScratchTimestampProcessorTest {
         processor.configure(AudioProcessor.AudioFormat(48_000, 6, C.ENCODING_PCM_16BIT))
 
         assertNull(processor.pcmRingForTest())
-        assertFalse(processor.pcmRingForTest() != null)
     }
 }
