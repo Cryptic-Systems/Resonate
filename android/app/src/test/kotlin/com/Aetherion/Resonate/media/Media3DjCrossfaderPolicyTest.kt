@@ -26,7 +26,7 @@ class Media3DjCrossfaderPolicyTest {
     }
 
     @Test
-    fun inactiveStandbyKeepsTheOnlyAudibleDeckAtUnityAtEveryFaderPosition() {
+    fun crossfaderStillMutesThePlayingDeckWhenTheOtherDeckIsStopped() {
         for (position in listOf(0f, 0.5f, 1f)) {
             val activeA = Media3DjCrossfaderPolicy.gainsForState(
                 position = position,
@@ -39,10 +39,9 @@ class Media3DjCrossfaderPolicyTest {
                 bothDecksPlaying = false,
             )
 
-            assertEquals(1f, activeA.first, 0.0001f)
-            assertEquals(0f, activeA.second, 0.0001f)
-            assertEquals(0f, activeB.first, 0.0001f)
-            assertEquals(1f, activeB.second, 0.0001f)
+            val expected = Media3DjCrossfaderPolicy.gains(position)
+            assertEquals(expected, activeA)
+            assertEquals(expected, activeB)
         }
     }
 
@@ -60,7 +59,7 @@ class Media3DjCrossfaderPolicyTest {
     }
 
     @Test
-    fun crossfaderCanBePrepositionedWithTwoLoadedDecksAndNoTransition() {
+    fun crossfaderCanBePositionedWithEitherDeckLoadedAndNoTransition() {
         fun allowed(
             activeHasMedia: Boolean = true,
             standbyHasMedia: Boolean = true,
@@ -82,9 +81,11 @@ class Media3DjCrossfaderPolicyTest {
             transitionOwnsGain = false,
         ))
         assertTrue(!allowed(activeHasMedia = false))
-        assertTrue(!allowed(standbyHasMedia = false))
-        // Playback state does not gate fader positioning. applyDeckVolumes
-        // keeps the sole audible deck at unity until its partner also plays.
+        assertTrue(allowed(standbyHasMedia = false))
+        assertTrue(allowed(activeHasMedia = false, standbyHasMedia = true))
+        assertTrue(!allowed(activeHasMedia = false, standbyHasMedia = false))
+        // A single loaded deck remains crossfader-controllable so moving to
+        // the empty side correctly mutes the loaded deck.
         assertTrue(!allowed(transitionOwnsGain = true))
         assertTrue(!Media3DjCrossfaderPolicy.canApply(
             position = Float.NaN,
