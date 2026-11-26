@@ -91,6 +91,54 @@ void main() {
       expect(plan.status, QueuePlanStatus.noEligibleTracks);
     });
 
+    test('reports why fully analyzed tracks miss the calmer profile', () {
+      final songs = [_song('fast'), _song('energetic'), _song('calm')];
+      final plan = planner.planWithProfiles(
+        songs,
+        intent: QueueIntent.calmerMix,
+        profiles: {
+          'fast': _profile('fast', bpm: 132, energy: 0.20),
+          'energetic': _profile('energetic', bpm: 92, energy: 0.76),
+          'calm': _profile('calm', bpm: 88, energy: 0.22),
+        },
+      );
+      expect(plan.analysisCoverage, 1.0);
+      expect(plan.analyzedTrackCount, 3);
+      expect(plan.eligibleTrackCount, 1);
+      expect(plan.exclusionCounts['bpm_out_of_range'], 1);
+      expect(plan.exclusionCounts['energy_out_of_range'], 1);
+      expect(plan.reason, contains('BPM outside the requested range'));
+      expect(plan.reason, contains('energy outside the requested range'));
+    });
+
+    test('counts missing required analysis signals separately', () {
+      final plan = planner.planWithProfiles(
+        [_song('no-beats'), _song('no-energy')],
+        intent: QueueIntent.calmerMix,
+        profiles: {
+          'no-beats': _profile('no-beats', bpm: 88, energy: 0.2,
+            confidence: 0.9),
+          'no-energy': DjTrackProfile(
+            songId: 'no-energy',
+            durationMs: 180000,
+            beatGrid: const DjBeatGrid(
+              bpm: null, confidence: 0, firstBeatMs: null,
+              beatMs: [], downbeatMs: [], downbeatConfidence: 0,
+              barConfidence: 0, phraseConfidence: 0,
+            ),
+            keyRoot: null,
+            keyMode: null,
+            keyConfidence: 0,
+            energyCurve: const [],
+            analysisConfidence: 0.9,
+            analysisVersion: DjAnalysis.currentVersion,
+          ),
+        },
+      );
+      expect(plan.exclusionCounts['missing_energy_profile'], 1);
+      expect(plan.exclusionCounts['missing_beat_grid'], 1);
+    });
+
     test('keeps scanning when analyzed tracks fail but scope remains unanalyzed', () {
       final plan = planner.planWithProfiles(
         [_song('slow-a'), _song('slow-b'), _song('unknown')],
