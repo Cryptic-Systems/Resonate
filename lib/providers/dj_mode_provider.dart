@@ -208,7 +208,9 @@ class DjModeProvider extends ChangeNotifier {
   }
 
   bool _isDeckAnalysisSafe() =>
-      !_disposed && _appForeground && !music.transitionInProgress;
+      !_disposed &&
+      !music.transitionInProgress &&
+      (_appForeground || _idle.canContinueInBackground);
 
   void _resumePriorityAnalysis() {
     if (!_loaded || _disposed || !_isDeckAnalysisSafe()) return;
