@@ -55,16 +55,35 @@ class IntelligentQueuePlanner {
 
     final candidates = <_Candidate>[];
     final excluded = <String>[];
+    final exclusionCounts = <String, int>{};
+    void record(String reason) {
+      exclusionCounts.update(reason, (count) => count + 1, ifAbsent: () => 1);
+    }
     var analyzedCount = 0;
     for (var index = 0; index < songs.length; index++) {
       final song = songs[index];
       final profile = profiles[song.id];
-      if (profile == null || !_profileMatchesSong(profile, song) ||
-          profile.analysisConfidence < intent.minAnalysisConfidence ||
-          profile.analysisVersion < DjAnalysis.currentVersion) {
+      if (profile == null) {
         excluded.add(song.id);
+        record('missing_profile');
         continue;
       }
+      if (!_profileMatchesSong(profile, song)) {
+        excluded.add(song.id);
+        record('track_identity_or_duration_mismatch');
+        continue;
+      }
+      if (profile.analysisVersion < DjAnalysis.currentVersion) {
+        excluded.add(song.id);
+        record('stale_analysis_version');
+        continue;
+      }
+      if (profile.analysisConfidence < intent.minAnalysisConfidence) {
+        excluded.add(song.id);
+        record('low_analysis_confidence');
+        continue;
+      }
+
       final bpm = profile.hasTempo ? profile.beatGrid.bpm : null;
       final energy = _averageEnergy(profile);
       final hasKey = profile.hasKey && profile.keyConfidence >= 0.35;
@@ -75,15 +94,26 @@ class IntelligentQueuePlanner {
         analyzedCount++;
       }
 
-      if (intent.requireBeatGrid &&
-          (bpm == null || (intent.minBpm != null && bpm < intent.minBpm!) ||
-           (intent.maxBpm != null && bpm > intent.maxBpm!))) {
-        excluded.add(song.id);
-        continue;
+      var rejected = false;
+      if (intent.requireBeatGrid && bpm == null) {
+        record('missing_beat_grid');
+        rejected = true;
+      } else if (intent.requireBeatGrid &&
+          ((intent.minBpm != null && bpm! < intent.minBpm!) ||
+           (intent.maxBpm != null && bpm! > intent.maxBpm!))) {
+        record('bpm_out_of_range');
+        rejected = true;
       }
-      if (intent.requireEnergy &&
-          (energy == null || (intent.minEnergy != null && energy < intent.minEnergy!) ||
-           (intent.maxEnergy != null && energy > intent.maxEnergy!))) {
+      if (intent.requireEnergy && energy == null) {
+        record('missing_energy_profile');
+        rejected = true;
+      } else if (intent.requireEnergy &&
+          ((intent.minEnergy != null && energy! < intent.minEnergy!) ||
+           (intent.maxEnergy != null && energy! > intent.maxEnergy!))) {
+        record('energy_out_of_range');
+        rejected = true;
+      }
+      if (rejected) {
         excluded.add(song.id);
         continue;
       }
@@ -93,15 +123,17 @@ class IntelligentQueuePlanner {
     final coverage = analyzedCount / songs.length;
     if (candidates.isEmpty) {
       final insufficient = analyzedCount < songs.length;
+      final reason = insufficient
+          ? 'DJ analysis is still incomplete for this scope. This request was not replaced with ordinary shuffle.'
+          : 'No analyzed tracks meet this mix profile.';
       return QueuePlan(
         intentId: intent.id, songs: const [],
         status: insufficient ? QueuePlanStatus.insufficientAnalysis
             : QueuePlanStatus.noEligibleTracks,
         analysisCoverage: coverage, analyzedTrackCount: analyzedCount,
         eligibleTrackCount: 0, excludedSongIds: List.unmodifiable(excluded),
-        reason: insufficient
-            ? 'DJ analysis is still incomplete for this scope. This request was not replaced with ordinary shuffle.'
-            : 'No analyzed tracks meet this mix profile.',
+        reason: reason,
+        exclusionCounts: Map.unmodifiable(exclusionCounts),
       );
     }
 
@@ -135,6 +167,7 @@ class IntelligentQueuePlanner {
       excludedSongIds: List.unmodifiable(excluded),
       reason: complete ? null
           : 'Some tracks were excluded because DJ analysis was missing, stale, or outside this mix profile.',
+      exclusionCounts: Map.unmodifiable(exclusionCounts),
     );
   }
 
