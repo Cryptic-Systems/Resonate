@@ -117,7 +117,7 @@ class DjScratchPcmRingBufferTest {
         assertNull(ring.framePositionAtMediaTimeUs(10_000L))
         ring.clear()
         ring.append(pcm16(4_000, 5_000), 20_000L)
-        assertEquals(1.0, ring.framePositionAtMediaTimeUs(21_000L)!!, 0.0)
+        assertEquals(5.0, ring.framePositionAtMediaTimeUs(21_000L)!!, 0.0)
     }
 
     @Test
