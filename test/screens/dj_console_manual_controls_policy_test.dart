@@ -117,7 +117,7 @@ void main() {
         bool bPlaying = true,
       }) =>
           DjConsoleManualControlsPolicy.crossfaderStatusText(
-            djModeEnabled: dj,
+            djSessionActive: dj,
             media3SessionActive: media3,
             transitionInProgress: transition,
             deckAHasMedia: aLoaded,
@@ -185,10 +185,10 @@ void main() {
       expect(label(), 'STANDBY');
     });
 
-    test('channel gain requires a loaded deck and an active safe DJ session', () {
+    test('channel gain requires a loaded deck and an active manual DJ session', () {
       expect(
         DjConsoleManualControlsPolicy.canAdjustChannelGain(
-          djModeEnabled: true,
+          djSessionActive: true,
           media3SessionActive: true,
           transitionInProgress: false,
           deckHasMedia: true,
@@ -197,7 +197,7 @@ void main() {
       );
       expect(
         DjConsoleManualControlsPolicy.canAdjustChannelGain(
-          djModeEnabled: true,
+          djSessionActive: true,
           media3SessionActive: true,
           transitionInProgress: true,
           deckHasMedia: true,
@@ -206,7 +206,7 @@ void main() {
       );
       expect(
         DjConsoleManualControlsPolicy.canAdjustChannelGain(
-          djModeEnabled: true,
+          djSessionActive: true,
           media3SessionActive: false,
           transitionInProgress: false,
           deckHasMedia: true,
@@ -215,7 +215,7 @@ void main() {
       );
       expect(
         DjConsoleManualControlsPolicy.canAdjustChannelGain(
-          djModeEnabled: false,
+          djSessionActive: false,
           media3SessionActive: true,
           transitionInProgress: false,
           deckHasMedia: true,
@@ -224,7 +224,7 @@ void main() {
       );
       expect(
         DjConsoleManualControlsPolicy.canAdjustChannelGain(
-          djModeEnabled: true,
+          djSessionActive: true,
           media3SessionActive: true,
           transitionInProgress: false,
           deckHasMedia: false,
@@ -233,10 +233,10 @@ void main() {
       );
     });
 
-    test('crossfader remains active with either deck loaded in DJ mode', () {
+    test('crossfader remains active with either deck loaded in a manual DJ session', () {
       expect(
         DjConsoleManualControlsPolicy.canAdjustCrossfader(
-          djModeEnabled: true,
+          djSessionActive: true,
           transitionInProgress: false,
           deckAHasMedia: true,
           deckBHasMedia: true,
@@ -245,7 +245,7 @@ void main() {
       );
       expect(
         DjConsoleManualControlsPolicy.canAdjustCrossfader(
-          djModeEnabled: true,
+          djSessionActive: true,
           transitionInProgress: true,
           deckAHasMedia: true,
           deckBHasMedia: true,
@@ -254,7 +254,7 @@ void main() {
       );
       expect(
         DjConsoleManualControlsPolicy.canAdjustCrossfader(
-          djModeEnabled: true,
+          djSessionActive: true,
           transitionInProgress: false,
           deckAHasMedia: true,
           deckBHasMedia: false,
@@ -263,7 +263,7 @@ void main() {
       );
       expect(
         DjConsoleManualControlsPolicy.canAdjustCrossfader(
-          djModeEnabled: false,
+          djSessionActive: false,
           transitionInProgress: false,
           deckAHasMedia: true,
           deckBHasMedia: true,
