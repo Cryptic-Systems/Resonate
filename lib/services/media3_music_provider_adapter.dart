@@ -486,6 +486,9 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
       speed: deck.speed,
       pitch: deck.pitch,
       audioSessionId: deck.audioSessionId,
+      loopActive: deck.loopActive,
+      loopStart: deck.loopStart,
+      loopEnd: deck.loopEnd,
     );
   }
 
