@@ -446,6 +446,39 @@ extension MusicProviderDjHandoff on MusicProvider {
     });
   }
 
+  Future<void> setDjDeckLoopRange({
+    required String deckId,
+    required Duration start,
+    required Duration end,
+    required String expectedMediaId,
+  }) {
+    if ((deckId != 'A' && deckId != 'B') ||
+        start.isNegative || end <= start ||
+        end - start < const Duration(milliseconds: 120) ||
+        expectedMediaId.trim().isEmpty) {
+      throw ArgumentError('DJ loop requires deck A/B, ordered points at least 120 ms apart and a track identity.');
+    }
+    return _runDjDeckCommand<void>(
+      'loop_$deckId',
+      (session) => session.setDjDeckLoopRange(
+        deckId: deckId,
+        start: start,
+        end: end,
+        expectedMediaId: expectedMediaId,
+      ),
+    );
+  }
+
+  Future<void> clearDjDeckLoop({required String deckId}) {
+    if (deckId != 'A' && deckId != 'B') {
+      throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
+    }
+    return _runDjDeckCommand<void>(
+      'loop_clear_$deckId',
+      (session) => session.clearDjDeckLoop(deckId: deckId),
+    );
+  }
+
   /// Retains interactive authority for the complete crossfader drag.
   ///
   /// The retained lease is deliberately separate from ordinary per-command
