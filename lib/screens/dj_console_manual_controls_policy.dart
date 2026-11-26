@@ -45,8 +45,15 @@ class DjConsoleManualControlsPolicy {
     if (!media3SessionActive) return 'MEDIA3 SESSION INACTIVE';
     if (transitionInProgress) return 'TRANSITION IN PROGRESS';
     if (!deckAHasMedia && !deckBHasMedia) return 'LOAD A DECK';
-    if (!deckAIsPlaying && !deckBIsPlaying) return 'DECKS STOPPED';
-    if (!deckAIsPlaying || !deckBIsPlaying) return 'ONE DECK PLAYING · FADER ACTIVE';
+
+    // A transport flag on an empty deck is stale/invalid state. Only count a
+    // deck as playing when it owns loaded media.
+    final deckAActive = deckAHasMedia && deckAIsPlaying;
+    final deckBActive = deckBHasMedia && deckBIsPlaying;
+    if (!deckAActive && !deckBActive) return 'DECKS STOPPED';
+    if (!deckAActive || !deckBActive) {
+      return 'ONE DECK PLAYING · FADER ACTIVE';
+    }
     return 'MANUAL MIX READY';
   }
 
