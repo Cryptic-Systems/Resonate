@@ -1238,22 +1238,33 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                           borderRadius: BorderRadius.circular(9),
                         ),
                         child: Stack(fit: StackFit.expand, children: [
-                          SingleChildScrollView(
-                            controller: _waveformScroll,
-                            scrollDirection: Axis.horizontal,
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTapDown: widget.jogSeekEnabled && duration > Duration.zero
+                                ? (details) {
+                                    final width = waveformConstraints.maxWidth;
+                                    if (width <= 0) return;
+                                    final fraction = (details.localPosition.dx / width)
+                                        .clamp(0.0, 1.0);
+                                    final target = Duration(
+                                      milliseconds: (duration.inMilliseconds * fraction).round(),
+                                    );
+                                    unawaited(widget.onJogSeek(target));
+                                  }
+                                : null,
                             child: SizedBox(
                               width: contentWidth,
                               height: compact ? 22 : 30,
                               child: RepaintBoundary(
                                 child: CustomPaint(
-                                painter: _ConsoleWavePainter(
-                                  progress: progress,
-                                  color: accent,
-                                  segments: segments,
-                                  beatGrid: beatGrid,
-                                  sections: sections,
-                                  durationMs: duration.inMilliseconds,
-                                ),
+                                  painter: _ConsoleWavePainter(
+                                    progress: progress,
+                                    color: accent,
+                                    segments: segments,
+                                    beatGrid: beatGrid,
+                                    sections: sections,
+                                    durationMs: duration.inMilliseconds,
+                                  ),
                                 ),
                               ),
                             ),
