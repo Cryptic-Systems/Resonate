@@ -184,9 +184,14 @@ class DjAnalysisService {
   /// Ensure we have a cached row. Safe to call from preload / idle (async).
   ///
   /// Re-analyzes when [force] is true, version is stale, or file identity changed.
-  Future<DjAnalysis> analyzeSong(Song song, {bool force = false}) async {
+  Future<DjAnalysis> analyzeSong(
+    Song song, {
+    bool force = false,
+    bool Function()? shouldContinue,
+  }) async {
     final generation = _analysisGeneration;
-    bool cancelled() => generation != _analysisGeneration;
+    bool cancelled() =>
+        generation != _analysisGeneration || !(shouldContinue?.call() ?? true);
     if (!force) {
       final existing = await getAnalysis(song.id);
       if (existing != null) {
