@@ -80,9 +80,12 @@ internal class DjScratchRenderPolicy(
                 velocity = snapshot.velocity
                 lastSequence = snapshot.sequence
             }
+            val blockStartCursor = cursorFrame
             for (frame in 0 until frameCount) {
                 if (!ring.readInterpolatedFrame(cursorFrame, interpolated)) {
-                    reset()
+                    // Keep the anchor/cursor so a later PCM block can satisfy a
+                    // forward look-ahead; the caller discards this partial output.
+                    cursorFrame = blockStartCursor
                     return false
                 }
                 for (channel in 0 until ring.channelCount) {
@@ -109,10 +112,11 @@ internal class DjScratchRenderPolicy(
         }
 
         val liveStartPosition = source.position()
+        val blockStartCursor = cursorFrame
         val fadeFrames = minOf(frameCount, releaseFramesRemaining)
         for (frame in 0 until fadeFrames) {
             if (!ring.readInterpolatedFrame(cursorFrame, interpolated)) {
-                reset()
+                cursorFrame = blockStartCursor
                 return false
             }
             val liveOffset = liveStartPosition + frame * bytesPerFrame
