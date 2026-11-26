@@ -872,10 +872,10 @@ class Media3PlaybackRuntime {
           throw ArgumentError('Scratch control requires a physical deck, track identity, finite velocity within ±4x and a nonnegative anchor.');
         }
         final backend = _backend;
-        if (backend is! PlaybackDjDeckBackend) {
+        if (backend is! PlaybackDjScratchBackend) {
           throw UnsupportedError('The active backend does not support native DJ scratch control.');
         }
-        await (backend as PlaybackDjDeckBackend).setDjScratchControl(
+        await (backend as PlaybackDjScratchBackend).setDjScratchControl(
           deckId: deckId,
           expectedMediaId: expectedMediaId,
           active: active,
