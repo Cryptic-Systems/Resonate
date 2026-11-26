@@ -1,6 +1,6 @@
 # Resonate DJ Console — Product & Technical Direction
 
-**Status:** DJ Workspace is watch-only; landscape Console implemented; manual Deck B preparation/cue/equal-power handoff and bounded active-deck jog seeking are enabled; scratch and continuous mixer controls remain gated  
+**Status:** DJ Workspace remains watch-only; landscape DJ Console supports physical A/B deck operation, manual standby preparation/cue/equal-power handoff, bounded active-deck jog seeking, native-readback tempo/pitch, per-deck EQ/filter/channel gain, and lease-protected continuous crossfader control; scratch and loop performance remain intentionally gated pending dedicated native semantics and device validation  
 **Target branch:** `dj-workspace-development`  
 **Parent experience:** Existing DJ Workspace  
 **Primary form factor:** Landscape, with a deliberate portrait entry/rotation experience  
@@ -182,7 +182,7 @@ Work incrementally, with architecture and playback safety preceding visual compl
 
 ### Phase 1 — visual Console foundation
 
-**Current implementation:** landscape route, two-deck shell, measured progressive waveform pipeline and live deck identity are present. The Console supports lease-protected manual Deck B preparation/cue/equal-power handoff and one-shot active-deck jog seeking. Scratch, pitch/time-stretch, continuous crossfader, per-deck EQ and filter controls remain gated until their native/DSP contracts are implemented and validated.
+**Current implementation:** landscape route, two-deck shell, measured progressive waveform pipeline and live deck identity are present. The Console supports independent physical A/B transport and deck loading/clearing; lease-protected manual standby preparation, cueing and native equal-power handoff; one-shot active-deck jog seeking; native-readback tempo/pitch; per-deck three-band EQ, filter and channel gain; and a continuous crossfader whose drag retains interactive authority and drains accepted writes before user-transport preemption. Scratch emulation and looping remain gated because they require separate native interaction contracts and device validation.
 
 - Add navigation from DJ Workspace into a dedicated Console route/mode.
 - Implement orientation lifecycle handling and landscape-responsive layout.
@@ -203,13 +203,11 @@ Work incrementally, with architecture and playback safety preceding visual compl
 
 ### Phase 3 — safe performance controls
 
-- Add the first supported jog/seek/nudge interactions.
-- Integrate channel EQ and filter controls through the established DSP path.
-- Define and implement crossfader semantics against native transition authority.
-- Add cue/loop controls only after native support, precision and lifecycle semantics are specified.
-- Add tempo/pitch controls only when actual time-stretch and BPM behavior is validated.
+**Implemented:** bounded active-deck jog seeking; manual standby cue and native handoff; native-readback per-deck tempo/pitch; per-deck three-band EQ and LP/HP filter controls; independent channel gain; and a continuous equal-power crossfader with a retained interactive lease. Native Media3 owns gain application and promotion. User transport preempts the gesture only after accepted native writes drain, and subsequent stale gesture events cannot reacquire authority.
 
-**Exit criteria:** every enabled control has a real, documented effect; no competing audio path, gain envelope or unleased transport write.
+**Still intentionally gated:** scratch-style platter manipulation, beat nudging, loops and other controls that require continuous low-latency media-clock semantics not provided by the current one-shot seek contract.
+
+**Exit criteria:** every enabled control has a real, documented effect; no competing audio path, gain envelope or unleased transport write. CI validates policy and command routing; physical-device listening remains required for latency, sound quality, clipping/crackle and transition behaviour.
 
 ### Phase 4 — performance intelligence and polish
 
@@ -288,3 +286,8 @@ Tempo writes are committed once when the slider is released, not continuously du
 ## 2026-11-24 — native crossfader single-deck safety
 
 The native DJ gain path now pins the only audible physical deck to unity crossfader gain (while retaining its independent channel-gain factor) whenever the peer deck is empty or not playing. This avoids the previous equal-power center position attenuating a solo active deck by approximately 3 dB during DJ-mode entry or standby preparation. Native crossfader writes are rejected unless DJ dual-deck mode is active, both physical decks contain media and are playing, and no native transition currently owns the gain envelope. This is a native safety prerequisite only: the continuous crossfader UI remains gated until the provider-level interactive lease, cancellation/authority-loss behavior, and physical-device transition behavior are fully validated.
+
+
+## 2026-11-26 — continuous DJ mixer controls and final state consistency
+
+The Console now exposes the native Media3-backed physical-deck workflow for A/B loading, play/pause, seek, cue preparation, tempo/pitch, three-band EQ, filter and channel gain, alongside the lease-protected continuous crossfader. The crossfader retains interactive arbiter authority for the full drag, drains accepted native writes before higher-priority user transport proceeds, and rejects later writes from a preempted gesture. Native Media3 remains the sole gain-envelope and deck-promotion authority. A provider-state defect was also corrected so clearing a deck's EQ resets the visible three-band gains only after the native reset succeeds. Scratch and looping remain gated; neither is represented as implemented. CI green does not replace physical-device validation of sound quality and gesture feel.
