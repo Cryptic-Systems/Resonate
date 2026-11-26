@@ -202,6 +202,18 @@ class DjIdleAnalysisService {
     }
   }
 
+  Future<void> resumePriorityAnalysis({
+    required bool Function() isSafeToAnalyze,
+    required bool Function() isStillIdle,
+  }) async {
+    _priorityAnalysisAllowed = isSafeToAnalyze;
+    if (_running || !isSafeToAnalyze()) return;
+    await _drainPriorityAnalyses(
+      isSafeToAnalyze: isSafeToAnalyze,
+      isStillIdle: isStillIdle,
+    );
+  }
+
   Future<void> startIfNeeded({
     int maxSongs = 40,
     int maxWaveformChunks = 2,
