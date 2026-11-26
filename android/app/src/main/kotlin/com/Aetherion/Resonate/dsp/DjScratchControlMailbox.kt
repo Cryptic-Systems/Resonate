@@ -38,14 +38,15 @@ internal class DjScratchControlMailbox(
         if (mediaId.isBlank() || !velocity.isFinite() || anchorMediaTimeUs < 0L ||
             kotlin.math.abs(velocity) > maximumAbsVelocity
         ) return false
-        val next = Snapshot(
-            sequence = sequence.incrementAndGet(),
-            mediaId = mediaId,
-            active = active,
-            velocity = if (active) velocity else 1.0,
-            anchorMediaTimeUs = anchorMediaTimeUs,
-        )
-        latest.set(next)
+        latest.updateAndGet {
+            Snapshot(
+                sequence = sequence.incrementAndGet(),
+                mediaId = mediaId,
+                active = active,
+                velocity = if (active) velocity else 1.0,
+                anchorMediaTimeUs = anchorMediaTimeUs,
+            )
+        }
         return true
     }
 
