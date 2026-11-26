@@ -89,7 +89,7 @@ class DjIdleAnalysisService {
           maxChunks: 128,
           isStillIdle: isStillIdle,
         );
-        if (await _analysis.hasWaveformProfile(entry.key)) {
+        if (await _waveformChunks.hasCompleteWaveform(entry.value)) {
           _priorityWaveformTracks.remove(entry.key);
         }
       }
