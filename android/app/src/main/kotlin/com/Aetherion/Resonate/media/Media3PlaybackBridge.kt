@@ -720,6 +720,33 @@ class Media3PlaybackBridge(
                     if (accepted) result.success(true)
                     else result.error("DJ_DECK_SEEK_REJECTED", "The deck identity changed or the requested position is invalid.", null)
                 }
+                "setDjDeckLoopRange" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val startMs = call.argument<Number>("startMs")?.toLong()
+                    val endMs = call.argument<Number>("endMs")?.toLong()
+                    val expectedMediaId = call.argument<String>("expectedMediaId")
+                    if (deckId !in setOf("A", "B") || startMs == null || endMs == null ||
+                        startMs < 0L || endMs <= startMs || expectedMediaId.isNullOrBlank()
+                    ) {
+                        result.error("INVALID_DJ_DECK_LOOP", "A physical deck, ordered nonnegative loop points and expected media ID are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDjDeckLoopRange(
+                        deckId!!, startMs, endMs, expectedMediaId,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_LOOP_REJECTED", "The native deck rejected the loop range or its media identity changed.", null)
+                }
+                "clearDjDeckLoop" -> {
+                    val deckId = call.argument<String>("deckId")
+                    if (deckId !in setOf("A", "B")) {
+                        result.error("INVALID_DJ_DECK_LOOP", "deckId must be A or B.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.clearDjDeckLoop(deckId!!) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_LOOP_CLEAR_REJECTED", "The native deck loop could not be cleared.", null)
+                }
                 "clearDjDeck" -> {
                     val deckId = call.argument<String>("deckId")
                     if (deckId == null || deckId !in setOf("A", "B")) {
