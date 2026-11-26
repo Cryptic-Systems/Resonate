@@ -32,7 +32,11 @@ class DjWaveformRangeReader {
     // Use the same persisted analysis version and source fingerprint as the
     // chunk producer. A different identity must fail closed, not look empty.
     final analysis = await _database.getDjAnalysis(song.id);
-    final fingerprint = await _sourceFingerprint(song.filePath, analysis);
+    final fingerprint = await _sourceFingerprint(
+      song.filePath,
+      analysis,
+      durationMs,
+    );
     if (fingerprint == null) return const <DjWaveformChunk>[];
     final identity = DjWaveformIdentity(
       songId: song.id,
@@ -81,6 +85,7 @@ class DjWaveformRangeReader {
   Future<String?> _sourceFingerprint(
     String path,
     DjAnalysis? analysis,
+    int durationMs,
   ) async {
     if (!path.startsWith('content://')) {
       try {
@@ -93,9 +98,11 @@ class DjWaveformRangeReader {
         }
       } catch (_) {}
     }
-    // Match the producer's MediaStore identity exactly. Without indexed size,
-    // the stored chunk cannot be safely associated with this source.
+    // Match the producer's MediaStore identity exactly. Document providers
+    // frequently omit SIZE; duration plus the stable content URI keeps those
+    // tracks readable instead of making their persisted waveform invisible.
     final size = analysis?.fileSizeBytes;
-    return size == null || size <= 0 ? null : 'mediastore:$path:$size';
+    final identity = size != null && size > 0 ? 'size:$size' : 'duration:$durationMs';
+    return 'mediastore:$path:$identity:$durationMs';
   }
 }
