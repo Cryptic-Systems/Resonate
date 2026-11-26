@@ -117,6 +117,6 @@ class DjScratchRenderPolicyTest {
 
         assertFalse(policy.render(input, output, ring, command(1L, true, 8.0, 10_000L)))
         assertFalse(policy.isScratchActiveForTest())
-        assertTrue(samples(input).contentEquals(samples(pcm16(0, 1_000))))
+        assertEquals(listOf(0, 1_000), samples(input))
     }
 }
