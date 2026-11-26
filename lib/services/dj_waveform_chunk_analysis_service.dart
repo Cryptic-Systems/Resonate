@@ -25,7 +25,7 @@ class DjWaveformChunkAnalysisService {
         _peakAnalyzer = peakAnalyzer;
 
   static const int chunkDurationMs = 8000;
-  static const int _maxChunksPerRun = 4;
+  static const int _maxChunksPerRun = 128;
 
   final DatabaseHelper _db;
   final DjBpmEstimator _estimator;
