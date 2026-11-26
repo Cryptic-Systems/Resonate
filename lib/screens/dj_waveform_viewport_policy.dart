@@ -1,4 +1,4 @@
-/// Deterministic viewport-to-chunk mapping for the DJ Console waveform.
+/// Full-track overview mapping for the DJ Console waveform.
 class DjWaveformViewportRange {
   const DjWaveformViewportRange({
     required this.startMs,
@@ -14,7 +14,7 @@ class DjWaveformViewportRange {
 class DjWaveformViewportPolicy {
   const DjWaveformViewportPolicy({
     this.chunkDurationMs = 8000,
-    this.pixelsPerSecond = 3.0,
+    this.pixelsPerSecond = 0.0,
   });
 
   final int chunkDurationMs;
@@ -33,23 +33,15 @@ class DjWaveformViewportPolicy {
         pixelsPerSecond <= 0) {
       return null;
     }
-    final contentWidth =
-        (durationMs / 1000 * pixelsPerSecond).clamp(viewportWidth, double.infinity);
-    final offset = scrollOffset.clamp(0.0, contentWidth - viewportWidth);
-    final rawStart =
-        (offset / contentWidth * durationMs).floor().clamp(0, durationMs);
-    final rawEnd = ((offset + viewportWidth) / contentWidth * durationMs)
-        .ceil()
-        .clamp(0, durationMs);
-    final startMs =
-        ((rawStart ~/ chunkDurationMs) * chunkDurationMs).clamp(0, durationMs);
-    final endMs = (((rawEnd + chunkDurationMs - 1) ~/ chunkDurationMs) *
-            chunkDurationMs)
-        .clamp(0, durationMs);
+    // The deck overview always represents the complete track at once.
+    // All persisted 8-second chunks are fetched and compressed into the
+    // available width, just like a DJ overview waveform. Zoomed scrolling
+    // waveforms can be added as a separate mode without hiding track sections.
+    const contentWidth = 0.0;
     return DjWaveformViewportRange(
-      startMs: startMs.toInt(),
-      endMs: endMs.toInt(),
-      contentWidth: contentWidth.toDouble(),
+      startMs: 0,
+      endMs: durationMs,
+      contentWidth: viewportWidth,
     );
   }
 }
