@@ -334,3 +334,18 @@ Implemented the first runtime foundation on the existing Media3 output path:
 - Unit tests cover identity vs content equality, repeated handleBuffer retries, one-time consumption, frame/time mapping, malformed PCM and invalidation.
 
 **Scope and limits:** this is a timestamp/frame association layer, not the scratch engine. It does not alter audio, change playback speed, reverse samples, or expose a scratch gesture. The probe retains the most recently consumed block metadata only; no PCM ring buffer/cursor exists yet. Before building the ring, validate the adapter against the real Media3 sink lifecycle and add processor-level tests for format changes, partial writes and flush/drain ordering. Device latency and audible behaviour remain unverified.
+
+
+### 2026-11-26 — bounded scratch PCM history and cursor foundation
+
+The next scratch foundation is now implemented as an isolated, testable native component:
+
+- `DjScratchPcmRingBuffer` stores interleaved PCM16 samples in fixed-capacity arrays, with a hard maximum of 192,000 frames (four seconds at 48 kHz). It does not resize or allocate per frame.
+- Absolute frame indices remain monotonic across wrap and clear operations. The ring tracks the first still-valid frame explicitly, so a stale cursor cannot silently alias newly captured audio after a flush.
+- Each retained frame has its own source-media timestamp. This preserves timestamp discontinuities between input blocks rather than assuming decoder output is always contiguous.
+- Oversized input blocks retain only the newest frames; malformed, unaligned and negative-PTS blocks are rejected.
+- `DjScratchFrameCursor` provides bounded forward, hold and reverse cursor math with finite-value validation and a maximum velocity. It is control math only, not an audio renderer.
+- The timestamp processor now passively copies each timestamped PCM16 block into a per-physical-deck ring before the unchanged native DSP stage. The output buffer is still passed through unchanged. Unsupported layouts do not allocate a ring; processor flush clears history and reset releases it.
+- Tests cover stereo interleaving, wrap/overflow, per-frame PTS, discontinuous blocks, clear invalidation, cursor direction and bounds, and byte-exact processor pass-through.
+
+**Scope and safety:** no scratch gesture is exposed and no cursor is currently allowed to alter audible output. The ring is a bounded capture history only. The next pass must add the audio-thread control handoff and a deterministic render/read policy, then prove normal playback, flush/seek/format changes, pause/resume and cancellation before any scratch audio is enabled. Physical-device latency and sound-quality validation remain outstanding.
