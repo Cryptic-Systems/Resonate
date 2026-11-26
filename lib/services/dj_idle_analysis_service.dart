@@ -21,13 +21,16 @@ class DjIdleAnalysisService {
     DatabaseHelper? database,
     DjAnalysisService? analysis,
     DjWaveformChunkAnalysisService? waveformChunks,
+    VoidCallback? onWaveformUpdated,
   })  : _db = database ?? DatabaseHelper(),
         _analysis = analysis ?? DjAnalysisService(),
-        _waveformChunks = waveformChunks ?? DjWaveformChunkAnalysisService();
+        _waveformChunks = waveformChunks ?? DjWaveformChunkAnalysisService(),
+        _onWaveformUpdated = onWaveformUpdated;
 
   final DatabaseHelper _db;
   final DjAnalysisService _analysis;
   final DjWaveformChunkAnalysisService _waveformChunks;
+  final VoidCallback? _onWaveformUpdated;
 
   bool _running = false;
   bool _stopRequested = false;
@@ -93,6 +96,7 @@ class DjIdleAnalysisService {
           _priorityWaveformTracks.remove(entry.key);
         }
       }
+      if (processed > 0) _onWaveformUpdated?.call();
       return processed;
     } finally {
       if (startedHere) await DjAnalysisForegroundService.stop();
