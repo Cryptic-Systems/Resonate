@@ -659,12 +659,10 @@ class _ConsoleDeck extends StatefulWidget {
 class _ConsoleDeckState extends State<_ConsoleDeck>
     with SingleTickerProviderStateMixin {
   late final AnimationController _platterRotation;
-  final ScrollController _waveformScroll = ScrollController();
   Future<List<DjWaveformChunk>>? _waveformFuture;
   int? _requestedStartMs;
   int? _requestedEndMs;
   double _viewportWidth = 0;
-  bool _resetWaveformScrollPending = false;
   double _channelGain = 1.0;
   bool _channelGainDragging = false;
   late List<double> _eqGains;
@@ -698,7 +696,6 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
           : 0.0,
     );
     _syncPlatterMotion();
-    _waveformScroll.addListener(_onWaveformScroll);
   }
 
   @override
@@ -735,7 +732,6 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
       _requestedStartMs = null;
       _requestedEndMs = null;
       _waveformFuture = null;
-      _resetWaveformScrollPending = true;
     }
     if (oldWidget.isPlaying != widget.isPlaying ||
         oldWidget.active != widget.active ||
@@ -751,10 +747,6 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     }
   }
 
-  void _onWaveformScroll() {
-    if (!_resetWaveformScrollPending) _requestVisibleWaveform();
-  }
-
   void _requestVisibleWaveform() {
     final loader = widget.waveformLoader;
     final durationMs = widget.duration.inMilliseconds;
@@ -762,7 +754,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     final range = _viewportPolicy.visibleRange(
       durationMs: durationMs,
       viewportWidth: _viewportWidth,
-      scrollOffset: _waveformScroll.hasClients ? _waveformScroll.offset : 0,
+      scrollOffset: 0,
     );
     if (range == null) return;
     final startMs = range.startMs;
@@ -1058,8 +1050,6 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
 
   @override
   void dispose() {
-    _waveformScroll.removeListener(_onWaveformScroll);
-    _waveformScroll.dispose();
     _platterRotation.dispose();
     super.dispose();
   }
@@ -1184,13 +1174,6 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                   if (_requestedStartMs == null) {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (!mounted) return;
-                      if (_resetWaveformScrollPending) {
-                        _resetWaveformScrollPending = false;
-                        if (_waveformScroll.hasClients &&
-                            _waveformScroll.offset != 0) {
-                          _waveformScroll.jumpTo(0);
-                        }
-                      }
                       _requestVisibleWaveform();
                     });
                   }
