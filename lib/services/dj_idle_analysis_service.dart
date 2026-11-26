@@ -143,8 +143,8 @@ class DjIdleAnalysisService {
     required bool Function() isSafeToAnalyze,
     required bool Function() isStillIdle,
   }) async {
-    if (_priorityAnalysisDrainRunning || _priorityAnalysisTracks.isEmpty ||
-        !isSafeToAnalyze()) {
+    if (_running || _priorityAnalysisDrainRunning ||
+        _priorityAnalysisTracks.isEmpty || !isSafeToAnalyze()) {
       return;
     }
     _priorityAnalysisDrainRunning = true;
@@ -226,7 +226,7 @@ class DjIdleAnalysisService {
     int maxWaveformChunks = 2,
     bool Function()? isStillIdle,
   }) async {
-    if (_running) return;
+    if (_running || _priorityAnalysisDrainRunning) return;
     _running = true;
     _stopRequested = false;
     _scanned = 0;
