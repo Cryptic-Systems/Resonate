@@ -42,6 +42,34 @@ void main() {
       );
     });
 
+    test('scratch anchors preserve sub-millisecond platter movement', () {
+      final result = DjConsoleJogSeekPolicy.scratchAnchorPosition(
+        start: const Duration(seconds: 20),
+        accumulatedRadians: math.pi / 180,
+        duration: const Duration(minutes: 3),
+      );
+      expect(result.inMicroseconds, 20000000 + 5000);
+    });
+
+    test('scratch anchors clamp at exact microsecond track boundaries', () {
+      expect(
+        DjConsoleJogSeekPolicy.scratchAnchorPosition(
+          start: const Duration(microseconds: 500),
+          accumulatedRadians: -math.pi * 2,
+          duration: const Duration(minutes: 1),
+        ),
+        Duration.zero,
+      );
+      expect(
+        DjConsoleJogSeekPolicy.scratchAnchorPosition(
+          start: const Duration(seconds: 59),
+          accumulatedRadians: math.pi * 2,
+          duration: const Duration(minutes: 1),
+        ),
+        const Duration(minutes: 1),
+      );
+    });
+
     test('normalizes angle wrap across the -pi/pi boundary', () {
       expect(
         DjConsoleJogSeekPolicy.normalizedAngleDelta(-math.pi * 1.9),
