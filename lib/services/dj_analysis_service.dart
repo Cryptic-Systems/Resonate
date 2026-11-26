@@ -371,6 +371,9 @@ class DjAnalysisService {
           : (startMs >= durationMs - windowMs - 1000 ? 'end' : 'mid');
       await addWindow(startMs, role, sampleSeconds);
       if (isCancelled?.call() ?? false) return null;
+      // Yield between bounded decoder windows so UI and playback work can
+      // retain scheduling priority on lower-powered devices.
+      await Future<void>.delayed(const Duration(milliseconds: 90));
     }
 
     if (windows.isEmpty) {
