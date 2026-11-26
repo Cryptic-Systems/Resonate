@@ -302,7 +302,7 @@ class Media3PlaybackService : MediaSessionService() {
         DspEngineSinkHook.activateDeck(deckId)
         return try {
             if (Media3DeckTransportPolicy.shouldRestartFromBeginning(player.playbackState)) {
-                player.seekTo(0L)
+                player.seekTo(djLoops[deckId]?.range?.startMs ?: 0L)
             }
             player.play()
             true
@@ -1513,6 +1513,14 @@ class Media3PlaybackService : MediaSessionService() {
         if (!::activePlayer.isInitialized) return null
         if (positionMs < 0L) return false
         return try {
+            if (djDualDeckMode) {
+                val loop = djLoops[activeDeckId]
+                if (loop != null &&
+                    (positionMs < loop.range.startMs || positionMs >= loop.range.endMs)
+                ) {
+                    clearDjDeckLoopInternal(activeDeckId)
+                }
+            }
             activePlayer.seekTo(positionMs)
             true
         } catch (_: Exception) {
