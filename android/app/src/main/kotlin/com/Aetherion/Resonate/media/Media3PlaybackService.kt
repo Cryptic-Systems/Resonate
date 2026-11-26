@@ -19,6 +19,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.aetherion.resonate.dsp.DspEngineSinkHook
+import com.aetherion.resonate.dsp.DjScratchTimestampLedger
 import com.aetherion.resonate.dsp.DspEngineRegistry
 import com.Aetherion.Resonate.R
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -862,11 +863,15 @@ class Media3PlaybackService : MediaSessionService() {
                 context: Context,
                 enableFloatOutput: Boolean,
                 enableAudioOutputPlaybackParams: Boolean,
-            ): AudioSink = DefaultAudioSink.Builder(context)
-                .setAudioProcessors(DspEngineSinkHook.createProcessors(deckId))
-                .setEnableFloatOutput(enableFloatOutput)
-                .setEnableAudioTrackPlaybackParams(enableAudioOutputPlaybackParams)
-                .build()
+            ): AudioSink {
+                val timestampLedger = DjScratchTimestampLedger()
+                val delegate = DefaultAudioSink.Builder(context)
+                    .setAudioProcessors(DspEngineSinkHook.createProcessors(deckId, timestampLedger))
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioOutputPlaybackParams)
+                    .build()
+                return TimestampedDjAudioSink(delegate, timestampLedger)
+            }
         },
     ).build().apply {
         val deck = this
