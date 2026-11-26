@@ -43,6 +43,7 @@ class DjModeProvider extends ChangeNotifier {
   late final Future<void> ready;
   bool _lastObservedPlaying = false;
   bool _appForeground = false;
+  bool _disposed = false;
   int _waveformRevision = 0;
   Timer? _eventScanDebounce;
 
@@ -180,6 +181,7 @@ class DjModeProvider extends ChangeNotifier {
   }
 
   void _onWaveformUpdated() {
+    if (_disposed) return;
     _waveformRevision++;
     notifyListeners();
   }
@@ -187,7 +189,7 @@ class DjModeProvider extends ChangeNotifier {
   /// Builds the full-track waveform for a deck-loaded song. If playback is
   /// active, the idle scanner retains the request and resumes after playback.
   Future<void> ensureTrackWaveform(Song song) async {
-    if (!_loaded) return;
+    if (!_loaded || _disposed) return;
     try {
       await _idle.ensureTrackWaveform(
         song,
@@ -268,6 +270,7 @@ class DjModeProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _eventScanDebounce?.cancel();
     music.removeListener(_onMusicChanged);
     _idle.stop();
