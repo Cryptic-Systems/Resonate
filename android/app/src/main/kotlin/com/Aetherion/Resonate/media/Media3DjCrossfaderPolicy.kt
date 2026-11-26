@@ -12,9 +12,8 @@ internal object Media3DjCrossfaderPolicy {
     }
 
     /**
-     * A crossfader can be pre-positioned whenever both physical decks have
-     * media. gainsForState keeps the sole playing deck at unity until both
-     * decks are audible, so moving the stored fader cannot attenuate one deck.
+     * Keep the crossfader controllable when either physical deck has media.
+     * Moving toward an empty or paused deck must still cut the opposite side.
      */
     fun canApply(
         position: Float,
