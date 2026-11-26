@@ -14,9 +14,18 @@ import java.nio.ByteBuffer
  */
 internal class DjScratchTimestampProcessor(
     private val ledger: DjScratchTimestampLedger,
+    private val controlMailbox: DjScratchControlMailbox,
 ) : BaseAudioProcessor() {
     @Volatile
     private var lastConsumedTimestamp: DjScratchPcmTimestamp? = null
+
+    // Snapshot observed by the processor thread. It is control telemetry only
+    // until the bounded scratch renderer is integrated; PCM remains pass-through.
+    @Volatile
+    private var latestControlSnapshot: DjScratchControlMailbox.Snapshot? = null
+
+    internal fun latestControlSnapshotForTest(): DjScratchControlMailbox.Snapshot? =
+        latestControlSnapshot
 
     // One bounded PCM history per physical deck. It is passive capture only;
     // normal Media3 output remains byte-for-byte pass-through at this stage.
@@ -49,6 +58,7 @@ internal class DjScratchTimestampProcessor(
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
+        latestControlSnapshot = controlMailbox.snapshot()
         val timestamp = ledger.consume(
             inputBuffer,
             inputAudioFormat.sampleRate,
@@ -65,6 +75,7 @@ internal class DjScratchTimestampProcessor(
 
     override fun onFlush() {
         lastConsumedTimestamp = null
+        latestControlSnapshot = null
         pcmRing?.clear()
     }
 
