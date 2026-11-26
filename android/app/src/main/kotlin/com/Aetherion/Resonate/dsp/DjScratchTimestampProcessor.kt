@@ -14,7 +14,6 @@ import java.nio.ByteBuffer
  * implemented and verified.
  */
 internal class DjScratchTimestampProcessor(
-    private val deckId: String,
     private val ledger: DjScratchTimestampLedger,
 ) : BaseAudioProcessor() {
     @Volatile
