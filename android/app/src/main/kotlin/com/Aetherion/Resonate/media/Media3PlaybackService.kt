@@ -421,11 +421,7 @@ class Media3PlaybackService : MediaSessionService() {
         }
     }
 
-    /**
-     * Publish platter velocity to the mailbox owned by one physical deck.
-     * This is intentionally control-only: the processor remains PCM pass-through
-     * until the scratch cursor, renderer and release path are fully integrated.
-     */
+    /** Publish validated platter control to the scratch renderer for one physical deck. */
     fun setDjScratchControl(
         deckId: String,
         expectedMediaId: String,
@@ -1300,6 +1296,9 @@ class Media3PlaybackService : MediaSessionService() {
         ) return false
         pendingCrossfadeDurationMs = null
         cancelCrossfade(clearOverlays = false, resetStandbySpeed = false)
+        // A crossfade owns both outputs; retire any in-flight platter motion
+        // before either deck enters the transition ramp.
+        djScratchMailboxes.values.forEach { it.clear() }
         val generation = ++fadeGeneration
         startingCrossfadeDurationMs = durationMs
         crossfadeStatus = "starting"
