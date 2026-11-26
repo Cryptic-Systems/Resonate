@@ -29,20 +29,9 @@ internal object Media3DjCrossfaderPolicy {
             !transitionOwnsGain
 
     /**
-     * When only one deck is audible, pin gain to that physical deck regardless
-     * of the stored fader position. Once both decks are playing, use the
-     * operator's equal-power position.
+     * The physical A/B crossfader position is always authoritative, even when
+     * only one deck is playing. This lets the operator cut that deck to silence
+     * by moving the fader toward the empty or paused side.
      */
-    fun gainsForState(
-        position: Float,
-        activeDeckId: String,
-        bothDecksPlaying: Boolean,
-    ): Pair<Float, Float> =
-        if (bothDecksPlaying) {
-            gains(position)
-        } else if (activeDeckId == "B") {
-            gains(1f)
-        } else {
-            gains(0f)
-        }
+    fun gainsForPosition(position: Float): Pair<Float, Float> = gains(position)
 }
