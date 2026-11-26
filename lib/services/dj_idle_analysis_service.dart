@@ -264,6 +264,16 @@ class DjIdleAnalysisService {
             );
           }
         }
+        // A deck-loaded track takes priority over the library backlog. Drain
+        // its full waveform as soon as the current serial profile decode settles.
+        if (_priorityWaveformTracks.isNotEmpty &&
+            !_stopRequested &&
+            (isStillIdle?.call() ?? true)) {
+          await _drainPriorityWaveforms(
+            isStillIdle: isStillIdle ?? () => true,
+            serviceAlreadyStarted: _backgroundServiceStarted,
+          );
+        }
         // Yield to the UI and re-check stop state before the next song.
         await Future<void>.delayed(const Duration(milliseconds: 120));
       }
