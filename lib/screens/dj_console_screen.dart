@@ -1676,9 +1676,11 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                     side: BorderSide(color: accent.withValues(alpha: .45)),
                   ),
                   child: Text(
-                    _loopInPreview == null
-                        ? 'LOOP IN'
-                        : 'IN ${_format(_loopInPreview!)}',
+                    _loopInPreview != null
+                        ? 'IN ${_format(_loopInPreview!)}'
+                        : widget.loopActive && widget.loopStart != null
+                            ? 'IN ${_format(widget.loopStart!)}'
+                            : 'LOOP IN',
                     style: TextStyle(color: accent, fontSize: 9, fontWeight: FontWeight.w900),
                   ),
                 ),
