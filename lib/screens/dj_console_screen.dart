@@ -561,6 +561,22 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                   position: target,
                   expectedMediaId: deck!.mediaId!,
                 ),
+                loopActive: deck?.loopActive == true,
+                loopStart: deck?.loopStart,
+                loopEnd: deck?.loopEnd,
+                onSetLoopRange: djSessionActive && loaded &&
+                        music.media3ProviderSessionActive && !music.transitionInProgress
+                    ? (start, end) => music.setDjDeckLoopRange(
+                          deckId: id,
+                          start: start,
+                          end: end,
+                          expectedMediaId: deck!.mediaId!,
+                        )
+                    : null,
+                onClearLoop: djSessionActive && loaded &&
+                        music.media3ProviderSessionActive && !music.transitionInProgress
+                    ? () => music.clearDjDeckLoop(deckId: id)
+                    : null,
                 status: DjConsoleManualControlsPolicy.deckStatusLabel(
                   selected: state?.activeDeckId == id,
                   isPlaying: isPlaying,
@@ -712,6 +728,11 @@ class _ConsoleDeck extends StatefulWidget {
     required this.onFilterChanged,
     required this.jogSeekEnabled,
     required this.onJogSeek,
+    required this.loopActive,
+    required this.loopStart,
+    required this.loopEnd,
+    required this.onSetLoopRange,
+    required this.onClearLoop,
     required this.status, required this.title, required this.artist, required this.progress,
     required this.position, required this.duration, required this.profileFuture,
     required this.expectedSongId,
@@ -738,6 +759,10 @@ class _ConsoleDeck extends StatefulWidget {
   final double filterCutoffHz;
   final Future<void> Function(int type, double cutoffHz) onFilterChanged;
   final Future<void> Function(Duration position) onJogSeek;
+  final bool loopActive;
+  final Duration? loopStart, loopEnd;
+  final Future<void> Function(Duration start, Duration end)? onSetLoopRange;
+  final Future<void> Function()? onClearLoop;
   final double progress;
   final Duration position, duration;
   final Future<DjTrackProfile?>? profileFuture;
@@ -772,6 +797,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   Duration? _jogStartPosition;
   Duration? _jogPreviewPosition;
   String? _jogSongId;
+  Duration? _loopInPreview;
   static const _viewportPolicy = DjWaveformViewportPolicy();
 
   @override
@@ -833,6 +859,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
       });
     }
     if (oldWidget.expectedSongId != widget.expectedSongId) {
+      _loopInPreview = null;
       _platterRotation.value = 0;
       _requestedStartMs = null;
       _requestedEndMs = null;
@@ -1631,6 +1658,104 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
                 child: _buildCuePad(index, accent),
               )),
             ),
+          ),
+          const SizedBox(height: 5),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: widget.onSetLoopRange == null ? null : () {
+                    if (widget.loopActive) {
+                      unawaited(widget.onClearLoop?.call());
+                    }
+                    setState(() => _loopInPreview = widget.position);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+                    side: BorderSide(color: accent.withValues(alpha: .45)),
+                  ),
+                  child: Text(
+                    _loopInPreview == null
+                        ? 'LOOP IN'
+                        : 'IN ${_format(_loopInPreview!)}',
+                    style: TextStyle(color: accent, fontSize: 9, fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: widget.onSetLoopRange == null || _loopInPreview == null
+                      ? null
+                      : () async {
+                          final start = _loopInPreview!;
+                          final end = widget.position;
+                          if (end - start < const Duration(milliseconds: 120) ||
+                              (widget.duration > Duration.zero &&
+                                  end >= widget.duration - const Duration(milliseconds: 40))) {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              content: Text('Set LOOP OUT at least 120 ms after LOOP IN and before the track end.'),
+                            ));
+                            return;
+                          }
+                          try {
+                            await widget.onSetLoopRange!(start, end);
+                            if (mounted) setState(() => _loopInPreview = null);
+                          } catch (error) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Loop was not engaged: $error')),
+                            );
+                          }
+                        },
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+                    side: BorderSide(color: accent.withValues(alpha: .45)),
+                  ),
+                  child: Text(
+                    widget.loopActive && widget.loopEnd != null
+                        ? 'OUT ${_format(widget.loopEnd!)}'
+                        : 'LOOP OUT',
+                    style: TextStyle(color: accent, fontSize: 9, fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: FilledButton.tonal(
+                  onPressed: widget.loopActive && widget.onClearLoop != null
+                      ? () async {
+                          try {
+                            await widget.onClearLoop!();
+                            if (mounted) setState(() => _loopInPreview = null);
+                          } catch (error) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Loop could not be cleared: $error')),
+                            );
+                          }
+                        }
+                      : null,
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+                    backgroundColor: widget.loopActive
+                        ? accent.withValues(alpha: .20)
+                        : null,
+                  ),
+                  child: Text(
+                    widget.loopActive ? 'EXIT LOOP' : 'LOOP OFF',
+                    style: TextStyle(
+                      color: widget.loopActive ? accent : null,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           Row(children: [
