@@ -318,7 +318,6 @@ class Media3PlaybackService : MediaSessionService() {
             crossfadeStatus in setOf("starting", "fading")
         ) return false
         val player = playerForPhysicalDeck(deckId) ?: return false
-        clearDjDeckLoopInternal(deckId)
         val wasCanonical = player === activePlayer
         val peerDeckId = if (deckId == "A") "B" else "A"
         val peer = playerForPhysicalDeck(peerDeckId)
@@ -360,6 +359,7 @@ class Media3PlaybackService : MediaSessionService() {
             crossfadeStatus in setOf("starting", "fading")
         ) return false
         val player = playerForPhysicalDeck(deckId) ?: return false
+        clearDjDeckLoopInternal(deckId)
         val wasCanonical = player === activePlayer
         val peerDeckId = if (deckId == "A") "B" else "A"
         val peer = playerForPhysicalDeck(peerDeckId)
