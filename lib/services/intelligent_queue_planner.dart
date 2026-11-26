@@ -167,7 +167,7 @@ class IntelligentQueuePlanner {
       eligibleTrackCount: candidates.length,
       excludedSongIds: List.unmodifiable(excluded),
       reason: complete ? null
-          : 'Some tracks were excluded because DJ analysis was missing, stale, or outside this mix profile.',
+          : 'Some tracks were excluded because DJ analysis was missing, stale, or outside this mix profile. ${_exclusionSummary(exclusionCounts)}',
       exclusionCounts: Map.unmodifiable(exclusionCounts),
     );
   }
