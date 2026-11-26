@@ -22,7 +22,8 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
   bool _loading = true;
   final ValueNotifier<bool> _saving = ValueNotifier<bool>(false);
   Future<void> _commitTail = Future<void>.value();
-  late Future<Map<String, dynamic>?> _statusFuture;
+  final ValueNotifier<Map<String, dynamic>?> _liveStatus = ValueNotifier<Map<String, dynamic>?>(null);
+  bool _statusPollInFlight = false;
   int _localSliderChangeDepth = 0;
   Timer? _meterPoll;
 
@@ -37,17 +38,27 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _statusFuture = AudioEffectsBridge.getLiveDspStatus();
     _meterPoll = Timer.periodic(const Duration(milliseconds: 100), (_) {
-      if (!mounted || _loading) return;
-      setState(() => _statusFuture = AudioEffectsBridge.getLiveDspStatus());
+      unawaited(_pollLiveStatus());
     });
     _load();
+  }
+
+  Future<void> _pollLiveStatus() async {
+    if (!mounted || _loading || _statusPollInFlight) return;
+    _statusPollInFlight = true;
+    try {
+      final status = await AudioEffectsBridge.getLiveDspStatus();
+      if (mounted && status != null) _liveStatus.value = status;
+    } finally {
+      _statusPollInFlight = false;
+    }
   }
 
   @override
   void dispose() {
     _meterPoll?.cancel();
+    _liveStatus.dispose();
     _saving.dispose();
     super.dispose();
   }
@@ -77,8 +88,8 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
       _settings = canonical;
       _bands = bands;
       _loading = false;
-      _statusFuture = AudioEffectsBridge.getLiveDspStatus();
     });
+    unawaited(_pollLiveStatus());
   }
 
   Future<void> _commit({bool pushBands = false, bool pushSpeaker = false}) {
@@ -155,9 +166,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
         current,
         pushSpeaker: pushSpeaker,
       );
-      if (mounted) {
-        setState(() => _statusFuture = AudioEffectsBridge.getLiveDspStatus());
-      }
+      if (mounted) unawaited(_pollLiveStatus());
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -244,10 +253,9 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
   }
 
   Widget _statusCard() {
-    return FutureBuilder<Map<String, dynamic>?>(
-      future: _statusFuture,
-      builder: (context, snapshot) {
-        final status = snapshot.data;
+    return ValueListenableBuilder<Map<String, dynamic>?>(
+      valueListenable: _liveStatus,
+      builder: (context, status, _) {
         final engines = (status?['activeEngines'] as num?)?.toInt() ?? 0;
         final calls = (status?['processCalls'] as num?)?.toInt() ?? 0;
         final avgUs = (status?['avgUs'] as num?)?.toDouble() ?? 0;
@@ -302,7 +310,7 @@ class _DspSettingsScreenState extends State<DspSettingsScreen> {
               padding: EdgeInsets.only(top: 8),
               child: Text('Safety pass-through is active. DSP has been demoted to protect playback.'),
             ),
-          if (snapshot.connectionState == ConnectionState.waiting)
+          if (status == null)
             const Padding(
               padding: EdgeInsets.only(top: 8),
               child: LinearProgressIndicator(),
