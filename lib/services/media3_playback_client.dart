@@ -782,6 +782,29 @@ class Media3PlaybackClient {
     });
   }
 
+  /// Publishes one platter's signed velocity to its identity-checked native deck.
+  /// This is a control primitive; the native PCM path remains pass-through for now.
+  Future<void> setDjScratchControl({
+    required String deckId,
+    required String expectedMediaId,
+    required bool active,
+    required double velocity,
+    required Duration anchor,
+  }) async {
+    _validatePhysicalDeck(deckId);
+    if (expectedMediaId.trim().isEmpty || !velocity.isFinite ||
+        velocity.abs() > 4.0 || anchor.isNegative) {
+      throw ArgumentError('Scratch control requires a track identity, finite velocity within ±4x and a nonnegative anchor.');
+    }
+    await _invokeAccepted('setDjScratchControl', <String, Object>{
+      'deckId': deckId,
+      'expectedMediaId': expectedMediaId,
+      'active': active,
+      'velocity': velocity,
+      'anchorMediaTimeUs': anchor.inMicroseconds,
+    });
+  }
+
   Future<void> setDjDeckLoopRange({
     required String deckId,
     required Duration start,
