@@ -36,14 +36,7 @@ class Media3DjCrossfaderPolicyTest {
     @Test
     fun bothPlayingDecksUseTheOperatorEqualPowerPosition() {
         val expected = Media3DjCrossfaderPolicy.gains(0.25f)
-        assertEquals(
-            expected,
-            Media3DjCrossfaderPolicy.gainsForState(
-                position = 0.25f,
-                activeDeckId = "B",
-                bothDecksPlaying = true,
-            ),
-        )
+        assertEquals(expected, Media3DjCrossfaderPolicy.gainsForPosition(0.25f))
     }
 
     @Test
