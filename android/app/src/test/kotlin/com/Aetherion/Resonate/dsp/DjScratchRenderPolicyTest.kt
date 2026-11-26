@@ -96,6 +96,26 @@ class DjScratchRenderPolicyTest {
     }
 
     @Test
+    fun forwardLookAheadMissFallsBackAndResumesFromSameCursorWhenPcmArrives() {
+        val ring = DjScratchPcmRingBuffer(1_000, 1, 16)
+        ring.append(pcm16(0, 1_000, 2_000, 3_000), 10_000L)
+        val firstLiveBlock = pcm16(4_000, 5_000)
+        ring.append(firstLiveBlock, 14_000L)
+        val output = ByteBuffer.allocate(firstLiveBlock.remaining())
+        val policy = DjScratchRenderPolicy()
+        val control = command(1L, true, 1.0, 15_000L)
+
+        assertFalse(policy.render(firstLiveBlock, output, ring, control))
+        assertFalse(policy.isScratchActiveForTest())
+
+        val nextLiveBlock = pcm16(6_000, 7_000)
+        ring.append(nextLiveBlock, 16_000L)
+        assertTrue(policy.render(nextLiveBlock, output, ring, control))
+        assertEquals(listOf(5_000, 6_000), samples(output))
+        assertTrue(policy.isScratchActiveForTest())
+    }
+
+    @Test
     fun invalidAnchorFailsClosedWithoutLeavingScratchActive() {
         val ring = DjScratchPcmRingBuffer(1_000, 1, 8)
         ring.append(pcm16(0, 1_000, 2_000), 10_000L)
