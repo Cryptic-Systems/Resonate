@@ -116,15 +116,28 @@ void main() {
         [_song('no-beats'), _song('no-energy')],
         intent: QueueIntent.calmerMix,
         profiles: {
-          'no-beats': _profile('no-beats', bpm: 88, energy: 0.2,
-            confidence: 0.9),
+          'no-beats': DjTrackProfile(
+            songId: 'no-beats',
+            durationMs: 180000,
+            beatGrid: const DjBeatGrid(),
+            keyRoot: null,
+            keyMode: null,
+            keyConfidence: 0,
+            energyCurve: const [
+              DjEnergyPoint(timeMs: 0, value: 0.2),
+              DjEnergyPoint(timeMs: 90000, value: 0.2),
+            ],
+            analysisConfidence: 0.9,
+            analysisVersion: DjAnalysis.currentVersion,
+          ),
           'no-energy': DjTrackProfile(
             songId: 'no-energy',
             durationMs: 180000,
             beatGrid: const DjBeatGrid(
-              bpm: null, confidence: 0, firstBeatMs: null,
-              beatMs: [], downbeatMs: [], downbeatConfidence: 0,
-              barConfidence: 0, phraseConfidence: 0,
+              bpm: 88, confidence: 0.9, firstBeatMs: 120,
+              beatMs: [120, 620, 1120], downbeatMs: [120],
+              downbeatConfidence: 0.9, barConfidence: 0.9,
+              phraseConfidence: 0.9,
             ),
             keyRoot: null,
             keyMode: null,
