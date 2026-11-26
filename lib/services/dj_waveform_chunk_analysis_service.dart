@@ -37,6 +37,38 @@ class DjWaveformChunkAnalysisService {
 
   bool get isRunning => _running;
 
+  /// True only when every expected full-track chunk is persisted for the
+  /// current source identity. Profile snippets do not count as full coverage.
+  Future<bool> hasCompleteWaveform(Song song) async {
+    final durationMs = song.duration.inMilliseconds;
+    if (song.id.trim().isEmpty ||
+        song.filePath.trim().isEmpty ||
+        durationMs <= 0) {
+      return false;
+    }
+    final expected = (durationMs + chunkDurationMs - 1) ~/ chunkDurationMs;
+    if (expected <= 0 || expected > DjWaveformStoragePolicy.maxChunksPerTrack) {
+      return false;
+    }
+    final analysis = await _db.getDjAnalysis(song.id);
+    final fingerprint = await _sourceFingerprint(song.filePath, analysis);
+    if (fingerprint == null) return false;
+    final identity = DjWaveformIdentity(
+      songId: song.id,
+      analysisVersion: (analysis?.analysisVersion ?? 0) > 0
+          ? analysis!.analysisVersion
+          : DjAnalysis.currentVersion,
+      sourceFingerprint: fingerprint,
+      durationMs: durationMs,
+      schemaVersion: DjWaveformStoragePolicy.schemaVersion,
+    );
+    final completed = await _db.getDjWaveformCompletedIndices(
+      identity: identity,
+      expectedChunkCount: expected,
+    );
+    return completed.length == expected;
+  }
+
   /// Processes at most [maxChunks] missing chunks, one decoder request at a
   /// time. A failed chunk stops this batch and remains eligible for retry.
   Future<int> processMissingChunks(
