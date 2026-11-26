@@ -1,6 +1,6 @@
 # Resonate DJ Console — Product & Technical Direction
 
-**Status:** DJ Workspace remains watch-only; landscape DJ Console supports physical A/B deck operation, manual standby preparation/cue/equal-power handoff, bounded active-deck jog seeking, native-readback tempo/pitch, per-deck EQ/filter/channel gain, and lease-protected continuous crossfader control; scratch and loop performance remain intentionally gated pending dedicated native semantics and device validation  
+**Status:** DJ Workspace remains watch-only; landscape DJ Console supports physical A/B deck operation, manual standby preparation/cue/equal-power handoff, bounded active-deck jog seeking, native-readback tempo/pitch, per-deck EQ/filter/channel gain, lease-protected continuous crossfader control, and native per-deck A/B loop ranges; scratch remains gated pending a dedicated low-latency PCM/media-clock implementation and device validation  
 **Target branch:** `dj-workspace-development`  
 **Parent experience:** Existing DJ Workspace  
 **Primary form factor:** Landscape, with a deliberate portrait entry/rotation experience  
@@ -182,7 +182,7 @@ Work incrementally, with architecture and playback safety preceding visual compl
 
 ### Phase 1 — visual Console foundation
 
-**Current implementation:** landscape route, two-deck shell, measured progressive waveform pipeline and live deck identity are present. The Console supports independent physical A/B transport and deck loading/clearing; lease-protected manual standby preparation, cueing and native equal-power handoff; one-shot active-deck jog seeking; native-readback tempo/pitch; per-deck three-band EQ, filter and channel gain; and a continuous crossfader whose drag retains interactive authority and drains accepted writes before user-transport preemption. Scratch emulation and looping remain gated because they require separate native interaction contracts and device validation.
+**Current implementation:** landscape route, two-deck shell, measured progressive waveform pipeline and live deck identity are present. The Console supports independent physical A/B transport and deck loading/clearing; lease-protected manual standby preparation, cueing and native equal-power handoff; one-shot active-deck jog seeking; native-readback tempo/pitch; per-deck three-band EQ, filter and channel gain; a continuous crossfader whose drag retains interactive authority and drains accepted writes before user-transport preemption; and manual A/B loop ranges scheduled against each deck's native Media3 media clock. Scratch emulation remains gated because it needs a separate low-latency PCM/media-clock interaction contract and device validation.
 
 - Add navigation from DJ Workspace into a dedicated Console route/mode.
 - Implement orientation lifecycle handling and landscape-responsive layout.
@@ -203,11 +203,11 @@ Work incrementally, with architecture and playback safety preceding visual compl
 
 ### Phase 3 — safe performance controls
 
-**Implemented:** bounded active-deck jog seeking; manual standby cue and native handoff; native-readback per-deck tempo/pitch; per-deck three-band EQ and LP/HP filter controls; independent channel gain; and a continuous equal-power crossfader with a retained interactive lease. Native Media3 owns gain application and promotion. User transport preempts the gesture only after accepted native writes drain, and subsequent stale gesture events cannot reacquire authority.
+**Implemented:** bounded active-deck jog seeking; manual standby cue and native handoff; native-readback per-deck tempo/pitch; per-deck three-band EQ and LP/HP filter controls; independent channel gain; a continuous equal-power crossfader with a retained interactive lease; and manual per-deck A/B loop points. Loop boundaries are scheduled by native Media3 `PlayerMessage` events on the selected player's application looper, not by Flutter timers. Loop state follows physical A/B identity through promotion, survives pause/resume, and is cleared on deck replacement, track change or an explicit seek outside the range. The loop range is checked against the current media identity, seekability and duration. Native Media3 remains the sole playback authority.
 
-**Still intentionally gated:** scratch-style platter manipulation, beat nudging, loops and other controls that require continuous low-latency media-clock semantics not provided by the current one-shot seek contract.
+**Still intentionally gated:** scratch-style platter manipulation and beat nudging. The current `DspEngineAudioProcessor` receives decoded PCM ahead of the audible media position, while Media3 playback parameters do not provide reverse playback. Rapid `seekTo` calls are not an acceptable substitute. A real scratch implementation needs a bounded per-deck PCM ring buffer, a reliable mapping between buffered frames and media time, bidirectional platter-rate control, deterministic catch-up/seek on release, and cancellation on transport preemption, deck promotion, pause, interruption and track replacement. It must remain inside the existing Media3 audio-sink path and prove that it introduces no competing output, dropouts or DSP-state leakage.
 
-**Exit criteria:** every enabled control has a real, documented effect; no competing audio path, gain envelope or unleased transport write. CI validates policy and command routing; physical-device listening remains required for latency, sound quality, clipping/crackle and transition behaviour.
+**Exit criteria:** every enabled control has a real, documented effect; no competing audio path, gain envelope or unleased transport write. CI validates policy and command routing; physical-device listening remains required to verify loop-boundary audibility, scratch latency, sound quality, clipping/crackle and transition behaviour.
 
 ### Phase 4 — performance intelligence and polish
 
@@ -291,3 +291,10 @@ The native DJ gain path now pins the only audible physical deck to unity crossfa
 ## 2026-11-26 — continuous DJ mixer controls and final state consistency
 
 The Console now exposes the native Media3-backed physical-deck workflow for A/B loading, play/pause, seek, cue preparation, tempo/pitch, three-band EQ, filter and channel gain, alongside the lease-protected continuous crossfader. The crossfader retains interactive arbiter authority for the full drag, drains accepted native writes before higher-priority user transport proceeds, and rejects later writes from a preempted gesture. Native Media3 remains the sole gain-envelope and deck-promotion authority. A provider-state defect was also corrected so clearing a deck's EQ resets the visible three-band gains only after the native reset succeeds. Scratch and looping remain gated; neither is represented as implemented. CI green does not replace physical-device validation of sound quality and gesture feel.
+
+
+### 2026-11-26 — Native loop-control pass
+
+The DJ Console now has native per-deck A/B loop-range commands and loop-state readback. The service validates the selected physical deck, exact current media ID, seekability, known duration, minimum loop span and a guard before track end. Boundary callbacks are scheduled against the Media3 player's media clock; loop state is retained by physical A/B identity across canonical promotion and cleaned up on deck/track replacement, mode exit or an explicit seek outside the range. Flutter owns only the A/B point selection and UI; all boundary execution remains native. This is a first loop-control implementation, not a claim of sample-perfect/gapless loop seams: verify local and content-provider media on physical devices before release.
+
+Scratch remains gated. The existing decoded-PCM processor does not receive media timestamps for every input buffer, so a safe scratch design must first solve frame-to-media-clock mapping and bounded bidirectional playback without issuing high-frequency decoder seeks.
