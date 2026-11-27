@@ -27,6 +27,7 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
         // subscribing to interruption handling that can pause the main track.
         handleAudioSessionActivation: false,
         handleInterruptions: false,
+        androidApplyAudioAttributes: false,
       );
 
   Future<void> _configureVoicePlayer(AudioPlayer player) {
