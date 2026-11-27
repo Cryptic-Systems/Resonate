@@ -89,6 +89,9 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
       }
       _djSessionStarted = false;
       if (mounted) {
+        context
+            .read<WorkspaceTransitionController>()
+            .markFailed(ResonateWorkspace.dj, error);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not initialize Resonatix DJ: $error')),
         );
