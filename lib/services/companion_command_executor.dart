@@ -6,6 +6,8 @@ import '../providers/music_provider.dart';
 import '../services/companion_decision_log.dart';
 import '../services/intelligence_settings_store.dart';
 import '../services/local_intent_parser.dart';
+import 'voice_cue_service.dart';
+import 'voice_cue_router.dart';
 
 class CompanionCommandResult {
   final bool ok;
@@ -25,7 +27,18 @@ class CompanionCommandExecutor {
     required this.mixes,
   });
 
-  Future<CompanionCommandResult> execute(CompanionIntent intent) async {
+  Future<CompanionCommandResult> execute(CompanionI    if (result.ok) {
+      final origin = music.isDjDualDeckSessionActive
+          ? VoiceCueOrigin.djManual
+          : VoiceCueOrigin.playerAuto;
+      unawaited(VoiceCueService.instance.speak(
+        cueId: 'ask_resonate_companion.voice_ask_got_it',
+        origin: origin,
+        eventId: 'ask_resonate_${intent.action.name}_${DateTime.now().microsecondsSinceEpoch}',
+        confirmed: true,
+      ));
+    }
+ntent intent) async {
     final result = await _execute(intent);
     await CompanionDecisionLog.record(
       source: 'ask_resonate',
