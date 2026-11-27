@@ -22,9 +22,6 @@ enum VoiceCueBlockReason {
   duplicateEvent,
 }
 
-/// A request to speak a cue. This policy deliberately does not own an audio
-/// player: it decides whether the event is eligible before a playback layer
-/// resolves the stable cue ID to an asset.
 class VoiceCueRequest {
   const VoiceCueRequest({
     required this.cueId,
@@ -42,20 +39,11 @@ class VoiceCueRequest {
   final String cueId;
   final VoiceCueRoute route;
   final VoiceCueOrigin origin;
-
-  /// Stable ID for the event that caused the cue (transition, queue update,
-  /// deck action, etc.). Multiple phrase variants share this ID.
   final String eventId;
-
-  /// Mutually exclusive phrase family, e.g. transition_praise or acknowledgement.
   final String semanticGroup;
   final bool voiceFeedbackEnabled;
   final bool confirmed;
   final DateTime expiresAt;
-
-  /// Optional explicit origin allow-list for conditional cues (e.g. mode
-  /// announcements valid after a shared setting change as well as Player).
-  /// Other route types keep their fixed origin rules.
   final List<VoiceCueOrigin>? allowedOrigins;
 }
 
@@ -70,9 +58,8 @@ class VoiceCueDecision {
   final VoiceCueBlockReason? reason;
 }
 
-/// Small, deterministic eligibility and duplicate-suppression layer for voice
-/// feedback. Caller supplies time, so expiry behavior is straightforward to
-/// test and does not depend on timers or a background service.
+/// Deterministic eligibility and duplicate suppression. The caller supplies time
+/// so expiry behavior is testable and never depends on background timers.
 class VoiceCueRouter {
   VoiceCueRouter({DateTime Function()? clock})
       : _clock = clock ?? DateTime.now;
@@ -90,17 +77,14 @@ class VoiceCueRouter {
         VoiceCueBlockReason.voiceFeedbackDisabled,
       );
     }
-
     if (!request.confirmed) {
       return const VoiceCueDecision.blocked(
         VoiceCueBlockReason.unconfirmedEvent,
       );
     }
-
     if (!_clock().isBefore(request.expiresAt)) {
       return const VoiceCueDecision.blocked(VoiceCueBlockReason.expired);
     }
-
     if (request.cueId.trim().isEmpty ||
         request.eventId.trim().isEmpty ||
         request.semanticGroup.trim().isEmpty ||
@@ -111,7 +95,6 @@ class VoiceCueRouter {
         VoiceCueBlockReason.invalidRequest,
       );
     }
-
     if (!_routeAllows(request.route, request.origin, request.allowedOrigins)) {
       return const VoiceCueDecision.blocked(
         VoiceCueBlockReason.wrongWorkspace,
@@ -125,9 +108,7 @@ class VoiceCueRouter {
       );
     }
 
-    // This is a reservation. If playback never starts (for example, the music
-    // state changed or the audio focus request was denied), the caller must
-    // release it. Once speech starts, keep it to suppress duplicate variants.
+    // Reserve before playback. Release only if playback never starts.
     _spokenEventGroups[dedupeKey] = request.expiresAt;
     while (_spokenEventGroups.length > _maxRememberedEvents) {
       _spokenEventGroups.remove(_spokenEventGroups.keys.first);
@@ -135,10 +116,6 @@ class VoiceCueRouter {
     return const VoiceCueDecision.allowed();
   }
 
-  /// Releases a reservation when the cue was accepted but did not start.
-  ///
-  /// Do not call after audible playback begins; keeping the reservation then
-  /// prevents duplicate phrases for the same semantic event.
   bool release({
     required String eventId,
     required String semanticGroup,
@@ -147,8 +124,10 @@ class VoiceCueRouter {
     return _spokenEventGroups.remove(_dedupeKey(eventId, semanticGroup)) != null;
   }
 
+  // Length-prefixing avoids collisions even if either caller-supplied value
+  // contains the separator characters used by ordinary concatenation.
   String _dedupeKey(String eventId, String semanticGroup) =>
-      '${eventId}::${semanticGroup}';
+      '${eventId.length}:$eventId${semanticGroup.length}:$semanticGroup';
 
   bool _routeAllows(
     VoiceCueRoute route,
@@ -175,6 +154,5 @@ class VoiceCueRouter {
     _spokenEventGroups.removeWhere((_, expiresAt) => !now.isBefore(expiresAt));
   }
 
-  /// Clears dedupe state at the start of a new app/session lifecycle.
   void resetSession() => _spokenEventGroups.clear();
 }
