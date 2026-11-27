@@ -41,6 +41,7 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
     if (identical(_workspaceLifecycle, coordinator)) return;
     _workspaceLifecycle?.unregister(this);
     _workspaceLifecycle = coordinator;
+    _activeWorkspace = coordinator.activeWorkspace;
     coordinator.register(this);
   }
 
