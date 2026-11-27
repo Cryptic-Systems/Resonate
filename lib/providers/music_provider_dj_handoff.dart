@@ -1804,6 +1804,7 @@ extension MusicProviderDjHandoff on MusicProvider {
                 maxDurationMs: presetUsable ? 15000 : 6500,
                 policy: _djPolicy,
                 preferredKind: presetUsable ? pairPreset?.preferredKind : null,
+                allowReviewedLateCue: presetUsable,
               );
         final execution = _djEngine.execution.plan(
           outgoing: profileA,
@@ -2005,15 +2006,18 @@ extension MusicProviderDjHandoff on MusicProvider {
                 );
           if (target != null) seekMs = target.inMilliseconds;
         }
-        final safeSeekMs = seekMs.clamp(
-          0,
-          incomingSong.duration.inMilliseconds > 0
+        final safeSeekMs = DjIncomingEntryPolicy.normalizeAutomaticEntryMs(
+          requestedMs: seekMs,
+          durationMs: incomingSong.duration.inMilliseconds > 0
               ? incomingSong.duration.inMilliseconds
-              : seekMs,
-        ).toInt();
+              : analysisB.durationMs,
+        );
+        final lateEntryRejected = safeSeekMs != seekMs;
         final stretch = plan.stretch;
-        final activeSpeed = stretch?.speedOutgoing ?? 1.0;
-        final standbySpeed = stretch?.speedIncoming ?? 1.0;
+        // A phase solution outside the incoming opening must not skip into
+        // the middle of the track. Drop the associated stretch with the seek.
+        final activeSpeed = lateEntryRejected ? 1.0 : (stretch?.speedOutgoing ?? 1.0);
+        final standbySpeed = lateEntryRejected ? 1.0 : (stretch?.speedIncoming ?? 1.0);
         _lastDjIncomingBeatMs = const <int>[];
         _lastDjIncomingBpm = plan.bpmB;
         _djStretchSpeedOut = activeSpeed;
@@ -2036,6 +2040,8 @@ extension MusicProviderDjHandoff on MusicProvider {
           extra: {
             ...plan.toDiagExtra(),
             'incomingStartMs': safeSeekMs,
+            'requestedIncomingStartMs': seekMs,
+            'lateIncomingCueRejected': lateEntryRejected,
             'activeSpeed': activeSpeed,
             'standbySpeed': standbySpeed,
           },
