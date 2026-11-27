@@ -92,14 +92,17 @@ class DjScratchTimestampProcessorTest {
         val processor = DjScratchTimestampProcessor(ledger, mailbox)
         processor.configure(AudioProcessor.AudioFormat(1_000, 1, C.ENCODING_PCM_16BIT))
         processor.flush()
-        val input = ByteBuffer.allocateDirect(8).order(ByteOrder.LITTLE_ENDIAN).apply {
+        val sinkInput = ByteBuffer.allocateDirect(8).order(ByteOrder.LITTLE_ENDIAN).apply {
             putShort(0)
             putShort(1_000)
             putShort(2_000)
             putShort(3_000)
             flip()
         }
-        ledger.record(input, 10_000L)
+        // The sink records its input identity, while the processor receives a
+        // duplicate view. FIFO timestamp fallback must still anchor scratch.
+        val input = sinkInput.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+        ledger.record(sinkInput, 10_000L)
         assertTrue(mailbox.publish("track-1", true, 1.0, 10_000L))
 
         processor.queueInput(input)
@@ -111,6 +114,12 @@ class DjScratchTimestampProcessorTest {
         assertEquals(3_000, rendered.short.toInt())
         assertEquals(4, processor.pcmRingForTest()!!.availableFrames)
         assertEquals(input.limit(), input.position())
+        val diagnostics = processor.diagnosticsSnapshot()
+        assertEquals(1L, diagnostics["timestampMatches"])
+        assertEquals(0L, diagnostics["timestampMisses"])
+        assertEquals(1L, diagnostics["activeControlBlocks"])
+        assertEquals(1L, diagnostics["renderedBlocks"])
+        assertEquals(0L, diagnostics["activeRenderFallbacks"])
     }
 
     @Test
