@@ -148,8 +148,8 @@ A regression test covers library selection from playing and paused states, inclu
 ## RQ-004 — Silence-aware transition trigger is missing or unreliable
 
 **Priority:** P2  
-**Status:** Open — requirements and detection design  
-**Evidence:** User-observed.
+**Status:** Initial trusted tail-silence cue integration implemented; CI/device validation pending  
+**Evidence:** Existing measured PCM silence profiles and transition planner code path.
 
 **Observed behavior**
 
@@ -162,17 +162,30 @@ Resonate does not reliably recognize track silence and trigger an appropriate cr
 
 Silence alone must never be sufficient to start a transition. Quiet intros, breakdowns, pauses, sparse passages and intentionally silent sections must not cause premature track changes.
 
-**Required work**
+**Initial implementation**
 
-- Define a robust energy/RMS-based detector with configurable threshold, hold duration, hysteresis and confidence.
-- Use look-ahead or buffered analysis where available; do not block the audio thread.
-- Scope detection to the current media identity and reset it on seek, track change, route/session reset and ownership changes.
-- Gate automatic transitions through existing PlaybackControlArbiter and CrossfadeTransitionGuard contracts.
-- Add negative tests for quiet music, breakdowns, silence at the beginning, short gaps and user pause/seek.
+The PCM profile already contains measured DjSilenceRegion records. A new conservative planner policy now selects an outgoing silence cue only when the region is:
+
+- at least two seconds long,
+- measured at or below -48 dBFS,
+- confidence at least 0.78,
+- in the final 15% of the track and within 20 seconds of the tail,
+- ending within 1.5 seconds of the track end,
+- still ahead of playback and within a 45-second planner look-ahead.
+
+The selected cue becomes the outgoing transition anchor. Existing cue scheduling preloads before that point and starts the normal Media3 A/B transition when playback reaches it. It does not block or inspect PCM on the audio thread, and quiet breakdowns/mid-track gaps do not qualify.
+
+**Remaining work**
+
+- Verify profile identity/fingerprint and stale profile invalidation on seek, track change, route/session reset and workspace ownership changes.
+- Confirm the planner is invoked early enough for cue preload and that the scheduled transition actually starts at the measured silence boundary.
+- Keep all transitions gated by PlaybackControlArbiter and CrossfadeTransitionGuard; user transport must preempt.
+- Add device diagnostics correlating measured cue, actual outgoing position, preload time and native crossfade start.
+- Future enhancement: a live rolling RMS detector for material without a trusted precomputed profile. Do not add a second audio capture path or block the audio thread.
 
 **Exit criteria**
 
-Detection is identity-scoped and deterministic; only a separately validated safe-transition decision can request a crossfade; user transport always preempts it.
+Exact-head CI passes; deterministic tests reject quiet music, breakdowns, silence at the beginning, short gaps, past cues and low-confidence regions; device diagnostics confirm the real transition begins at the selected cue and user transport always wins.
 
 ---
 
@@ -392,3 +405,8 @@ The provider contained a dedicated `repeat-self` transition: when Repeat One was
 - The user reports the DJ platter scratch remains inaudible after the previous native PCM fix. RQ-010 is reopened; do not claim scratch is working based on unit tests.
 - The automatic repeat-self feature was confirmed to be a Repeat One + crossfade path, not a separate random-probability scheduler. Its execution branch has been removed. Repeat One is restored to a normal native/single-source loop.
 - A new timestamp-ledger FIFO fallback and four-second per-deck PCM history are implemented with native regression tests. Latest CI must validate these changes before a test build is issued.
+
+
+## 2026-11-27 — silence-aware transition cue integration
+
+A conservative planner integration now uses existing measured PCM silence regions as outgoing tail cues. The new policy requires sustained deep silence, confidence, a near-tail location, a cue still ahead of playback and a bounded look-ahead. The cue is consumed by the existing automatic crossfade scheduler; it does not create a separate playback or audio-capture path. Focused tests cover accepted tail silence, weak/mid-track silence and already-passed cues. This is initial integration, not proof of audible device behavior; actual cue-to-native-start timing remains a device validation item.
