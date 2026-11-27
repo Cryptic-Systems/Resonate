@@ -13,6 +13,7 @@ import 'library_screen.dart';
 import 'player_screen.dart';
 import '../navigation/shell_nav.dart';
 import '../services/workspace_lifecycle_coordinator.dart';
+import '../services/workspace_transition_controller.dart';
 import 'home_dashboard.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -45,7 +46,14 @@ class _HomeScreenState extends State<HomeScreen> {
       unawaited(context
           .read<WorkspaceLifecycleCoordinator>()
           .activate(ResonateWorkspace.player)
-          .catchError((Object error) {
+          .then((_) async {
+        await WidgetsBinding.instance.endOfFrame;
+        if (mounted) {
+          context
+              .read<WorkspaceTransitionController>()
+              .markReady(ResonateWorkspace.player);
+        }
+      }).catchError((Object error) {
         debugPrint('Player workspace activation failed: $error');
       }));
       _shellNav = context.read<ShellNav>();
