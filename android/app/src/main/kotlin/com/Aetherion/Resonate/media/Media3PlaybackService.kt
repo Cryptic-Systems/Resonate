@@ -414,6 +414,9 @@ class Media3PlaybackService : MediaSessionService() {
         val duration = player.duration
         if (duration != C.TIME_UNSET && positionMs > duration) return false
         return try {
+            djScratchMailboxes[deckId]?.snapshot()?.let { snapshot ->
+                djScratchMailboxes[deckId]?.clear(snapshot.mediaId)
+            }
             val loop = djLoops[deckId]
             if (loop != null && (positionMs < loop.range.startMs || positionMs >= loop.range.endMs)) {
                 clearDjDeckLoopInternal(deckId)
@@ -967,6 +970,9 @@ class Media3PlaybackService : MediaSessionService() {
                     deck === standbyPlayer -> standbyDeckId()
                     else -> null
                 } ?: return
+                djScratchMailboxes[physicalDeckId]?.snapshot()?.let { snapshot ->
+                    djScratchMailboxes[physicalDeckId]?.clear(snapshot.mediaId)
+                }
                 val loop = djLoops[physicalDeckId] ?: return
                 if (playerForPhysicalDeck(physicalDeckId) === deck &&
                     deck.currentMediaItem?.mediaId == loop.expectedMediaId
@@ -1043,6 +1049,12 @@ class Media3PlaybackService : MediaSessionService() {
                 lastMediaTransitionReason = reason
                 lastMediaTransitionElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime()
                 if (physicalDeckId != null) {
+                    val scratchMailbox = djScratchMailboxes[physicalDeckId]
+                    scratchMailbox?.snapshot()?.let { snapshot ->
+                        if (snapshot.mediaId != mediaItem?.mediaId) {
+                            scratchMailbox.clear(snapshot.mediaId)
+                        }
+                    }
                     val loop = djLoops[physicalDeckId]
                     if (loop != null && loop.expectedMediaId != mediaItem?.mediaId) {
                         clearDjDeckLoopInternal(physicalDeckId)
@@ -1087,9 +1099,11 @@ class Media3PlaybackService : MediaSessionService() {
                     val deckId = activeDeckId
                     val isIndependentDeckPause =
                         djDualDeckMode && suppressDjPeerPauseDeckId == deckId
+                    djScratchMailboxes[deckId]?.clear()
                     if (isIndependentDeckPause) {
                         suppressDjPeerPauseDeckId = null
                     } else {
+                        djScratchMailboxes[standbyDeckId()]?.clear()
                         standbyPlayer?.pause()
                     }
                     if (!djDualDeckMode) pauseCrossfade()
