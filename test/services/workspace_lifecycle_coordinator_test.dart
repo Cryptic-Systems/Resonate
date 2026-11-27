@@ -11,7 +11,10 @@ class _Participant implements WorkspaceLifecycleParticipant {
   @override
   Future<void> onWorkspaceChanged(ResonateWorkspace workspace) async {
     transitions.add(workspace);
-    if (workspace == ResonateWorkspace.dj && djGate != null) {\n      await djGate!.future;\n    }\n    if (failOnDj && workspace == ResonateWorkspace.dj) {
+    if (workspace == ResonateWorkspace.dj && djGate != null) {
+      await djGate!.future;
+    }
+    if (failOnDj && workspace == ResonateWorkspace.dj) {
       throw StateError('synthetic lifecycle failure');
     }
   }
