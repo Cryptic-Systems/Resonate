@@ -22,6 +22,7 @@ import '../services/dj_transition_memory.dart';
 import '../services/dj_transition_preset_store.dart';
 import '../dj_engine/dj_engine.dart';
 import '../dj_engine/core/dj_policy.dart';
+import '../dj_engine/core/dj_incoming_entry_policy.dart';
 import '../dj_engine/intelligence/dj_autopilot_planner.dart';
 import '../services/playback_authority.dart';
 import '../services/playback_intent_gate.dart';
