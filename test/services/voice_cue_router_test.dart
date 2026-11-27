@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/services/voice_cue_router.dart';
+import 'package:resonate/services/workspace_lifecycle_coordinator.dart';
 
 void main() {
   late DateTime now;
@@ -31,6 +32,54 @@ void main() {
         expiresAt: expiresAt ?? now.add(const Duration(seconds: 5)),
         allowedOrigins: allowedOrigins,
       );
+
+  test('workspace origin gate blocks stale Player and DJ cues', () {
+    expect(
+      voiceCueOriginAllowedInWorkspace(
+        VoiceCueOrigin.playerAuto,
+        ResonateWorkspace.player,
+      ),
+      isTrue,
+    );
+    expect(
+      voiceCueOriginAllowedInWorkspace(
+        VoiceCueOrigin.playerAuto,
+        ResonateWorkspace.dj,
+      ),
+      isFalse,
+    );
+    expect(
+      voiceCueOriginAllowedInWorkspace(
+        VoiceCueOrigin.djManual,
+        ResonateWorkspace.dj,
+      ),
+      isTrue,
+    );
+    expect(
+      voiceCueOriginAllowedInWorkspace(
+        VoiceCueOrigin.djManual,
+        ResonateWorkspace.player,
+      ),
+      isFalse,
+    );
+  });
+
+  test('shared system and consent cues remain available in both workspaces', () {
+    expect(
+      voiceCueOriginAllowedInWorkspace(
+        VoiceCueOrigin.sharedSystem,
+        ResonateWorkspace.player,
+      ),
+      isTrue,
+    );
+    expect(
+      voiceCueOriginAllowedInWorkspace(
+        VoiceCueOrigin.sharedSystem,
+        ResonateWorkspace.dj,
+      ),
+      isTrue,
+    );
+  });
 
   test('player-only cue is accepted only from automatic playback', () {
     expect(router.evaluate(request(route: VoiceCueRoute.playerAuto)).allowed, isTrue);
