@@ -55,7 +55,7 @@ object DspEngineSinkHook {
 
     @JvmStatic
     fun createProcessors(deckId: String): Array<AudioProcessor> =
-        createDspProcessors(deckId)
+        if (deckId == "legacy") emptyArray() else createDspProcessors(deckId)
 
     /** Media3-only chain: timestamp probe first, then the unchanged native DSP stage. */
     @JvmStatic
