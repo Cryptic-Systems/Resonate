@@ -17,6 +17,7 @@ import 'package:resonate/services/playback_backend.dart';
 import 'package:resonate/services/playback_engine_session.dart';
 import 'package:resonate/services/media3_provider_state_bridge.dart';
 import 'package:resonate/services/dj_analysis_service.dart';
+import 'package:resonate/services/voice_cue_service.dart';
 
 Song _song(String id) => Song(
       id: id,
@@ -530,6 +531,10 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   SharedPreferences.setMockInitialValues(<String, Object>{});
+  // These provider tests exercise Media3 transport, not native just_audio
+  // output. Keep optional voice cues disabled so the test isolate does not
+  // attempt to initialize an Android audio plugin it does not register.
+  unawaited(VoiceCueService.instance.setEnabled(false));
 
   group('MusicProvider Media3 session preparation', () {
     setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
