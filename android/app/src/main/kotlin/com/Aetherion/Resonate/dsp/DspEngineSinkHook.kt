@@ -35,8 +35,7 @@ object DspEngineSinkHook {
     }
 
     private fun isDeckActive(deckId: String): Boolean =
-        deckId == "legacy" || deckId.startsWith("preview_") ||
-            activeDecks.contains(deckId)
+        deckId == "legacy" || activeDecks.contains(deckId)
 
     internal fun resetForTests() {
         processorsByDeck.clear()
