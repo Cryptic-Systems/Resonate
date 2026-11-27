@@ -25,12 +25,16 @@ class VoiceCueService {
   Map<String, Map<String, dynamic>>? _manifest;
   bool _speaking = false;
   bool _requestInFlight = false;
+  bool? _enabledOverride;
   int _generation = 0;
   Future<void>? _loading;
 
   bool get isSpeaking => _speaking;
 
   Future<void> setEnabled(bool enabled) async {
+    // Update synchronously so an event arriving before SharedPreferences
+    // completes cannot sneak a cue in after the user muted feedback.
+    _enabledOverride = enabled;
     if (!enabled) _generation++;
     final preferences = await SharedPreferences.getInstance();
     await preferences.setBool(_enabledKey, enabled);
@@ -44,6 +48,8 @@ class VoiceCueService {
   }
 
   Future<bool> isEnabled() async {
+    final override = _enabledOverride;
+    if (override != null) return override;
     final preferences = await SharedPreferences.getInstance();
     return preferences.getBool(_enabledKey) ?? true;
   }
@@ -100,11 +106,16 @@ class VoiceCueService {
       final entry = _manifest?[cueId];
       if (entry == null || entry['runtimeEnabled'] != true) return false;
       final assetPath = entry['assetPath'];
+      final category = entry['category'];
+      final filename = entry['filename'];
       if (assetPath is! String ||
+          category is! String ||
+          filename is! String ||
           !assetPath.startsWith(_assetRoot) ||
           assetPath.contains('..') ||
           assetPath.contains('\\') ||
-          !assetPath.endsWith('.mp3')) {
+          !assetPath.endsWith('.mp3') ||
+          assetPath != '$_assetRoot$category/$filename') {
         debugPrint('Resonate voice cue has an unsafe asset path ($cueId)');
         return false;
       }
