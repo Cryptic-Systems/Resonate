@@ -120,7 +120,9 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
 
   Future<void> _switchToPlayer() async {
     if (_switchingToPlayer ||
-        (!_djSessionStarted && !_djSessionCleanupRequired)) {
+        (_sessionStart == null &&
+            !_djSessionStarted &&
+            !_djSessionCleanupRequired)) {
       return;
     }
     _switchingToPlayer = true;
