@@ -2004,9 +2004,9 @@ class MusicProvider extends ChangeNotifier {
           trackLevel: _levelingRuntime.composeAdditionalTrackScale(_featureNormalizationScale),
           preamp: _eqPreampUserScale,
           sleepFade: _sleepFadeScale,
-          focusDuck: _isDucked
+          focusDuck: (_isDucked
               ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel)
-              : 1.0,
+              : 1.0) * _voiceCueDuckScale,
         );
       } catch (error) {
         debugPrint('Media3 gain-factor update failed: $error');
