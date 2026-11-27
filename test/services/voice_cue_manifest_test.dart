@@ -48,7 +48,7 @@ void main() {
       expect(routes, contains(entry['routingProposal']));
       expect(entry['allowedOrigins'], isA<List<dynamic>>());
       expect(entry['allowedOrigins'], isNotEmpty);
-      for (final origin in entry['allowedOrigins'] as List<dynamic> {
+      for (final origin in (entry['allowedOrigins'] as List<dynamic>)) {
         expect(origins, contains(origin));
       }
       expect(entry['semanticGroupProposal'], isA<String>());
