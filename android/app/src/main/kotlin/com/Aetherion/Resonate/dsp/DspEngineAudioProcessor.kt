@@ -283,12 +283,15 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
     }
 
     override fun onFlush() {
-        // Continuous engine; no hard reset.
+        // Media3 may flush immediately after initial configure. Retry transient
+        // library/engine initialization here, outside the real-time PCM callback.
+        maybeCreateEngine()
     }
 
     override fun onReset() {
         destroyEngine()
         createAttempted = false
+        createFailuresThisActivation = 0
         consecutiveProcessErrors = 0
         DspEngineSinkHook.forgetProcessor(this)
     }
