@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "status": "filename_routes_audited_assets_not_extracted_listening_review_pending",
-  "description": "Stable filename-level inventory and routing proposals for 84 voice clips. Routes and semantic groups are proposals derived from filenames and VOICE_WORKSPACE_ROUTING.md; no audio was transcribed by listening. assetPath is null and runtimeEnabled is false until source MP3s are extracted into Flutter assets, individually reviewed, and exact paths verified.",
+  "status": "filename_routes_enabled_audio_assets_extracted_listening_review_pending",
+  "description": "84 original MP3s extracted into stable Flutter asset paths using the manifest filenames. No clips were transcribed by listening and no audio was normalized or transcoded. Routing and semantic groups are filename-derived proposals and are now wired for playback; review any phrase/trigger mismatch during real playback.",
   "assets": [
     {
       "id": "ask_resonate_companion.voice_ask_built_you_a_120_minute_mix",
       "filename": "voice_ask_built_you_a_120-minute_mix.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/ask_resonate_companion/Ask Resonate , Companion responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/ask_resonate_companion__Ask Resonate , Companion responses.zip",
       "category": "ask_resonate_companion",
       "phraseFromFilename": "Built you a 120-minute mix",
       "routingProposal": "player_auto",
@@ -15,13 +15,13 @@
       ],
       "semanticGroupProposal": "companion_result",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/ask_resonate_companion/voice_ask_built_you_a_120-minute_mix.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "ask_resonate_companion.voice_ask_built_you_a_30_minute_mix",
       "filename": "voice_ask_built_you_a_30-minute_mix.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/ask_resonate_companion/Ask Resonate , Companion responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/ask_resonate_companion__Ask Resonate , Companion responses.zip",
       "category": "ask_resonate_companion",
       "phraseFromFilename": "Built you a 30-minute mix",
       "routingProposal": "player_auto",
@@ -30,13 +30,13 @@
       ],
       "semanticGroupProposal": "companion_result",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/ask_resonate_companion/voice_ask_built_you_a_30-minute_mix.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "ask_resonate_companion.voice_ask_built_you_a_45_minute_mix",
       "filename": "voice_ask_built_you_a_45-minute_mix.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/ask_resonate_companion/Ask Resonate , Companion responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/ask_resonate_companion__Ask Resonate , Companion responses.zip",
       "category": "ask_resonate_companion",
       "phraseFromFilename": "Built you a 45-minute mix",
       "routingProposal": "player_auto",
@@ -45,13 +45,13 @@
       ],
       "semanticGroupProposal": "companion_result",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/ask_resonate_companion/voice_ask_built_you_a_45-minute_mix.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "ask_resonate_companion.voice_ask_built_you_a_60_minute_mix",
       "filename": "voice_ask_built_you_a_60-minute_mix.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/ask_resonate_companion/Ask Resonate , Companion responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/ask_resonate_companion__Ask Resonate , Companion responses.zip",
       "category": "ask_resonate_companion",
       "phraseFromFilename": "Built you a 60-minute mix",
       "routingProposal": "player_auto",
@@ -60,13 +60,13 @@
       ],
       "semanticGroupProposal": "companion_result",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/ask_resonate_companion/voice_ask_built_you_a_60-minute_mix.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "ask_resonate_companion.voice_ask_built_you_a_90_minute_mix",
       "filename": "voice_ask_built_you_a_90-minute_mix.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/ask_resonate_companion/Ask Resonate , Companion responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/ask_resonate_companion__Ask Resonate , Companion responses.zip",
       "category": "ask_resonate_companion",
       "phraseFromFilename": "Built you a 90-minute mix",
       "routingProposal": "player_auto",
@@ -75,13 +75,13 @@
       ],
       "semanticGroupProposal": "companion_result",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/ask_resonate_companion/voice_ask_built_you_a_90-minute_mix.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "ask_resonate_companion.voice_ask_found_some_tracks_that_match_the_mood",
       "filename": "voice_ask_found_some_tracks_that_match_the_mood.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/ask_resonate_companion/Ask Resonate , Companion responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/ask_resonate_companion__Ask Resonate , Companion responses.zip",
       "category": "ask_resonate_companion",
       "phraseFromFilename": "Found some tracks that match the mood",
       "routingProposal": "both_contextual",
@@ -91,13 +91,13 @@
       ],
       "semanticGroupProposal": "companion_result",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/ask_resonate_companion/voice_ask_found_some_tracks_that_match_the_mood.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "ask_resonate_companion.voice_ask_got_it",
       "filename": "voice_ask_got_it.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/ask_resonate_companion/Ask Resonate , Companion responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/ask_resonate_companion__Ask Resonate , Companion responses.zip",
       "category": "ask_resonate_companion",
       "phraseFromFilename": "Got it",
       "routingProposal": "both_contextual",
@@ -107,13 +107,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/ask_resonate_companion/voice_ask_got_it.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "ask_resonate_companion.voice_ask_here_s_what_i_found",
       "filename": "voice_ask_here’s_what_I_found.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/ask_resonate_companion/Ask Resonate , Companion responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/ask_resonate_companion__Ask Resonate , Companion responses.zip",
       "category": "ask_resonate_companion",
       "phraseFromFilename": "Here's what I found",
       "routingProposal": "both_contextual",
@@ -123,13 +123,13 @@
       ],
       "semanticGroupProposal": "companion_result",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/ask_resonate_companion/voice_ask_here’s_what_I_found.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "ask_resonate_companion.voice_ask_keeping_it_local",
       "filename": "voice_ask_keeping_it_local.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/ask_resonate_companion/Ask Resonate , Companion responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/ask_resonate_companion__Ask Resonate , Companion responses.zip",
       "category": "ask_resonate_companion",
       "phraseFromFilename": "Keeping it local",
       "routingProposal": "both_contextual",
@@ -139,13 +139,13 @@
       ],
       "semanticGroupProposal": "companion_result",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/ask_resonate_companion/voice_ask_keeping_it_local.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "ask_resonate_companion.voice_ask_looking_through_your_library",
       "filename": "voice_ask_looking_through_your_library.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/ask_resonate_companion/Ask Resonate , Companion responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/ask_resonate_companion__Ask Resonate , Companion responses.zip",
       "category": "ask_resonate_companion",
       "phraseFromFilename": "Looking through your library",
       "routingProposal": "both_contextual",
@@ -155,13 +155,13 @@
       ],
       "semanticGroupProposal": "companion_result",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/ask_resonate_companion/voice_ask_looking_through_your_library.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "ask_resonate_companion.voice_ask_on_it",
       "filename": "voice_ask_on_it.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/ask_resonate_companion/Ask Resonate , Companion responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/ask_resonate_companion__Ask Resonate , Companion responses.zip",
       "category": "ask_resonate_companion",
       "phraseFromFilename": "On it",
       "routingProposal": "both_contextual",
@@ -171,13 +171,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/ask_resonate_companion/voice_ask_on_it.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "ask_resonate_companion.voice_ask_queue_updated",
       "filename": "voice_ask_queue _updated.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/ask_resonate_companion/Ask Resonate , Companion responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/ask_resonate_companion__Ask Resonate , Companion responses.zip",
       "category": "ask_resonate_companion",
       "phraseFromFilename": "Queue updated",
       "routingProposal": "both_contextual",
@@ -187,13 +187,13 @@
       ],
       "semanticGroupProposal": "companion_result",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/ask_resonate_companion/voice_ask_queue _updated.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "ask_resonate_companion.voice_ask_ready_when_you_are",
       "filename": "voice_ask_ready_when_you_are.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/ask_resonate_companion/Ask Resonate , Companion responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/ask_resonate_companion__Ask Resonate , Companion responses.zip",
       "category": "ask_resonate_companion",
       "phraseFromFilename": "Ready when you are",
       "routingProposal": "both_contextual",
@@ -203,13 +203,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/ask_resonate_companion/voice_ask_ready_when_you_are.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "ask_resonate_companion.voice_ask_warmup_set",
       "filename": "voice_ask_warmup_set.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/ask_resonate_companion/Ask Resonate , Companion responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/ask_resonate_companion__Ask Resonate , Companion responses.zip",
       "category": "ask_resonate_companion",
       "phraseFromFilename": "Warmup set",
       "routingProposal": "both_contextual",
@@ -219,13 +219,13 @@
       ],
       "semanticGroupProposal": "companion_result",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/ask_resonate_companion/voice_ask_warmup_set.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "ask_resonate_companion.voice_ask_you_might_like_these",
       "filename": "voice_ask_you_might_like_these.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/ask_resonate_companion/Ask Resonate , Companion responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/ask_resonate_companion__Ask Resonate , Companion responses.zip",
       "category": "ask_resonate_companion",
       "phraseFromFilename": "You might like these",
       "routingProposal": "both_contextual",
@@ -235,13 +235,13 @@
       ],
       "semanticGroupProposal": "contextual_event",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/ask_resonate_companion/voice_ask_you_might_like_these.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "deck_console_workspace.console_active_deck_switched",
       "filename": "console_active_deck_switched.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/deck_console_workspace/Deck,  Console,  Workspace.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/deck_console_workspace__Deck,  Console,  Workspace.zip",
       "category": "deck_console_workspace",
       "phraseFromFilename": "Active deck switched",
       "routingProposal": "dj_manual",
@@ -250,13 +250,13 @@
       ],
       "semanticGroupProposal": "manual_console_state",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/deck_console_workspace/console_active_deck_switched.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "deck_console_workspace.console_both_decks_loaded",
       "filename": "console_both_decks_loaded.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/deck_console_workspace/Deck,  Console,  Workspace.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/deck_console_workspace__Deck,  Console,  Workspace.zip",
       "category": "deck_console_workspace",
       "phraseFromFilename": "Both decks loaded",
       "routingProposal": "dj_manual",
@@ -265,13 +265,13 @@
       ],
       "semanticGroupProposal": "manual_console_state",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/deck_console_workspace/console_both_decks_loaded.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "deck_console_workspace.console_console_open",
       "filename": "Console_console_open.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/deck_console_workspace/Deck,  Console,  Workspace.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/deck_console_workspace__Deck,  Console,  Workspace.zip",
       "category": "deck_console_workspace",
       "phraseFromFilename": "Console open",
       "routingProposal": "dj_manual",
@@ -280,13 +280,13 @@
       ],
       "semanticGroupProposal": "manual_console_state",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/deck_console_workspace/Console_console_open.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "deck_console_workspace.console_deck_a_active",
       "filename": "console_deck_A_active.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/deck_console_workspace/Deck,  Console,  Workspace.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/deck_console_workspace__Deck,  Console,  Workspace.zip",
       "category": "deck_console_workspace",
       "phraseFromFilename": "Deck A active",
       "routingProposal": "dj_manual",
@@ -295,13 +295,13 @@
       ],
       "semanticGroupProposal": "manual_console_state",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/deck_console_workspace/console_deck_A_active.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "deck_console_workspace.console_deck_b_active",
       "filename": "console_deck_B_active.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/deck_console_workspace/Deck,  Console,  Workspace.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/deck_console_workspace__Deck,  Console,  Workspace.zip",
       "category": "deck_console_workspace",
       "phraseFromFilename": "Deck B active",
       "routingProposal": "dj_manual",
@@ -310,13 +310,13 @@
       ],
       "semanticGroupProposal": "manual_console_state",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/deck_console_workspace/console_deck_B_active.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "deck_console_workspace.console_incoming_prepared",
       "filename": "Console_incoming_prepared.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/deck_console_workspace/Deck,  Console,  Workspace.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/deck_console_workspace__Deck,  Console,  Workspace.zip",
       "category": "deck_console_workspace",
       "phraseFromFilename": "Incoming prepared",
       "routingProposal": "dj_manual",
@@ -325,13 +325,13 @@
       ],
       "semanticGroupProposal": "manual_console_state",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/deck_console_workspace/Console_incoming_prepared.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "deck_console_workspace.console_monitoring",
       "filename": "console_monitoring.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/deck_console_workspace/Deck,  Console,  Workspace.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/deck_console_workspace__Deck,  Console,  Workspace.zip",
       "category": "deck_console_workspace",
       "phraseFromFilename": "Monitoring",
       "routingProposal": "dj_manual",
@@ -340,13 +340,13 @@
       ],
       "semanticGroupProposal": "manual_console_state",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/deck_console_workspace/console_monitoring.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "deck_console_workspace.console_standby_ready",
       "filename": "console_standby_ready.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/deck_console_workspace/Deck,  Console,  Workspace.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/deck_console_workspace__Deck,  Console,  Workspace.zip",
       "category": "deck_console_workspace",
       "phraseFromFilename": "Standby ready",
       "routingProposal": "dj_manual",
@@ -355,13 +355,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/deck_console_workspace/console_standby_ready.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_aligning_the_phrase",
       "filename": "voice_dj_aligning_the_phrase.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Aligning the phrase",
       "routingProposal": "dj_manual",
@@ -370,13 +370,13 @@
       ],
       "semanticGroupProposal": "contextual_event",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_aligning_the_phrase.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_building_into_the_next_one",
       "filename": "voice_dj_building_into_the_next_one.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Building into the next one",
       "routingProposal": "both_contextual",
@@ -386,13 +386,13 @@
       ],
       "semanticGroupProposal": "transition_event",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_building_into_the_next_one.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_coming_up_next",
       "filename": "voice_dj_coming_up_next.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Coming up next",
       "routingProposal": "both_contextual",
@@ -402,13 +402,13 @@
       ],
       "semanticGroupProposal": "transition_event",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_coming_up_next.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_drop_incoming",
       "filename": "voice_dj_Drop_Incoming.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Drop incoming",
       "routingProposal": "dj_manual",
@@ -417,13 +417,13 @@
       ],
       "semanticGroupProposal": "contextual_event",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_Drop_Incoming.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_energy_rising",
       "filename": "voice_dj_energy_rising.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Energy rising",
       "routingProposal": "conditional",
@@ -433,13 +433,13 @@
       ],
       "semanticGroupProposal": "energy_or_selection",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_energy_rising.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_here_we_go",
       "filename": "voice_dj_here_we_go.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Here we go",
       "routingProposal": "dj_manual",
@@ -448,13 +448,13 @@
       ],
       "semanticGroupProposal": "energy_or_selection",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_here_we_go.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_keeping_the_flow_tight",
       "filename": "voice_dj_keeping_the_flow_tight..mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Keeping the flow tight",
       "routingProposal": "both_contextual",
@@ -464,13 +464,13 @@
       ],
       "semanticGroupProposal": "transition_event",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_keeping_the_flow_tight..mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_key_match_looking_solid",
       "filename": "voice_dj_key_match_looking_solid.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Key match looking solid",
       "routingProposal": "conditional",
@@ -480,13 +480,13 @@
       ],
       "semanticGroupProposal": "contextual_event",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_key_match_looking_solid.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_letting_it_breathe",
       "filename": "voice_dj_letting_it_breathe.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Letting it breathe",
       "routingProposal": "both_contextual",
@@ -496,13 +496,13 @@
       ],
       "semanticGroupProposal": "contextual_event",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_letting_it_breathe.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_let_s_go",
       "filename": "voice_dj_let’s_go.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Let's go",
       "routingProposal": "dj_manual",
@@ -511,13 +511,13 @@
       ],
       "semanticGroupProposal": "energy_or_selection",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_let’s_go.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_next_track_locked",
       "filename": "voice_dj_next_track_locked.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Next track locked",
       "routingProposal": "both_contextual",
@@ -527,13 +527,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_next_track_locked.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_nice_transition",
       "filename": "voice_dj_nice_transition.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Nice transition",
       "routingProposal": "conditional",
@@ -543,13 +543,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_nice_transition.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_reading_the_room",
       "filename": "voice_dj_reading_the_room.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Reading the room",
       "routingProposal": "conditional",
@@ -559,13 +559,13 @@
       ],
       "semanticGroupProposal": "contextual_event",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_reading_the_room.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_ride_this_one_out",
       "filename": "voice_dj_ride_this_one_out..mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Ride this one out",
       "routingProposal": "conditional",
@@ -575,13 +575,13 @@
       ],
       "semanticGroupProposal": "transition_event",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_ride_this_one_out..mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_smooth_handoff",
       "filename": "voice_dj_smooth_handoff.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Smooth handoff",
       "routingProposal": "conditional",
@@ -591,13 +591,13 @@
       ],
       "semanticGroupProposal": "transition_event",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_smooth_handoff.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_soft_landing",
       "filename": "voice_dj_soft_landing.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Soft landing",
       "routingProposal": "conditional",
@@ -607,13 +607,13 @@
       ],
       "semanticGroupProposal": "transition_event",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_soft_landing.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_standby_ready",
       "filename": "voice_dj_standby_ready.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "Standby ready",
       "routingProposal": "both_contextual",
@@ -623,13 +623,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_standby_ready.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_that_was_clean",
       "filename": "voice_dj_that_was_clean.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "That was clean",
       "routingProposal": "conditional",
@@ -639,13 +639,13 @@
       ],
       "semanticGroupProposal": "transition_event",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_that_was_clean.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "dj_transition_performance.voice_dj_this_one_s_got_heat",
       "filename": "voice_dj_this_one’s_got_heat.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/dj_transition_performance/DJ Transition & Performance.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/dj_transition_performance__DJ Transition & Performance.zip",
       "category": "dj_transition_performance",
       "phraseFromFilename": "This one's got heat",
       "routingProposal": "conditional",
@@ -655,13 +655,13 @@
       ],
       "semanticGroupProposal": "energy_or_selection",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/dj_transition_performance/voice_dj_this_one’s_got_heat.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "hype_flavor_personality.hype_feeling_the_groove",
       "filename": "hype_feeling_the_groove.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/hype_flavor_personality/Hype, Flavor, Personality (use sparingly).zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/hype_flavor_personality__Hype, Flavor, Personality (use sparingly).zip",
       "category": "hype_flavor_personality",
       "phraseFromFilename": "Feeling the groove",
       "routingProposal": "conditional",
@@ -671,13 +671,13 @@
       ],
       "semanticGroupProposal": "energy_or_selection",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/hype_flavor_personality/hype_feeling_the_groove.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "hype_flavor_personality.hype_good_taste",
       "filename": "hype_good_taste.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/hype_flavor_personality/Hype, Flavor, Personality (use sparingly).zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/hype_flavor_personality__Hype, Flavor, Personality (use sparingly).zip",
       "category": "hype_flavor_personality",
       "phraseFromFilename": "Good taste",
       "routingProposal": "conditional",
@@ -687,13 +687,13 @@
       ],
       "semanticGroupProposal": "energy_or_selection",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/hype_flavor_personality/hype_good_taste.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "hype_flavor_personality.hype_let_s_keep_this_moving",
       "filename": "hype_let’s_keep_this_moving.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/hype_flavor_personality/Hype, Flavor, Personality (use sparingly).zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/hype_flavor_personality__Hype, Flavor, Personality (use sparingly).zip",
       "category": "hype_flavor_personality",
       "phraseFromFilename": "Let's keep this moving",
       "routingProposal": "both_contextual",
@@ -703,13 +703,13 @@
       ],
       "semanticGroupProposal": "energy_or_selection",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/hype_flavor_personality/hype_let’s_keep_this_moving.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "hype_flavor_personality.hype_locked_in",
       "filename": "hype_locked_in.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/hype_flavor_personality/Hype, Flavor, Personality (use sparingly).zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/hype_flavor_personality__Hype, Flavor, Personality (use sparingly).zip",
       "category": "hype_flavor_personality",
       "phraseFromFilename": "Locked in",
       "routingProposal": "conditional",
@@ -719,13 +719,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/hype_flavor_personality/hype_locked_in.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "hype_flavor_personality.hype_nice_selection",
       "filename": "hype_nice_selection.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/hype_flavor_personality/Hype, Flavor, Personality (use sparingly).zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/hype_flavor_personality__Hype, Flavor, Personality (use sparingly).zip",
       "category": "hype_flavor_personality",
       "phraseFromFilename": "Nice selection",
       "routingProposal": "conditional",
@@ -735,13 +735,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/hype_flavor_personality/hype_nice_selection.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "hype_flavor_personality.hype_rising",
       "filename": "hype_rising.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/hype_flavor_personality/Hype, Flavor, Personality (use sparingly).zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/hype_flavor_personality__Hype, Flavor, Personality (use sparingly).zip",
       "category": "hype_flavor_personality",
       "phraseFromFilename": "Rising",
       "routingProposal": "conditional",
@@ -751,13 +751,13 @@
       ],
       "semanticGroupProposal": "energy_or_selection",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/hype_flavor_personality/hype_rising.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "hype_flavor_personality.hype_this_is_the_one",
       "filename": "hype_this_is_the_one.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/hype_flavor_personality/Hype, Flavor, Personality (use sparingly).zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/hype_flavor_personality__Hype, Flavor, Personality (use sparingly).zip",
       "category": "hype_flavor_personality",
       "phraseFromFilename": "This is the one",
       "routingProposal": "conditional",
@@ -767,13 +767,13 @@
       ],
       "semanticGroupProposal": "contextual_event",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/hype_flavor_personality/hype_this_is_the_one.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "hype_flavor_personality.hype_you_re_on_a_roll",
       "filename": "hype_you’re_on_a_roll.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/hype_flavor_personality/Hype, Flavor, Personality (use sparingly).zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/hype_flavor_personality__Hype, Flavor, Personality (use sparingly).zip",
       "category": "hype_flavor_personality",
       "phraseFromFilename": "You're on a roll",
       "routingProposal": "conditional",
@@ -783,13 +783,13 @@
       ],
       "semanticGroupProposal": "energy_or_selection",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/hype_flavor_personality/hype_you’re_on_a_roll.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "mode_policy.voice_mode_audiobook",
       "filename": "voice_mode_audiobook.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/mode_policy/Mode & Policy feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/mode_policy__Mode & Policy feedback.zip",
       "category": "mode_policy",
       "phraseFromFilename": "Audiobook",
       "routingProposal": "conditional",
@@ -799,13 +799,13 @@
       ],
       "semanticGroupProposal": "mode_confirmation",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/mode_policy/voice_mode_audiobook.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "mode_policy.voice_mode_driving",
       "filename": "voice_mode_driving.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/mode_policy/Mode & Policy feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/mode_policy__Mode & Policy feedback.zip",
       "category": "mode_policy",
       "phraseFromFilename": "Driving",
       "routingProposal": "conditional",
@@ -815,13 +815,13 @@
       ],
       "semanticGroupProposal": "mode_confirmation",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/mode_policy/voice_mode_driving.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "mode_policy.voice_mode_motivation",
       "filename": "voice_mode_motivation.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/mode_policy/Mode & Policy feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/mode_policy__Mode & Policy feedback.zip",
       "category": "mode_policy",
       "phraseFromFilename": "Motivation",
       "routingProposal": "conditional",
@@ -831,13 +831,13 @@
       ],
       "semanticGroupProposal": "mode_confirmation",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/mode_policy/voice_mode_motivation.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "mode_policy.voice_mode_normal",
       "filename": "voice_mode_normal.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/mode_policy/Mode & Policy feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/mode_policy__Mode & Policy feedback.zip",
       "category": "mode_policy",
       "phraseFromFilename": "Normal",
       "routingProposal": "conditional",
@@ -847,13 +847,13 @@
       ],
       "semanticGroupProposal": "mode_confirmation",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/mode_policy/voice_mode_normal.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "mode_policy.voice_mode_podcast",
       "filename": "voice_mode_podcast.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/mode_policy/Mode & Policy feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/mode_policy__Mode & Policy feedback.zip",
       "category": "mode_policy",
       "phraseFromFilename": "Podcast",
       "routingProposal": "conditional",
@@ -863,13 +863,13 @@
       ],
       "semanticGroupProposal": "mode_confirmation",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/mode_policy/voice_mode_podcast.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "mode_policy.voice_mode_running",
       "filename": "voice_mode_running.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/mode_policy/Mode & Policy feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/mode_policy__Mode & Policy feedback.zip",
       "category": "mode_policy",
       "phraseFromFilename": "Running",
       "routingProposal": "conditional",
@@ -879,13 +879,13 @@
       ],
       "semanticGroupProposal": "mode_confirmation",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/mode_policy/voice_mode_running.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "mode_policy.voice_mode_sleep",
       "filename": "voice_mode_sleep.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/mode_policy/Mode & Policy feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/mode_policy__Mode & Policy feedback.zip",
       "category": "mode_policy",
       "phraseFromFilename": "Sleep",
       "routingProposal": "conditional",
@@ -895,13 +895,13 @@
       ],
       "semanticGroupProposal": "mode_confirmation",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/mode_policy/voice_mode_sleep.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "mode_policy.voice_mode_work",
       "filename": "voice_mode_work.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/mode_policy/Mode & Policy feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/mode_policy__Mode & Policy feedback.zip",
       "category": "mode_policy",
       "phraseFromFilename": "Work",
       "routingProposal": "conditional",
@@ -911,13 +911,13 @@
       ],
       "semanticGroupProposal": "mode_confirmation",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/mode_policy/voice_mode_work.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "mode_policy.voice_mode_workout",
       "filename": "voice_mode_workout.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/mode_policy/Mode & Policy feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/mode_policy__Mode & Policy feedback.zip",
       "category": "mode_policy",
       "phraseFromFilename": "Workout",
       "routingProposal": "conditional",
@@ -927,13 +927,13 @@
       ],
       "semanticGroupProposal": "mode_confirmation",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/mode_policy/voice_mode_workout.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "risk_safety_intelligence.voice_risk_autopilot_standing_by",
       "filename": "voice_risk_autopilot_standing_by.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/risk_safety_intelligence/Risk, Safety,  Intelligence feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/risk_safety_intelligence__Risk, Safety,  Intelligence feedback.zip",
       "category": "risk_safety_intelligence",
       "phraseFromFilename": "Autopilot standing by",
       "routingProposal": "player_auto",
@@ -942,13 +942,13 @@
       ],
       "semanticGroupProposal": "system_state",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/risk_safety_intelligence/voice_risk_autopilot_standing_by.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "risk_safety_intelligence.voice_risk_bass_collision",
       "filename": "voice_risk_bass_collision.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/risk_safety_intelligence/Risk, Safety,  Intelligence feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/risk_safety_intelligence__Risk, Safety,  Intelligence feedback.zip",
       "category": "risk_safety_intelligence",
       "phraseFromFilename": "Bass collision",
       "routingProposal": "conditional",
@@ -958,13 +958,13 @@
       ],
       "semanticGroupProposal": "risk_analysis",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/risk_safety_intelligence/voice_risk_bass_collision.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "risk_safety_intelligence.voice_risk_better_transition_available",
       "filename": "voice_risk_better_transition_available.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/risk_safety_intelligence/Risk, Safety,  Intelligence feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/risk_safety_intelligence__Risk, Safety,  Intelligence feedback.zip",
       "category": "risk_safety_intelligence",
       "phraseFromFilename": "Better transition available",
       "routingProposal": "conditional",
@@ -974,13 +974,13 @@
       ],
       "semanticGroupProposal": "transition_event",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/risk_safety_intelligence/voice_risk_better_transition_available.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "risk_safety_intelligence.voice_risk_confidence_low",
       "filename": "voice_risk_confidence_low.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/risk_safety_intelligence/Risk, Safety,  Intelligence feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/risk_safety_intelligence__Risk, Safety,  Intelligence feedback.zip",
       "category": "risk_safety_intelligence",
       "phraseFromFilename": "Confidence low",
       "routingProposal": "conditional",
@@ -990,13 +990,13 @@
       ],
       "semanticGroupProposal": "risk_analysis",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/risk_safety_intelligence/voice_risk_confidence_low.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "risk_safety_intelligence.voice_risk_energy_shock_detected",
       "filename": "voice_risk_energy_shock_detected.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/risk_safety_intelligence/Risk, Safety,  Intelligence feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/risk_safety_intelligence__Risk, Safety,  Intelligence feedback.zip",
       "category": "risk_safety_intelligence",
       "phraseFromFilename": "Energy shock detected",
       "routingProposal": "conditional",
@@ -1006,13 +1006,13 @@
       ],
       "semanticGroupProposal": "energy_or_selection",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/risk_safety_intelligence/voice_risk_energy_shock_detected.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "risk_safety_intelligence.voice_risk_harmonic_conflict",
       "filename": "voice_risk_harmonic_conflict.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/risk_safety_intelligence/Risk, Safety,  Intelligence feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/risk_safety_intelligence__Risk, Safety,  Intelligence feedback.zip",
       "category": "risk_safety_intelligence",
       "phraseFromFilename": "Harmonic conflict",
       "routingProposal": "conditional",
@@ -1022,13 +1022,13 @@
       ],
       "semanticGroupProposal": "risk_analysis",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/risk_safety_intelligence/voice_risk_harmonic_conflict.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "risk_safety_intelligence.voice_risk_playing_it_safe",
       "filename": "voice_risk_playing_it_safe.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/risk_safety_intelligence/Risk, Safety,  Intelligence feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/risk_safety_intelligence__Risk, Safety,  Intelligence feedback.zip",
       "category": "risk_safety_intelligence",
       "phraseFromFilename": "Playing it safe",
       "routingProposal": "conditional",
@@ -1038,13 +1038,13 @@
       ],
       "semanticGroupProposal": "risk_analysis",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/risk_safety_intelligence/voice_risk_playing_it_safe.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "risk_safety_intelligence.voice_risk_structure_mismatch",
       "filename": "voice_risk_structure_mismatch.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/risk_safety_intelligence/Risk, Safety,  Intelligence feedback.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/risk_safety_intelligence__Risk, Safety,  Intelligence feedback.zip",
       "category": "risk_safety_intelligence",
       "phraseFromFilename": "Structure mismatch",
       "routingProposal": "conditional",
@@ -1054,13 +1054,13 @@
       ],
       "semanticGroupProposal": "risk_analysis",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/risk_safety_intelligence/voice_risk_structure_mismatch.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "utility_micro.short_utility_done",
       "filename": "short_utility_done.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/utility_micro/Short utility, one-word  micro responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/utility_micro__Short utility, one-word  micro responses.zip",
       "category": "utility_micro",
       "phraseFromFilename": "Done",
       "routingProposal": "both_contextual",
@@ -1070,13 +1070,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/utility_micro/short_utility_done.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "utility_micro.short_utility_got_it",
       "filename": "short_utility_got_it.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/utility_micro/Short utility, one-word  micro responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/utility_micro__Short utility, one-word  micro responses.zip",
       "category": "utility_micro",
       "phraseFromFilename": "Got it",
       "routingProposal": "both_contextual",
@@ -1086,13 +1086,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/utility_micro/short_utility_got_it.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "utility_micro.short_utility_locked",
       "filename": "short_utility_locked.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/utility_micro/Short utility, one-word  micro responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/utility_micro__Short utility, one-word  micro responses.zip",
       "category": "utility_micro",
       "phraseFromFilename": "Locked",
       "routingProposal": "both_contextual",
@@ -1102,13 +1102,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/utility_micro/short_utility_locked.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "utility_micro.short_utility_nice",
       "filename": "short_utility_nice.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/utility_micro/Short utility, one-word  micro responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/utility_micro__Short utility, one-word  micro responses.zip",
       "category": "utility_micro",
       "phraseFromFilename": "Nice",
       "routingProposal": "both_contextual",
@@ -1118,13 +1118,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/utility_micro/short_utility_nice.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "utility_micro.short_utility_noted",
       "filename": "short_utility_noted.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/utility_micro/Short utility, one-word  micro responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/utility_micro__Short utility, one-word  micro responses.zip",
       "category": "utility_micro",
       "phraseFromFilename": "Noted",
       "routingProposal": "both_contextual",
@@ -1134,13 +1134,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/utility_micro/short_utility_noted.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "utility_micro.short_utility_okay",
       "filename": "short_utility_okay.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/utility_micro/Short utility, one-word  micro responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/utility_micro__Short utility, one-word  micro responses.zip",
       "category": "utility_micro",
       "phraseFromFilename": "Okay",
       "routingProposal": "both_contextual",
@@ -1150,13 +1150,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/utility_micro/short_utility_okay.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "utility_micro.short_utility_ready",
       "filename": "short_utility_ready.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/utility_micro/Short utility, one-word  micro responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/utility_micro__Short utility, one-word  micro responses.zip",
       "category": "utility_micro",
       "phraseFromFilename": "Ready",
       "routingProposal": "both_contextual",
@@ -1166,13 +1166,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/utility_micro/short_utility_ready.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "utility_micro.short_utility_yes",
       "filename": "short_utility_yes.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/utility_micro/Short utility, one-word  micro responses.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/utility_micro__Short utility, one-word  micro responses.zip",
       "category": "utility_micro",
       "phraseFromFilename": "Yes",
       "routingProposal": "both_contextual",
@@ -1182,13 +1182,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/utility_micro/short_utility_yes.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "system_consent_status.voice_system_all_set",
       "filename": "voice_system_all_set.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/system_consent_status/System,  Consent,  Status.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/system_consent_status__System,  Consent,  Status.zip",
       "category": "system_consent_status",
       "phraseFromFilename": "All set",
       "routingProposal": "shared_system",
@@ -1197,13 +1197,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/system_consent_status/voice_system_all_set.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "system_consent_status.voice_system_analyzing",
       "filename": "voice_system_analyzing.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/system_consent_status/System,  Consent,  Status.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/system_consent_status__System,  Consent,  Status.zip",
       "category": "system_consent_status",
       "phraseFromFilename": "Analyzing",
       "routingProposal": "shared_system",
@@ -1212,13 +1212,13 @@
       ],
       "semanticGroupProposal": "system_state",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/system_consent_status/voice_system_analyzing.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "system_consent_status.voice_system_autopilot_consent",
       "filename": "voice_system_autopilot_consent.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/system_consent_status/System,  Consent,  Status.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/system_consent_status__System,  Consent,  Status.zip",
       "category": "system_consent_status",
       "phraseFromFilename": "Autopilot consent",
       "routingProposal": "shared_system",
@@ -1227,13 +1227,13 @@
       ],
       "semanticGroupProposal": "system_state",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/system_consent_status/voice_system_autopilot_consent.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "system_consent_status.voice_system_intelligence_is_offline",
       "filename": "voice_system_intelligence_is_offline.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/system_consent_status/System,  Consent,  Status.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/system_consent_status__System,  Consent,  Status.zip",
       "category": "system_consent_status",
       "phraseFromFilename": "Intelligence is offline",
       "routingProposal": "shared_system",
@@ -1242,13 +1242,13 @@
       ],
       "semanticGroupProposal": "system_state",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/system_consent_status/voice_system_intelligence_is_offline.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "system_consent_status.voice_system_preparation_complete",
       "filename": "voice_system_preparation_complete.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/system_consent_status/System,  Consent,  Status.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/system_consent_status__System,  Consent,  Status.zip",
       "category": "system_consent_status",
       "phraseFromFilename": "Preparation complete",
       "routingProposal": "shared_system",
@@ -1257,13 +1257,13 @@
       ],
       "semanticGroupProposal": "system_state",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/system_consent_status/voice_system_preparation_complete.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "system_consent_status.voice_system_ready",
       "filename": "voice_system_ready.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/system_consent_status/System,  Consent,  Status.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/system_consent_status__System,  Consent,  Status.zip",
       "category": "system_consent_status",
       "phraseFromFilename": "Ready",
       "routingProposal": "shared_system",
@@ -1272,13 +1272,13 @@
       ],
       "semanticGroupProposal": "acknowledgement_or_status",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/system_consent_status/voice_system_ready.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "system_consent_status.voice_system_standing_by",
       "filename": "voice_system_standing_by.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/system_consent_status/System,  Consent,  Status.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/system_consent_status__System,  Consent,  Status.zip",
       "category": "system_consent_status",
       "phraseFromFilename": "Standing by",
       "routingProposal": "shared_system",
@@ -1287,13 +1287,13 @@
       ],
       "semanticGroupProposal": "system_state",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/system_consent_status/voice_system_standing_by.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "system_consent_status.voice_system_voice_feedback_enabled",
       "filename": "voice_system_voice_feedback_enabled.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/system_consent_status/System,  Consent,  Status.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/system_consent_status__System,  Consent,  Status.zip",
       "category": "system_consent_status",
       "phraseFromFilename": "Voice feedback enabled",
       "routingProposal": "shared_system",
@@ -1302,13 +1302,13 @@
       ],
       "semanticGroupProposal": "system_state",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/system_consent_status/voice_system_voice_feedback_enabled.mp3",
+      "runtimeEnabled": true
     },
     {
       "id": "system_consent_status.voice_system_voice_feedback_off",
       "filename": "voice_system_voice_feedback_off.mp3",
-      "sourceArchive": "assets/audio/resonate_voice/system_consent_status/System,  Consent,  Status.zip",
+      "sourceArchive": "assets/audio/resonate_voice/source_archives/system_consent_status__System,  Consent,  Status.zip",
       "category": "system_consent_status",
       "phraseFromFilename": "Voice feedback off",
       "routingProposal": "shared_system",
@@ -1317,8 +1317,8 @@
       ],
       "semanticGroupProposal": "system_state",
       "evidence": "filename_and_routing_document_only",
-      "assetPath": null,
-      "runtimeEnabled": false
+      "assetPath": "assets/audio/resonate_voice/system_consent_status/voice_system_voice_feedback_off.mp3",
+      "runtimeEnabled": true
     }
   ]
 }
