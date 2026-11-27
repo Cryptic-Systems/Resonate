@@ -129,19 +129,32 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
       return;
     }
     _switchingToPlayer = true;
+    final transition = context.read<WorkspaceTransitionController>();
+    final experience = context.read<ExperienceProvider>();
     try {
-      await context.read<WorkspaceTransitionController>().transitionTo(
+      await transition.transitionTo(
         ResonateWorkspace.player,
         performHandoff: () async {
           await _endDjSessionAndRestorePlayer();
           if (!mounted) return;
           Navigator.of(context).popUntil((route) => route.isFirst);
-          await context.read<ExperienceProvider>().switchExperience(
-                ResonateExperience.player,
-              );
+          await experience.switchExperience(ResonateExperience.player);
         },
       );
     } catch (error) {
+      // A destination startup failure must not leave a half-mounted Player.
+      // Re-enter DJ through the same readiness barrier when Player was selected.
+      if (experience.selected == ResonateExperience.player) {
+        try {
+          await transition.transitionTo(
+            ResonateWorkspace.dj,
+            performHandoff: () =>
+                experience.switchExperience(ResonateExperience.resonatixDj),
+          );
+        } catch (rollbackError) {
+          debugPrint('DJ workspace recovery after Player failure failed: $rollbackError');
+        }
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not return to Resonate Player: $error')),
