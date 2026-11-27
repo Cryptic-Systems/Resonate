@@ -412,7 +412,6 @@ object DspEngineRegistry {
             "gateTripped" to DspSessionGate.isTripped(),
             "nativeAllowed" to DspSessionGate.isNativeAllowed(),
             "nativeCreateFailures" to DspSessionGate.createFailureCount(),
-            "nativeLibrary" to DspEngineJni.loadStatus(),
             "linearGain" to stickyState.linearGain,
             "eqEnabled" to stickyState.eqEnabled,
             "dspEnabled" to stickyState.dspEnabled,
