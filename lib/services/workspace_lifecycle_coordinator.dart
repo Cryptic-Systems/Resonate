@@ -46,17 +46,8 @@ class WorkspaceLifecycleCoordinator extends ChangeNotifier {
   Future<void> activate(ResonateWorkspace workspace) {
     final operation = _transitionTail.then((_) async {
       if (_disposed) return;
+      if (_active == workspace) return;
       final participants = _participants.toList(growable: false);
-      if (_active == workspace) {
-        // Reconcile participants that may have been recreated by a route.
-        for (final participant in participants) {
-          if (_participants.contains(participant)) {
-            await participant.onWorkspaceChanged(workspace);
-          }
-        }
-        return;
-      }
-
       final previous = _active;
       final changed = <WorkspaceLifecycleParticipant>[];
       try {
