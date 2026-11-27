@@ -58,8 +58,12 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
     return _sleepFadeOperations;
   }
 
-  PlaybackFeaturesProvider({required this.music}) {
+  PlaybackFeaturesProvider({
+    required this.music,
+    WorkspaceLifecycleCoordinator? workspaceLifecycle,
+  }) : _workspaceLifecycle = workspaceLifecycle {
     music.addListener(_syncEngineIfNeeded);
+    _workspaceLifecycle?.register(this);
     ready = _load();
   }
 
@@ -73,6 +77,10 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
     final trackChanged = songId != _lastSongId;
     _lastSongId = songId;
     _lastEngine = engine;
+    if (!_workspaceActive) {
+      if (trackChanged && normalizationEnabled) _normalizationRefreshPending = true;
+      return;
+    }
     if (trackChanged) {
       unawaited(_refreshNormalizationForCurrentSong());
     } else {
@@ -84,7 +92,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
     // Media3 and the legacy engine share the same user-facing rate range.
     speed = value.clamp(0.5, 2.0).toDouble();
     try {
-      await music.setPlaybackSpeedForFeatures(speed);
+      if (_workspaceActive) await music.setPlaybackSpeedForFeatures(speed);
     } catch (e) {
       debugPrint('Playback speed failed: $e');
     }
@@ -95,7 +103,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
   Future<void> setPitch(double value) async {
     pitch = value.clamp(0.5, 2.0).toDouble();
     try {
-      await music.setPlaybackPitchForFeatures(pitch);
+      if (_workspaceActive) await music.setPlaybackPitchForFeatures(pitch);
     } catch (e) {
       debugPrint('Playback pitch failed: $e');
     }
@@ -106,7 +114,11 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
   Future<void> setNormalizationEnabled(bool value) async {
     normalizationEnabled = value;
     if (value) {
-      unawaited(_refreshNormalizationForCurrentSong());
+      if (_workspaceActive) {
+        unawaited(_refreshNormalizationForCurrentSong());
+      } else {
+        _normalizationRefreshPending = true;
+      }
     } else {
       ++_normalizationGeneration;
       normalizedSongId = null;
@@ -119,8 +131,10 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
 
   Future<void> setTargetLoudness(double value) async {
     targetLoudness = value.clamp(-20.0, -8.0).toDouble();
-    if (normalizationEnabled) {
+    if (normalizationEnabled && _workspaceActive) {
       unawaited(_refreshNormalizationForCurrentSong(force: true));
+    } else if (normalizationEnabled) {
+      _normalizationRefreshPending = true;
     }
     await _save();
     notifyListeners();
@@ -131,11 +145,19 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
     normalizedSongId = songId;
     _normalizationGainDb = gainDb.isFinite ? gainDb : 0.0;
     if (!normalizationEnabled) return;
+    if (!_workspaceActive) {
+      _normalizationRefreshPending = true;
+      return;
+    }
     await _applyNormalization();
     notifyListeners();
   }
 
   Future<void> _refreshNormalizationForCurrentSong({bool force = false}) async {
+    if (!_workspaceActive) {
+      _normalizationRefreshPending = normalizationEnabled;
+      return;
+    }
     final generation = ++_normalizationGeneration;
     final song = music.currentSong;
     if (!normalizationEnabled || song == null) {
@@ -145,6 +167,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
       return;
     }
     bool cancelled() => _disposed ||
+        !_workspaceActive ||
         generation != _normalizationGeneration ||
         !normalizationEnabled ||
         music.currentSong?.id != song.id;
@@ -179,6 +202,10 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
   }
 
   Future<void> _applyNormalization() async {
+    if (!_workspaceActive) {
+      _normalizationRefreshPending = normalizationEnabled;
+      return;
+    }
     try {
       // MusicProvider selects the canonical backend. On Media3, normalization
       // is composed as attenuation-only track gain with the other gain factors.
@@ -193,7 +220,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
   }
 
   Future<void> applyToActiveEngine() async {
-    if (_disposed) return;
+    if (_disposed || !_workspaceActive) return;
     try {
       await music.setPlaybackSpeedForFeatures(speed.clamp(0.5, 2.0).toDouble());
       await music.setPlaybackPitchForFeatures(pitch.clamp(0.5, 2.0).toDouble());
@@ -207,7 +234,45 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
     }
   }
 
-  @override\n  void onWorkspaceChanged(ResonateWorkspace workspace) {\n    final active = workspace == ResonateWorkspace.player;\n    if (_workspaceActive == active) return;\n    _workspaceActive = active;\n    if (!active) {\n      ++_normalizationGeneration;\n      _normalizationRefreshPending = normalizationEnabled;\n      return;\n    }\n    _lastSongId = music.currentSong?.id;\n    _lastEngine = music.activeEngineLabel;\n    unawaited(applyToActiveEngine());\n    if (_normalizationRefreshPending || normalizationEnabled) {\n      _normalizationRefreshPending = false;\n      unawaited(_refreshNormalizationForCurrentSong());\n    }\n  }\n\n  static const int _fadeOutSeconds = 45;
+  @override
+  void onWorkspaceChanged(ResonateWorkspace workspace) {
+    final active = workspace == ResonateWorkspace.player;
+    if (_workspaceActive == active) return;
+    _workspaceActive = active;
+    if (!active) {
+      ++_normalizationGeneration;
+      _normalizationRefreshPending = normalizationEnabled;
+      return;
+    }
+    _lastSongId = music.currentSong?.id;
+    _lastEngine = music.activeEngineLabel;
+    unawaited(applyToActiveEngine());
+    if (_normalizationRefreshPending || normalizationEnabled) {
+      _normalizationRefreshPending = false;
+      unawaited(_refreshNormalizationForCurrentSong());
+    }
+  }
+
+  @override
+  void onWorkspaceChanged(ResonateWorkspace workspace) {
+    final active = workspace == ResonateWorkspace.player;
+    if (_workspaceActive == active) return;
+    _workspaceActive = active;
+    if (!active) {
+      ++_normalizationGeneration;
+      _normalizationRefreshPending = normalizationEnabled;
+      return;
+    }
+    _lastSongId = music.currentSong?.id;
+    _lastEngine = music.activeEngineLabel;
+    unawaited(applyToActiveEngine());
+    if (_normalizationRefreshPending || normalizationEnabled) {
+      _normalizationRefreshPending = false;
+      unawaited(_refreshNormalizationForCurrentSong());
+    }
+  }
+
+  static const int _fadeOutSeconds = 45;
 
   Future<void> startSleepTimer(Duration duration) async {
     if (_disposed) return;
@@ -329,6 +394,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
   @override
   void dispose() {
     _disposed = true;
+    _workspaceLifecycle?.unregister(this);
     ++_normalizationGeneration;
     music.removeListener(_syncEngineIfNeeded);
     // Invalidate any asynchronous tick already in flight. Without advancing
