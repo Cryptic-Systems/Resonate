@@ -113,6 +113,17 @@ void main() {
     )).allowed, isTrue);
   });
 
+  test('releases a reservation when playback does not start', () {
+    expect(router.evaluate(request()).allowed, isTrue);
+    expect(router.evaluate(request()).reason,
+        VoiceCueBlockReason.duplicateEvent);
+    expect(router.release(
+      eventId: 'event-1',
+      semanticGroup: 'acknowledgement',
+    ), isTrue);
+    expect(router.evaluate(request()).allowed, isTrue);
+  });
+
   test('only one phrase from a semantic group is accepted per event', () {
     expect(router.evaluate(request()).allowed, isTrue);
     expect(router.evaluate(request(
