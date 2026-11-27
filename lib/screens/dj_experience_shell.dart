@@ -99,6 +99,7 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
       _djSessionStarted = false;
       _sessionStartupBlocked = !cleanupSucceeded || !playerLifecycleRestored;
       if (mounted) {
+        setState(() {});
         final transition = context.read<WorkspaceTransitionController>();
         if (transition.destination == ResonateWorkspace.dj) {
           // Let the initiating Player/DJ handoff perform its own rollback.
