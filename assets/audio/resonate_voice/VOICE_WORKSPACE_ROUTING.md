@@ -122,6 +122,7 @@ Every cue request should carry:
 
 - `cueId` — stable manifest ID, never a filename-derived lookup at runtime.
 - `origin` — `player_auto`, `dj_manual`, or `shared_system`.
+- `allowedOrigins` — optional explicit origin allow-list for `conditional` cues. This is needed for mode confirmations, which may originate from a shared setting change; ordinary conditional analysis/risk cues default to Player or DJ origins only.
 - `eventId` — dedupe key for one semantic event (e.g. transition UUID or queue mutation ID).
 - `priority` and `expiresAt` — stale cues must be discarded.
 - `semanticGroup` — mutually exclusive variants (e.g. transition praise, acknowledgement, ready state).
@@ -130,7 +131,7 @@ Every cue request should carry:
 
 The coordinator should enforce:
 
-1. Route permission: reject a `player_auto` cue in manual context and vice versa unless explicitly `both_contextual` or `conditional`.
+1. Route permission: reject a `player_auto` cue in manual context and vice versa unless explicitly `both_contextual` or `conditional`. For conditional cues, enforce the manifest's explicit `allowedOrigins` when present; do not broaden all conditional risk cues to shared-system events.
 2. One cue per event: dedupe by `eventId`; choose one member of a semantic group. `VoiceCueRouter.evaluate` reserves the event-group key before playback; if playback is cancelled or never starts, call `release(eventId, semanticGroup)`. Keep the reservation once audible speech begins.
 3. Workspace change: cancel queued low-priority cues from the previous experience. Release their reservations if they never started. Do not interrupt a clip already playing unless it is a safety-critical cue and policy explicitly allows it.
 4. No speech on every tap, track tick, beat tick, or analysis update.
