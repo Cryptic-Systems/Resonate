@@ -45,7 +45,7 @@ internal class DjScratchTimestampProcessor(
             DjScratchPcmRingBuffer(
                 sampleRate = inputAudioFormat.sampleRate,
                 channelCount = inputAudioFormat.channelCount,
-                capacityFrames = (inputAudioFormat.sampleRate * 2L)
+                capacityFrames = (inputAudioFormat.sampleRate * 4L)
                     .coerceAtMost(DjScratchPcmRingBuffer.MAX_CAPACITY_FRAMES.toLong())
                     .toInt(),
             )
