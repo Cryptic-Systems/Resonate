@@ -28,7 +28,9 @@ class CompanionCommandExecutor {
     required this.mixes,
   });
 
-  Future<CompanionCommandResult> execute(CompanionI    if (result.ok) {
+  Future<CompanionCommandResult> execute(CompanionIntent intent) async {
+    final result = await _execute(intent);
+    if (result.ok) {
       final origin = music.isDjDualDeckSessionActive
           ? VoiceCueOrigin.djManual
           : VoiceCueOrigin.playerAuto;
@@ -39,8 +41,6 @@ class CompanionCommandExecutor {
         confirmed: true,
       ));
     }
-ntent intent) async {
-    final result = await _execute(intent);
     await CompanionDecisionLog.record(
       source: 'ask_resonate',
       action: intent.action.name,
