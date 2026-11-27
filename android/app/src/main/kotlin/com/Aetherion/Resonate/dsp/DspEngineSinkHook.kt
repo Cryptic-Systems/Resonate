@@ -8,10 +8,10 @@ import java.util.concurrent.CopyOnWriteArraySet
 /**
  * Factory for native DSP AudioProcessors installed in Media3 DefaultAudioSink.
  *
- * Media3 calls [createProcessors] once per deck, so dual playback receives
- * independent DSP processors and native handles for decks A and B. The
- * no-argument overload remains as compatibility for the legacy just_audio
- * injection hook while that backend is being retired.
+ * Media3 calls the deck-aware [createProcessors] overload once per deck, so dual
+ * playback receives independent DSP processors and native handles for A and B.
+ * The legacy just_audio overload deliberately returns no processors: that
+ * backend now carries only voice/SFX output and must bypass music DSP.
  *
  * Crash history (2026-09-28): old JNI called dsp_create(double, int) but the
  * real ABI is dsp_create(const DspConfig*). That treated the sample-rate bits
