@@ -28,6 +28,26 @@ void main() {
     expect(ids.every((id) => id is String && id.trim().isNotEmpty), isTrue);
   });
 
+  test('mode-change cues are enabled for shared-system playback', () {
+    final modeCues = assets
+        .where((raw) => (raw as Map<String, dynamic>)['id']
+            .toString()
+            .startsWith('mode_policy.voice_mode_'))
+        .cast<Map<String, dynamic>>()
+        .toList();
+
+    expect(modeCues, hasLength(9));
+    for (final cue in modeCues) {
+      expect(cue['runtimeEnabled'], isTrue, reason: cue['id'].toString());
+      expect(cue['allowedOrigins'], contains('sharedSystem'),
+          reason: cue['id'].toString());
+      expect(cue['routingProposal'], 'conditional',
+          reason: cue['id'].toString());
+      final path = cue['assetPath'] as String;
+      expect(File(path).existsSync(), isTrue, reason: cue['id'].toString());
+    }
+  });
+
   test('all enabled entries have safe unique paths and known policy values', () {
     const routes = {
       'player_auto',
