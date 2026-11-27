@@ -87,21 +87,24 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
         // screen must not be exposed while native dual-deck mode may remain.
         debugPrint('DJ startup rollback failed: $cleanupError');
       }
+      var playerLifecycleRestored = false;
       if (cleanupSucceeded) {
         try {
           await _workspaceLifecycle.activate(ResonateWorkspace.player);
+          playerLifecycleRestored = true;
         } catch (lifecycleError) {
           debugPrint('DJ workspace startup rollback failed: $lifecycleError');
         }
       }
       _djSessionStarted = false;
-      _sessionStartupBlocked = !cleanupSucceeded;
+      _sessionStartupBlocked = !cleanupSucceeded || !playerLifecycleRestored;
       if (mounted) {
         final transition = context.read<WorkspaceTransitionController>();
         if (transition.destination == ResonateWorkspace.dj) {
           // Let the initiating Player/DJ handoff perform its own rollback.
           transition.markFailed(ResonateWorkspace.dj, error);
-        } else if (!transition.isTransitioning && cleanupSucceeded) {
+        } else if (!transition.isTransitioning &&
+            cleanupSucceeded && playerLifecycleRestored) {
           // A persisted DJ selection can fail during cold start too. Fall
           // back only after native DJ mode has been closed successfully.
           try {
