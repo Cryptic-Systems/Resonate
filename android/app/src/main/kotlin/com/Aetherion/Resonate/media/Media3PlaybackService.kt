@@ -795,6 +795,11 @@ class Media3PlaybackService : MediaSessionService() {
      * Keep transport policy identical on both decks. A prepared standby deck
      * can become active after crossfade, so updates must not leave it stale.
      */
+    /**
+     * Applies the operator-selected queue repeat policy to both physical A/B
+     * players. Repeat One is a manual deck playback mode; it must not schedule
+     * an automatic same-track DJ crossfade or promote the standby deck.
+     */
     fun setRepeatMode(mode: Int): Boolean {
         if (mode != Player.REPEAT_MODE_OFF &&
             mode != Player.REPEAT_MODE_ONE &&
