@@ -13,6 +13,7 @@ void main() {
   VoiceCueRequest request({
     VoiceCueRoute route = VoiceCueRoute.bothContextual,
     VoiceCueOrigin origin = VoiceCueOrigin.playerAuto,
+    String cueId = 'cue.test',
     String eventId = 'event-1',
     String semanticGroup = 'acknowledgement',
     bool enabled = true,
@@ -20,7 +21,7 @@ void main() {
     DateTime? expiresAt,
   }) {
     return VoiceCueRequest(
-      cueId: 'cue.test',
+      cueId: cueId,
       route: route,
       origin: origin,
       eventId: eventId,
@@ -98,6 +99,18 @@ void main() {
     expect(router.evaluate(request(
       expiresAt: now,
     )).reason, VoiceCueBlockReason.expired);
+  });
+
+  test('rejects missing runtime IDs before reserving an event group', () {
+    expect(router.evaluate(request(cueId: '  ')).reason,
+        VoiceCueBlockReason.invalidRequest);
+    expect(router.evaluate(request(
+      eventId: '  ',
+      semanticGroup: 'another-group',
+    )).reason, VoiceCueBlockReason.invalidRequest);
+    expect(router.evaluate(request(
+      eventId: 'valid-after-invalid',
+    )).allowed, isTrue);
   });
 
   test('only one phrase from a semantic group is accepted per event', () {
