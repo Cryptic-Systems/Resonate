@@ -110,6 +110,7 @@ class ResonateMainDrawer extends StatelessWidget {
               onTap: () async {
                 final transition = context.read<WorkspaceTransitionController>();
                 final experience = context.read<ExperienceProvider>();
+                final lifecycle = context.read<WorkspaceLifecycleCoordinator>();
                 final messenger = ScaffoldMessenger.of(context);
                 Navigator.of(context).pop();
                 try {
@@ -120,6 +121,30 @@ class ResonateMainDrawer extends StatelessWidget {
                     ),
                   );
                 } catch (error) {
+                  // If DJ mounted but could not initialize, restore Player
+                  // behind the same barrier instead of exposing a partial shell.
+                  if (experience.selected == ResonateExperience.resonatixDj) {
+                    try {
+                      await transition.transitionTo(
+                        ResonateWorkspace.player,
+                        performHandoff: () async {
+                          await lifecycle.activate(ResonateWorkspace.player);
+                          await experience.switchExperience(
+                            ResonateExperience.player,
+                          );
+                        },
+                      );
+                    } catch (rollbackError) {
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'DJ startup failed and Player recovery failed: $rollbackError',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+                  }
                   messenger.showSnackBar(
                     SnackBar(
                       content: Text('Could not open Resonatix DJ: $error'),
