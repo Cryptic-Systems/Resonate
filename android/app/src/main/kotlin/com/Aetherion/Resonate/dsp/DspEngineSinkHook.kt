@@ -112,7 +112,7 @@ object DspEngineSinkHook {
 
     /** Tracks the timestamp-aware scratch processor for per-deck diagnostics. */
     @JvmStatic
-    fun trackScratchProcessor(processor: DjScratchTimestampProcessor, deckId: String) {
+    internal fun trackScratchProcessor(processor: DjScratchTimestampProcessor, deckId: String) {
         scratchProcessorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(processor)
     }
 
@@ -140,7 +140,7 @@ object DspEngineSinkHook {
     }
 
     @JvmStatic
-    fun forgetScratchProcessor(processor: DjScratchTimestampProcessor) {
+    internal fun forgetScratchProcessor(processor: DjScratchTimestampProcessor) {
         scratchProcessorsByDeck.values.forEach { it.remove(processor) }
     }
 
