@@ -854,6 +854,12 @@ extension MusicProviderDjHandoff on MusicProvider {
       );
       _publishServiceState();
       notifyListeners();
+      unawaited(VoiceCueService.instance.speak(
+        cueId: 'deck_console_workspace.console_standby_ready',
+        origin: VoiceCueOrigin.djManual,
+        eventId: 'manual_standby_ready_${incomingSong.id}_${incomingQueueIndex}_${DateTime.now().microsecondsSinceEpoch}',
+        confirmed: true,
+      ));
     } catch (error) {
       _manualDjPreparedDeck = null;
       _manualDjPreparedLease = null;
