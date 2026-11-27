@@ -40,7 +40,8 @@ These phrases describe Resonate doing a task on behalf of the listener, or autom
 | `voice_ask_built_you_a_60-minute_mix.mp3` | player_auto | A 60-minute mix was successfully built |
 | `voice_ask_built_you_a_90-minute_mix.mp3` | player_auto | A 90-minute mix was successfully built |
 | `voice_ask_found_some_tracks_that_match_the_mood.mp3` | both_contextual | Mood discovery returned matching tracks in Player or a DJ set preparation flow |
-| `voice_ask_here’s_what_I_found.mp3` | both_contextual | Present confirmed search results in either experience; do not play if result presentation is immediate and obvious |\n| `voice_ask_keeping_it_local.mp3` | both_contextual | Local-only search scope is active in either experience |
+| `voice_ask_here’s_what_I_found.mp3` | both_contextual | Present confirmed search results in either experience; do not play if result presentation is immediate and obvious |
+| `voice_ask_keeping_it_local.mp3` | both_contextual | Local-only search scope is active in either experience |
 | `voice_ask_looking_through_your_library.mp3` | both_contextual | A library search is underway in either experience and takes long enough to justify speech |
 | `voice_ask_warmup_set.mp3` | both_contextual | A warmup set is prepared by automatic playback or a DJ set workflow |
 | `voice_ask_you_might_like_these.mp3` | both_contextual | Recommendations are ready in Player or DJ Workspace; use only when user-facing results are available |
