@@ -131,6 +131,7 @@ class DspEngineAudioProcessorTest {
         // Media3 is the only production music authority. The remaining
         // just_audio player handles voice/SFX and must not inherit music DSP.
         assertEquals(0, DspEngineSinkHook.createProcessors().size)
+        assertEquals(0, DspEngineSinkHook.createProcessors("legacy").size)
         assertEquals(0, api.createCalls)
         assertEquals(0, DspEngineRegistry.activeCount())
     }
