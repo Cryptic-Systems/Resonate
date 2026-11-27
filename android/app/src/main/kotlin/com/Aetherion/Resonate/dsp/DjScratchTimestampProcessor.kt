@@ -71,7 +71,11 @@ internal class DjScratchTimestampProcessor(
         val ring = pcmRing
         val rendered = timestamp != null && ring != null &&
             renderPolicy.render(inputBuffer, output, ring, latestControlSnapshot)
-        if (!rendered) {
+        if (rendered) {
+            // AudioProcessor.queueInput must consume its input even when the
+            // renderer reads from a duplicate for zero-copy-safe history access.
+            inputBuffer.position(inputBuffer.limit())
+        } else {
             // A failed anchor/read must never emit a partially rendered block.
             output.clear()
             output.put(inputBuffer)
