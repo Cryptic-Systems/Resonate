@@ -25,6 +25,7 @@ class VoiceCueService {
   Map<String, Map<String, dynamic>>? _manifest;
   bool _speaking = false;
   bool _requestInFlight = false;
+  bool _settingsChangeInFlight = false;
   bool? _enabledOverride;
   int _generation = 0;
   Future<void>? _loading;
@@ -32,18 +33,24 @@ class VoiceCueService {
   bool get isSpeaking => _speaking;
 
   Future<void> setEnabled(bool enabled) async {
-    // Update synchronously so an event arriving before SharedPreferences
-    // completes cannot sneak a cue in after the user muted feedback.
+    // Invalidate pending source loads on every preference change and block
+    // new requests until persistence/stop work is settled.
+    final generation = ++_generation;
     _enabledOverride = enabled;
-    if (!enabled) _generation++;
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setBool(_enabledKey, enabled);
-    if (!enabled) {
-      try {
-        await _player.stop();
-      } catch (_) {}
-      _speaking = false;
-      _router.resetSession();
+    _settingsChangeInFlight = true;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setBool(_enabledKey, enabled);
+      if (generation != _generation) return;
+      if (!enabled) {
+        try {
+          await _player.stop();
+        } catch (_) {}
+        _speaking = false;
+        _router.resetSession();
+      }
+    } finally {
+      if (generation == _generation) _settingsChangeInFlight = false;
     }
   }
 
@@ -94,14 +101,18 @@ class VoiceCueService {
     bool confirmed = true,
     List<VoiceCueOrigin>? allowedOrigins,
   }) async {
-    if (_requestInFlight || _speaking) return false;
+    if (_settingsChangeInFlight || _requestInFlight || _speaking) return false;
     _requestInFlight = true;
     final generation = _generation;
     String? reservedGroup;
     try {
       if (!await isEnabled() || generation != _generation) return false;
       await _ensureManifest();
-      if (generation != _generation || !await isEnabled()) return false;
+      if (generation != _generation ||
+          _settingsChangeInFlight ||
+          !await isEnabled()) {
+        return false;
+      }
 
       final entry = _manifest?[cueId];
       if (entry == null || entry['runtimeEnabled'] != true) return false;
@@ -150,7 +161,9 @@ class VoiceCueService {
       reservedGroup = group;
 
       await _player.setAudioSource(AudioSource.asset(assetPath));
-      if (generation != _generation || !await isEnabled()) {
+      if (generation != _generation ||
+          _settingsChangeInFlight ||
+          !await isEnabled()) {
         _router.release(eventId: eventId, semanticGroup: group);
         reservedGroup = null;
         try {
