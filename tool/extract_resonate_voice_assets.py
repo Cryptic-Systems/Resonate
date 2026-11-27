@@ -40,7 +40,8 @@ def main() -> None:
     for old_archive, records in grouped.items():
         source = ROOT / old_archive
         category = records[0]["category"]
-        archive_name = f"{category}__{safe_basename(old_archive)}"
+        basename = safe_basename(old_archive)
+        archive_name = basename if basename.startswith(f"{category}__") else f"{category}__{basename}"
         archive_destination = ARCHIVE_ROOT / archive_name
         archive_destination.parent.mkdir(parents=True, exist_ok=True)
         if not archive_destination.is_file():
