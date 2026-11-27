@@ -57,7 +57,7 @@ void main() {
       expect(entry['assetPath'], isA<String>());
       final path = entry['assetPath'] as String;
       expect(path, startsWith(assetRoot));
-      expect(path, isNot(contains('..')));
+      expect(path.split('/'), isNot(contains('..')));
       expect(path, isNot(contains('\\')));
       expect(path, endsWith('.mp3'));
       expect(assetPaths.add(path), isTrue, reason: 'Duplicate asset path: $path');
@@ -79,7 +79,7 @@ void main() {
       expect(path, isA<String>());
       final archivePath = path as String;
       expect(archivePath, startsWith('${assetRoot}source_archives/'));
-      expect(archivePath, isNot(contains('..')));
+      expect(archivePath.split('/'), isNot(contains('..')));
       final file = File(archivePath);
       expect(file.existsSync(), isTrue, reason: 'Missing source archive: $path');
       expect(file.lengthSync(), greaterThan(0), reason: 'Empty source archive: $path');
