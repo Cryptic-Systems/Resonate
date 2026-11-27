@@ -15,6 +15,7 @@ import java.nio.ByteBuffer
 internal class DjScratchTimestampProcessor(
     private val ledger: DjScratchTimestampLedger,
     private val controlMailbox: DjScratchControlMailbox = DjScratchControlMailbox(),
+    private val deckId: String = "A",
 ) : BaseAudioProcessor() {
     @Volatile
     private var lastConsumedTimestamp: DjScratchPcmTimestamp? = null
@@ -29,6 +30,32 @@ internal class DjScratchTimestampProcessor(
     // One bounded PCM history and render cursor per physical deck.
     private var pcmRing: DjScratchPcmRingBuffer? = null
     private val renderPolicy = DjScratchRenderPolicy()
+    private val pcmBlocks = AtomicLong()
+    private val timestampMatches = AtomicLong()
+    private val timestampMisses = AtomicLong()
+    private val activeControlBlocks = AtomicLong()
+    private val renderedBlocks = AtomicLong()
+    private val activeRenderFallbacks = AtomicLong()
+
+    internal fun diagnosticsSnapshot(): Map<String, Any?> {
+        val ring = pcmRing
+        val control = latestControlSnapshot
+        return mapOf(
+            "processorPresent" to true,
+            "deckId" to deckId,
+            "pcmBlocks" to pcmBlocks.get(),
+            "timestampMatches" to timestampMatches.get(),
+            "timestampMisses" to timestampMisses.get(),
+            "activeControlBlocks" to activeControlBlocks.get(),
+            "renderedBlocks" to renderedBlocks.get(),
+            "activeRenderFallbacks" to activeRenderFallbacks.get(),
+            "ringCapacityFrames" to (ring?.capacityFrames ?: 0),
+            "ringAvailableFrames" to (ring?.availableFrames ?: 0),
+            "lastControlActive" to (control?.active == true),
+            "lastControlVelocity" to control?.velocity,
+            "lastControlAnchorMediaTimeUs" to control?.anchorMediaTimeUs,
+        )
+    }
 
     internal fun lastConsumedTimestampForTest(): DjScratchPcmTimestamp? =
         lastConsumedTimestamp
@@ -39,6 +66,7 @@ internal class DjScratchTimestampProcessor(
         // Timestamp mapping is valid only for the PCM16 path used by the native
         // DSP processor. Other formats are passed through without metadata.
         lastConsumedTimestamp = null
+        DspEngineSinkHook.trackScratchProcessor(this, deckId)
         pcmRing = if (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT &&
             inputAudioFormat.sampleRate > 0 && inputAudioFormat.channelCount in 1..2
         ) {
@@ -57,7 +85,9 @@ internal class DjScratchTimestampProcessor(
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
+        pcmBlocks.incrementAndGet()
         latestControlSnapshot = controlMailbox.snapshot()
+        if (latestControlSnapshot?.active == true) activeControlBlocks.incrementAndGet()
         val timestamp = ledger.consume(
             inputBuffer,
             inputAudioFormat.sampleRate,
@@ -65,17 +95,22 @@ internal class DjScratchTimestampProcessor(
         )
         lastConsumedTimestamp = timestamp
         if (timestamp != null) {
+            timestampMatches.incrementAndGet()
             pcmRing?.append(inputBuffer, timestamp.presentationTimeUs)
+        } else {
+            timestampMisses.incrementAndGet()
         }
         val output = replaceOutputBuffer(inputBuffer.remaining())
         val ring = pcmRing
         val rendered = timestamp != null && ring != null &&
             renderPolicy.render(inputBuffer, output, ring, latestControlSnapshot)
         if (rendered) {
+            renderedBlocks.incrementAndGet()
             // AudioProcessor.queueInput must consume its input even when the
             // renderer reads from a duplicate for zero-copy-safe history access.
             inputBuffer.position(inputBuffer.limit())
         } else {
+            if (latestControlSnapshot?.active == true) activeRenderFallbacks.incrementAndGet()
             // A failed anchor/read must never emit a partially rendered block.
             output.clear()
             output.put(inputBuffer)
