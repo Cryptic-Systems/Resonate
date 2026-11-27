@@ -136,7 +136,9 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
     final generation = _generation;
     String? reservedGroup;
     try {
-      if (!await isEnabled() || generation != _generation ||\n          workspaceGeneration != _workspaceGeneration ||\n          !_originAllowedInWorkspace(origin)) return false;
+      if (!await isEnabled() || generation != _generation ||
+          workspaceGeneration != _workspaceGeneration ||
+          !_originAllowedInWorkspace(origin)) return false;
       await _ensureManifest();
       if (generation != _generation ||
           _settingsChangeInFlight ||
