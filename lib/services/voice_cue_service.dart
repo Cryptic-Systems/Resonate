@@ -123,7 +123,10 @@ class VoiceCueService {
           category is! String ||
           filename is! String ||
           !assetPath.startsWith(_assetRoot) ||
-          assetPath.contains('..') ||
+          category.contains('/') ||
+          filename.contains('/') ||
+          filename.contains('\\\\') ||
+          assetPath.split('/').contains('..') ||
           assetPath.contains('\\') ||
           !assetPath.endsWith('.mp3') ||
           assetPath != '$_assetRoot$category/$filename') {
