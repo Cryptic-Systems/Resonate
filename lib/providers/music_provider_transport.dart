@@ -87,6 +87,13 @@ Future<void> pause({String source = 'normal_player'}) {
           // closes the race where a resume enabled focus while session startup
           // was completing immediately before the pause took ownership.
           await session.setAudioFocusHandling(false);
+          // The native pause command can be acknowledged before the next
+          // asynchronous MediaSession snapshot reaches the Dart state bridge.
+          // Refresh once after the command so reconciliation cannot restore a
+          // stale "playing" value and leave the pause control visually behind.
+          if (session is PlaybackStateRefreshSession) {
+            await (session as PlaybackStateRefreshSession).refreshState();
+          }
           unawaited(ResonateDiagnostics.record('media3_pause_canonical_only', {
             'legacyEnginesRetired': _legacyEnginesRetired,
             'transportEpoch': _userTransportEpoch,
