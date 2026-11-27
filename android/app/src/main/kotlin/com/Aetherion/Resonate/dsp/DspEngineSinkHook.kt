@@ -27,6 +27,8 @@ object DspEngineSinkHook {
      */
     private const val ENABLE_NATIVE_LIVE_DSP = true
     private val processorsByDeck = ConcurrentHashMap<String, CopyOnWriteArraySet<DspEngineAudioProcessor>>()
+    private val scratchProcessorsByDeck =
+        ConcurrentHashMap<String, CopyOnWriteArraySet<DjScratchTimestampProcessor>>()
     // Tracks the service's physical active/fading roles, not only the single
     // canonical MediaSession deck. A fading incoming deck must remain active.
     private val activeDecks = CopyOnWriteArraySet<String>().apply {
@@ -39,6 +41,7 @@ object DspEngineSinkHook {
 
     internal fun resetForTests() {
         processorsByDeck.clear()
+        scratchProcessorsByDeck.clear()
         activeDecks.clear()
         activeDecks.add("A")
         activeDecks.add("legacy")
@@ -65,7 +68,7 @@ object DspEngineSinkHook {
         controlMailbox: DjScratchControlMailbox,
     ): Array<AudioProcessor> {
         return try {
-            val timestampProcessor = DjScratchTimestampProcessor(timestampLedger, controlMailbox)
+            val timestampProcessor = DjScratchTimestampProcessor(timestampLedger, controlMailbox, deckId)
             val dspProcessor = createDspProcessor(deckId)
             arrayOf(timestampProcessor, dspProcessor)
         } catch (t: Throwable) {
@@ -107,16 +110,38 @@ object DspEngineSinkHook {
         processor.setDeckActive(isDeckActive(deckId))
     }
 
+    /** Tracks the timestamp-aware scratch processor for per-deck diagnostics. */
+    @JvmStatic
+    fun trackScratchProcessor(processor: DjScratchTimestampProcessor, deckId: String) {
+        scratchProcessorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(processor)
+    }
+
+    /** Latest scratch pipeline counters; no PCM data is exposed or retained here. */
+    @JvmStatic
+    fun scratchDiagnostics(deckId: String): Map<String, Any?> {
+        val processor = scratchProcessorsByDeck[deckId]?.lastOrNull()
+        return processor?.diagnosticsSnapshot() ?: mapOf(
+            "processorPresent" to false,
+            "deckId" to deckId,
+        )
+    }
+
     /** Drops all processor references when the owning ExoPlayer is released. */
     @JvmStatic
     fun forgetDeck(deckId: String) {
         processorsByDeck.remove(deckId)
+        scratchProcessorsByDeck.remove(deckId)
     }
 
     /** Removes released processor instances so a stale deck cannot be reactivated. */
     @JvmStatic
     fun forgetProcessor(processor: DspEngineAudioProcessor) {
         processorsByDeck.values.forEach { it.remove(processor) }
+    }
+
+    @JvmStatic
+    fun forgetScratchProcessor(processor: DjScratchTimestampProcessor) {
+        scratchProcessorsByDeck.values.forEach { it.remove(processor) }
     }
 
     /** Activates a deck's native handle immediately before it is allowed to output. */
