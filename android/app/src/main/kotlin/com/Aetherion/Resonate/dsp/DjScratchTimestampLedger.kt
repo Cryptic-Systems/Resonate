@@ -40,7 +40,13 @@ internal class DjScratchTimestampLedger {
         // consume the oldest outstanding PTS; Media3's sink processes PCM FIFO.
         val exact = timestamps.remove(buffer)
         val presentationTimeUs = if (exact != null) {
-            pending.removeIf { it.buffer === buffer }
+            val iterator = pending.iterator()
+            while (iterator.hasNext()) {
+                if (iterator.next().buffer === buffer) {
+                    iterator.remove()
+                    break
+                }
+            }
             exact
         } else {
             val next = pending.pollFirst() ?: return null
