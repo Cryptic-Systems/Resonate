@@ -73,6 +73,7 @@ class DspEngineAudioProcessorTest {
     fun setUp() {
         DspSessionGate.resetForTests()
         DspEngineRegistry.resetForTests()
+        DspEngineSinkHook.resetForTests()
         DspEngineRegistry.nativeApi = FakeRegistryApi()
         api = FakeProcessorApi()
         DspEngineAudioProcessor.nativeApi = api
@@ -81,6 +82,7 @@ class DspEngineAudioProcessorTest {
     @After
     fun tearDown() {
         DspEngineRegistry.resetForTests()
+        DspEngineSinkHook.resetForTests()
         DspSessionGate.resetForTests()
         DspEngineAudioProcessor.nativeApi = object : DspEngineAudioProcessor.NativeDspApi {
             override fun create(sampleRate: Double, channels: Int) =
@@ -175,7 +177,6 @@ class DspEngineAudioProcessorTest {
 
     @Test
     fun reconfigured_active_deck_rejoins_registry_after_media3_reset() {
-        DspEngineRegistry.setActiveDeck("B")
         val processor = DspEngineAudioProcessor("B")
         processor.setNativeProcessEnabled(true)
         processor.setDeckActive(false)
@@ -189,6 +190,9 @@ class DspEngineAudioProcessorTest {
         // Media3 may reset the processor while clearing the DJ deck queue.
         // The same instance can be configured again for the restored queue.
         processor.reset()
+        // The service restores Deck B while its processor is still absent.
+        // Media3 then reconfigures the same processor instance for the queue.
+        DspEngineSinkHook.activateDeck("B")
         processor.configure(
             AudioProcessor.AudioFormat(44100, 2, C.ENCODING_PCM_16BIT)
         )
