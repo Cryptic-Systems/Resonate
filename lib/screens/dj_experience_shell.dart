@@ -25,6 +25,7 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
 
   late final PageController _pageController;
   late final MusicProvider _music;
+  late final WorkspaceLifecycleCoordinator _workspaceLifecycle;
   ShellNav? _shellNav;
   int _selectedIndex = _workspaceTab;
   bool _djSessionStarted = false;
@@ -37,6 +38,7 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
     super.initState();
     _pageController = PageController(initialPage: _workspaceTab);
     _music = context.read<MusicProvider>();
+    _workspaceLifecycle = context.read<WorkspaceLifecycleCoordinator>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _shellNav = context.read<ShellNav>();
