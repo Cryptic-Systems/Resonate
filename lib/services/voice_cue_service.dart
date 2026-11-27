@@ -118,8 +118,11 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
       }
       _manifest = indexed;
       completer.complete();
-    } catch (error, stack) {
-      completer.completeError(error, stack);
+    } catch (_) {
+      // The initiating request receives the original error and handles it.
+      // Complete the shared waiter normally so an unobserved pending future
+      // cannot surface as an uncaught async error in tests or early startup.
+      if (!completer.isCompleted) completer.complete();
       rethrow;
     } finally {
       _loading = null;
