@@ -31,6 +31,7 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
   int _selectedIndex = _workspaceTab;
   bool _djSessionStarted = false;
   bool _djSessionCleanupRequired = false;
+  bool _sessionStartupBlocked = false;
   bool _consoleOpening = false;
   bool _switchingToPlayer = false;
   Future<void>? _sessionStart;
@@ -66,6 +67,7 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
       _djSessionCleanupRequired = true;
       await _music.beginDjSession();
       _djSessionStarted = true;
+      _sessionStartupBlocked = false;
       await WidgetsBinding.instance.endOfFrame;
       if (mounted) {
         context
@@ -75,27 +77,33 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
     } catch (error) {
       // Startup may have partially initialized the music session. Keep the
       // teardown flag set until endDjSession has had a chance to reconcile it.
+      var cleanupSucceeded = false;
       try {
         await _music.endDjSession();
         _djSessionCleanupRequired = false;
+        cleanupSucceeded = true;
       } catch (cleanupError) {
-        // Keep cleanup required so a later exit/dispose can retry it.
+        // Keep cleanup required and retain DJ lifecycle ownership. A Player
+        // screen must not be exposed while native dual-deck mode may remain.
         debugPrint('DJ startup rollback failed: $cleanupError');
       }
-      try {
-        await _workspaceLifecycle.activate(ResonateWorkspace.player);
-      } catch (lifecycleError) {
-        debugPrint('DJ workspace startup rollback failed: $lifecycleError');
+      if (cleanupSucceeded) {
+        try {
+          await _workspaceLifecycle.activate(ResonateWorkspace.player);
+        } catch (lifecycleError) {
+          debugPrint('DJ workspace startup rollback failed: $lifecycleError');
+        }
       }
       _djSessionStarted = false;
+      _sessionStartupBlocked = !cleanupSucceeded;
       if (mounted) {
         final transition = context.read<WorkspaceTransitionController>();
         if (transition.destination == ResonateWorkspace.dj) {
           // Let the initiating Player/DJ handoff perform its own rollback.
           transition.markFailed(ResonateWorkspace.dj, error);
-        } else if (!transition.isTransitioning) {
-          // A persisted DJ selection can fail during cold start too. Never
-          // leave the app parked on a workspace whose session did not start.
+        } else if (!transition.isTransitioning && cleanupSucceeded) {
+          // A persisted DJ selection can fail during cold start too. Fall
+          // back only after native DJ mode has been closed successfully.
           try {
             await context.read<ExperienceProvider>().switchExperience(
                   ResonateExperience.player,
@@ -108,6 +116,14 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
               SnackBar(content: Text('Could not initialize Resonatix DJ: $error')),
             );
           }
+        } else if (!transition.isTransitioning) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'DJ startup failed and audio cleanup is still pending. Retry returning to Player.',
+              ),
+            ),
+          );
         }
       }
     }
@@ -216,6 +232,49 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
 
   @override
   Widget build(BuildContext context) {
+    if (_sessionStartupBlocked) {
+      final colors = Theme.of(context).colorScheme;
+      return Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 52,
+                      color: colors.error,
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'DJ session needs recovery',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'The audio session has not closed cleanly. Resonate is keeping this workspace isolated until cleanup succeeds.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 22),
+                    FilledButton.icon(
+                      onPressed: _switchToPlayer,
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      label: const Text('Retry return to Player'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       body: PageView(
         controller: _pageController,
