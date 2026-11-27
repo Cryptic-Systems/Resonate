@@ -36,6 +36,17 @@ void main() {
     ]);
   });
 
+  test('repeated activation of the current workspace is idempotent', () async {
+    final coordinator = WorkspaceLifecycleCoordinator();
+    final participant = _Participant();
+    coordinator.register(participant);
+
+    await coordinator.activate(ResonateWorkspace.player);
+    await coordinator.activate(ResonateWorkspace.player);
+
+    expect(participant.transitions, [ResonateWorkspace.player]);
+  });
+
   test('serializes rapid transitions and leaves the final destination active',
       () async {
     final coordinator = WorkspaceLifecycleCoordinator();
