@@ -12,16 +12,22 @@ class DjScratchTimestampLedgerTest {
     fun recordsTimestampByBufferIdentityAndConsumesOnce() {
         val ledger = DjScratchTimestampLedger()
         val first = ByteBuffer.allocateDirect(4096)
+        val second = ByteBuffer.allocateDirect(4096)
         val equalButDistinct = ByteBuffer.allocateDirect(4096)
 
         ledger.record(first, 1_250_000L)
-        assertNull(ledger.consume(equalButDistinct, 48_000, 2))
+        ledger.record(second, 1_500_000L)
 
-        val block = ledger.consume(first, 48_000, 2)
-        assertEquals(1_250_000L, block?.presentationTimeUs)
-        assertEquals(1024, block?.frameCount)
-        assertEquals(48_000, block?.sampleRate)
-        assertEquals(2, block?.channelCount)
+        // Exact identity wins even when it is not the oldest pending buffer.
+        val exact = ledger.consume(second, 48_000, 2)
+        assertEquals(1_500_000L, exact?.presentationTimeUs)
+
+        // A sink-provided duplicate falls back to the oldest remaining PTS.
+        val fallback = ledger.consume(equalButDistinct, 48_000, 2)
+        assertEquals(1_250_000L, fallback?.presentationTimeUs)
+        assertEquals(1024, fallback?.frameCount)
+        assertEquals(48_000, fallback?.sampleRate)
+        assertEquals(2, fallback?.channelCount)
         assertNull(ledger.consume(first, 48_000, 2))
     }
 
