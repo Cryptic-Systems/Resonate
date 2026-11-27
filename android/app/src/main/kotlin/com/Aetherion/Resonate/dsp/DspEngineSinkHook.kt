@@ -29,7 +29,7 @@ object DspEngineSinkHook {
     private val processorsByDeck = ConcurrentHashMap<String, CopyOnWriteArraySet<DspEngineAudioProcessor>>()
     // Tracks the service's physical active/fading roles, not only the single
     // canonical MediaSession deck. A fading incoming deck must remain active.
-    private val activeDecks = ConcurrentHashMap.newKeySet<String>().apply {
+    private val activeDecks = CopyOnWriteArraySet<String>().apply {
         add("A")
         add("legacy")
     }
