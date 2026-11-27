@@ -708,23 +708,9 @@ class MusicProvider extends ChangeNotifier {
     return false;
   }
 
-  /// Seamless loop: same song on the idle engine when repeat-one + crossfade.
-  bool get canRepeatSelfHandoff {
-    if (!effectiveCrossfadeEnabled) return false;
-    if (_repeatMode != PlaybackRepeatMode.one) return false;
-    if (_crossfadeInProgress ||
-        _automaticCrossfadeInFlight ||
-        _repeatSelfHandoffInFlight ||
-        _transportInFlight) {
-      return false;
-    }
-    if (currentSong == null || currentSong!.filePath.trim().isEmpty) return false;
-    final playing = _media3ProviderSession != null
-        ? _media3ProviderSession!.isPlaying
-        : audioPlayer.playing;
-    if (!playing && !_userWantsPlaying) return false;
-    return true;
-  }
+  /// Automatic DJ-style same-track replay is intentionally disabled.
+  /// Repeat One remains a normal single-deck loop controlled by the user.
+  bool get canRepeatSelfHandoff => false;
 
   Song? get _crossfadeTargetSong {
     if (_queue.isEmpty || _queueIndex < 0) return null;
@@ -1520,15 +1506,16 @@ class MusicProvider extends ChangeNotifier {
         !_automaticCrossfadeInFlight &&
         !_repeatSelfHandoffInFlight;
 
-    final activeLoop = effectiveCrossfadeEnabled
-        ? LoopMode.off
-        : switch (_repeatMode) {
-            PlaybackRepeatMode.one => LoopMode.one,
-            // Repeat-all advances the app queue; native LoopMode.all on a single
-            // source would repeat the current track instead of advancing.
-            PlaybackRepeatMode.all => LoopMode.off,
-            PlaybackRepeatMode.off => LoopMode.off,
-          };
+    // Repeat One is a user-requested loop, not an automatic DJ handoff.
+    // Keep it on the active source even when crossfade is enabled; the DJ
+    // repeat-self crossfade path is retired.
+    final activeLoop = switch (_repeatMode) {
+      PlaybackRepeatMode.one => LoopMode.one,
+      // Repeat-all advances the app queue; native LoopMode.all on a single
+      // source would repeat the current track instead of advancing.
+      PlaybackRepeatMode.all => LoopMode.off,
+      PlaybackRepeatMode.off => LoopMode.off,
+    };
     try { await idle.pause(); } catch (_) {}
     if (!ownsBoundary()) return;
     try { await idle.setVolume(0.0); } catch (_) {}
@@ -2617,9 +2604,14 @@ class MusicProvider extends ChangeNotifier {
     final remaining = duration - activePosition;
     if (remaining <= Duration.zero) return;
 
-    // Repeat-one + crossfade: use the same DJ mix-in/mix-out intelligence
-    // as song-to-song transitions whenever a trustworthy profile is available.
-    if (_repeatMode == PlaybackRepeatMode.one) {
+    // Automatic same-track DJ replay is retired. Repeat One is handled by
+    // the normal single-deck loop mode; it must never preload/promote the same
+    // track through a DJ crossfade, which can look like a failed restart.
+    if (_repeatMode == PlaybackRepeatMode.one) return;
+
+    // Legacy repeat-self code below is retained only for cancellation/recovery
+    // compatibility with an already-running transition from an older session.
+    if (false && _repeatMode == PlaybackRepeatMode.one) {
       if (_media3ProviderSessionActive) {
         if (!effectiveCrossfadeEnabled ||
             _repeatSelfHandoffInFlight ||
