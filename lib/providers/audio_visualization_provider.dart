@@ -53,7 +53,7 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
   }
 
   Future<void> _refreshCaptureAfterResume() async {
-    if (!_preferencesLoaded || !enabled || !_playbackActive) return;
+    if (!_workspaceActive || !_preferencesLoaded || !enabled || !_playbackActive) return;
     if (_capturePermissionGranted) {
       await AudioEffectsBridge.refreshVisualizers();
       if (!_disposed) _syncCapture();
