@@ -782,8 +782,7 @@ class Media3PlaybackClient {
     });
   }
 
-  /// Publishes one platter's signed velocity to its identity-checked native deck.
-  /// This is a control primitive; the native PCM path remains pass-through for now.
+  /// Publishes signed platter velocity to the deck's native timestamped PCM renderer.
   Future<void> setDjScratchControl({
     required String deckId,
     required String expectedMediaId,
