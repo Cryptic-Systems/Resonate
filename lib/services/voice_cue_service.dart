@@ -329,6 +329,18 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
       _speaking = true;
       _speakingOrigin = origin;
       await _setMusicDucked(true);
+      if (generation != _generation ||
+          workspaceGeneration != _workspaceGeneration ||
+          !_originAllowedInWorkspace(origin) ||
+          _settingsChangeInFlight ||
+          !await isEnabled()) {
+        _speaking = false;
+        _speakingOrigin = null;
+        await _setMusicDucked(false);
+        _router.release(eventId: eventId, semanticGroup: group);
+        reservedGroup = null;
+        return false;
+      }
       debugPrint('Resonate voice cue starting (' + cueId + ', ' + entry['filename'].toString() + ')');
       final playback = player.play();
       unawaited(playback.timeout(const Duration(seconds: 20)).then<void>((_) {
