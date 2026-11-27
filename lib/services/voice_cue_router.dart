@@ -109,19 +109,37 @@ class VoiceCueRouter {
       );
     }
 
-    final dedupeKey = '${request.eventId}::${request.semanticGroup}';
+    final dedupeKey = _dedupeKey(request.eventId, request.semanticGroup);
     if (_spokenEventGroups.containsKey(dedupeKey)) {
       return const VoiceCueDecision.blocked(
         VoiceCueBlockReason.duplicateEvent,
       );
     }
 
+    // This is a reservation. If playback never starts (for example, the music
+    // state changed or the audio focus request was denied), the caller must
+    // release it. Once speech starts, keep it to suppress duplicate variants.
     _spokenEventGroups[dedupeKey] = request.expiresAt;
     while (_spokenEventGroups.length > _maxRememberedEvents) {
       _spokenEventGroups.remove(_spokenEventGroups.keys.first);
     }
     return const VoiceCueDecision.allowed();
   }
+
+  /// Releases a reservation when the cue was accepted but did not start.
+  ///
+  /// Do not call after audible playback begins; keeping the reservation then
+  /// prevents duplicate phrases for the same semantic event.
+  bool release({
+    required String eventId,
+    required String semanticGroup,
+  }) {
+    if (eventId.trim().isEmpty || semanticGroup.trim().isEmpty) return false;
+    return _spokenEventGroups.remove(_dedupeKey(eventId, semanticGroup)) != null;
+  }
+
+  String _dedupeKey(String eventId, String semanticGroup) =>
+      '${eventId}::${semanticGroup}';
 
   bool _routeAllows(VoiceCueRoute route, VoiceCueOrigin origin) {
     switch (route) {
