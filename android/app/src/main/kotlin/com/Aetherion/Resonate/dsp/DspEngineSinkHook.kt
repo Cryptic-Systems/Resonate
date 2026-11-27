@@ -27,6 +27,23 @@ object DspEngineSinkHook {
      */
     private const val ENABLE_NATIVE_LIVE_DSP = true
     private val processorsByDeck = ConcurrentHashMap<String, CopyOnWriteArraySet<DspEngineAudioProcessor>>()
+    // Tracks the service's physical active/fading roles, not only the single
+    // canonical MediaSession deck. A fading incoming deck must remain active.
+    private val activeDecks = ConcurrentHashMap.newKeySet<String>().apply {
+        add("A")
+        add("legacy")
+    }
+
+    private fun isDeckActive(deckId: String): Boolean =
+        deckId == "legacy" || deckId.startsWith("preview_") ||
+            activeDecks.contains(deckId)
+
+    internal fun resetForTests() {
+        processorsByDeck.clear()
+        activeDecks.clear()
+        activeDecks.add("A")
+        activeDecks.add("legacy")
+    }
 
     /** Compatibility overload used only by the legacy just_audio sink patch. */
     @JvmStatic
@@ -64,10 +81,7 @@ object DspEngineSinkHook {
         val allow = ENABLE_NATIVE_LIVE_DSP && DspSessionGate.isNativeAllowed()
         val proc = DspEngineAudioProcessor(deckId)
         proc.setNativeProcessEnabled(allow)
-        proc.setDeckActive(
-            deckId == "legacy" || deckId.startsWith("preview_") ||
-                DspEngineRegistry.isActiveDeck(deckId)
-        )
+        proc.setDeckActive(isDeckActive(deckId))
         processorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(proc)
         val active = DspEngineRegistry.activeCount()
         Log.i(
@@ -86,9 +100,7 @@ object DspEngineSinkHook {
         // a queue clear. Reconcile its logical role at configuration time:
         // the earlier activateDeck() may have run while this processor was
         // temporarily absent from the registry after onReset().
-        val active = deckId == "legacy" || deckId.startsWith("preview_") ||
-            DspEngineRegistry.isActiveDeck(deckId)
-        processor.setDeckActive(active)
+        processor.setDeckActive(isDeckActive(deckId))
     }
 
     /** Drops all processor references when the owning ExoPlayer is released. */
@@ -106,12 +118,14 @@ object DspEngineSinkHook {
     /** Activates a deck's native handle immediately before it is allowed to output. */
     @JvmStatic
     fun activateDeck(deckId: String) {
+        activeDecks.add(deckId)
         processorsByDeck[deckId]?.forEach { it.setDeckActive(true) }
     }
 
     /** Releases a deck's native handle while its ExoPlayer remains reusable as standby. */
     @JvmStatic
     fun suspendDeck(deckId: String) {
+        activeDecks.remove(deckId)
         processorsByDeck[deckId]?.forEach { it.setDeckActive(false) }
     }
 }
