@@ -106,5 +106,21 @@ void main() {
       expect(controller.isTransitioning, isFalse);
       controller.dispose();
     });
+
+    test('settles an in-flight transition when the controller is disposed',
+        () async {
+      final controller = WorkspaceTransitionController();
+      final handoff = Completer<void>();
+      final transition = controller.transitionTo(
+        ResonateWorkspace.player,
+        performHandoff: () => handoff.future,
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      controller.dispose();
+      handoff.complete();
+
+      await expectLater(transition, throwsA(isA<StateError>()));
+    });
   });
 }
