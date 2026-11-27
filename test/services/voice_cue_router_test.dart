@@ -20,56 +20,41 @@ void main() {
     bool confirmed = true,
     DateTime? expiresAt,
     List<VoiceCueOrigin>? allowedOrigins,
-  }) {
-    return VoiceCueRequest(
-      cueId: cueId,
-      route: route,
-      origin: origin,
-      eventId: eventId,
-      semanticGroup: semanticGroup,
-      voiceFeedbackEnabled: enabled,
-      confirmed: confirmed,
-      expiresAt: expiresAt ?? now.add(const Duration(seconds: 5)),
-      allowedOrigins: allowedOrigins,
-    );
-  }
+  }) => VoiceCueRequest(
+        cueId: cueId,
+        route: route,
+        origin: origin,
+        eventId: eventId,
+        semanticGroup: semanticGroup,
+        voiceFeedbackEnabled: enabled,
+        confirmed: confirmed,
+        expiresAt: expiresAt ?? now.add(const Duration(seconds: 5)),
+        allowedOrigins: allowedOrigins,
+      );
 
   test('player-only cue is accepted only from automatic playback', () {
-    expect(
-      router.evaluate(request(route: VoiceCueRoute.playerAuto)).allowed,
-      isTrue,
-    );
-    expect(
-      router.evaluate(request(
-        route: VoiceCueRoute.playerAuto,
-        origin: VoiceCueOrigin.djManual,
-        eventId: 'manual-event',
-      )).reason,
-      VoiceCueBlockReason.wrongWorkspace,
-    );
+    expect(router.evaluate(request(route: VoiceCueRoute.playerAuto)).allowed, isTrue);
+    expect(router.evaluate(request(
+      route: VoiceCueRoute.playerAuto,
+      origin: VoiceCueOrigin.djManual,
+      eventId: 'manual-event',
+    )).reason, VoiceCueBlockReason.wrongWorkspace);
   });
 
   test('manual-only cue is accepted only from DJ Workspace/Console events', () {
-    expect(
-      router.evaluate(request(
-        route: VoiceCueRoute.djManual,
-        origin: VoiceCueOrigin.djManual,
-      )).allowed,
-      isTrue,
-    );
-    expect(
-      router.evaluate(request(
-        route: VoiceCueRoute.djManual,
-        origin: VoiceCueOrigin.playerAuto,
-        eventId: 'auto-event',
-      )).reason,
-      VoiceCueBlockReason.wrongWorkspace,
-    );
+    expect(router.evaluate(request(
+      route: VoiceCueRoute.djManual,
+      origin: VoiceCueOrigin.djManual,
+    )).allowed, isTrue);
+    expect(router.evaluate(request(
+      route: VoiceCueRoute.djManual,
+      origin: VoiceCueOrigin.playerAuto,
+      eventId: 'auto-event',
+    )).reason, VoiceCueBlockReason.wrongWorkspace);
   });
 
   test('contextual shared phrase can be used in either experience', () {
-    expect(router.evaluate(request(origin: VoiceCueOrigin.playerAuto)).allowed,
-        isTrue);
+    expect(router.evaluate(request(origin: VoiceCueOrigin.playerAuto)).allowed, isTrue);
     expect(router.evaluate(request(
       origin: VoiceCueOrigin.djManual,
       eventId: 'dj-event',
@@ -138,9 +123,8 @@ void main() {
   });
 
   test('rejects expired cue before it is played', () {
-    expect(router.evaluate(request(
-      expiresAt: now,
-    )).reason, VoiceCueBlockReason.expired);
+    expect(router.evaluate(request(expiresAt: now)).reason,
+        VoiceCueBlockReason.expired);
   });
 
   test('rejects missing runtime IDs before reserving an event group', () {
@@ -150,15 +134,12 @@ void main() {
       eventId: '  ',
       semanticGroup: 'another-group',
     )).reason, VoiceCueBlockReason.invalidRequest);
-    expect(router.evaluate(request(
-      eventId: 'valid-after-invalid',
-    )).allowed, isTrue);
+    expect(router.evaluate(request(eventId: 'valid-after-invalid')).allowed, isTrue);
   });
 
   test('releases a reservation when playback does not start', () {
     expect(router.evaluate(request()).allowed, isTrue);
-    expect(router.evaluate(request()).reason,
-        VoiceCueBlockReason.duplicateEvent);
+    expect(router.evaluate(request()).reason, VoiceCueBlockReason.duplicateEvent);
     expect(router.release(
       eventId: 'event-1',
       semanticGroup: 'acknowledgement',
@@ -175,6 +156,17 @@ void main() {
     expect(router.evaluate(request(
       eventId: 'event-1',
       semanticGroup: 'transition_praise',
+    )).allowed, isTrue);
+  });
+
+  test('event and group boundaries cannot collide in dedupe key', () {
+    expect(router.evaluate(request(
+      eventId: 'a::b',
+      semanticGroup: 'c',
+    )).allowed, isTrue);
+    expect(router.evaluate(request(
+      eventId: 'a',
+      semanticGroup: 'b::c',
     )).allowed, isTrue);
   });
 
