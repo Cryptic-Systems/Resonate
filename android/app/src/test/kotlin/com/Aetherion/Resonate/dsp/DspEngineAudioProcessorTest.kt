@@ -174,6 +174,30 @@ class DspEngineAudioProcessorTest {
     }
 
     @Test
+    fun reconfigured_active_deck_rejoins_registry_after_media3_reset() {
+        DspEngineRegistry.setActiveDeck("B")
+        val processor = DspEngineAudioProcessor("B")
+        processor.setNativeProcessEnabled(true)
+        processor.setDeckActive(false)
+        processor.configure(
+            AudioProcessor.AudioFormat(44100, 2, C.ENCODING_PCM_16BIT)
+        )
+
+        assertEquals(0, api.createCalls)
+        assertEquals(0, DspEngineRegistry.activeCount())
+
+        // Media3 may reset the processor while clearing the DJ deck queue.
+        // The same instance can be configured again for the restored queue.
+        processor.reset()
+        processor.configure(
+            AudioProcessor.AudioFormat(44100, 2, C.ENCODING_PCM_16BIT)
+        )
+
+        assertEquals(1, api.createCalls)
+        assertEquals(1, DspEngineRegistry.activeCount())
+    }
+
+    @Test
     fun transient_native_create_failure_recovers_on_audio_processor_flush() {
         api.failCreateCalls = 1
         val processor = configure()
