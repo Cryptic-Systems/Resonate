@@ -1,14 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/services/workspace_lifecycle_coordinator.dart';
 
 class _Participant implements WorkspaceLifecycleParticipant {
   final List<ResonateWorkspace> transitions = [];
   bool failOnDj = false;
+  Completer<void>? djGate;
 
   @override
   Future<void> onWorkspaceChanged(ResonateWorkspace workspace) async {
     transitions.add(workspace);
-    if (failOnDj && workspace == ResonateWorkspace.dj) {
+    if (workspace == ResonateWorkspace.dj && djGate != null) {\n      await djGate!.future;\n    }\n    if (failOnDj && workspace == ResonateWorkspace.dj) {
       throw StateError('synthetic lifecycle failure');
     }
   }
@@ -57,6 +60,38 @@ void main() {
     expect(participant.transitions.last, ResonateWorkspace.player);
   });
 
+  test('participant registered during a transition receives the settled destination', () async {
+    final coordinator = WorkspaceLifecycleCoordinator();
+    final blocker = _Participant()..djGate = Completer<void>();
+    coordinator.register(blocker);
+    await coordinator.activate(ResonateWorkspace.player);
+
+    final switching = coordinator.activate(ResonateWorkspace.dj);
+    await Future<void>.delayed(Duration.zero);
+    final lateParticipant = _Participant();
+    coordinator.register(lateParticipant);
+
+    blocker.djGate!.complete();
+    await switching;
+    await coordinator.activate(ResonateWorkspace.dj);
+
+    expect(lateParticipant.transitions, [ResonateWorkspace.dj]);
+  });
+
+  test('participant failure after partial application is rolled back', () async {
+    final coordinator = WorkspaceLifecycleCoordinator();
+    final participant = _Participant()..failOnDj = true;
+    coordinator.register(participant);
+
+    await expectLater(
+      coordinator.activate(ResonateWorkspace.dj),
+      throwsStateError,
+    );
+
+    expect(participant.transitions.last, ResonateWorkspace.player);
+    expect(coordinator.activeWorkspace, ResonateWorkspace.player);
+  });
+
   test('unregistered participants receive no later transitions', () async {
     final coordinator = WorkspaceLifecycleCoordinator();
     final participant = _Participant();
@@ -65,6 +100,6 @@ void main() {
 
     await coordinator.activate(ResonateWorkspace.dj);
 
-    expect(participant.transitions, [ResonateWorkspace.player]);
+    expect(participant.transitions, isEmpty);
   });
 }
