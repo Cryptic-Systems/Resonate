@@ -13,13 +13,13 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
   final MusicProvider music;
   final WorkspaceLifecycleCoordinator? _workspaceLifecycle;
   bool _workspaceActive = true;
-  bool _normalizationRefreshPending = false;
   double speed = 1.0;
   double pitch = 1.0;
   bool normalizationEnabled = false;
   double targetLoudness = -14.0;
   int sleepRemainingSeconds = 0;
   String? normalizedSongId;
+  double? _normalizedTargetLoudness;
   double _normalizationGainDb = 0.0;
 
   double get _normalizationTrackLevel => normalizationEnabled
@@ -70,17 +70,13 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
   bool get sleepTimerActive => sleepRemainingSeconds > 0;
 
   void _syncEngineIfNeeded() {
-    if (_disposed) return;
+    if (_disposed || !_workspaceActive) return;
     final songId = music.currentSong?.id;
     final engine = music.activeEngineLabel;
     if (songId == _lastSongId && engine == _lastEngine) return;
     final trackChanged = songId != _lastSongId;
     _lastSongId = songId;
     _lastEngine = engine;
-    if (!_workspaceActive) {
-      if (trackChanged && normalizationEnabled) _normalizationRefreshPending = true;
-      return;
-    }
     if (trackChanged) {
       unawaited(_refreshNormalizationForCurrentSong());
     } else {
@@ -116,12 +112,11 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
     if (value) {
       if (_workspaceActive) {
         unawaited(_refreshNormalizationForCurrentSong());
-      } else {
-        _normalizationRefreshPending = true;
       }
     } else {
       ++_normalizationGeneration;
       normalizedSongId = null;
+      _normalizedTargetLoudness = null;
       _normalizationGainDb = 0.0;
       await _applyNormalization();
     }
@@ -133,8 +128,6 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
     targetLoudness = value.clamp(-20.0, -8.0).toDouble();
     if (normalizationEnabled && _workspaceActive) {
       unawaited(_refreshNormalizationForCurrentSong(force: true));
-    } else if (normalizationEnabled) {
-      _normalizationRefreshPending = true;
     }
     await _save();
     notifyListeners();
@@ -145,19 +138,14 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
     normalizedSongId = songId;
     _normalizationGainDb = gainDb.isFinite ? gainDb : 0.0;
     if (!normalizationEnabled) return;
-    if (!_workspaceActive) {
-      _normalizationRefreshPending = true;
-      return;
-    }
+    if (!_workspaceActive) return;
+    _normalizedTargetLoudness = targetLoudness;
     await _applyNormalization();
     notifyListeners();
   }
 
   Future<void> _refreshNormalizationForCurrentSong({bool force = false}) async {
-    if (!_workspaceActive) {
-      _normalizationRefreshPending = normalizationEnabled;
-      return;
-    }
+    if (!_workspaceActive) return;
     final generation = ++_normalizationGeneration;
     final song = music.currentSong;
     if (!normalizationEnabled || song == null) {
@@ -174,6 +162,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
     // Never carry the previous track's trim into a newly selected track while
     // its own cache is being resolved or its analysis is running.
     normalizedSongId = null;
+    _normalizedTargetLoudness = null;
     _normalizationGainDb = 0.0;
     await _applyNormalization();
     if (cancelled()) return;
@@ -191,6 +180,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
       }
       if (cancelled() || result == null) return;
       normalizedSongId = song.id;
+      _normalizedTargetLoudness = targetLoudness;
       _normalizationGainDb = result.gainDb;
       await _applyNormalization();
       if (!cancelled()) _notifyIfAlive();
@@ -243,15 +233,20 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
       // Keep the shared sleep timer alive, but cancel Player-only loudness
       // analysis and stop applying Player rate/normalization controls to DJ decks.
       ++_normalizationGeneration;
-      _normalizationRefreshPending = normalizationEnabled;
       return;
     }
     _lastSongId = music.currentSong?.id;
     _lastEngine = music.activeEngineLabel;
-    await applyToActiveEngine();
-    if (_normalizationRefreshPending || normalizationEnabled) {
-      _normalizationRefreshPending = false;
+    await music.setPlaybackSpeedForFeatures(speed.clamp(0.5, 2.0).toDouble());
+    await music.setPlaybackPitchForFeatures(pitch.clamp(0.5, 2.0).toDouble());
+    final currentSongId = music.currentSong?.id;
+    final normalizationIsStale = normalizationEnabled &&
+        (normalizedSongId != currentSongId ||
+            _normalizedTargetLoudness != targetLoudness);
+    if (normalizationIsStale) {
       await _refreshNormalizationForCurrentSong();
+    } else {
+      await _applyNormalization();
     }
   }
 
