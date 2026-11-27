@@ -417,7 +417,10 @@ class ResonateApp extends StatelessWidget {
         ChangeNotifierProvider(
           lazy: false,
           create: (context) =>
-              PlaybackFeaturesProvider(music: context.read<MusicProvider>()),
+              PlaybackFeaturesProvider(
+                music: context.read<MusicProvider>(),
+                workspaceLifecycle: context.read<WorkspaceLifecycleCoordinator>(),
+              ),
         ),
         ChangeNotifierProvider(
           lazy: false,
