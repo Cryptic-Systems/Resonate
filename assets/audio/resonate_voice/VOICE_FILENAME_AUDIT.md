@@ -167,3 +167,8 @@ Do not rename the originals during audit. Once extracted, use manifest IDs and e
 4. Review the actual codebase's DJ/voice event lifecycle before wiring triggers.
 5. Add a small voice playback coordinator with priority, cooldown, stale-event cancellation, and user opt-out.
 6. Run device tests with music playing, screen off, Bluetooth routing, interruptions, and crossfade enabled.
+
+
+## Workspace routing
+
+The category inventory above is not a playback permission list. Resonate has separate automatic playback and hands-on DJ Workspace/Console experiences, and cues may be valid in either, both, or only one depending on the actual event. See [VOICE_WORKSPACE_ROUTING.md](VOICE_WORKSPACE_ROUTING.md) for the filename-level routing proposal, duplicate-phrase rules, event contract, and safeguards. Route by event origin and confirmed state, not by category folder alone.
