@@ -35,6 +35,11 @@ class Media3ProviderStateBridge {
     _accept(_runtime.current);
   }
 
+  /// Synchronously mirrors the runtime's latest reconciled snapshot after an
+  /// explicit refresh. The broadcast stream is asynchronous, so consumers
+  /// reading [current] immediately after refresh must not see the old value.
+  void refreshFromRuntime() => _accept(_runtime.current);
+
   void _accept(Media3RuntimeState state) {
     if (_disposed) return;
     final snapshot = state.snapshot;
