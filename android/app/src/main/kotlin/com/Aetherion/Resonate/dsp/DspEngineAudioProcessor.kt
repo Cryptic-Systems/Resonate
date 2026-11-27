@@ -37,6 +37,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
                 DspEngineJni.nativeProcessPcm16Direct(handle, buffer, frames, channels, sampleRate)
             override fun setEnabled(handle: Long, enabled: Boolean) =
                 DspEngineJni.nativeSetEnabled(handle, enabled)
+            override fun ensureLoaded(): Boolean = DspEngineJni.ensureLoaded()
         }
 
         @Volatile
