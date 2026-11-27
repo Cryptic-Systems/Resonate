@@ -55,6 +55,11 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }).catchError((Object error) {
         debugPrint('Player workspace activation failed: $error');
+        if (mounted) {
+          context
+              .read<WorkspaceTransitionController>()
+              .markFailed(ResonateWorkspace.player, error);
+        }
       }));
       _shellNav = context.read<ShellNav>();
       _shellNav?.bind(_selectPage);
