@@ -55,12 +55,17 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
   Future<void> _startDjSession() async {
     _djSessionStarted = true;
     try {
+      await _workspaceLifecycle.activate(ResonateWorkspace.dj);
+      if (!mounted) return;
       await _music.beginDjSession();
     } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not initialize Resonatix DJ: $error')),
-      );
+      if (mounted) {
+        await _workspaceLifecycle.activate(ResonateWorkspace.player);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not initialize Resonatix DJ: $error')),
+        );
+      }
+      _djSessionStarted = false;
     }
   }
 
@@ -114,7 +119,9 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
   void dispose() {
     _shellNav?.unbind();
     if (_djSessionStarted) {
-      unawaited(_music.endDjSession().catchError((Object error) {
+      unawaited(_music.endDjSession().then((_) async {
+        await _workspaceLifecycle.activate(ResonateWorkspace.player);
+      }).catchError((Object error) {
         debugPrint('DJ session cleanup failed: $error');
       }));
     }
