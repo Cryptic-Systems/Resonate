@@ -134,11 +134,11 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
   }
 
   Future<void> applyTrackGain(String songId, double gainDb) async {
+    if (!_workspaceActive) return;
     ++_normalizationGeneration;
     normalizedSongId = songId;
     _normalizationGainDb = gainDb.isFinite ? gainDb : 0.0;
     if (!normalizationEnabled) return;
-    if (!_workspaceActive) return;
     _normalizedTargetLoudness = targetLoudness;
     await _applyNormalization();
     notifyListeners();
