@@ -15,7 +15,10 @@ void _typeCheck<T>() {}
 
 void main() {
   test('voice cue call sites and settings compile together', () {
-    _typeCheck<VoiceCueService>();\n    _typeCheck<WorkspaceLifecycleCoordinator>();\n    _typeCheck<AudioVisualizationProvider>();\n    _typeCheck<PlaybackFeaturesProvider>();
+    _typeCheck<VoiceCueService>();
+    _typeCheck<WorkspaceLifecycleCoordinator>();
+    _typeCheck<AudioVisualizationProvider>();
+    _typeCheck<PlaybackFeaturesProvider>();
     _typeCheck<ModeProvider>();
     _typeCheck<MusicProvider>();
     _typeCheck<DjConsoleScreen>();
