@@ -107,3 +107,12 @@ CI proves software contracts only. The audible scratch response, transition entr
 - [ ] Verify the ring retains four seconds at 44.1/48 kHz within its bounded capacity.
 - [ ] On device, record timestamp match/miss counts, valid-anchor count, render count and fallback count while scratching each playing physical deck.
 - [ ] Verify audible forward, reverse, hold and release behavior; fail closed to live PCM on invalid anchors.
+
+
+### Silence-aware automatic transition cue
+- [ ] A trusted near-tail silence region becomes the outgoing transition cue and is not replaced by a generic earlier outro marker.
+- [ ] Mid-track silence, quiet breakdowns, short gaps, shallow RMS dips and low-confidence regions do not schedule a transition.
+- [ ] A silence cue already behind the current playhead is ignored.
+- [ ] Verify the planner runs early enough to preload the incoming deck before the cue.
+- [ ] Compare the measured cue timestamp with the actual native crossfade start and outgoing deck position.
+- [ ] Pause, seek, Next/Previous, track replacement and workspace transitions invalidate or preempt pending silence cues.
