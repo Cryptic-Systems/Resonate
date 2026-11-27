@@ -253,25 +253,6 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
     }
   }
 
-  @override
-  void onWorkspaceChanged(ResonateWorkspace workspace) {
-    final active = workspace == ResonateWorkspace.player;
-    if (_workspaceActive == active) return;
-    _workspaceActive = active;
-    if (!active) {
-      ++_normalizationGeneration;
-      _normalizationRefreshPending = normalizationEnabled;
-      return;
-    }
-    _lastSongId = music.currentSong?.id;
-    _lastEngine = music.activeEngineLabel;
-    unawaited(applyToActiveEngine());
-    if (_normalizationRefreshPending || normalizationEnabled) {
-      _normalizationRefreshPending = false;
-      unawaited(_refreshNormalizationForCurrentSong());
-    }
-  }
-
   static const int _fadeOutSeconds = 45;
 
   Future<void> startSleepTimer(Duration duration) async {
