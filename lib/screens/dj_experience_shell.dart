@@ -76,6 +76,7 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
       await _sessionStart;
       await _music.endDjSession();
       _djSessionStarted = false;
+      await _workspaceLifecycle.activate(ResonateWorkspace.player);
       if (!mounted) return;
       Navigator.of(context).popUntil((route) => route.isFirst);
       await context.read<ExperienceProvider>().switchExperience(
