@@ -34,8 +34,8 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
     if (existing != null) return existing;
     final configuration = () async {
       // Android's shared audio_session configuration is owned by the music
-      // transport. Give the independent cue player explicit speech/sonification
-      // attributes without claiming focus or changing Media3's attributes.
+      // transport. Give the independent cue player explicit speech attributes on the
+      // media output route, without claiming focus or changing Media3's attributes.
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
         await player.setAndroidAudioAttributes(
           const AndroidAudioAttributes(
