@@ -325,14 +325,20 @@ The automatic candidate generator includes a `breakdownDrop` candidate whose inc
 ### RQ-010 — DJ platter scratch does not audibly manipulate the deck
 
 **Priority:** P1  
-**Status:** Targeted PCM processor fix implemented; exact-head CI passed; end-to-end device validation pending  
-**Evidence:** User-observed; native processor contract defect confirmed by code inspection.
+**Status:** Reopened after failed device test; timestamp mapping and history-window hardening implemented; CI/device validation pending  
+**Evidence:** User reports scratch still produces no audible platter manipulation on the latest test build.
 
 The native timestamped PCM scratch renderer was present in the Media3 audio-processor chain, but its successful render path read from a duplicate input buffer without advancing the original buffer. Media3's `AudioProcessor.queueInput` contract requires the supplied input buffer to be consumed. The existing scratch test covered pass-through consumption but did not assert consumption when rendering was active.
 
-**Targeted fix:** after a complete scratch block is rendered, advance the original input buffer to its limit. A regression assertion now verifies the active scratch render consumes the complete block, and a processor-factory test verifies timestamp capture precedes native DSP. Stale mailbox state is also retired on seek, track change and pause. The stale client comment claiming the native path was pass-through has been corrected.
+**Previous targeted fix:** after a complete scratch block is rendered, advance the original input buffer to its limit. Regression coverage verifies active-render input consumption and processor ordering. The user's latest device test shows this was insufficient.
 
-**Remaining investigation:** verify timestamp-ledger matches, PCM history availability, anchor validity and mailbox acceptance on a physical device. Add bounded diagnostics for rejected controls or unavailable timestamp history if the first device test still fails.
+**New code findings and hardening:**
+
+- The timestamp ledger originally required the exact `ByteBuffer` object recorded by the outer `AudioSink`. A sink that passes a duplicate/slice to its first processor would silently lose the PTS and force every scratch block to pass through. The ledger now keeps a bounded FIFO fallback for ordered PCM buffer views while retaining identity matching as its preferred path; a regression test covers the buffer-view case.
+- The scratch ring was allocated for only two seconds even though its declared maximum capacity supports four seconds. It now uses the full four-second per-deck window, with a regression test for allocation.
+- The successful PCM render still consumes the original input block; the fail-closed pass-through path remains unchanged.
+
+**Remaining investigation:** the physical-device scratch path still needs observable counters for timestamp matches/misses, valid anchors, active render blocks and render fallbacks. CI can validate these policies but cannot prove that the user's deck is producing audible scratch output.
 
 
 
@@ -366,3 +372,23 @@ Exact-head CI passes; diagnostics demonstrate one terminal outcome for completio
 - The silence detector and PCM profile pipeline already generate and persist measured silence regions. The transition brain currently uses trusted silence as a candidate score/risk signal; there is no independent, playback-time silence trigger that is proven to start a transition when a safe silence window is reached. RQ-004 therefore remains an integration gap, not an absent detector.
 - Repository issue #5 is open and corresponds to the new RQ-011 recovery hardening.
 - Exact-head CI passed on c43f7b3 before the RQ-011 change. The RQ-011 commits require a fresh CI run before validation.
+
+
+## RQ-012 — Automatic DJ-style same-track replay is mistaken for playback restart
+
+**Priority:** P2  
+**Status:** Automatic repeat-self DJ crossfade execution path removed; exact-head CI and device validation pending  
+**Evidence:** Confirmed by provider code inspection and user-observed playback.
+
+The provider contained a dedicated `repeat-self` transition: when Repeat One was selected while crossfade was enabled, it analyzed the current track's outro, preloaded the same track on the standby deck, and crossfaded/promoted it back to the beginning or an analyzed intro cue. This was not an independent random scheduler; it was coupled to the Repeat One mode and could look like playback failed and restarted immediately after a crossfade.
+
+**Change:** automatic same-track DJ handoff is retired. Repeat One now uses the normal single-source loop policy and never schedules a same-track DJ crossfade. Ordinary automatic crossfades between different queue items, Repeat All queue wrapping, and explicit manual DJ deck operations remain separate.
+
+**Exit criteria:** CI passes; device tests confirm Repeat One repeats without a DJ crossfade, Repeat Off never restarts a completed track, Repeat All advances/wraps the queue once, and ordinary A-to-B crossfades continue to promote the next distinct queue item.
+
+
+## 2026-11-27 — scratch failure and repeat-self removal follow-up
+
+- The user reports the DJ platter scratch remains inaudible after the previous native PCM fix. RQ-010 is reopened; do not claim scratch is working based on unit tests.
+- The automatic repeat-self feature was confirmed to be a Repeat One + crossfade path, not a separate random-probability scheduler. Its execution branch has been removed. Repeat One is restored to a normal native/single-source loop.
+- A new timestamp-ledger FIFO fallback and four-second per-deck PCM history are implemented with native regression tests. Latest CI must validate these changes before a test build is issued.
