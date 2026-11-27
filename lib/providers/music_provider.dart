@@ -66,6 +66,8 @@ import '../playback/repeat_mode_transition_policy.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
+import '../services/voice_cue_service.dart';
+import '../services/voice_cue_router.dart';
 
 part 'music_provider_crossfade.dart';
 part 'music_provider_transport.dart';
