@@ -78,7 +78,7 @@ A lease is generation-bound. Revocation invalidates the lease before asynchronou
 | `DjConsoleScreen` | Landscape performance surface, measured waveforms, deck status, active-deck jog seek and manual controls | Retain and evolve |
 | Manual DJ handoff in `MusicProvider` | Deck B preparation, cue, tempo parameters, crossfade, cancellation and lease cleanup | Reuse; extend only for the empty-session workflow |
 
-The existing Console is intentionally honest about implemented controls. Jog interaction is a one-shot seek on the verified active deck; it is not scratching or continuous platter-speed control. Tempo writes are per physical deck and require a valid manual lease and prepared standby state.
+The Console now has a native timestamped-PCM platter-control path in addition to one-shot jog seek. Forward/reverse velocity, hold and release-to-live rendering are implemented in the Media3 sink chain, but audible behavior still requires physical-device validation. Tempo writes remain per physical deck and require a valid manual lease and prepared standby state.
 
 ### 2.4 Existing Intelligence Autopilot is not the DJ automation selector
 
@@ -135,7 +135,7 @@ Therefore, independent DJ startup is a real gap. It is not evidence that another
 5. Define what promotion means for the session queue and how the next standby is selected.
 6. Keep MediaSession, MusicProvider state, physical deck identity and DSP routing synchronized through promotion.
 7. Ensure a fresh DJ session cannot overwrite the saved Resonate Player queue. Use a session-level DJ set/queue snapshot or a carefully designed queue-context boundary; do not create a second playback engine or library database.
-8. The approved product target is independent dual-deck performance, not just incoming-track handoff. Do not expose independent Play, pause, channel gain, crossfader, cue-monitoring or scratch controls until their native semantics are explicitly implemented and validated. The existing standby is not yet an independently audible channel outside the native crossfade envelope. Scratching remains a separate capability requiring its own validated low-latency control path.
+8. The approved product target is independent dual-deck performance, not just incoming-track handoff. Do not expose independent Play, pause, channel gain, crossfader, cue-monitoring or scratch controls until their native semantics are explicitly implemented and validated. The existing standby is not yet an independently audible channel outside the native crossfade envelope. A low-latency timestamped-PCM scratch control path is now wired per physical deck; release acceptance remains gated on physical-device proof of audible forward/reverse/hold/release behavior and interruption safety.
 
 A focused native/API spike must establish whether the existing two physical players can be evolved into independently controlled, concurrently audible deck channels while retaining a single app output policy and safe DSP routing. It must also establish whether independently selected MediaItems can be loaded without changing the Player queue. Prefer a narrow extension of the existing Media3 service and bridge. Do not add another ExoPlayer service, MediaSession, audio focus owner or DSP chain.
 
