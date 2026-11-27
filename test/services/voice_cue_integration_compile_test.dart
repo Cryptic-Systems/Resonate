@@ -14,6 +14,10 @@ import 'package:resonate/providers/playback_features_provider.dart';
 void _typeCheck<T>() {}
 
 void main() {
+  test('voice cue service can be resolved before Flutter audio binding', () {
+    expect(VoiceCueService.instance.isSpeaking, isFalse);
+  });
+
   test('voice cue call sites and settings compile together', () {
     _typeCheck<VoiceCueService>();
     _typeCheck<WorkspaceLifecycleCoordinator>();
