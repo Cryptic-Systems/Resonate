@@ -52,6 +52,7 @@ import '../playback/crossfade_fallback_fade.dart';
 import '../playback/crossfade_settings.dart';
 import '../playback/transport_epoch.dart';
 import '../playback/completion_ownership_policy.dart';
+import '../playback/completion_recovery_policy.dart';
 import '../playback/engine_pair.dart';
 import '../playback/dj_handoff_state.dart';
 import '../playback/audio_leveling_settings.dart';
@@ -2460,6 +2461,16 @@ class MusicProvider extends ChangeNotifier {
           // handoff); for A→B we continue after commit without a second advance.
           _completionObservedDuringCrossfade = true;
           _completionObservedSongId = completedSongId;
+          // Completion may be emitted only once. Re-arm the watchdog from this
+          // confirmed event so a timed-out/stale fade cannot strand the queue
+          // merely because no further position tick arrives from the ended deck.
+          _armEndOfTrackWatchdog();
+          unawaited(ResonateDiagnostics.record('completion_transition_recovery_armed', {
+            'songId': completedSongId,
+            'queueIndex': _queueIndex,
+            'crossfadeInProgress': _crossfadeInProgress,
+            'automaticCrossfadeInFlight': _automaticCrossfadeInFlight,
+          }));
           if (_repeatMode == PlaybackRepeatMode.one ||
               _repeatSelfHandoffInFlight) {
             // Do not treat as "need to go to next queue item".
@@ -3354,6 +3365,9 @@ class MusicProvider extends ChangeNotifier {
       // Already moved on (successful crossfade or manual next).
       if (currentSong?.id != expectedSongId || _queueIndex != expectedIndex) return;
 
+      final completionObservedForExpectedSong =
+          _completionObservedDuringCrossfade &&
+          _completionObservedSongId == expectedSongId;
       if (_crossfadeInProgress ||
           _automaticCrossfadeInFlight ||
           _repeatSelfHandoffInFlight) {
@@ -3372,6 +3386,7 @@ class MusicProvider extends ChangeNotifier {
         _crossfadeInProgress = false;
         _automaticCrossfadeInFlight = false;
         _completionObservedDuringCrossfade = false;
+        _completionObservedSongId = null;
         _repeatSelfHandoffInFlight = false;
         _repeatSelfHandoffArmed = false;
         _repeatSelfTargetSongId = null;
@@ -3395,7 +3410,12 @@ class MusicProvider extends ChangeNotifier {
           audioPlayer.processingState == ProcessingState.completed;
       final canAdvance = _queueIndex < _queue.length - 1 ||
           _repeatMode != PlaybackRepeatMode.off;
-      if (atEnd && canAdvance) {
+      final shouldRecoverCompletion = CompletionRecoveryPolicy.shouldAdvance(
+        atEnd: atEnd,
+        canAdvance: canAdvance,
+        completionObservedDuringTransition: completionObservedForExpectedSong,
+      );
+      if (shouldRecoverCompletion) {
         unawaited(ResonateDiagnostics.record('end_of_track_watchdog_fired', {
           'songId': currentSong!.id,
           'queueIndex': _queueIndex,
