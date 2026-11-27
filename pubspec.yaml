@@ -45,6 +45,7 @@ flutter:
     - assets/audio/resonate_voice/risk_safety_intelligence/
     - assets/audio/resonate_voice/system_consent_status/
     - assets/audio/resonate_voice/utility_micro/
+    - assets/audio/resonate_voice/voice_manifest.json
     - assets/Normal_Mode.jpg
     - assets/Running_Mode.jpg
     - assets/Workout_Mode.jpg
