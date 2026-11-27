@@ -114,6 +114,22 @@ class DjScratchTimestampProcessorTest {
     }
 
     @Test
+    fun media3FactoryInstallsTimestampScratchBeforeNativeDsp() {
+        val chain = DspEngineSinkHook.createProcessors(
+            "A",
+            DjScratchTimestampLedger(),
+            DjScratchControlMailbox(),
+        )
+        try {
+            assertEquals(2, chain.size)
+            assertTrue(chain[0] is DjScratchTimestampProcessor)
+            assertTrue(chain[1] is DspEngineAudioProcessor)
+        } finally {
+            DspEngineSinkHook.forgetDeck("A")
+        }
+    }
+
+    @Test
     fun unsupportedPcmLayoutDoesNotAllocateScratchHistory() {
         val processor = DjScratchTimestampProcessor(DjScratchTimestampLedger())
         processor.configure(AudioProcessor.AudioFormat(48_000, 6, C.ENCODING_PCM_16BIT))
