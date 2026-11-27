@@ -173,18 +173,30 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
                     Log.w(TAG, "id=$processorId rejected handle destroy failed", t)
                 }
                 engineHandle = 0
-                nativeProcessEnabled = false
+                recordCreateFailure("registry_rejected")
                 return
             }
 
+            createFailuresThisActivation = 0
             DspSessionGate.noteCreateSuccess()
             Log.i(TAG, "id=$processorId engine ok handle=$h sr=$configuredRate ch=$configuredChannels active=$deckActive")
         } catch (t: Throwable) {
             Log.e(TAG, "id=$processorId nativeCreate failed", t)
             engineHandle = 0
-            nativeProcessEnabled = false
-            DspSessionGate.noteCreateFailure(t.javaClass.simpleName)
+            recordCreateFailure(t.javaClass.simpleName)
         }
+    }
+
+    /** Retry only on explicit lifecycle events, never on every PCM block. */
+    private fun recordCreateFailure(reason: String) {
+        createAttempted = false
+        createFailuresThisActivation++
+        DspSessionGate.noteCreateFailure(reason)
+        Log.w(
+            TAG,
+            "id=$processorId native engine creation attempt $createFailuresThisActivation/" +
+                "$MAX_CREATE_FAILURES_PER_ACTIVATION failed reason=$reason; playback remains pass-through",
+        )
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
