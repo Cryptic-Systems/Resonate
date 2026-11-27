@@ -41,6 +41,41 @@ void main() {
     );
   }
 
+  test('automatic candidates never enter deep into the incoming track', () {
+    final outgoing = track(id: 'outgoing');
+    final incoming = DjTrackProfile(
+      songId: 'incoming-with-late-breakdown',
+      durationMs: 240000,
+      beatGrid: const DjBeatGrid(
+        bpm: 128, confidence: 0.95, firstBeatMs: 0,
+        beatMs: [0, 469, 938, 1406, 1875, 2344, 2813, 3281],
+        downbeatMs: [0, 1875], downbeatConfidence: 0.9,
+        barConfidence: 0.9, phraseConfidence: 0.9,
+      ),
+      sections: const [
+        DjSection(type: DjSectionType.breakdown, startMs: 90000, endMs: 120000, confidence: 0.95),
+        DjSection(type: DjSectionType.drop, startMs: 120000, endMs: 150000, confidence: 0.95),
+      ],
+      transitions: const DjTransitionMarkers(bestIntroMs: 0, bestOutroMs: 220000),
+      analysisConfidence: 0.95,
+    );
+
+    final automatic = engine.brain.generate(
+      outgoing: outgoing, incoming: incoming, outgoingPositionMs: 220000,
+    );
+    expect(automatic, isNotEmpty);
+    expect(automatic.every((candidate) => candidate.incomingStartMs <= 36000), isTrue);
+    expect(automatic.any((candidate) => candidate.kind == DjTransitionKind.breakdownDrop), isFalse);
+
+    final reviewed = engine.brain.generate(
+      outgoing: outgoing, incoming: incoming, outgoingPositionMs: 220000,
+      allowReviewedLateCue: true,
+    );
+    expect(reviewed.any((candidate) =>
+      candidate.kind == DjTransitionKind.breakdownDrop &&
+      candidate.incomingStartMs == 90000), isTrue);
+  });
+
   test('chooses a musical candidate instead of only safe crossfade', () {
     final plan = engine.planTransition(
       outgoing: track(id: 'a', energy: 0.65),
