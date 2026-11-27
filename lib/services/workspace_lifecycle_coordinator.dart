@@ -34,7 +34,12 @@ class WorkspaceLifecycleCoordinator extends ChangeNotifier {
     _transitionTail = operation.then<void>(
       (_) {},
       onError: (Object error, StackTrace stack) {
-        debugPrint('Workspace participant initialization failed: $error');
+        // A participant that cannot synchronize to the current workspace must
+        // not remain registered and receive later transitions from an
+        // unknown starting state. It can explicitly register again after its
+        // own initialization/recovery has completed.
+        _participants.remove(participant);
+        debugPrint('Workspace participant initialization failed; unregistered: $error');
       },
     );
   }
