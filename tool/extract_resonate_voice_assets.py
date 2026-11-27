@@ -96,14 +96,11 @@ def main() -> None:
     marker = "    - assets/sfx/\n"
     categories = sorted({entry["category"] for entry in entries})
     additions = "".join(f"    - assets/audio/resonate_voice/{category}/\\n" for category in categories)
-    if additions.strip() not in text:
-        if marker not in text:
-            raise SystemExit("Could not find assets/sfx entry in pubspec.yaml")
-        text = text.replace(marker, marker + additions)
-        pubspec.write_text(text, encoding="utf-8")
-
-    print(f"Extracted and activated {extracted} voice cues across {len(grouped)} source archives.")
-
-
-if __name__ == "__main__":
-    main()
+    missing_asset_dirs = [
+        category for category in categories
+        if f"    - assets/audio/resonate_voice/{category}/" not in text
+    ]
+    additions = "".join(
+        f"    - assets/audio/resonate_voice/{category}/\\n"
+        for category in missing_asset_dirs
+    )
