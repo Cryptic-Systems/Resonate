@@ -71,6 +71,19 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
   VoiceCueOrigin? _speakingOrigin;
   Future<void>? _loading;
   Future<void>? _playerConfiguration;
+  Future<void> Function(bool active)? _musicDucking;
+
+  void attachMusicDucking(Future<void> Function(bool active) callback) {
+    _musicDucking = callback;
+  }
+
+  Future<void> _setMusicDucked(bool active) async {
+    try {
+      await _musicDucking?.call(active);
+    } catch (error) {
+      debugPrint('Resonate voice cue music duck update failed: $error');
+    }
+  }
 
   bool get isSpeaking => _speaking;
 
@@ -109,6 +122,7 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
       }
       _speaking = false;
       _speakingOrigin = null;
+      await _setMusicDucked(false);
     }
   }
 
@@ -128,6 +142,7 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
         } catch (_) {}
         _speaking = false;
         _speakingOrigin = null;
+        await _setMusicDucked(false);
         _router.resetSession();
       }
     } finally {
@@ -313,6 +328,7 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
 
       _speaking = true;
       _speakingOrigin = origin;
+      await _setMusicDucked(true);
       debugPrint('Resonate voice cue starting (' + cueId + ', ' + entry['filename'].toString() + ')');
       final playback = player.play();
       unawaited(playback.timeout(const Duration(seconds: 20)).then<void>((_) {
@@ -326,12 +342,14 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
       }).whenComplete(() {
         _speaking = false;
         _speakingOrigin = null;
+        await _setMusicDucked(false);
       }));
       reservedGroup = null;
       return true;
     } catch (error) {
       _speaking = false;
       _speakingOrigin = null;
+      await _setMusicDucked(false);
       _logBlocked(cueId, 'playback preparation failed: ' + error.toString());
       if (reservedGroup != null) {
         _router.release(eventId: eventId, semanticGroup: reservedGroup);
@@ -380,6 +398,8 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
     final player = _player;
     _player = null;
     if (player != null) await player.dispose();
+    await _setMusicDucked(false);
+    _musicDucking = null;
     _router.resetSession();
   }
 }
