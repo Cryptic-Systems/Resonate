@@ -100,7 +100,7 @@ def main() -> None:
         if f"    - assets/audio/resonate_voice/{category}/" not in text
     ]
     additions = "".join(
-        f"    - assets/audio/resonate_voice/{category}/\\n"
+        f"    - assets/audio/resonate_voice/{category}/\n"
         for category in missing_asset_dirs
     )
     if additions:
