@@ -21,8 +21,12 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
   static const String _assetRoot = 'assets/audio/resonate_voice/';
 
   AudioPlayer? _player;
-  AudioPlayer get _audioPlayer =>
-      _player ??= AudioPlayer(handleAudioSessionActivation: false);
+  AudioPlayer get _audioPlayer => _player ??= AudioPlayer(
+        // Voice cues must mix over Media3 without requesting audio focus or
+        // subscribing to interruption handling that can pause the main track.
+        handleAudioSessionActivation: false,
+        handleInterruptions: false,
+      );
   final VoiceCueRouter _router = VoiceCueRouter();
   Map<String, Map<String, dynamic>>? _manifest;
   bool _speaking = false;
@@ -220,7 +224,9 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
       if (!decision.allowed) return false;
       reservedGroup = group;
 
-      await _audioPlayer.setAudioSource(AudioSource.asset(assetPath));
+      final player = _audioPlayer;
+      await player.setVolume(1.0);
+      await player.setAudioSource(AudioSource.asset(assetPath));
       if (generation != _generation ||
           workspaceGeneration != _workspaceGeneration ||
           !_originAllowedInWorkspace(origin) ||
@@ -229,14 +235,15 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
         _router.release(eventId: eventId, semanticGroup: group);
         reservedGroup = null;
         try {
-          await _audioPlayer.stop();
+          await player.stop();
         } catch (_) {}
         return false;
       }
 
       _speaking = true;
       _speakingOrigin = origin;
-      final playback = _audioPlayer.play();
+      debugPrint('Resonate voice cue starting ($cueId, ${entry['filename']})');
+      final playback = player.play();
       unawaited(playback.catchError((Object error, StackTrace stack) {
         _router.release(eventId: eventId, semanticGroup: group);
         debugPrint('Resonate voice cue failed ($cueId): $error');
