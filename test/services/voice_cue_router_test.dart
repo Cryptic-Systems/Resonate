@@ -19,6 +19,7 @@ void main() {
     bool enabled = true,
     bool confirmed = true,
     DateTime? expiresAt,
+    List<VoiceCueOrigin>? allowedOrigins,
   }) {
     return VoiceCueRequest(
       cueId: cueId,
@@ -29,6 +30,7 @@ void main() {
       voiceFeedbackEnabled: enabled,
       confirmed: confirmed,
       expiresAt: expiresAt ?? now.add(const Duration(seconds: 5)),
+      allowedOrigins: allowedOrigins,
     );
   }
 
@@ -72,6 +74,25 @@ void main() {
       origin: VoiceCueOrigin.djManual,
       eventId: 'dj-event',
     )).allowed, isTrue);
+  });
+
+  test('conditional cue can explicitly permit shared-system origin', () {
+    expect(router.evaluate(request(
+      route: VoiceCueRoute.conditional,
+      origin: VoiceCueOrigin.sharedSystem,
+      allowedOrigins: const [VoiceCueOrigin.playerAuto, VoiceCueOrigin.sharedSystem],
+    )).allowed, isTrue);
+    expect(router.evaluate(request(
+      route: VoiceCueRoute.conditional,
+      origin: VoiceCueOrigin.sharedSystem,
+      eventId: 'conditional-default',
+    )).reason, VoiceCueBlockReason.wrongWorkspace);
+    expect(router.evaluate(request(
+      route: VoiceCueRoute.conditional,
+      origin: VoiceCueOrigin.sharedSystem,
+      allowedOrigins: const [],
+      eventId: 'conditional-empty',
+    )).reason, VoiceCueBlockReason.invalidRequest);
   });
 
   test('shared system cue requires shared-system event origin', () {
