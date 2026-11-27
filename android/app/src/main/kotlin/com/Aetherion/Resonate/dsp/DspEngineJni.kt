@@ -1,16 +1,44 @@
 package com.aetherion.resonate.dsp
 
 object DspEngineJni {
+    @Volatile private var dspEngineLoaded = false
+    @Volatile private var dspJniLoaded = false
+    @Volatile private var lastLoadFailure: String? = null
+
     init {
-        try {
-            System.loadLibrary("dsp_engine")
-        } catch (_: Throwable) {
-        }
-        try {
-            System.loadLibrary("dsp_jni")
-        } catch (_: Throwable) {
-        }
+        ensureLoaded()
     }
+
+    /** Retryable native-library bootstrap for transient early-startup load failures. */
+    @JvmStatic
+    @Synchronized
+    fun ensureLoaded(): Boolean {
+        if (!dspEngineLoaded) {
+            try {
+                System.loadLibrary("dsp_engine")
+                dspEngineLoaded = true
+            } catch (error: Throwable) {
+                lastLoadFailure = "dsp_engine: " + error.javaClass.simpleName + ": " + error.message.orEmpty()
+            }
+        }
+        if (!dspJniLoaded) {
+            try {
+                System.loadLibrary("dsp_jni")
+                dspJniLoaded = true
+            } catch (error: Throwable) {
+                lastLoadFailure = "dsp_jni: " + error.javaClass.simpleName + ": " + error.message.orEmpty()
+            }
+        }
+        if (dspEngineLoaded && dspJniLoaded) lastLoadFailure = null
+        return dspEngineLoaded && dspJniLoaded
+    }
+
+    @JvmStatic
+    fun loadStatus(): Map<String, Any> = mapOf(
+        "dspEngineLoaded" to dspEngineLoaded,
+        "dspJniLoaded" to dspJniLoaded,
+        "loadFailure" to (lastLoadFailure ?: ""),
+    )
 
     external fun nativeCreate(sampleRate: Double, channels: Int): Long
     external fun nativeDestroy(handle: Long)
