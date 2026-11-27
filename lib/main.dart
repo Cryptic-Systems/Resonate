@@ -36,6 +36,7 @@ import 'playback/playback_control_arbiter.dart';
 import 'services/playback_diagnostics_observer.dart';
 import 'services/resonate_diagnostics.dart';
 import 'services/workspace_lifecycle_coordinator.dart';
+import 'services/workspace_transition_controller.dart';
 import 'services/voice_cue_service.dart';
 
 /// Brand spectrum from the Resonate mark: cyan-blue → violet → pink → orange.
@@ -325,6 +326,7 @@ class ResonateApp extends StatelessWidget {
           return lifecycle;
         }),
         ChangeNotifierProvider(create: (_) => ShellNav()),
+        ChangeNotifierProvider(create: (_) => WorkspaceTransitionController()),
         ChangeNotifierProvider(create: (_) => AskResonateController()),
         ChangeNotifierProvider(
           create: (context) {
@@ -638,21 +640,82 @@ class _LifecycleHomeState extends State<_LifecycleHome>
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ExperienceProvider>(
-      builder: (context, experience, _) {
-        if (!experience.isReady) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-        if (experience.needsInitialSelection) {
-          return const ExperienceSelectorScreen();
-        }
-        return switch (experience.selected!) {
-          ResonateExperience.player => const HomeScreen(),
-          ResonateExperience.resonatixDj => const DjExperienceShell(),
-        };
-      },
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Consumer<ExperienceProvider>(
+          builder: (context, experience, _) {
+            if (!experience.isReady) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (experience.needsInitialSelection) {
+              return const ExperienceSelectorScreen();
+            }
+            return switch (experience.selected!) {
+              ResonateExperience.player => const HomeScreen(),
+              ResonateExperience.resonatixDj => const DjExperienceShell(),
+            };
+          },
+        ),
+        Consumer<WorkspaceTransitionController>(
+          builder: (context, transition, _) {
+            final active = transition.isTransitioning;
+            final colors = Theme.of(context).colorScheme;
+            return Positioned.fill(
+              child: IgnorePointer(
+                ignoring: !active,
+                child: AnimatedOpacity(
+                  opacity: active ? 1 : 0,
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  child: Material(
+                    color: colors.surface,
+                    child: SafeArea(
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.graphic_eq_rounded,
+                                size: 58,
+                                color: colors.primary,
+                              ),
+                              const SizedBox(height: 24),
+                              Text(
+                                transition.title,
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.headlineSmall,
+                              ),
+                              const SizedBox(height: 14),
+                              SizedBox(
+                                width: 180,
+                                child: LinearProgressIndicator(
+                                  minHeight: 3,
+                                  borderRadius: BorderRadius.circular(99),
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              Text(
+                                'Preparing your workspace',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 }
