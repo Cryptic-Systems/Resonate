@@ -445,13 +445,16 @@ class ModeProvider extends ChangeNotifier {
     if (mode == ResonateMode.work) _workCoordinator.setMode(mode);
     _onContextChanged();
     notifyListeners();
+    final modeCueId = 'mode_policy.voice_mode_${mode.id}';
     unawaited(VoiceCueService.instance.speak(
-      cueId: 'mode_policy.voice_mode_${mode.id}',
+      cueId: modeCueId,
       origin: VoiceCueOrigin.sharedSystem,
       eventId: 'mode_change_${previous.id}_to_${mode.id}_${DateTime.now().microsecondsSinceEpoch}',
       confirmed: true,
       allowedOrigins: const <VoiceCueOrigin>[VoiceCueOrigin.sharedSystem],
-    ));
+    ).then((started) {
+      debugPrint('Mode voice cue $modeCueId ${started ? "started" : "was not started"}');
+    }));
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_modeKey, mode.id);
