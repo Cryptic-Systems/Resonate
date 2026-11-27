@@ -11,6 +11,10 @@ No audio has been re-recorded, renamed, normalized, or edited. Quiet/whispered d
 
 The repository currently stores the eight category ZIP archives, not extracted MP3 files. This document therefore does not claim that individual MP3s are already Flutter-loadable assets, and the existing placeholder manifest is intentionally not populated with unusable paths.
 
+## Archive verification update (2026-11-27)
+
+I inspected the supplied `Resonate Feedback.zip` and its eight nested category archives. The archives contain **84 MP3 entries** with category counts matching this inventory: 15 companion, 8 deck/console, 19 DJ transition, 8 hype, 9 mode, 8 risk, 8 utility, and 9 system. The exact filenames were checked against the nested archive listings, including capitalization, apostrophes, the embedded space in `voice_ask_queue _updated.mp3`, and the two double-period filenames. This confirms the filename inventory only; it does not confirm spoken delivery, audio quality, or routing suitability by listening.
+
 ## Integration principles
 
 - Use one spoken cue for one meaningful state/event; don't stack several near-synonyms.
