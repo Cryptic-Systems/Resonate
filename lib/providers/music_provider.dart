@@ -346,7 +346,6 @@ class MusicProvider extends ChangeNotifier {
   Media3DjTransitionPreparation? _repeatSelfDjPreparation;
   bool _repeatSelfDjPlanning = false;
   bool _repeatSelfDjPreloadInFlight = false;
-  int _repeatSelfDjPlanGeneration = 0;
   String? get _repeatSelfTargetSongId =>
       _crossfadeRuntime.repeatSelfTargetSongId;
   set _repeatSelfTargetSongId(String? value) =>
@@ -1243,7 +1242,6 @@ class MusicProvider extends ChangeNotifier {
         'positionMs': _media3ProviderSession?.position.inMilliseconds,
       }));
     }
-    _repeatSelfDjPlanGeneration++;
     _repeatSelfDjPlanning = false;
     _repeatSelfDjPreloadInFlight = false;
     _repeatSelfDjPreparation = null;
@@ -4093,7 +4091,6 @@ class MusicProvider extends ChangeNotifier {
     _repeatSelfHandoffInFlight = false;
     _repeatSelfFadeExecuting = false;
     _repeatSelfTargetSongId = null;
-    _repeatSelfDjPlanGeneration++;
     _repeatSelfDjPlanning = false;
     _repeatSelfDjPreloadInFlight = false;
     _repeatSelfDjPreparation = null;
