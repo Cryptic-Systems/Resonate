@@ -1,0 +1,49 @@
+name: Voice Cue Policy CI
+
+on:
+  push:
+    branches: [resonate-voice-audit]
+    paths:
+      - "lib/services/voice_cue_router.dart"
+      - "test/services/voice_cue_router_test.dart"
+      - ".github/workflows/voice-cue-policy.yml"
+  pull_request:
+    branches: [dj-workspace-development]
+    paths:
+      - "lib/services/voice_cue_router.dart"
+      - "test/services/voice_cue_router_test.dart"
+      - ".github/workflows/voice-cue-policy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: voice-cue-policy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  voice-cue-policy:
+    name: Analyze and test voice cue policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.2"
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze voice cue policy
+        run: flutter analyze lib/services/voice_cue_router.dart test/services/voice_cue_router_test.dart
+
+      - name: Run voice cue policy tests
+        run: flutter test test/services/voice_cue_router_test.dart --reporter expanded
