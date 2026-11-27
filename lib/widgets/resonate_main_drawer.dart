@@ -123,7 +123,8 @@ class ResonateMainDrawer extends StatelessWidget {
                 } catch (error) {
                   // If DJ mounted but could not initialize, restore Player
                   // behind the same barrier instead of exposing a partial shell.
-                  if (experience.selected == ResonateExperience.resonatixDj) {
+                  if (experience.selected == ResonateExperience.resonatixDj &&
+                      lifecycle.activeWorkspace == ResonateWorkspace.player) {
                     try {
                       await transition.transitionTo(
                         ResonateWorkspace.player,
@@ -147,7 +148,11 @@ class ResonateMainDrawer extends StatelessWidget {
                   }
                   messenger.showSnackBar(
                     SnackBar(
-                      content: Text('Could not open Resonatix DJ: $error'),
+                      content: Text(
+                        lifecycle.activeWorkspace == ResonateWorkspace.dj
+                            ? 'DJ startup needs recovery. Use Retry return to Player on the recovery screen.'
+                            : 'Could not open Resonatix DJ: $error',
+                      ),
                     ),
                   );
                 }
