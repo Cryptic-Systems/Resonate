@@ -78,6 +78,8 @@ class Media3ProviderStateBridge {
       deckB: snapshot?.deckB,
       audioUnderrunCountA: snapshot?.audioUnderrunCountA ?? 0,
       audioUnderrunCountB: snapshot?.audioUnderrunCountB ?? 0,
+      scratchDiagnosticsA: snapshot?.scratchDiagnosticsA ?? const <String, Object?>{},
+      scratchDiagnosticsB: snapshot?.scratchDiagnosticsB ?? const <String, Object?>{},
       lastUnderrunDeck: snapshot?.lastUnderrunDeck,
       lastUnderrunBufferSizeFrames: snapshot?.lastUnderrunBufferSizeFrames ?? 0,
       lastUnderrunBufferSizeMs: snapshot?.lastUnderrunBufferSizeMs ?? 0,
@@ -138,6 +140,8 @@ class Media3ProviderState {
     this.deckB,
     this.audioUnderrunCountA = 0,
     this.audioUnderrunCountB = 0,
+    this.scratchDiagnosticsA = const <String, Object?>{},
+    this.scratchDiagnosticsB = const <String, Object?>{},
     this.lastUnderrunDeck,
     this.lastUnderrunBufferSizeFrames = 0,
     this.lastUnderrunBufferSizeMs = 0,
@@ -184,6 +188,8 @@ class Media3ProviderState {
         deckB = null,
         audioUnderrunCountA = 0,
         audioUnderrunCountB = 0,
+        scratchDiagnosticsA = const <String, Object?>{},
+        scratchDiagnosticsB = const <String, Object?>{},
         lastUnderrunDeck = null,
         lastUnderrunBufferSizeFrames = 0,
         lastUnderrunBufferSizeMs = 0,
@@ -236,6 +242,8 @@ class Media3ProviderState {
   final PlaybackDeckSnapshot? deckB;
   final int audioUnderrunCountA;
   final int audioUnderrunCountB;
+  final Map<String, Object?> scratchDiagnosticsA;
+  final Map<String, Object?> scratchDiagnosticsB;
   final String? lastUnderrunDeck;
   final int lastUnderrunBufferSizeFrames;
   final int lastUnderrunBufferSizeMs;
