@@ -20,57 +20,16 @@ class PsychicTrackAnalysisBridge {
     List<DjDecodedPcmWindow> windows,
   ) async {
     if (!Platform.isAndroid || windows.isEmpty) return null;
-    final rms = <double>[];
-    final peak = <double>[];
-    final bass = <double>[];
-    final durations = <double>[];
-
-    for (final window in windows) {
-      if (window.sampleRate < 8000 ||
-          window.channels < 1 ||
-          window.channels > 8) {
-        continue;
-      }
-      final frameBytes = window.channels * 2;
-      final frames = window.pcm.length ~/ frameBytes;
-      if (frames < 4) continue;
-      final data = ByteData.sublistView(window.pcm);
-      final filterState = List<double>.filled(window.channels, 0);
-      final alpha = math.exp(
-        -2 * math.pi * 120 / window.sampleRate,
-      );
-      var squareSum = 0.0;
-      var bassSquareSum = 0.0;
-      var samplePeak = 0.0;
-      var sampleCount = 0;
-
-      for (var frame = 0; frame < frames; frame++) {
-        for (var channel = 0; channel < window.channels; channel++) {
-          final sample = data.getInt16(
-                frame * frameBytes + channel * 2,
-                Endian.little,
-              ) /
-              32768.0;
-          squareSum += sample * sample;
-          samplePeak = math.max(samplePeak, sample.abs());
-          final low = (1 - alpha) * sample +
-              alpha * filterState[channel];
-          filterState[channel] = low;
-          bassSquareSum += low * low;
-          sampleCount++;
-        }
-      }
-      if (sampleCount == 0) continue;
-      double toDb(double power) =>
-          power > 1e-24 ? 10 * math.log(power) / math.ln10 : -120;
-      rms.add(toDb(squareSum / sampleCount));
-      peak.add(samplePeak > 1e-12
-          ? 20 * math.log(samplePeak) / math.ln10
-          : -120);
-      bass.add(toDb(bassSquareSum / sampleCount));
-      durations.add(frames / window.sampleRate);
-    }
-    if (rms.isEmpty) return null;
+    final measured = await compute(
+      _measurePsychicWindowsInBackground,
+      windows,
+      debugLabel: 'psychic_pcm_metrics',
+    );
+    if (measured == null) return null;
+    final rms = measured['rms'] as List<double>;
+    final peak = measured['peak'] as List<double>;
+    final bass = measured['bass'] as List<double>;
+    final durations = measured['durations'] as List<double>;
 
     var fileSizeBytes = 0;
     var modifiedTimeNs = 0;
@@ -156,4 +115,62 @@ class PsychicTrackAnalysisBridge {
       return const {};
     }
   }
+}
+
+
+/// Performs the per-sample Psychic feature reductions off the UI isolate.
+/// The returned primitive lists are passed to the native Psychic cache bridge.
+Map<String, List<double>>? _measurePsychicWindowsInBackground(
+  List<DjDecodedPcmWindow> windows,
+) {
+  final rms = <double>[];
+  final peak = <double>[];
+  final bass = <double>[];
+  final durations = <double>[];
+
+  for (final window in windows) {
+    if (window.sampleRate < 8000 ||
+        window.channels < 1 ||
+        window.channels > 8) {
+      continue;
+    }
+    final frameBytes = window.channels * 2;
+    final frames = window.pcm.length ~/ frameBytes;
+    if (frames < 4) continue;
+    final data = ByteData.sublistView(window.pcm);
+    final filterState = List<double>.filled(window.channels, 0);
+    final alpha = math.exp(-2 * math.pi * 120 / window.sampleRate);
+    var squareSum = 0.0;
+    var bassSquareSum = 0.0;
+    var samplePeak = 0.0;
+    var sampleCount = 0;
+
+    for (var frame = 0; frame < frames; frame++) {
+      for (var channel = 0; channel < window.channels; channel++) {
+        final sample = data.getInt16(
+              frame * frameBytes + channel * 2,
+              Endian.little,
+            ) /
+            32768.0;
+        squareSum += sample * sample;
+        samplePeak = math.max(samplePeak, sample.abs());
+        final low =
+            (1 - alpha) * sample + alpha * filterState[channel];
+        filterState[channel] = low;
+        bassSquareSum += low * low;
+        sampleCount++;
+      }
+    }
+    if (sampleCount == 0) continue;
+    double toDb(double power) =>
+        power > 1e-24 ? 10 * math.log(power) / math.ln10 : -120;
+    rms.add(toDb(squareSum / sampleCount));
+    peak.add(samplePeak > 1e-12
+        ? 20 * math.log(samplePeak) / math.ln10
+        : -120);
+    bass.add(toDb(bassSquareSum / sampleCount));
+    durations.add(frames / window.sampleRate);
+  }
+  if (rms.isEmpty) return null;
+  return {'rms': rms, 'peak': peak, 'bass': bass, 'durations': durations};
 }
