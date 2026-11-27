@@ -42,7 +42,7 @@ Evidence labels:
 
 **Observed behavior**
 
-Audible crackling persists most noticeably during complex transitions, particularly phrase-aware and beat-match crossfades. The application otherwise performed well during the user's latest test session.
+Earlier device sessions reported audible crackling most noticeably during complex transitions, particularly phrase-aware and beat-match crossfades. On 2026-11-27 the user reported crackling is now almost impossible to hear after the DSP upgrade. Treat this as a substantial improvement, not closure: complex-transition stress and route/device coverage remain outstanding.
 
 **What diagnostics currently establish**
 
@@ -79,7 +79,7 @@ Reproducible transition tests show no processor lifecycle race; telemetry can id
 
 **Observed behavior**
 
-DSP intelligence can become overwhelmed, apply frequent or excessive ducking, and surprise the listener with audible changes or distortion risk.
+Earlier sessions reported frequent or excessive ducking. On 2026-11-27 the user reported no audible ducking during playback after the DSP upgrade. Preserve the current protection settings; do not weaken clipping safeguards or retune gain staging without new diagnostics showing a regression.
 
 **Code-level finding to validate**
 
@@ -121,7 +121,7 @@ A targeted native DSP change is now on the development branch: after the configu
 ## RQ-003 — Pause control briefly becomes stale after library track selection
 
 **Priority:** P2  
-**Status:** Targeted state-refresh fix implemented; CI/device validation pending  
+**Status:** Targeted state-refresh fix implemented; exact-head CI passed; device validation pending  
 **Evidence:** User-observed; asynchronous state-projection race isolated and regression-tested.
 
 **Observed behavior**
@@ -313,7 +313,7 @@ This scope supersedes the 2026-11-22 temporary deferral of RQ-003 and authorizes
 ### RQ-009 — Automatic DJ crossfade can enter too far into the incoming track
 
 **Priority:** P1  
-**Status:** Targeted planner guard implemented; CI and device validation pending  
+**Status:** Targeted planner guard implemented; exact-head CI passed; device validation pending  
 **Evidence:** User-observed; code path confirmed as a possible cause.
 
 The automatic candidate generator includes a `breakdownDrop` candidate whose incoming start is the breakdown section timestamp. The legacy beat-alignment fallback can also derive a later seek from phase alignment. Either can cause an automatic transition to begin well into the incoming song rather than near its opening.
@@ -325,7 +325,7 @@ The automatic candidate generator includes a `breakdownDrop` candidate whose inc
 ### RQ-010 — DJ platter scratch does not audibly manipulate the deck
 
 **Priority:** P1  
-**Status:** Targeted PCM processor fix implemented; end-to-end device validation pending  
+**Status:** Targeted PCM processor fix implemented; exact-head CI passed; end-to-end device validation pending  
 **Evidence:** User-observed; native processor contract defect confirmed by code inspection.
 
 The native timestamped PCM scratch renderer was present in the Media3 audio-processor chain, but its successful render path read from a duplicate input buffer without advancing the original buffer. Media3's `AudioProcessor.queueInput` contract requires the supplied input buffer to be consumed. The existing scratch test covered pass-through consumption but did not assert consumption when rendering was active.
@@ -334,3 +334,35 @@ The native timestamped PCM scratch renderer was present in the Media3 audio-proc
 
 **Remaining investigation:** verify timestamp-ledger matches, PCM history availability, anchor validity and mailbox acceptance on a physical device. Add bounded diagnostics for rejected controls or unavailable timestamp history if the first device test still fails.
 
+
+
+## RQ-011 — Queue can stall when completion occurs during a failed or stale crossfade
+
+**Priority:** P1  
+**Status:** Targeted watchdog recovery hardening implemented; exact-head CI validation pending  
+**Evidence:** Open repository issue #5; code-path review.
+
+The repository's open issue #5 documents a case where the outgoing player reports completion while a crossfade is in progress. The completion listener defers ordinary queue advancement because the transition owns the event. If the transition later times out or becomes stale, no second completion event is guaranteed.
+
+**Code review finding**
+
+The provider already has an end-of-track watchdog and records completion observed during a transition. However, the completion observation was not itself used as a durable recovery condition, and the completion event did not explicitly re-arm the watchdog. A final player-state snapshot that no longer reports completed could therefore make recovery depend on subsequent position events.
+
+**Targeted hardening**
+
+- Re-arm the end-of-track watchdog when a completion is observed during a crossfade.
+- Preserve the completed song occurrence identity and use that observation as a recovery condition after the transition grace period.
+- Keep queue exhaustion authoritative; do not advance when no next item/repeat target exists.
+- Keep normal end-of-track watchdog behavior unchanged.
+- Add a pure policy regression suite for observed completion, no premature advance, exhausted queue and ordinary end-of-track recovery.
+
+**Exit criteria**
+
+Exact-head CI passes; diagnostics demonstrate one terminal outcome for completion during successful, failed, timed-out and preempted transitions; device testing confirms no stalled queue or duplicate advancement.
+
+## 2026-11-27 device feedback and integration findings
+
+- The user reports that the DSP upgrade has made crackling almost impossible to hear and that DSP no longer audibly ducks during playback. These are positive listening observations; retain RQ-001 and RQ-002 as improved-but-open until complex transition, content-URI and route stress tests are completed.
+- The silence detector and PCM profile pipeline already generate and persist measured silence regions. The transition brain currently uses trusted silence as a candidate score/risk signal; there is no independent, playback-time silence trigger that is proven to start a transition when a safe silence window is reached. RQ-004 therefore remains an integration gap, not an absent detector.
+- Repository issue #5 is open and corresponds to the new RQ-011 recovery hardening.
+- Exact-head CI passed on c43f7b3 before the RQ-011 change. The RQ-011 commits require a fresh CI run before validation.
