@@ -6,7 +6,7 @@ import 'package:resonate/services/workspace_lifecycle_coordinator.dart';
 class _Participant implements WorkspaceLifecycleParticipant {
   final List<ResonateWorkspace> transitions = [];
   bool failOnDj = false;
-  Completer<void>? djGate;
+  Completer<void>? djGate;\n  Completer<void>? djEntered;
 
   @override
   Future<void> onWorkspaceChanged(ResonateWorkspace workspace) async {
@@ -65,12 +65,12 @@ void main() {
 
   test('participant registered during a transition receives the settled destination', () async {
     final coordinator = WorkspaceLifecycleCoordinator();
-    final blocker = _Participant()..djGate = Completer<void>();
+    final blocker = _Participant()\n      ..djGate = Completer<void>()\n      ..djEntered = Completer<void>();
     coordinator.register(blocker);
     await coordinator.activate(ResonateWorkspace.player);
 
     final switching = coordinator.activate(ResonateWorkspace.dj);
-    await Future<void>.delayed(Duration.zero);
+    await blocker.djEntered!.future;
     final lateParticipant = _Participant();
     coordinator.register(lateParticipant);
 
