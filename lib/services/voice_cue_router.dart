@@ -1,8 +1,24 @@
-import 'dart:collection';
+import 'dart:collection';\n\nimport 'workspace_lifecycle_coordinator.dart';
 
 /// The experience that originated a voice event. Automatic DJ mixing still
 /// belongs to the Player; manual deck/Console actions belong to DJ Workspace.
 enum VoiceCueOrigin { playerAuto, djManual, sharedSystem }
+
+/// Prevents delayed events from one product experience speaking in the other.
+/// Shared system/consent state remains available in both workspaces.
+bool voiceCueOriginAllowedInWorkspace(
+  VoiceCueOrigin origin,
+  ResonateWorkspace workspace,
+) {
+  switch (origin) {
+    case VoiceCueOrigin.playerAuto:
+      return workspace == ResonateWorkspace.player;
+    case VoiceCueOrigin.djManual:
+      return workspace == ResonateWorkspace.dj;
+    case VoiceCueOrigin.sharedSystem:
+      return true;
+  }
+}
 
 /// Routing permission assigned to an individual voice asset in the manifest.
 enum VoiceCueRoute {
