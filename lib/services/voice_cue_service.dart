@@ -12,8 +12,7 @@ import 'workspace_lifecycle_coordinator.dart';
 /// Manifest-backed short voice feedback. Original recordings and dynamics are
 /// preserved; this service does not normalize or transcode audio.
 class VoiceCueService implements WorkspaceLifecycleParticipant {
-  VoiceCueService._()
-      : _player = AudioPlayer(handleAudioSessionActivation: false);
+  VoiceCueService._();
 
   static final VoiceCueService instance = VoiceCueService._();
   static const String _manifestAsset =
@@ -21,7 +20,9 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
   static const String _enabledKey = 'resonate_voice_feedback_enabled';
   static const String _assetRoot = 'assets/audio/resonate_voice/';
 
-  final AudioPlayer _player;
+  AudioPlayer? _player;
+  AudioPlayer get _audioPlayer =>
+      _player ??= AudioPlayer(handleAudioSessionActivation: false);
   final VoiceCueRouter _router = VoiceCueRouter();
   Map<String, Map<String, dynamic>>? _manifest;
   bool _speaking = false;
@@ -48,6 +49,15 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
   bool _originAllowedInWorkspace(VoiceCueOrigin origin) =>
       voiceCueOriginAllowedInWorkspace(origin, _activeWorkspace);
 
+  bool _hasFlutterServicesBinding() {
+    try {
+      ServicesBinding.instance;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   @override
   Future<void> onWorkspaceChanged(ResonateWorkspace workspace) async {
     if (_activeWorkspace == workspace) return;
@@ -55,9 +65,12 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
     _workspaceGeneration++;
     final speakingOrigin = _speakingOrigin;
     if (speakingOrigin != null && !_originAllowedInWorkspace(speakingOrigin)) {
-      try {
-        await _player.stop();
-      } catch (_) {}
+      final player = _player;
+      if (player != null) {
+        try {
+          await player.stop();
+        } catch (_) {}
+      }
       _speaking = false;
       _speakingOrigin = null;
     }
@@ -75,7 +88,7 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
       if (generation != _generation) return;
       if (!enabled) {
         try {
-          await _player.stop();
+          await _player?.stop();
         } catch (_) {}
         _speaking = false;
         _speakingOrigin = null;
@@ -136,7 +149,10 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
     bool confirmed = true,
     List<VoiceCueOrigin>? allowedOrigins,
   }) async {
-    if (_settingsChangeInFlight || _requestInFlight || _speaking ||
+    if (!_hasFlutterServicesBinding() ||
+        _settingsChangeInFlight ||
+        _requestInFlight ||
+        _speaking ||
         !_originAllowedInWorkspace(origin)) return false;
     _requestInFlight = true;
     final generation = _generation;
@@ -204,7 +220,7 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
       if (!decision.allowed) return false;
       reservedGroup = group;
 
-      await _player.setAudioSource(AudioSource.asset(assetPath));
+      await _audioPlayer.setAudioSource(AudioSource.asset(assetPath));
       if (generation != _generation ||
           workspaceGeneration != _workspaceGeneration ||
           !_originAllowedInWorkspace(origin) ||
@@ -220,7 +236,7 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
 
       _speaking = true;
       _speakingOrigin = origin;
-      final playback = _player.play();
+      final playback = _audioPlayer.play();
       unawaited(playback.catchError((Object error, StackTrace stack) {
         _router.release(eventId: eventId, semanticGroup: group);
         debugPrint('Resonate voice cue failed ($cueId): $error');
@@ -275,7 +291,9 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
 
   Future<void> dispose() async {
     _generation++;
-    await _player.dispose();
+    final player = _player;
+    _player = null;
+    if (player != null) await player.dispose();
     _router.resetSession();
   }
 }
