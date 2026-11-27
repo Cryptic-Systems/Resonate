@@ -150,6 +150,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
     final song = music.currentSong;
     if (!normalizationEnabled || song == null) {
       normalizedSongId = null;
+      _normalizedTargetLoudness = null;
       _normalizationGainDb = 0.0;
       await _applyNormalization();
       return;
@@ -192,10 +193,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
   }
 
   Future<void> _applyNormalization() async {
-    if (!_workspaceActive) {
-      _normalizationRefreshPending = normalizationEnabled;
-      return;
-    }
+    if (!_workspaceActive) return;
     try {
       // MusicProvider selects the canonical backend. On Media3, normalization
       // is composed as attenuation-only track gain with the other gain factors.
