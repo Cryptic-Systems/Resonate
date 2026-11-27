@@ -23,6 +23,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
         fun destroy(handle: Long)
         fun process(handle: Long, buffer: ByteBuffer, frames: Int, channels: Int, sampleRate: Double): Int
         fun setEnabled(handle: Long, enabled: Boolean)
+        fun ensureLoaded(): Boolean = true
     }
 
     companion object {
