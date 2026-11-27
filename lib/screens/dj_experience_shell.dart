@@ -32,6 +32,7 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
   bool _consoleOpening = false;
   bool _switchingToPlayer = false;
   Future<void>? _sessionStart;
+  Future<void>? _sessionTeardown;
 
   @override
   void initState() {
@@ -56,16 +57,52 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
     _djSessionStarted = true;
     try {
       await _workspaceLifecycle.activate(ResonateWorkspace.dj);
-      if (!mounted) return;
+      if (!mounted) {
+        await _workspaceLifecycle.activate(ResonateWorkspace.player);
+        _djSessionStarted = false;
+        return;
+      }
       await _music.beginDjSession();
     } catch (error) {
-      if (mounted) {
+      // Startup may have partially initialized the music session. Keep the
+      // teardown flag set until endDjSession has had a chance to reconcile it.
+      try {
+        await _music.endDjSession();
+      } catch (cleanupError) {
+        debugPrint('DJ startup rollback failed: $cleanupError');
+      }
+      try {
         await _workspaceLifecycle.activate(ResonateWorkspace.player);
+      } catch (lifecycleError) {
+        debugPrint('DJ workspace startup rollback failed: $lifecycleError');
+      }
+      _djSessionStarted = false;
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not initialize Resonatix DJ: $error')),
         );
       }
-      _djSessionStarted = false;
+    }
+  }
+
+  Future<void> _endDjSessionAndRestorePlayer() {
+    return _sessionTeardown ??= _finishDjSessionTeardown();
+  }
+
+  Future<void> _finishDjSessionTeardown() async {
+    try {
+      // Never race endDjSession against beginDjSession. Startup owns the
+      // transition until it settles, including rollback after partial failure.
+      await _sessionStart;
+      if (_djSessionStarted) {
+        await _music.endDjSession();
+        _djSessionStarted = false;
+      }
+      await _workspaceLifecycle.activate(ResonateWorkspace.player);
+    } catch (_) {
+      // Permit a later navigation/dispose attempt to retry failed cleanup.
+      _sessionTeardown = null;
+      rethrow;
     }
   }
 
@@ -73,10 +110,7 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
     if (_switchingToPlayer || !_djSessionStarted) return;
     _switchingToPlayer = true;
     try {
-      await _sessionStart;
-      await _music.endDjSession();
-      await _workspaceLifecycle.activate(ResonateWorkspace.player);
-      _djSessionStarted = false;
+      await _endDjSessionAndRestorePlayer();
       if (!mounted) return;
       Navigator.of(context).popUntil((route) => route.isFirst);
       await context.read<ExperienceProvider>().switchExperience(
@@ -119,10 +153,8 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
   @override
   void dispose() {
     _shellNav?.unbind();
-    if (_djSessionStarted) {
-      unawaited(_music.endDjSession().then((_) async {
-        await _workspaceLifecycle.activate(ResonateWorkspace.player);
-      }).catchError((Object error) {
+    if (_djSessionStarted || _sessionStart != null) {
+      unawaited(_endDjSessionAndRestorePlayer().catchError((Object error) {
         debugPrint('DJ session cleanup failed: $error');
       }));
     }
