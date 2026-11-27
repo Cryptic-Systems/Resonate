@@ -45,6 +45,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
         const val MAX_FRAMES = 4096
         const val MAX_BYTES = MAX_FRAMES * 2 * 2
         private const val MAX_PROCESS_ERRORS = 8
+        private const val MAX_CREATE_FAILURES_PER_ACTIVATION = 3
         private const val MAX_SUPPORTED_CHANNELS = 2
 
         private val nextId = AtomicInteger(1)
@@ -67,6 +68,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
     private var configuredRate: Int = 44100
     private var configuredChannels: Int = 2
     private var createAttempted = false
+    private var createFailuresThisActivation = 0
     private var formatConfigured = false
     private var consecutiveProcessErrors = 0
 
@@ -74,6 +76,8 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
         nativeProcessEnabled = enabled && DspSessionGate.isNativeAllowed()
         if (!nativeProcessEnabled) {
             destroyEngineLocked()
+            createAttempted = false
+            createFailuresThisActivation = 0
             return@synchronized
         }
         if (engineHandle != 0L) {
@@ -92,10 +96,12 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
     fun setDeckActive(active: Boolean) = synchronized(engineLock) {
         deckActive = active
         if (active) {
+            if (!deckActive) createFailuresThisActivation = 0
             if (nativeProcessEnabled) maybeCreateEngineLocked()
         } else {
             destroyEngineLocked()
             createAttempted = false
+            createFailuresThisActivation = 0
         }
     }
 
@@ -115,6 +121,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
             Log.i(TAG, "id=$processorId format change $configuredRate/$configuredChannels → $rate/$ch")
             destroyEngine()
             createAttempted = false
+            createFailuresThisActivation = 0
         }
 
         configuredRate = rate
