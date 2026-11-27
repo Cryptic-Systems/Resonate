@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
@@ -27,6 +28,28 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
         handleAudioSessionActivation: false,
         handleInterruptions: false,
       );
+
+  Future<void> _configureVoicePlayer(AudioPlayer player) {
+    return _playerConfiguration ??= () async {
+      // Android's shared audio_session configuration is owned by the music
+      // transport. Give the independent cue player explicit speech/sonification
+      // attributes without claiming focus or changing Media3's attributes.
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+        await player.setAndroidAudioAttributes(
+          const AndroidAudioAttributes(
+            contentType: AndroidAudioContentType.speech,
+            flags: AndroidAudioFlags.none,
+            usage: AndroidAudioUsage.assistanceSonification,
+          ),
+        );
+      }
+      await player.setVolume(1.0);
+    }();
+  }
+
+  void _logBlocked(String cueId, String reason) {
+    debugPrint('Resonate voice cue blocked (' + cueId + '): ' + reason);
+  }
   final VoiceCueRouter _router = VoiceCueRouter();
   Map<String, Map<String, dynamic>>? _manifest;
   bool _speaking = false;
@@ -39,6 +62,7 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
   WorkspaceLifecycleCoordinator? _workspaceLifecycle;
   VoiceCueOrigin? _speakingOrigin;
   Future<void>? _loading;
+  Future<void>? _playerConfiguration;
 
   bool get isSpeaking => _speaking;
 
@@ -153,11 +177,26 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
     bool confirmed = true,
     List<VoiceCueOrigin>? allowedOrigins,
   }) async {
-    if (!_hasFlutterServicesBinding() ||
-        _settingsChangeInFlight ||
-        _requestInFlight ||
-        _speaking ||
-        !_originAllowedInWorkspace(origin)) return false;
+    if (!_hasFlutterServicesBinding()) {
+      _logBlocked(cueId, 'Flutter services binding is not ready');
+      return false;
+    }
+    if (_settingsChangeInFlight) {
+      _logBlocked(cueId, 'voice preference update is in progress');
+      return false;
+    }
+    if (_requestInFlight) {
+      _logBlocked(cueId, 'another cue is loading');
+      return false;
+    }
+    if (_speaking) {
+      _logBlocked(cueId, 'another cue is already playing');
+      return false;
+    }
+    if (!_originAllowedInWorkspace(origin)) {
+      _logBlocked(cueId, 'origin is not allowed in the active workspace');
+      return false;
+    }
     _requestInFlight = true;
     final generation = _generation;
     final workspaceGeneration = _workspaceGeneration;
@@ -165,18 +204,29 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
     try {
       if (!await isEnabled() || generation != _generation ||
           workspaceGeneration != _workspaceGeneration ||
-          !_originAllowedInWorkspace(origin)) return false;
+          !_originAllowedInWorkspace(origin)) {
+        _logBlocked(cueId, 'disabled or request became stale before manifest load');
+        return false;
+      }
       await _ensureManifest();
       if (generation != _generation ||
           workspaceGeneration != _workspaceGeneration ||
           !_originAllowedInWorkspace(origin) ||
           _settingsChangeInFlight ||
           !await isEnabled()) {
+        _logBlocked(cueId, 'disabled or request became stale after manifest load');
         return false;
       }
 
       final entry = _manifest?[cueId];
-      if (entry == null || entry['runtimeEnabled'] != true) return false;
+      if (entry == null) {
+        _logBlocked(cueId, 'cue ID is missing from the manifest');
+        return false;
+      }
+      if (entry['runtimeEnabled'] != true) {
+        _logBlocked(cueId, 'cue is not runtime-enabled');
+        return false;
+      }
       final assetPath = entry['assetPath'];
       final category = entry['category'];
       final filename = entry['filename'];
@@ -196,9 +246,15 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
       }
 
       final route = _parseRoute(entry['routingProposal']);
-      if (route == null) return false;
+      if (route == null) {
+        _logBlocked(cueId, 'manifest route is invalid');
+        return false;
+      }
       final groupValue = entry['semanticGroupProposal'];
-      if (groupValue is! String || groupValue.trim().isEmpty) return false;
+      if (groupValue is! String || groupValue.trim().isEmpty) {
+        _logBlocked(cueId, 'manifest semantic group is invalid');
+        return false;
+      }
       final group = groupValue;
       final manifestOrigins = (entry['allowedOrigins'] as List<dynamic>?)
               ?.map(_parseOrigin)
@@ -208,7 +264,10 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
       final origins = allowedOrigins == null
           ? manifestOrigins.toList()
           : manifestOrigins.intersection(allowedOrigins.toSet()).toList();
-      if (route == VoiceCueRoute.conditional && origins.isEmpty) return false;
+      if (route == VoiceCueRoute.conditional && origins.isEmpty) {
+        _logBlocked(cueId, 'manifest and call-site origin permissions do not intersect');
+        return false;
+      }
 
       final decision = _router.evaluate(VoiceCueRequest(
         cueId: cueId,
@@ -221,11 +280,14 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
         expiresAt: DateTime.now().add(const Duration(seconds: 20)),
         allowedOrigins: origins,
       ));
-      if (!decision.allowed) return false;
+      if (!decision.allowed) {
+        _logBlocked(cueId, 'router rejected cue: ' + decision.reason.toString());
+        return false;
+      }
       reservedGroup = group;
 
       final player = _audioPlayer;
-      await player.setVolume(1.0);
+      await _configureVoicePlayer(player);
       await player.setAudioSource(AudioSource.asset(assetPath));
       if (generation != _generation ||
           workspaceGeneration != _workspaceGeneration ||
@@ -237,16 +299,22 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
         try {
           await player.stop();
         } catch (_) {}
+        _logBlocked(cueId, 'request became stale before native playback started');
         return false;
       }
 
       _speaking = true;
       _speakingOrigin = origin;
-      debugPrint('Resonate voice cue starting ($cueId, ${entry['filename']})');
+      debugPrint('Resonate voice cue starting (' + cueId + ', ' + entry['filename'].toString() + ')');
       final playback = player.play();
-      unawaited(playback.catchError((Object error, StackTrace stack) {
+      unawaited(playback.timeout(const Duration(seconds: 20)).then<void>((_) {
+        debugPrint('Resonate voice cue completed (' + cueId + ')');
+      }, onError: (Object error, StackTrace stack) async {
         _router.release(eventId: eventId, semanticGroup: group);
-        debugPrint('Resonate voice cue failed ($cueId): $error');
+        debugPrint('Resonate voice cue failed or timed out (' + cueId + '): ' + error.toString());
+        try {
+          await player.stop();
+        } catch (_) {}
       }).whenComplete(() {
         _speaking = false;
         _speakingOrigin = null;
@@ -256,6 +324,7 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
     } catch (error) {
       _speaking = false;
       _speakingOrigin = null;
+      _logBlocked(cueId, 'playback preparation failed: ' + error.toString());
       if (reservedGroup != null) {
         _router.release(eventId: eventId, semanticGroup: reservedGroup);
       }
