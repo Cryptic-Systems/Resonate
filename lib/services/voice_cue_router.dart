@@ -70,7 +70,7 @@ class VoiceCueRouter {
       : _clock = clock ?? DateTime.now;
 
   final DateTime Function() _clock;
-  final Set<String> _spokenEventGroups = HashSet<String>();
+  static const int _maxRememberedEvents = 512;\n  final LinkedHashMap<String, DateTime> _spokenEventGroups =\n      LinkedHashMap<String, DateTime>();
 
   VoiceCueDecision evaluate(VoiceCueRequest request) {
     if (!request.voiceFeedbackEnabled) {
