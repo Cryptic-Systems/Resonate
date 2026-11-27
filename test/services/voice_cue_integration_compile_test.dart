@@ -15,6 +15,7 @@ import 'package:resonate/providers/playback_features_provider.dart';
 void _typeCheck<T>() {}
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   test('voice cue manifest is bundled and contains the ready test cue', () async {
     final manifest = await rootBundle.loadString(
       'assets/audio/resonate_voice/voice_manifest.json',
