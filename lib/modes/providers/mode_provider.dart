@@ -27,8 +27,8 @@ import '../models/driving_intent.dart';
 import '../integration/mode_context_port.dart';
 import '../integration/mode_playback_port.dart';
 import '../integration/mode_motion_port.dart';
-import '../services/voice_cue_service.dart';
-import '../services/voice_cue_router.dart';
+import '../../services/voice_cue_service.dart';
+import '../../services/voice_cue_router.dart';
 
 /// Central Modes Engine. It emits policy and delegates playback/context work
 /// to adapters supplied by the main Resonate application.
