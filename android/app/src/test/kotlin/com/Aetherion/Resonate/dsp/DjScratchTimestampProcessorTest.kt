@@ -110,6 +110,7 @@ class DjScratchTimestampProcessorTest {
         assertEquals(2_000, rendered.short.toInt())
         assertEquals(3_000, rendered.short.toInt())
         assertEquals(4, processor.pcmRingForTest()!!.availableFrames)
+        assertEquals(input.limit(), input.position())
     }
 
     @Test
