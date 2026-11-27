@@ -29,6 +29,8 @@ internal class DjScratchTimestampProcessor(
 
     // One bounded PCM history and render cursor per physical deck.
     private var pcmRing: DjScratchPcmRingBuffer? = null
+    @Volatile private var ringCapacityFrames = 0
+    @Volatile private var ringAvailableFrames = 0
     private val renderPolicy = DjScratchRenderPolicy()
     private val pcmBlocks = AtomicLong()
     private val timestampMatches = AtomicLong()
@@ -38,7 +40,6 @@ internal class DjScratchTimestampProcessor(
     private val activeRenderFallbacks = AtomicLong()
 
     internal fun diagnosticsSnapshot(): Map<String, Any?> {
-        val ring = pcmRing
         val control = latestControlSnapshot
         return mapOf(
             "processorPresent" to true,
@@ -49,8 +50,8 @@ internal class DjScratchTimestampProcessor(
             "activeControlBlocks" to activeControlBlocks.get(),
             "renderedBlocks" to renderedBlocks.get(),
             "activeRenderFallbacks" to activeRenderFallbacks.get(),
-            "ringCapacityFrames" to (ring?.capacityFrames ?: 0),
-            "ringAvailableFrames" to (ring?.availableFrames ?: 0),
+            "ringCapacityFrames" to ringCapacityFrames,
+            "ringAvailableFrames" to ringAvailableFrames,
             "lastControlActive" to (control?.active == true),
             "lastControlVelocity" to control?.velocity,
             "lastControlAnchorMediaTimeUs" to control?.anchorMediaTimeUs,
@@ -80,6 +81,8 @@ internal class DjScratchTimestampProcessor(
         } else {
             null
         }
+        ringCapacityFrames = pcmRing?.capacityFrames ?: 0
+        ringAvailableFrames = 0
         return inputAudioFormat
     }
 
@@ -104,6 +107,7 @@ internal class DjScratchTimestampProcessor(
         val ring = pcmRing
         val rendered = timestamp != null && ring != null &&
             renderPolicy.render(inputBuffer, output, ring, latestControlSnapshot)
+        ringAvailableFrames = ring?.availableFrames ?: 0
         if (rendered) {
             renderedBlocks.incrementAndGet()
             // AudioProcessor.queueInput must consume its input even when the
@@ -122,6 +126,7 @@ internal class DjScratchTimestampProcessor(
         lastConsumedTimestamp = null
         latestControlSnapshot = null
         pcmRing?.clear()
+        ringAvailableFrames = 0
         renderPolicy.reset()
     }
 
@@ -131,6 +136,8 @@ internal class DjScratchTimestampProcessor(
         latestControlSnapshot = null
         pcmRing?.clear()
         pcmRing = null
+        ringCapacityFrames = 0
+        ringAvailableFrames = 0
         renderPolicy.reset()
         ledger.clear()
     }
