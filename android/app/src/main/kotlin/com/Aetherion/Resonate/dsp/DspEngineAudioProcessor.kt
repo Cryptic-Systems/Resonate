@@ -94,9 +94,13 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
 
     /** The service toggles this when a physical player enters/leaves the active or fading role. */
     fun setDeckActive(active: Boolean) = synchronized(engineLock) {
+        val wasActive = deckActive
         deckActive = active
         if (active) {
-            if (!deckActive) createFailuresThisActivation = 0
+            if (!wasActive || (engineHandle == 0L && createFailuresThisActivation >= MAX_CREATE_FAILURES_PER_ACTIVATION)) {
+                createFailuresThisActivation = 0
+                createAttempted = false
+            }
             if (nativeProcessEnabled) maybeCreateEngineLocked()
         } else {
             destroyEngineLocked()
