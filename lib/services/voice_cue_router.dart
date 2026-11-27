@@ -35,6 +35,7 @@ class VoiceCueRequest {
     required this.voiceFeedbackEnabled,
     required this.confirmed,
     required this.expiresAt,
+    this.allowedOrigins,
   });
 
   /// Stable manifest ID. Never use a source filename as the runtime lookup key.
@@ -51,6 +52,11 @@ class VoiceCueRequest {
   final bool voiceFeedbackEnabled;
   final bool confirmed;
   final DateTime expiresAt;
+
+  /// Optional explicit origin allow-list for conditional cues (e.g. mode
+  /// announcements valid after a shared setting change as well as Player).
+  /// Other route types keep their fixed origin rules.
+  final List<VoiceCueOrigin>? allowedOrigins;
 }
 
 class VoiceCueDecision {
@@ -97,13 +103,16 @@ class VoiceCueRouter {
 
     if (request.cueId.trim().isEmpty ||
         request.eventId.trim().isEmpty ||
-        request.semanticGroup.trim().isEmpty) {
+        request.semanticGroup.trim().isEmpty ||
+        (request.route == VoiceCueRoute.conditional &&
+            request.allowedOrigins != null &&
+            request.allowedOrigins!.isEmpty)) {
       return const VoiceCueDecision.blocked(
         VoiceCueBlockReason.invalidRequest,
       );
     }
 
-    if (!_routeAllows(request.route, request.origin)) {
+    if (!_routeAllows(request.route, request.origin, request.allowedOrigins)) {
       return const VoiceCueDecision.blocked(
         VoiceCueBlockReason.wrongWorkspace,
       );
@@ -141,15 +150,21 @@ class VoiceCueRouter {
   String _dedupeKey(String eventId, String semanticGroup) =>
       '${eventId}::${semanticGroup}';
 
-  bool _routeAllows(VoiceCueRoute route, VoiceCueOrigin origin) {
+  bool _routeAllows(
+    VoiceCueRoute route,
+    VoiceCueOrigin origin,
+    List<VoiceCueOrigin>? allowedOrigins,
+  ) {
     switch (route) {
       case VoiceCueRoute.playerAuto:
         return origin == VoiceCueOrigin.playerAuto;
       case VoiceCueRoute.djManual:
         return origin == VoiceCueOrigin.djManual;
       case VoiceCueRoute.bothContextual:
-      case VoiceCueRoute.conditional:
         return origin != VoiceCueOrigin.sharedSystem;
+      case VoiceCueRoute.conditional:
+        return allowedOrigins?.contains(origin) ??
+            origin != VoiceCueOrigin.sharedSystem;
       case VoiceCueRoute.sharedSystem:
         return origin == VoiceCueOrigin.sharedSystem;
     }
