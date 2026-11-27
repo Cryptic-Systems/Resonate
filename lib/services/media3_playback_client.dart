@@ -129,6 +129,8 @@ class Media3PlaybackState {
     this.shuffleModeEnabled = false,
     this.audioUnderrunCountA = 0,
     this.audioUnderrunCountB = 0,
+    this.scratchDiagnosticsA = const <String, Object?>{},
+    this.scratchDiagnosticsB = const <String, Object?>{},
     this.lastUnderrunDeck,
     this.lastUnderrunBufferSizeFrames = 0,
     this.lastUnderrunBufferSizeMs = 0,
@@ -189,6 +191,8 @@ class Media3PlaybackState {
   final bool shuffleModeEnabled;
   final int audioUnderrunCountA;
   final int audioUnderrunCountB;
+  final Map<String, Object?> scratchDiagnosticsA;
+  final Map<String, Object?> scratchDiagnosticsB;
   final String? lastUnderrunDeck;
   final int lastUnderrunBufferSizeFrames;
   final int lastUnderrunBufferSizeMs;
@@ -229,6 +233,9 @@ class Media3PlaybackState {
     final audioDiagnostics = rawAudioDiagnostics is Map
         ? Map<Object?, Object?>.from(rawAudioDiagnostics)
         : const <Object?, Object?>{};
+    Map<String, Object?> diagnosticMap(Object? value) => value is Map
+        ? Map<String, Object?>.from(value)
+        : const <String, Object?>{};
     return Media3PlaybackState(
       connected: boolValue(map['connected']),
       isPlaying: boolValue(map['isPlaying']),
@@ -285,6 +292,8 @@ class Media3PlaybackState {
       shuffleModeEnabled: boolValue(map['shuffleModeEnabled']),
       audioUnderrunCountA: integerValue(audioDiagnostics['underrunCountA']),
       audioUnderrunCountB: integerValue(audioDiagnostics['underrunCountB']),
+      scratchDiagnosticsA: diagnosticMap(audioDiagnostics['scratchDeckA']),
+      scratchDiagnosticsB: diagnosticMap(audioDiagnostics['scratchDeckB']),
       lastUnderrunDeck: stringValue(audioDiagnostics['lastUnderrunDeck']),
       lastUnderrunBufferSizeFrames: integerValue(audioDiagnostics['lastUnderrunBufferSizeFrames']),
       lastUnderrunBufferSizeMs: integerValue(audioDiagnostics['lastUnderrunBufferSizeMs']),
