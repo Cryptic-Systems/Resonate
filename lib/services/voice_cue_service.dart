@@ -123,9 +123,9 @@ class VoiceCueService {
           category is! String ||
           filename is! String ||
           !assetPath.startsWith(_assetRoot) ||
-          category.contains('/') ||
+          category.codeUnits.contains(92) ||
           filename.contains('/') ||
-          filename.contains('\\\\') ||
+          filename.codeUnits.contains(92) ||
           assetPath.split('/').contains('..') ||
           assetPath.contains('\\') ||
           !assetPath.endsWith('.mp3') ||
