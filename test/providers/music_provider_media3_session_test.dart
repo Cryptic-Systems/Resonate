@@ -73,7 +73,7 @@ Media3ProviderState _state({
       error: null,
     );
 
-class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueBackend, PlaybackDjDeckSession {
+class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueBackend, PlaybackDjDeckSession, PlaybackStateRefreshSession {
   _FakePlaybackSession({bool synchronousStates = false})
       : states = StreamController<Media3ProviderState>.broadcast(
           sync: synchronousStates,
@@ -119,6 +119,8 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   Song? currentSongValue;
   int? queueIndexValue;
   bool playingValue = false;
+  bool stalePauseSnapshotOnPause = false;
+  bool? stalePauseReportedPlayingValue;
   bool readyValue = true;
   bool completedValue = false;
   String crossfadeStatusValue = 'idle';
@@ -137,7 +139,7 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   @override
   int? get queueIndex => queueIndexValue;
   @override
-  bool get isPlaying => playingValue;
+  bool get isPlaying => stalePauseReportedPlayingValue ?? playingValue;
   @override
   Duration get position => positionValue;
   @override
@@ -203,7 +205,7 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   }
 
   @override
-  Future<void> play() async { playingValue = true; completedValue = false; calls.add('play'); }
+  Future<void> play() async { playingValue = true; stalePauseReportedPlayingValue = null; completedValue = false; calls.add('play'); }
   @override
   Future<void> setPlaybackSpeed(double speed) async {
     playbackSpeedValue = speed;
@@ -218,10 +220,34 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
       calls.add('pause_waiting');
       await gate.future;
     }
+    final wasPlaying = playingValue;
     playingValue = false;
+    if (stalePauseSnapshotOnPause && wasPlaying) {
+      stalePauseReportedPlayingValue = true;
+    } else {
+      stalePauseReportedPlayingValue = null;
+    }
   }
   @override
-  Future<void> stop() async { playingValue = false; calls.add('stop'); }
+  Future<void> refreshState() async {
+    calls.add('refreshState');
+    stalePauseReportedPlayingValue = null;
+    final song = currentSongValue;
+    final index = queueIndexValue;
+    if (song != null && index != null) {
+      states.add(_state(
+        song: song,
+        queueIndex: index,
+        playing: playingValue,
+        position: positionValue,
+        playWhenReady: playingValue,
+        activeDeckId: activeDeckIdValue,
+        crossfadeStatus: crossfadeStatusValue,
+      ));
+    }
+  }
+  @override
+  Future<void> stop() async { playingValue = false; stalePauseReportedPlayingValue = null; calls.add('stop'); }
   @override
   Future<void> seek(Duration position) async { positionValue = position; calls.add('seek:${position.inMilliseconds}'); }
   @override
@@ -690,6 +716,27 @@ void main() {
       expect(session.calls, contains('gainFactors'));
       expect(provider.debugLegacyEngineConstructed, isFalse,
           reason: 'Feature changes must activate the injected session, not construct just_audio.');
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('pause refreshes Media3 state before reconciling the button state', () async {
+      final session = _FakePlaybackSession()
+        ..stalePauseSnapshotOnPause = true;
+      final provider = MusicProvider(media3ProviderSession: session);
+      await provider.prepareMedia3ProviderSession();
+      final song = _song('pause-state-refresh');
+      await provider.playSong(song, queue: <Song>[song]);
+      expect(provider.isPlaying, isTrue);
+
+      await provider.pause();
+
+      expect(session.calls, contains('refreshState'));
+      expect(session.isPlaying, isFalse);
+      expect(provider.isPlaying, isFalse);
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
