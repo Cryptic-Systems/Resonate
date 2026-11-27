@@ -18,6 +18,7 @@ enum VoiceCueBlockReason {
   wrongWorkspace,
   unconfirmedEvent,
   expired,
+  invalidRequest,
   duplicateEvent,
 }
 
@@ -36,6 +37,7 @@ class VoiceCueRequest {
     required this.expiresAt,
   });
 
+  /// Stable manifest ID. Never use a source filename as the runtime lookup key.
   final String cueId;
   final VoiceCueRoute route;
   final VoiceCueOrigin origin;
@@ -91,6 +93,14 @@ class VoiceCueRouter {
 
     if (!_clock().isBefore(request.expiresAt)) {
       return const VoiceCueDecision.blocked(VoiceCueBlockReason.expired);
+    }
+
+    if (request.cueId.trim().isEmpty ||
+        request.eventId.trim().isEmpty ||
+        request.semanticGroup.trim().isEmpty) {
+      return const VoiceCueDecision.blocked(
+        VoiceCueBlockReason.invalidRequest,
+      );
     }
 
     if (!_routeAllows(request.route, request.origin)) {
