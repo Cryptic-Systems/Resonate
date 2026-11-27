@@ -22,6 +22,20 @@ on:
       - "lib/screens/settings_screen.dart"
       - "lib/providers/music_provider_dj_handoff.dart"
       - "lib/modes/providers/mode_provider.dart"
+      - "lib/services/workspace_lifecycle_coordinator.dart"
+      - "lib/providers/audio_visualization_provider.dart"
+      - "lib/providers/playback_features_provider.dart"
+      - "lib/main.dart"
+      - "lib/screens/home_screen.dart"
+      - "lib/screens/dj_experience_shell.dart"
+      - "test/services/workspace_lifecycle_coordinator_test.dart"
+      - "lib/services/workspace_lifecycle_coordinator.dart"
+      - "lib/providers/audio_visualization_provider.dart"
+      - "lib/providers/playback_features_provider.dart"
+      - "lib/main.dart"
+      - "lib/screens/home_screen.dart"
+      - "lib/screens/dj_experience_shell.dart"
+      - "test/services/workspace_lifecycle_coordinator_test.dart"
   pull_request:
     branches: [dj-workspace-development]
     paths:
@@ -76,4 +90,4 @@ jobs:
         run: flutter analyze lib/services/voice_cue_router.dart lib/services/voice_cue_service.dart lib/screens/settings_screen.dart lib/screens/voice_feedback_settings_screen.dart lib/services/companion_command_executor.dart test/services/voice_cue_router_test.dart test/services/voice_cue_manifest_test.dart test/services/voice_cue_integration_compile_test.dart
 
       - name: Run voice cue policy tests
-        run: flutter test test/services/voice_cue_router_test.dart test/services/voice_cue_manifest_test.dart test/services/voice_cue_integration_compile_test.dart --reporter expanded
+        run: flutter test test/services/voice_cue_router_test.dart test/services/voice_cue_manifest_test.dart test/services/voice_cue_integration_compile_test.dart test/services/workspace_lifecycle_coordinator_test.dart --reporter expanded
