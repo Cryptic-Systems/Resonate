@@ -24,7 +24,10 @@ class WorkspaceLifecycleCoordinator extends ChangeNotifier {
 
   void register(WorkspaceLifecycleParticipant participant) {
     _participants.add(participant);
-    unawaited(Future<void>.sync(() => participant.onWorkspaceChanged(_active)));
+    unawaited(Future<void>.sync(() => participant.onWorkspaceChanged(_active))
+        .catchError((Object error) {
+      debugPrint('Workspace participant initialization failed: $error');
+    }));
   }
 
   void unregister(WorkspaceLifecycleParticipant participant) {
