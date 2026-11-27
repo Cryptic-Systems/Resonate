@@ -114,6 +114,15 @@ class DjScratchTimestampProcessorTest {
     }
 
     @Test
+    fun allocatesFourSecondsOfScratchHistoryPerDeck() {
+        val processor = DjScratchTimestampProcessor(DjScratchTimestampLedger())
+        processor.configure(AudioProcessor.AudioFormat(1_000, 1, C.ENCODING_PCM_16BIT))
+        processor.flush()
+
+        assertEquals(4_000, processor.pcmRingForTest()?.capacityFrames)
+    }
+
+    @Test
     fun media3FactoryInstallsTimestampScratchBeforeNativeDsp() {
         val chain = DspEngineSinkHook.createProcessors(
             "A",
