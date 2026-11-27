@@ -126,6 +126,7 @@ internal class DjScratchTimestampProcessor(
     }
 
     override fun onReset() {
+        DspEngineSinkHook.forgetScratchProcessor(this)
         lastConsumedTimestamp = null
         latestControlSnapshot = null
         pcmRing?.clear()
