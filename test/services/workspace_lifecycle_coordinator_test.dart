@@ -13,6 +13,9 @@ class _Participant implements WorkspaceLifecycleParticipant {
   Future<void> onWorkspaceChanged(ResonateWorkspace workspace) async {
     transitions.add(workspace);
     if (workspace == ResonateWorkspace.dj && djGate != null) {
+      if (djEntered != null && !djEntered!.isCompleted) {
+        djEntered!.complete();
+      }
       await djGate!.future;
     }
     if (failOnDj && workspace == ResonateWorkspace.dj) {
