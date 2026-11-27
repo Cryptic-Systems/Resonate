@@ -22,7 +22,6 @@ class DjAnalysisService {
 
   final DatabaseHelper _db;
   final DjBpmEstimator _estimator;
-  final DjPcmProfileAnalyzer _profileAnalyzer = const DjPcmProfileAnalyzer();
   final DjProfileSerializer _profileSerializer = const DjProfileSerializer();
   final Map<String, DjTrackProfile> _profileMemory = {};
   final Map<String, DjAnalysis> _memory = {};
@@ -397,12 +396,18 @@ class DjAnalysisService {
     }
 
     if (isCancelled?.call() ?? false) return null;
-    final profile = _profileAnalyzer.analyze(
-      songId: song.id,
-      durationMs: durationMs,
-      windows: windows,
-      maxSafeBassDb: maxSafeBassDb,
-      analysisVersion: DjAnalysis.currentVersion,
+    // PCM profiling is CPU-bound. Run it on a worker isolate so the UI
+    // isolate remains responsive while library analysis is in progress.
+    final profile = await compute(
+      _analyzeDjProfileInBackground,
+      <String, dynamic>{
+        'songId': song.id,
+        'durationMs': durationMs,
+        'windows': windows,
+        'maxSafeBassDb': maxSafeBassDb,
+        'analysisVersion': DjAnalysis.currentVersion,
+      },
+      debugLabel: 'dj_pcm_profile_analysis',
     );
     if (isCancelled?.call() ?? false) return null;
     final psychicAnalysis =
@@ -499,4 +504,17 @@ class DjAnalysisService {
     _memory.clear();
     _profileMemory.clear();
   }
+}
+
+
+/// Isolate entry point for CPU-heavy PCM profiling. Keep this top-level so
+/// Flutter can execute it away from the UI isolate.
+DjTrackProfile _analyzeDjProfileInBackground(Map<String, dynamic> args) {
+  return const DjPcmProfileAnalyzer().analyze(
+    songId: args['songId'] as String,
+    durationMs: args['durationMs'] as int,
+    windows: (args['windows'] as List).cast<DjDecodedPcmWindow>(),
+    maxSafeBassDb: args['maxSafeBassDb'] as double?,
+    analysisVersion: args['analysisVersion'] as int,
+  );
 }
