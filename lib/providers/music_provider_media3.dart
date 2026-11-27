@@ -476,9 +476,6 @@ extension MusicProviderMedia3 on MusicProvider {
       _preloadedNextSongId = null;
       _media3DjTransitionPreparation = null;
       _repeatSelfDjPreparation = null;
-      _repeatSelfDjPlanSongId = null;
-      _repeatSelfDjPlanAttempted = false;
-      _repeatSelfDjPlanGeneration++;
       _repeatSelfDjPreloadInFlight = false;
       _lastCompletionSongId = null;
       _crossfadeInProgress = false;
@@ -984,9 +981,6 @@ extension MusicProviderMedia3 on MusicProvider {
         _cancelAutomaticPlaybackWork(reason: 'external_repeat_mode_changed');
       }
       final previousMode = _repeatMode;
-      _repeatSelfDjPlanGeneration++;
-      _repeatSelfDjPlanSongId = null;
-      _repeatSelfDjPlanAttempted = false;
       _repeatSelfDjPlanning = false;
       _repeatSelfDjPreloadInFlight = false;
       _repeatSelfDjPreparation = null;
