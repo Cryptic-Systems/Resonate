@@ -230,6 +230,8 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   }
   @override
   Future<void> refreshState() async {
+    // Only the stale-snapshot scenario needs an explicit native refresh.
+    if (stalePauseReportedPlayingValue == null) return;
     calls.add('refreshState');
     stalePauseReportedPlayingValue = null;
     final song = currentSongValue;
