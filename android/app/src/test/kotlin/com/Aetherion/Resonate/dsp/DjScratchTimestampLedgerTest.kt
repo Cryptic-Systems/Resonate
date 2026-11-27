@@ -26,6 +26,21 @@ class DjScratchTimestampLedgerTest {
     }
 
     @Test
+    fun consumesTimestampInOrderWhenSinkPassesBufferView() {
+        val ledger = DjScratchTimestampLedger()
+        val sinkBuffer = ByteBuffer.allocateDirect(8)
+        val processorBufferView = sinkBuffer.duplicate()
+
+        ledger.record(sinkBuffer, 3_000_000L)
+
+        val timestamp = ledger.consume(processorBufferView, 48_000, 2)
+
+        assertEquals(3_000_000L, timestamp?.presentationTimeUs)
+        assertEquals(2, timestamp?.frameCount)
+        assertEquals(0, ledger.pendingCountForTest())
+    }
+
+    @Test
     fun retryDoesNotReplaceOriginalTimestamp() {
         val ledger = DjScratchTimestampLedger()
         val buffer = ByteBuffer.allocateDirect(2048)
