@@ -191,6 +191,13 @@ class Media3PlaybackService : MediaSessionService() {
             DspEngineSinkHook.forgetDeck(retiringDeckId)
             standby.release()
         }
+        // Clearing the DJ queues suspends both physical DSP processors.
+        // The canonical player survives mode exit, so explicitly reactivate its
+        // processor even when it is already physical deck A. Without this,
+        // returning to Player on A leaves playback in PCM pass-through and the
+        // live DSP meter registry empty until the service is rebuilt.
+        DspEngineRegistry.setActiveDeck(activeDeckId)
+        DspEngineSinkHook.activateDeck(activeDeckId)
         gainPolicy.resetDecks()
         applyDeckVolumes()
         crossfadeStatus = "idle"
