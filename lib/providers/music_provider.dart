@@ -2607,7 +2607,11 @@ class MusicProvider extends ChangeNotifier {
     // Automatic same-track DJ replay is retired. Repeat One is handled by
     // the normal single-deck loop mode; it must never preload/promote the same
     // track through a DJ crossfade, which can look like a failed restart.
-    if (_repeatMode == PlaybackRepeatMode.one) return;
+    if (!RepeatModeTransitionPolicy.shouldScheduleAutomaticSelfCrossfade(
+      repeatOne: _repeatMode == PlaybackRepeatMode.one,
+    )) {
+      if (_repeatMode == PlaybackRepeatMode.one) return;
+    }
 
     if (!canCrossfadeNext) return;
 
