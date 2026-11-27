@@ -1,5 +1,6 @@
 import '../core/dj_types.dart';
 import '../core/dj_policy.dart';
+import '../core/dj_incoming_entry_policy.dart';
 
 class DjTransitionBrain {
   const DjTransitionBrain();
@@ -11,12 +12,13 @@ class DjTransitionBrain {
     int preferredDurationMs = 8000,
     int maxDurationMs = 16000,
     DjPolicy policy = DjPolicy.balanced,
+    bool allowReviewedLateCue = false,
   }) {
     // Do not invent an "intelligent" transition when profiles are too weak
     // for the active policy floor. Playback continues through the safe path.
     final floor = policy.analysisFloor;
     if (outgoing.analysisConfidence < floor && incoming.analysisConfidence < floor) {
-      return _fallback(incoming, preferredDurationMs, outgoing: outgoing, outgoingPositionMs: outgoingPositionMs);
+      return _fallback(incoming, preferredDurationMs, outgoing: outgoing, outgoingPositionMs: outgoingPositionMs, allowReviewedLateCue: allowReviewedLateCue);
     }
 
     final candidates = generate(
@@ -26,12 +28,13 @@ class DjTransitionBrain {
       preferredDurationMs: preferredDurationMs,
       maxDurationMs: maxDurationMs,
       policy: policy,
+      allowReviewedLateCue: allowReviewedLateCue,
     );
-    if (candidates.isEmpty) return _fallback(incoming, preferredDurationMs, outgoing: outgoing, outgoingPositionMs: outgoingPositionMs);
+    if (candidates.isEmpty) return _fallback(incoming, preferredDurationMs, outgoing: outgoing, outgoingPositionMs: outgoingPositionMs, allowReviewedLateCue: allowReviewedLateCue);
     final sorted = [...candidates]..sort((a, b) => b.score.compareTo(a.score));
     final best = sorted.first;
     if (!policy.acceptsCandidate(best)) {
-      return _fallback(incoming, preferredDurationMs, outgoing: outgoing, outgoingPositionMs: outgoingPositionMs);
+      return _fallback(incoming, preferredDurationMs, outgoing: outgoing, outgoingPositionMs: outgoingPositionMs, allowReviewedLateCue: allowReviewedLateCue);
     }
     return best;
   }
@@ -43,6 +46,7 @@ class DjTransitionBrain {
     required int outgoingPositionMs,
     int preferredDurationMs = 8000,
     int maxDurationMs = 16000,
+    bool allowReviewedLateCue = false,
   }) {
     final result = <DjTransitionCandidate>[];
     final outgoingAnchor = _bestOutgoingAnchor(outgoing, outgoingPositionMs);
@@ -54,7 +58,9 @@ class DjTransitionBrain {
     void add(DjTransitionKind kind, int inMs, int duration, Map<String, double> scores) {
       // A blend must fit entirely inside the remaining playable material on
       // both decks. Unknown durations remain unconstrained rather than guessed.
-      if (outgoingAnchor < 0 || inMs < 0) return;
+      if (outgoingAnchor < 0 || inMs < 0 ||
+          (!allowReviewedLateCue &&
+              !DjIncomingEntryPolicy.isAutomaticOpeningEntry(inMs, incoming.durationMs))) return;
       final outgoingAvailable = outgoing.durationMs == null
           ? null
           : outgoing.durationMs! - outgoingAnchor;
@@ -93,7 +99,7 @@ class DjTransitionBrain {
       ));
     }
 
-    final intro = _bestIncomingAnchor(incoming);
+    final intro = _bestIncomingAnchor(incoming, allowReviewedLateCue: allowReviewedLateCue);
     final out = outgoing.transitions.bestOutroMs;
     if (out != null && (outgoing.durationMs == null || outgoing.durationMs! - outgoingAnchor > 2500)) {
       add(
@@ -345,14 +351,17 @@ class DjTransitionBrain {
     return candidates.first;
   }
 
-  int _bestIncomingAnchor(DjTrackProfile profile) {
+  int _bestIncomingAnchor(DjTrackProfile profile, {bool allowReviewedLateCue = false}) {
     final candidates = <int>[
       ...profile.transitions.safeMixIns.map((p) => p.timeMs),
       if (profile.transitions.bestIntroMs != null) profile.transitions.bestIntroMs!,
     ];
-    if (candidates.isEmpty) return 0;
-    candidates.sort();
-    return candidates.first;
+    final eligible = allowReviewedLateCue
+        ? candidates.where((value) => value >= 0).toList()
+        : candidates.where((value) => DjIncomingEntryPolicy.isAutomaticOpeningEntry(value, profile.durationMs)).toList();
+    if (eligible.isEmpty) return 0;
+    eligible.sort();
+    return eligible.first;
   }
 
   /// Rewards a transition anchor that is close to confidently measured,
@@ -498,8 +507,9 @@ class DjTransitionBrain {
     int duration, {
     required DjTrackProfile outgoing,
     required int outgoingPositionMs,
+    bool allowReviewedLateCue = false,
   }) {
-    final incomingStart = b.transitions.bestIntroMs ?? 0;
+    final incomingStart = _bestIncomingAnchor(b, allowReviewedLateCue: allowReviewedLateCue);
     var boundedDuration = duration.clamp(2000, 16000).toInt();
     final outgoingAvailable = outgoing.durationMs == null
         ? null
