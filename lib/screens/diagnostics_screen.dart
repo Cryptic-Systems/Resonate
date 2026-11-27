@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/music_provider.dart';
 import '../ui/resonate_glass.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/resonate_diagnostics.dart';
@@ -17,6 +19,16 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   void initState() {
     super.initState();
     _refresh();
+  }
+
+  String _scratchDeckSummary(Map<String, Object?>? diagnostics) {
+    if (diagnostics == null || diagnostics['processorPresent'] != true) {
+      return 'processor not attached';
+    }
+    int count(String key) => (diagnostics[key] as num?)?.toInt() ?? 0;
+    return 'rendered ${count('renderedBlocks')} · '
+        'PTS misses ${count('timestampMisses')} · '
+        'active fallbacks ${count('activeRenderFallbacks')}';
   }
 
   Future<void> _refresh() async {
@@ -122,6 +134,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     final dspHintSkippedEvents =
         eventTypes['media3_dsp_analysis_hint_skipped'] ?? 0;
     final droppedEvents = (_report['droppedEventCount'] as num?)?.toInt() ?? 0;
+    final media3State = context.watch<MusicProvider>().media3ShadowState;
+    final scratchSummary = 'A: ${_scratchDeckSummary(media3State?.scratchDiagnosticsA)}\n'
+        'B: ${_scratchDeckSummary(media3State?.scratchDiagnosticsB)}';
 
     return ResonateGlassScaffold(
       title: const Text('Privacy & Diagnostics'),
@@ -169,6 +184,11 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   leading: const Icon(Icons.graphic_eq_rounded),
                   title: const Text('Native audio underruns'),
                   subtitle: Text('$audioUnderruns underrun event batches captured from Media3'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.album_outlined),
+                  title: const Text('DJ scratch pipeline'),
+                  subtitle: Text(scratchSummary),
                 ),
                 ListTile(
                   leading: const Icon(Icons.multiline_chart_rounded),
