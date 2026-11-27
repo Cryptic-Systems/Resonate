@@ -34,6 +34,13 @@ class VoiceCueService {
   Future<void> setEnabled(bool enabled) async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setBool(_enabledKey, enabled);
+    if (!enabled) {
+      try {
+        await _player.stop();
+      } catch (_) {}
+      _speaking = false;
+      _router.resetSession();
+    }
   }
 
   Future<bool> isEnabled() async {
