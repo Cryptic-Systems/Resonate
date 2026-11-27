@@ -127,6 +127,15 @@ class DspEngineAudioProcessorTest {
     }
 
     @Test
+    fun legacy_just_audio_voice_path_does_not_attach_music_dsp() {
+        // Media3 is the only production music authority. The remaining
+        // just_audio player handles voice/SFX and must not inherit music DSP.
+        assertEquals(0, DspEngineSinkHook.createProcessors().size)
+        assertEquals(0, api.createCalls)
+        assertEquals(0, DspEngineRegistry.activeCount())
+    }
+
+    @Test
     fun multichannel_pcm_stays_bit_exact_and_stereo_reconfiguration_enables_dsp() {
         val processor = DspEngineAudioProcessor()
         processor.setNativeProcessEnabled(true)
