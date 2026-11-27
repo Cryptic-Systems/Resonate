@@ -1,6 +1,7 @@
 import '../core/dj_types.dart';
 import '../core/dj_policy.dart';
 import '../core/dj_incoming_entry_policy.dart';
+import '../core/dj_silence_transition_policy.dart';
 
 class DjTransitionBrain {
   const DjTransitionBrain();
@@ -339,6 +340,15 @@ class DjTransitionBrain {
   }
 
   int _bestOutgoingAnchor(DjTrackProfile profile, int currentMs) {
+    // A trusted, sustained tail-silence region takes precedence over generic
+    // outro markers. It is selected only when it is still ahead of playback,
+    // within the planner look-ahead, and close to the actual track tail.
+    final silenceCue = DjSilenceTransitionPolicy.nextSafeTailCue(
+      profile: profile,
+      currentPositionMs: currentMs,
+    );
+    if (silenceCue != null) return silenceCue;
+
     final candidates = profile.transitions.safeMixOuts
         .map((p) => p.timeMs)
         .where((ms) => ms >= currentMs &&
