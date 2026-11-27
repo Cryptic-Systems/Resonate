@@ -131,8 +131,8 @@ Every cue request should carry:
 The coordinator should enforce:
 
 1. Route permission: reject a `player_auto` cue in manual context and vice versa unless explicitly `both_contextual` or `conditional`.
-2. One cue per event: dedupe by `eventId`; choose one member of a semantic group.
-3. Workspace change: cancel queued low-priority cues from the previous experience. Do not interrupt a clip already playing unless it is a safety-critical cue and policy explicitly allows it.
+2. One cue per event: dedupe by `eventId`; choose one member of a semantic group. `VoiceCueRouter.evaluate` reserves the event-group key before playback; if playback is cancelled or never starts, call `release(eventId, semanticGroup)`. Keep the reservation once audible speech begins.
+3. Workspace change: cancel queued low-priority cues from the previous experience. Release their reservations if they never started. Do not interrupt a clip already playing unless it is a safety-critical cue and policy explicitly allows it.
 4. No speech on every tap, track tick, beat tick, or analysis update.
 5. Respect voice feedback opt-out and preserve source recording dynamics; no blanket normalization.
 6. Risk/safety cues may outrank flavor, but must never be fabricated or used as generic DJ banter.
