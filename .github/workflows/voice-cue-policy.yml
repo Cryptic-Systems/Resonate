@@ -13,6 +13,7 @@ on:
     paths:
       - "lib/services/voice_cue_router.dart"
       - "test/services/voice_cue_router_test.dart"
+      - "test/services/voice_cue_manifest_test.dart"
       - ".github/workflows/voice-cue-policy.yml"
   workflow_dispatch:
 
