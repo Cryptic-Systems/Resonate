@@ -82,6 +82,13 @@ object DspEngineSinkHook {
     @JvmStatic
     fun trackProcessor(processor: DspEngineAudioProcessor, deckId: String) {
         processorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(processor)
+        // Media3 can reset and later reconfigure the same AudioProcessor after
+        // a queue clear. Reconcile its logical role at configuration time:
+        // the earlier activateDeck() may have run while this processor was
+        // temporarily absent from the registry after onReset().
+        val active = deckId == "legacy" || deckId.startsWith("preview_") ||
+            DspEngineRegistry.isActiveDeck(deckId)
+        processor.setDeckActive(active)
     }
 
     /** Drops all processor references when the owning ExoPlayer is released. */
