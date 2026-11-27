@@ -39,11 +39,11 @@ These phrases describe Resonate doing a task on behalf of the listener, or autom
 | `voice_ask_built_you_a_45-minute_mix.mp3` | player_auto | A 45-minute mix was successfully built |
 | `voice_ask_built_you_a_60-minute_mix.mp3` | player_auto | A 60-minute mix was successfully built |
 | `voice_ask_built_you_a_90-minute_mix.mp3` | player_auto | A 90-minute mix was successfully built |
-| `voice_ask_found_some_tracks_that_match_the_mood.mp3` | player_auto | Mood discovery returned matching tracks |
-| `voice_ask_keeping_it_local.mp3` | player_auto | Local-only search scope is active |
-| `voice_ask_looking_through_your_library.mp3` | player_auto | A library search is underway and takes long enough to justify speech |
-| `voice_ask_warmup_set.mp3` | player_auto | Automatic warmup set is prepared |
-| `voice_ask_you_might_like_these.mp3` | player_auto | Automatic recommendations are ready |
+| `voice_ask_found_some_tracks_that_match_the_mood.mp3` | both_contextual | Mood discovery returned matching tracks in Player or a DJ set preparation flow |
+| `voice_ask_here’s_what_I_found.mp3` | both_contextual | Present confirmed search results in either experience; do not play if result presentation is immediate and obvious |\n| `voice_ask_keeping_it_local.mp3` | both_contextual | Local-only search scope is active in either experience |
+| `voice_ask_looking_through_your_library.mp3` | both_contextual | A library search is underway in either experience and takes long enough to justify speech |
+| `voice_ask_warmup_set.mp3` | both_contextual | A warmup set is prepared by automatic playback or a DJ set workflow |
+| `voice_ask_you_might_like_these.mp3` | both_contextual | Recommendations are ready in Player or DJ Workspace; use only when user-facing results are available |
 | `voice_risk_autopilot_standing_by.mp3` | player_auto | Automatic mixing/autopilot is enabled and ready; never imply active playback control if it is only standing by |
 | `voice_risk_playing_it_safe.mp3` | conditional | Automatic policy deliberately chose a conservative transition |
 | `voice_mode_*.mp3` | player_auto / shared_system | Use only when the mode is confirmed; announce mode changes once, not every track |
@@ -66,7 +66,7 @@ These phrases refer to a user-driven deck, console, monitoring, or performance a
 | `voice_dj_Drop_Incoming.mp3` | dj_manual | User-triggered/planned drop is confirmed and timing is locked |
 | `voice_dj_here_we_go.mp3` | dj_manual | User initiates a performance moment |
 | `voice_dj_let’s_go.mp3` | dj_manual | User initiates a high-energy performance moment; very sparse |
-| `voice_dj_reading_the_room.mp3` | dj_manual / conditional | Only if a real room/context analysis exists and the user is in the manual performance context |
+| `voice_dj_reading_the_room.mp3` | conditional | Only if a real room/context analysis exists; select Player or DJ origin from the event that produced it |
 
 ### 3. Both experiences, event-contextual
 
@@ -84,9 +84,9 @@ These phrases can be shared, but they are not interchangeable sound effects. The
 | `short_utility_okay.mp3` / `short_utility_yes.mp3` | both_contextual | Only when conversationally appropriate and no stronger acknowledgement is queued |
 | `short_utility_nice.mp3` | both_contextual | Sparse, optional acknowledgement; never a routine control response |
 | `short_utility_ready.mp3` / `voice_system_ready.mp3` / `voice_system_all_set.mp3` | both_contextual / shared_system | Confirm the specific readiness/setup event once; choose one |
-| `voice_system_preparation_complete.mp3` | both_contextual | A preparation task actually completed; do not pair with “All set” |
-| `voice_system_analyzing.mp3` | both_contextual | A real analysis task is in progress and long enough to justify speech |
-| `voice_system_standing_by.mp3` | both_contextual | Entering an intentional standby state, not every idle interval |
+| `voice_system_preparation_complete.mp3` | shared_system | A preparation task actually completed; do not pair with “All set” |
+| `voice_system_analyzing.mp3` | shared_system | A real analysis task is in progress and long enough to justify speech |
+| `voice_system_standing_by.mp3` | shared_system | Entering an intentional standby state, not every idle interval |
 | `voice_dj_coming_up_next.mp3` | both_contextual | Announce a confirmed incoming track in automatic transitions or manual performance; only once per incoming track |
 | `voice_dj_next_track_locked.mp3` | both_contextual | The next track is actually locked/selected, regardless of whether automatic policy or user action selected it |
 | `voice_dj_standby_ready.mp3` | both_contextual | A transition is prepared in either mode; do not duplicate console-standby-ready |
