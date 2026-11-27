@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io' show Platform;
-import 'dart:convert';
 import '../services/intelligence_seek_memory.dart';
 import 'dart:math' as math;
 import 'package:audio_service/audio_service.dart';
@@ -345,8 +344,6 @@ class MusicProvider extends ChangeNotifier {
   /// or clear a newer preload after manual transport takes ownership.
   int _media3PreloadGeneration = 0;
   Media3DjTransitionPreparation? _repeatSelfDjPreparation;
-  String? _repeatSelfDjPlanSongId;
-  bool _repeatSelfDjPlanAttempted = false;
   bool _repeatSelfDjPlanning = false;
   bool _repeatSelfDjPreloadInFlight = false;
   int _repeatSelfDjPlanGeneration = 0;
@@ -1247,8 +1244,6 @@ class MusicProvider extends ChangeNotifier {
       }));
     }
     _repeatSelfDjPlanGeneration++;
-    _repeatSelfDjPlanSongId = null;
-    _repeatSelfDjPlanAttempted = false;
     _repeatSelfDjPlanning = false;
     _repeatSelfDjPreloadInFlight = false;
     _repeatSelfDjPreparation = null;
