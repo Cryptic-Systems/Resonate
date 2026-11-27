@@ -7,10 +7,11 @@ import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'voice_cue_router.dart';
+import 'workspace_lifecycle_coordinator.dart';
 
 /// Manifest-backed short voice feedback. Original recordings and dynamics are
 /// preserved; this service does not normalize or transcode audio.
-class VoiceCueService {
+class VoiceCueService implements WorkspaceLifecycleParticipant {
   VoiceCueService._()
       : _player = AudioPlayer(handleAudioSessionActivation: false);
 
@@ -28,9 +29,46 @@ class VoiceCueService {
   bool _settingsChangeInFlight = false;
   bool? _enabledOverride;
   int _generation = 0;
+  int _workspaceGeneration = 0;
+  ResonateWorkspace _activeWorkspace = ResonateWorkspace.player;
+  WorkspaceLifecycleCoordinator? _workspaceLifecycle;
+  VoiceCueOrigin? _speakingOrigin;
   Future<void>? _loading;
 
   bool get isSpeaking => _speaking;
+
+  void attachWorkspaceLifecycle(WorkspaceLifecycleCoordinator coordinator) {
+    if (identical(_workspaceLifecycle, coordinator)) return;
+    _workspaceLifecycle?.unregister(this);
+    _workspaceLifecycle = coordinator;
+    coordinator.register(this);
+  }
+
+  bool _originAllowedInWorkspace(VoiceCueOrigin origin) {
+    switch (origin) {
+      case VoiceCueOrigin.playerAuto:
+        return _activeWorkspace == ResonateWorkspace.player;
+      case VoiceCueOrigin.djManual:
+        return _activeWorkspace == ResonateWorkspace.dj;
+      case VoiceCueOrigin.sharedSystem:
+        return true;
+    }
+  }
+
+  @override
+  Future<void> onWorkspaceChanged(ResonateWorkspace workspace) async {
+    if (_activeWorkspace == workspace) return;
+    _activeWorkspace = workspace;
+    _workspaceGeneration++;
+    final speakingOrigin = _speakingOrigin;
+    if (speakingOrigin != null && !_originAllowedInWorkspace(speakingOrigin)) {
+      try {
+        await _player.stop();
+      } catch (_) {}
+      _speaking = false;
+      _speakingOrigin = null;
+    }
+  }
 
   Future<void> setEnabled(bool enabled) async {
     // Invalidate pending source loads on every preference change and block
@@ -106,7 +144,7 @@ class VoiceCueService {
     final generation = _generation;
     String? reservedGroup;
     try {
-      if (!await isEnabled() || generation != _generation) return false;
+      if (!await isEnabled() || generation != _generation ||\n          workspaceGeneration != _workspaceGeneration ||\n          !_originAllowedInWorkspace(origin)) return false;
       await _ensureManifest();
       if (generation != _generation ||
           _settingsChangeInFlight ||
