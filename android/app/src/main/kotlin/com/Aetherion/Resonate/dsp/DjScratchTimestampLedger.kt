@@ -1,27 +1,32 @@
 package com.aetherion.resonate.dsp
 
 import java.nio.ByteBuffer
+import java.util.ArrayDeque
 import java.util.IdentityHashMap
 
 /**
  * Associates Media3 input-buffer identities with their media presentation
- * timestamps until the first PCM processor consumes those exact buffers.
+ * timestamps until the first PCM processor consumes those buffers.
  *
- * Identity, rather than ByteBuffer equality, is intentional: Media3 may retry
- * handleBuffer with the same object while back-pressured, and distinct buffers
- * can have equal contents/positions.
+ * Identity is the fast path because Media3 may retry handleBuffer with the same
+ * object. A bounded FIFO fallback handles AudioSink implementations that pass
+ * a duplicate/slice to the first processor; PCM buffers are delivered in order.
  */
 internal class DjScratchTimestampLedger {
     private companion object { const val MAX_PENDING_BUFFERS = 64 }
+    private data class Pending(val buffer: ByteBuffer, val presentationTimeUs: Long)
+
     private val timestamps = IdentityHashMap<ByteBuffer, Long>()
+    private val pending = ArrayDeque<Pending>()
 
     @Synchronized
     fun record(buffer: ByteBuffer, presentationTimeUs: Long) {
         if (presentationTimeUs < 0L || !buffer.hasRemaining()) return
         // A retry of the same Media3 buffer must not replace its original PTS.
         if (!timestamps.containsKey(buffer)) {
-            if (timestamps.size >= MAX_PENDING_BUFFERS) timestamps.clear()
+            if (timestamps.size >= MAX_PENDING_BUFFERS) clear()
             timestamps[buffer] = presentationTimeUs
+            pending.addLast(Pending(buffer, presentationTimeUs))
         }
     }
 
@@ -31,7 +36,17 @@ internal class DjScratchTimestampLedger {
         sampleRate: Int,
         channelCount: Int,
     ): DjScratchPcmTimestamp? {
-        val presentationTimeUs = timestamps.remove(buffer) ?: return null
+        // Prefer exact identity. If the sink passes a duplicate/slice instead,
+        // consume the oldest outstanding PTS; Media3's sink processes PCM FIFO.
+        val exact = timestamps.remove(buffer)
+        val presentationTimeUs = if (exact != null) {
+            pending.removeIf { it.buffer === buffer }
+            exact
+        } else {
+            val next = pending.pollFirst() ?: return null
+            timestamps.remove(next.buffer)
+            next.presentationTimeUs
+        }
         if (sampleRate <= 0 || channelCount !in 1..2) return null
         val bytesPerFrame = channelCount * Short.SIZE_BYTES
         val byteCount = buffer.remaining()
@@ -48,6 +63,7 @@ internal class DjScratchTimestampLedger {
     @Synchronized
     fun clear() {
         timestamps.clear()
+        pending.clear()
     }
 
     @Synchronized
