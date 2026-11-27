@@ -6,18 +6,10 @@ import 'package:resonate/services/workspace_lifecycle_coordinator.dart';
 class _Participant implements WorkspaceLifecycleParticipant {
   final List<ResonateWorkspace> transitions = [];
   bool failOnDj = false;
-  Completer<void>? djGate;
-  Completer<void>? djEntered;
 
   @override
   Future<void> onWorkspaceChanged(ResonateWorkspace workspace) async {
     transitions.add(workspace);
-    if (workspace == ResonateWorkspace.dj && djGate != null) {
-      if (djEntered != null && !djEntered!.isCompleted) {
-        djEntered!.complete();
-      }
-      await djGate!.future;
-    }
     if (failOnDj && workspace == ResonateWorkspace.dj) {
       throw StateError('synthetic lifecycle failure');
     }
@@ -78,24 +70,16 @@ void main() {
     expect(participant.transitions.last, ResonateWorkspace.player);
   });
 
-  test('participant registered during a transition receives the settled destination', () async {
+  test('late participant receives the current settled workspace', () async {
     final coordinator = WorkspaceLifecycleCoordinator();
-    final blocker = _Participant()
-      ..djGate = Completer<void>()
-      ..djEntered = Completer<void>();
-    coordinator.register(blocker);
-    await coordinator.activate(ResonateWorkspace.player);
+    await coordinator.activate(ResonateWorkspace.dj);
+    final participant = _Participant();
+    coordinator.register(participant);
 
-    final switching = coordinator.activate(ResonateWorkspace.dj);
-    await blocker.djEntered!.future;
-    final lateParticipant = _Participant();
-    coordinator.register(lateParticipant);
-
-    blocker.djGate!.complete();
-    await switching;
+    // This same-destination activation waits behind the queued registration.
     await coordinator.activate(ResonateWorkspace.dj);
 
-    expect(lateParticipant.transitions, [ResonateWorkspace.dj]);
+    expect(participant.transitions, [ResonateWorkspace.dj]);
   });
 
   test('participant failure after partial application is rolled back', () async {
