@@ -86,6 +86,7 @@ class DjAutopilotPlanner {
         preferredDurationMs: preferredDurationMs,
         maxDurationMs: maxDurationMs,
         policy: policy,
+        allowReviewedLateCue: allowReviewedLateCue,
       );
     }
     return best;
