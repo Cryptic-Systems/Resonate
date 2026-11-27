@@ -21,6 +21,7 @@ class DjAutopilotPlanner {
     int maxDurationMs = 16000,
     DjPolicy policy = DjPolicy.balanced,
     DjTransitionKind? preferredKind,
+    bool allowReviewedLateCue = false,
   }) async {
     final candidates = brain.generate(
       outgoing: outgoing,
@@ -29,6 +30,7 @@ class DjAutopilotPlanner {
       preferredDurationMs: preferredDurationMs,
       maxDurationMs: maxDurationMs,
       policy: policy,
+      allowReviewedLateCue: allowReviewedLateCue,
     );
     if (preferredKind != null) {
       final preferred = candidates.where((candidate) =>
@@ -45,6 +47,7 @@ class DjAutopilotPlanner {
         preferredDurationMs: preferredDurationMs,
         maxDurationMs: maxDurationMs,
         policy: policy,
+        allowReviewedLateCue: allowReviewedLateCue,
       );
     }
 
