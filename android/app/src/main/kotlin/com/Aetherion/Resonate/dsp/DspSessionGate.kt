@@ -25,8 +25,8 @@ object DspSessionGate {
     /**
      * Record a create failure for diagnostics only.
      *
-     * Do NOT trip the process-wide gate here. Each DspEngineAudioProcessor has
-     * its own createAttempted latch and therefore cannot spin on nativeCreate.
+     * Do NOT trip the process-wide gate here. Each processor owns a bounded
+     * retry budget and retries only on explicit lifecycle events, never per PCM block.
      */
     @JvmStatic
     fun noteCreateFailure(reason: String) {
