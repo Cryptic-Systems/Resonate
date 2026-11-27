@@ -98,7 +98,9 @@ class WorkspaceTransitionController extends ChangeNotifier {
     _generation++;
     final ready = _destinationReady;
     if (ready != null && !ready.isCompleted) {
-      ready.completeError(StateError('Workspace transition controller disposed.'));
+      // Complete normally: the transition may still be awaiting handoff
+      // preparation and attach its readiness listener only after that settles.
+      ready.complete();
     }
     _destinationReady = null;
     super.dispose();
