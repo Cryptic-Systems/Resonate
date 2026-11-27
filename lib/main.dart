@@ -35,6 +35,7 @@ import 'services/media3_provider_session.dart';
 import 'playback/playback_control_arbiter.dart';
 import 'services/playback_diagnostics_observer.dart';
 import 'services/resonate_diagnostics.dart';
+import 'services/workspace_lifecycle_coordinator.dart';
 
 /// Brand spectrum from the Resonate mark: cyan-blue → violet → pink → orange.
 class ResonateBrand {
@@ -317,6 +318,7 @@ class ResonateApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => ExperienceProvider()),
+        ChangeNotifierProvider(create: (_) => WorkspaceLifecycleCoordinator()),
         ChangeNotifierProvider(create: (_) => ShellNav()),
         ChangeNotifierProvider(create: (_) => AskResonateController()),
         ChangeNotifierProvider(
