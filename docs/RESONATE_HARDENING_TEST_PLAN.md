@@ -61,3 +61,25 @@ Run these against the release APK built from a green merge commit. Record pass/f
 3. Run the complete repository CI, including release-size gate.
 4. Keep device/listening results separate from CI claims.
 5. Avoid new features, generic preset cards, broad DSP retuning, or dependency additions during this pass.
+
+## 2026-11-27 — crossfade, transport and platter regression pass
+
+### Automatic incoming-track entry
+- [ ] Use tracks with a late breakdown/drop section and verify unreviewed automatic candidates never preload beyond the opening-entry policy (15% of duration, capped at 45 seconds).
+- [ ] Verify a late beat/phrase-alignment result falls back to the incoming beginning and does not retain the rejected tempo stretch.
+- [ ] Verify an explicitly reviewed pair preset can retain its approved later cue.
+- [ ] Read the native standby position before fade, during fade and after promotion; confirm the requested cue is not applied twice and the promoted deck advances only by elapsed fade playback.
+
+### Pause-state convergence
+- [ ] Select a track while playing, paused and during a transition; tap pause immediately and verify the control reflects the canonical Media3 pause after command acknowledgement.
+- [ ] Repeat with delayed native state publication and rapid play/pause commands; stale snapshots must not reverse the latest transport intent.
+- [ ] Repeat from Player, mini-player, notification and headset controls where available.
+
+### DJ platter scratch
+- [ ] Verify the Media3 processor factory installs timestamp capture/scratch rendering before native DSP on both physical decks.
+- [ ] Verify forward, reverse, hold, variable-speed strokes and release-to-live-audio are audible on each playing deck.
+- [ ] Verify seek, hot-cue, track replacement, pause, crossfade start and workspace teardown retire stale platter commands.
+- [ ] Confirm a rejected/late timestamp anchor fails closed to the untouched PCM block and never emits partial audio.
+- [ ] Confirm normal playback is byte-for-byte pass-through when scratch is inactive and DSP remains active.
+
+CI proves software contracts only. The audible scratch response, transition entry point and pause-control convergence require physical-device testing on more than one Android output/device configuration before release acceptance.
