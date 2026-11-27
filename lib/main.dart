@@ -319,7 +319,11 @@ class ResonateApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => ExperienceProvider()),
-        ChangeNotifierProvider(create: (_) {\n          final lifecycle = WorkspaceLifecycleCoordinator();\n          VoiceCueService.instance.attachWorkspaceLifecycle(lifecycle);\n          return lifecycle;\n        }),
+        ChangeNotifierProvider(create: (_) {
+          final lifecycle = WorkspaceLifecycleCoordinator();
+          VoiceCueService.instance.attachWorkspaceLifecycle(lifecycle);
+          return lifecycle;
+        }),
         ChangeNotifierProvider(create: (_) => ShellNav()),
         ChangeNotifierProvider(create: (_) => AskResonateController()),
         ChangeNotifierProvider(
