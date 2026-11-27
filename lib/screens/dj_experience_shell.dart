@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../experience/experience_provider.dart';
 import '../navigation/shell_nav.dart';
 import '../providers/music_provider.dart';
+import '../services/workspace_lifecycle_coordinator.dart';
 import 'dj_console_screen.dart';
 import 'dj_library_screen.dart';
 import 'dj_workspace_screen.dart';
