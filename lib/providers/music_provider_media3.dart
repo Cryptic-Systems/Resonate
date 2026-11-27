@@ -498,6 +498,14 @@ extension MusicProviderMedia3 on MusicProvider {
         'positionMs': session.position.inMilliseconds,
         'playing': session.isPlaying,
       });
+      // Only announce a handoff after Media3 has promoted and committed the
+      // incoming track. This is automatic Player-origin DJ, not manual Console.
+      unawaited(VoiceCueService.instance.speak(
+        cueId: 'dj_transition_performance.voice_dj_nice_transition',
+        origin: VoiceCueOrigin.playerAuto,
+        eventId: 'media3_auto_crossfade_${transitionGeneration}_${nextSong.id}',
+        confirmed: true,
+      ));
     } catch (error) {
       if (stillOwnsTransition()) {
         var fallbackStage = 'cancel_crossfade';
