@@ -44,9 +44,14 @@ object DspEngineSinkHook {
         activeDecks.add("legacy")
     }
 
-    /** Compatibility overload used only by the legacy just_audio sink patch. */
+    /**
+     * The legacy just_audio backend is no longer a music-playback authority.
+     * Its remaining production use is short voice/SFX playback, which must stay
+     * outside the music DSP chain (EQ, DVC, limiter and deck analysis). Media3
+     * deck processors are created through the explicit deckId overload below.
+     */
     @JvmStatic
-    fun createProcessors(): Array<AudioProcessor> = createProcessors("legacy")
+    fun createProcessors(): Array<AudioProcessor> = emptyArray()
 
     @JvmStatic
     fun createProcessors(deckId: String): Array<AudioProcessor> =
