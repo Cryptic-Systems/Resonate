@@ -256,7 +256,7 @@ Focused policy tests cover nearby beat timing, low-confidence suppression, inval
 
 ## DJ Console — gated parallel workstream
 
-The landscape DJ Console visual foundation may proceed in parallel with playback hardening. It must not create another player or output path. The initial visual shell is observational. Sampled PCM peak envelopes are now derived from the existing distributed decode windows, persisted as optional sparse segments, and rendered only against the verified active physical deck. Unanalysed gaps remain visibly empty; no full-track waveform is implied. Existing cached profiles without waveform segments are backfilled by the idle analysis scan, subject to its retry cooldown. Manual deck preparation, cueing, jog/scratch, channel gain and crossfader actions remain unavailable until their Media3/DSP command contracts, lease behavior, cancellation rules and regression tests are implemented.
+The landscape DJ Console visual foundation may proceed in parallel with playback hardening. It must not create another player or output path. The initial visual shell is observational. Sampled PCM peak envelopes are now derived from the existing distributed decode windows, persisted as optional sparse segments, and rendered only against the verified active physical deck. Unanalysed gaps remain visibly empty; no full-track waveform is implied. Existing cached profiles without waveform segments are backfilled by the idle analysis scan, subject to its retry cooldown. Manual deck preparation, cueing, jog/scratch, channel gain and crossfader now have Media3/DSP command contracts and regression coverage. Their physical-device behavior and interruption recovery remain unverified; do not claim release-ready functionality until those tests pass.
 
 ## Release discipline
 
@@ -330,7 +330,7 @@ The automatic candidate generator includes a `breakdownDrop` candidate whose inc
 
 The native timestamped PCM scratch renderer was present in the Media3 audio-processor chain, but its successful render path read from a duplicate input buffer without advancing the original buffer. Media3's `AudioProcessor.queueInput` contract requires the supplied input buffer to be consumed. The existing scratch test covered pass-through consumption but did not assert consumption when rendering was active.
 
-**Targeted fix:** after a complete scratch block is rendered, advance the original input buffer to its limit. A regression assertion now verifies the active scratch render consumes the complete block. The stale client comment claiming the native path was pass-through has also been corrected.
+**Targeted fix:** after a complete scratch block is rendered, advance the original input buffer to its limit. A regression assertion now verifies the active scratch render consumes the complete block, and a processor-factory test verifies timestamp capture precedes native DSP. Stale mailbox state is also retired on seek, track change and pause. The stale client comment claiming the native path was pass-through has been corrected.
 
 **Remaining investigation:** verify timestamp-ledger matches, PCM history availability, anchor validity and mailbox acceptance on a physical device. Add bounded diagnostics for rejected controls or unavailable timestamp history if the first device test still fails.
 
