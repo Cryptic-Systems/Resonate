@@ -107,6 +107,27 @@ void main() {
     )).reason, VoiceCueBlockReason.wrongWorkspace);
   });
 
+  test('origin allow-list cannot override fixed route permissions', () {
+    expect(router.evaluate(request(
+      route: VoiceCueRoute.playerAuto,
+      origin: VoiceCueOrigin.sharedSystem,
+      allowedOrigins: const [VoiceCueOrigin.sharedSystem],
+    )).reason, VoiceCueBlockReason.wrongWorkspace);
+  });
+
+  test('expired dedupe reservation is pruned and can be reused', () {
+    expect(router.evaluate(request(expiresAt: now.add(const Duration(seconds: 1)))).allowed, isTrue);
+    now = now.add(const Duration(seconds: 1));
+    expect(router.evaluate(request()).allowed, isTrue);
+  });
+
+  test('bounded cache evicts oldest remembered event', () {
+    for (var i = 0; i < 513; i++) {
+      expect(router.evaluate(request(eventId: 'event-$i')).allowed, isTrue);
+    }
+    expect(router.evaluate(request(eventId: 'event-0')).allowed, isTrue);
+  });
+
   test('does not speak when feedback is disabled or event is unconfirmed', () {
     expect(router.evaluate(request(enabled: false)).reason,
         VoiceCueBlockReason.voiceFeedbackDisabled);
