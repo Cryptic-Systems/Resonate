@@ -558,7 +558,7 @@ class _LifecycleHomeState extends State<_LifecycleHome>
     _lastBluetoothSignature = signature;
     unawaited(ResonateDiagnostics.record('audio_route_state_changed', {
       'bluetoothConnected': bluetooth.bluetoothConnected,
-      'deviceNamePresent': (bluetooth.connectedDeviceName ?? '').isNotEmpty,
+      'deviceNamePresent': bluetooth.connectedDeviceName.isNotEmpty,
       'audioContext': bluetooth.audioContext.name,
     }));
     try {
