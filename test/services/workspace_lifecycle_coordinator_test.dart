@@ -104,4 +104,18 @@ void main() {
 
     expect(participant.transitions, isEmpty);
   });
+
+  test('participant that fails initial synchronization is unregistered', () async {
+    final coordinator = WorkspaceLifecycleCoordinator();
+    final participant = _Participant()..failOnDj = true;
+
+    // Registration initialization is serialized before this activation.
+    coordinator.register(participant);
+    await coordinator.activate(ResonateWorkspace.player);
+    await coordinator.activate(ResonateWorkspace.dj);
+    await coordinator.activate(ResonateWorkspace.player);
+
+    expect(participant.transitions, [ResonateWorkspace.player]);
+    expect(coordinator.activeWorkspace, ResonateWorkspace.player);
+  });
 }
