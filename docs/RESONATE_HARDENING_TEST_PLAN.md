@@ -1,6 +1,6 @@
 # Resonate hardening and device validation
 
-Target branch: `Resonate-True-Apk`
+Target branch: `resonate-voice-audit`
 
 This is a release-readiness checklist, not a feature roadmap. Keep the current Resonate sound and controls intact. Prefer narrow fixes backed by a reproduced defect and regression test; do not retune DSP or rewrite playback ownership speculatively.
 
@@ -83,3 +83,12 @@ Run these against the release APK built from a green merge commit. Record pass/f
 - [ ] Confirm normal playback is byte-for-byte pass-through when scratch is inactive and DSP remains active.
 
 CI proves software contracts only. The audible scratch response, transition entry point and pause-control convergence require physical-device testing on more than one Android output/device configuration before release acceptance.
+
+
+### Queue completion during an interrupted crossfade
+- [ ] Complete the outgoing deck during a successful crossfade; verify exactly one incoming queue commit.
+- [ ] Force a crossfade timeout after the outgoing deck reports completion; verify the watchdog recovers to the next playable queue item.
+- [ ] Preempt a crossfade with manual Next/Previous after completion; verify the manual command wins and no watchdog double-advance occurs.
+- [ ] Exercise Repeat One, Repeat All, final queue item, and an unreadable incoming source.
+- [ ] Confirm a completion observation is retained for the expected song occurrence, but cannot advance after the current song/index has changed.
+- [ ] Confirm diagnostics show exactly one terminal outcome: committed, recovered, preempted, or exhausted.
