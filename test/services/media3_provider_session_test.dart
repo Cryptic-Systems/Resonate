@@ -203,6 +203,24 @@ void main() {
       expect(backend.calls, ['loadQueue']);
     });
 
+    test('refreshState synchronously updates the session transport projection', () async {
+      await session.start();
+      final song = _song('refresh-transport-state');
+      await session.loadQueue(<Song>[song]);
+
+      backend.value = _snapshot(mediaId: song.id, playing: true);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+      expect(session.isPlaying, isTrue);
+
+      // The backend read returns a newer paused snapshot without a broadcast
+      // event. refreshState must synchronously reconcile the session getter.
+      backend.value = _snapshot(mediaId: song.id, playing: false);
+      await session.refreshState();
+
+      expect(session.isPlaying, isFalse);
+    });
+
     test('replays active and standby audio sessions to late state subscribers', () async {
       await session.start();
       await session.loadQueue(<Song>[_song('late-effects-subscriber')]);
