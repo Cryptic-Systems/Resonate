@@ -89,12 +89,26 @@ class _DjExperienceShellState extends State<DjExperienceShell> {
       }
       _djSessionStarted = false;
       if (mounted) {
-        context
-            .read<WorkspaceTransitionController>()
-            .markFailed(ResonateWorkspace.dj, error);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not initialize Resonatix DJ: $error')),
-        );
+        final transition = context.read<WorkspaceTransitionController>();
+        if (transition.destination == ResonateWorkspace.dj) {
+          // Let the initiating Player/DJ handoff perform its own rollback.
+          transition.markFailed(ResonateWorkspace.dj, error);
+        } else if (!transition.isTransitioning) {
+          // A persisted DJ selection can fail during cold start too. Never
+          // leave the app parked on a workspace whose session did not start.
+          try {
+            await context.read<ExperienceProvider>().switchExperience(
+                  ResonateExperience.player,
+                );
+          } catch (fallbackError) {
+            debugPrint('Player fallback after DJ startup failure failed: $fallbackError');
+          }
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Could not initialize Resonatix DJ: $error')),
+            );
+          }
+        }
       }
     }
   }
