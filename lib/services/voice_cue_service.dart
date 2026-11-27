@@ -30,7 +30,9 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
       );
 
   Future<void> _configureVoicePlayer(AudioPlayer player) {
-    return _playerConfiguration ??= () async {
+    final existing = _playerConfiguration;
+    if (existing != null) return existing;
+    final configuration = () async {
       // Android's shared audio_session configuration is owned by the music
       // transport. Give the independent cue player explicit speech/sonification
       // attributes without claiming focus or changing Media3's attributes.
@@ -45,6 +47,11 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
       }
       await player.setVolume(1.0);
     }();
+    _playerConfiguration = configuration;
+    return configuration.catchError((Object error) {
+      _playerConfiguration = null;
+      throw error;
+    });
   }
 
   void _logBlocked(String cueId, String reason) {
