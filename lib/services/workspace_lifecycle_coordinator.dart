@@ -61,7 +61,19 @@ class WorkspaceLifecycleCoordinator extends ChangeNotifier {
           changed.add(participant);
           await participant.onWorkspaceChanged(workspace);
         }
-        if (_disposed) return;
+        if (_disposed) {
+          // dispose() may run while an asynchronous participant is applying
+          // the destination. Restore every participant already touched before
+          // allowing the queued transition to settle.
+          for (final participant in changed.reversed) {
+            try {
+              await participant.onWorkspaceChanged(previous);
+            } catch (rollbackError) {
+              debugPrint('Disposed workspace transition rollback failed: $rollbackError');
+            }
+          }
+          return;
+        }
         _active = workspace;
         notifyListeners();
       } catch (_) {
