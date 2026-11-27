@@ -229,7 +229,7 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
         _router.release(eventId: eventId, semanticGroup: group);
         reservedGroup = null;
         try {
-          await _player.stop();
+          await _audioPlayer.stop();
         } catch (_) {}
         return false;
       }
@@ -291,6 +291,8 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
 
   Future<void> dispose() async {
     _generation++;
+    _workspaceLifecycle?.unregister(this);
+    _workspaceLifecycle = null;
     final player = _player;
     _player = null;
     if (player != null) await player.dispose();
