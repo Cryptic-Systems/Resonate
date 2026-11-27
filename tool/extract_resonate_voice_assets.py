@@ -39,18 +39,16 @@ def main() -> None:
 
     for old_archive, records in grouped.items():
         source = ROOT / old_archive
-        if not source.is_file():
-            missing.append(f"source archive missing: {old_archive}")
-            continue
-
         category = records[0]["category"]
         archive_name = f"{category}__{safe_basename(old_archive)}"
         archive_destination = ARCHIVE_ROOT / archive_name
         archive_destination.parent.mkdir(parents=True, exist_ok=True)
-        if source.resolve() != archive_destination.resolve():
-            if archive_destination.exists():
-                archive_destination.unlink()
-            shutil.move(str(source), str(archive_destination))
+        if not archive_destination.is_file():
+            if not source.is_file():
+                missing.append(f"source archive missing: {old_archive}")
+                continue
+            if source.resolve() != archive_destination.resolve():
+                shutil.move(str(source), str(archive_destination))
 
         with zipfile.ZipFile(archive_destination) as archive:
             members = [m for m in archive.namelist() if not m.endswith("/") and m.lower().endswith(".mp3")]
@@ -95,7 +93,8 @@ def main() -> None:
     pubspec = ROOT / "pubspec.yaml"
     text = pubspec.read_text(encoding="utf-8")
     marker = "    - assets/sfx/\n"
-    additions = "".join(f"    - assets/audio/resonate_voice/{category}/\n" for category in sorted({e["category"] for e in entries}))
+    categories = sorted({entry["category"] for entry in entries})
+    additions = "".join(f"    - assets/audio/resonate_voice/{category}/\\n" for category in categories)
     if additions.strip() not in text:
         if marker not in text:
             raise SystemExit("Could not find assets/sfx entry in pubspec.yaml")
