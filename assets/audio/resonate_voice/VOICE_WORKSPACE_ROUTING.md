@@ -40,7 +40,6 @@ These phrases describe Resonate doing a task on behalf of the listener, or autom
 | `voice_ask_built_you_a_60-minute_mix.mp3` | player_auto | A 60-minute mix was successfully built |
 | `voice_ask_built_you_a_90-minute_mix.mp3` | player_auto | A 90-minute mix was successfully built |
 | `voice_ask_found_some_tracks_that_match_the_mood.mp3` | player_auto | Mood discovery returned matching tracks |
-| `voice_ask_found_some_tracks_that_match_the_mood.mp3` | player_auto | Mood discovery returned matching tracks |
 | `voice_ask_keeping_it_local.mp3` | player_auto | Local-only search scope is active |
 | `voice_ask_looking_through_your_library.mp3` | player_auto | A library search is underway and takes long enough to justify speech |
 | `voice_ask_warmup_set.mp3` | player_auto | Automatic warmup set is prepared |
@@ -64,7 +63,7 @@ These phrases refer to a user-driven deck, console, monitoring, or performance a
 | `console_monitoring.mp3` | dj_manual | User enables monitoring |
 | `console_standby_ready.mp3` | dj_manual | Manual console is ready for user-directed performance |
 | `voice_dj_aligning_the_phrase.mp3` | dj_manual | Manual performance is actively aligning a phrase; avoid narrating every analysis tick |
-| `voice_dj_drop_incoming.mp3` | dj_manual | User-triggered/planned drop is confirmed and timing is locked |
+| `voice_dj_Drop_Incoming.mp3` | dj_manual | User-triggered/planned drop is confirmed and timing is locked |
 | `voice_dj_here_we_go.mp3` | dj_manual | User initiates a performance moment |
 | `voice_dj_let’s_go.mp3` | dj_manual | User initiates a high-energy performance moment; very sparse |
 | `voice_dj_reading_the_room.mp3` | dj_manual / conditional | Only if a real room/context analysis exists and the user is in the manual performance context |
@@ -94,7 +93,7 @@ These phrases can be shared, but they are not interchangeable sound effects. The
 | `voice_dj_building_into_the_next_one.mp3` | both_contextual | A real transition build is underway; use only when the transition plan supports it |
 | `voice_dj_energy_rising.mp3` / `hype_rising.mp3` | conditional | Confirmed energy rise; choose one, route based on automatic vs manual event origin |
 | `voice_dj_key_match_looking_solid.mp3` | conditional | Confirmed key compatibility; can describe an automatic plan or manual pair analysis |
-| `voice_dj_let’s_keep_this_moving.mp3` | both_contextual | A deliberate keep-moving decision, not an ordinary track change |
+| `hype_let’s_keep_this_moving.mp3` | both_contextual | A deliberate keep-moving decision, not an ordinary track change |
 | `voice_dj_letting_it_breathe.mp3` | both_contextual | A deliberate hold/space decision; automatic policy or user-directed performance |
 | `voice_dj_ride_this_one_out..mp3` | conditional | Current track is intentionally held; source filename has double period |
 | `voice_dj_keeping_the_flow_tight..mp3` | both_contextual | Optional flavor during a confirmed smooth sequence; source filename has double period |
