@@ -69,10 +69,14 @@ class VoiceCueRouter {
   VoiceCueRouter({DateTime Function()? clock})
       : _clock = clock ?? DateTime.now;
 
+  static const int _maxRememberedEvents = 512;
   final DateTime Function() _clock;
-  static const int _maxRememberedEvents = 512;\n  final LinkedHashMap<String, DateTime> _spokenEventGroups =\n      LinkedHashMap<String, DateTime>();
+  final LinkedHashMap<String, DateTime> _spokenEventGroups =
+      LinkedHashMap<String, DateTime>();
 
   VoiceCueDecision evaluate(VoiceCueRequest request) {
+    _pruneExpiredEvents();
+
     if (!request.voiceFeedbackEnabled) {
       return const VoiceCueDecision.blocked(
         VoiceCueBlockReason.voiceFeedbackDisabled,
@@ -96,13 +100,16 @@ class VoiceCueRouter {
     }
 
     final dedupeKey = '${request.eventId}::${request.semanticGroup}';
-    if (_spokenEventGroups.contains(dedupeKey)) {
+    if (_spokenEventGroups.containsKey(dedupeKey)) {
       return const VoiceCueDecision.blocked(
         VoiceCueBlockReason.duplicateEvent,
       );
     }
 
-    _spokenEventGroups.add(dedupeKey);
+    _spokenEventGroups[dedupeKey] = request.expiresAt;
+    while (_spokenEventGroups.length > _maxRememberedEvents) {
+      _spokenEventGroups.remove(_spokenEventGroups.keys.first);
+    }
     return const VoiceCueDecision.allowed();
   }
 
@@ -118,6 +125,11 @@ class VoiceCueRouter {
       case VoiceCueRoute.sharedSystem:
         return origin == VoiceCueOrigin.sharedSystem;
     }
+  }
+
+  void _pruneExpiredEvents() {
+    final now = _clock();
+    _spokenEventGroups.removeWhere((_, expiresAt) => !now.isBefore(expiresAt));
   }
 
   /// Clears dedupe state at the start of a new app/session lifecycle.
