@@ -426,9 +426,7 @@ class ResonateApp extends StatelessWidget {
           lazy: false,
           create: (context) {
             final music = context.read<MusicProvider>();
-            return AudioVisualizationProvider(
-              workspaceLifecycle: context.read<WorkspaceLifecycleCoordinator>(),
-            )
+            return AudioVisualizationProvider()
               ..bindPlayback(
                 listenable: music,
                 isPlaying: () => music.isPlaying,
