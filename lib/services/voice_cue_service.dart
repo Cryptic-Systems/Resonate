@@ -8,30 +8,30 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'voice_cue_router.dart';
 
-/// Filename-manifest-backed voice playback.
-///
-/// The cue player is separate from the music player and does not request audio
-/// focus, so short voice feedback can layer over ongoing music. Original MP3
-/// dynamics are preserved; this service does not normalize or alter gain.
+/// Manifest-backed short voice feedback. Original recordings and dynamics are
+/// preserved; this service does not normalize or transcode audio.
 class VoiceCueService {
   VoiceCueService._()
       : _player = AudioPlayer(handleAudioSessionActivation: false);
 
   static final VoiceCueService instance = VoiceCueService._();
-
   static const String _manifestAsset =
       'assets/audio/resonate_voice/voice_manifest.json';
   static const String _enabledKey = 'resonate_voice_feedback_enabled';
+  static const String _assetRoot = 'assets/audio/resonate_voice/';
 
   final AudioPlayer _player;
   final VoiceCueRouter _router = VoiceCueRouter();
   Map<String, Map<String, dynamic>>? _manifest;
   bool _speaking = false;
+  bool _requestInFlight = false;
+  int _generation = 0;
   Future<void>? _loading;
 
   bool get isSpeaking => _speaking;
 
   Future<void> setEnabled(bool enabled) async {
+    if (!enabled) _generation++;
     final preferences = await SharedPreferences.getInstance();
     await preferences.setBool(_enabledKey, enabled);
     if (!enabled) {
@@ -59,13 +59,17 @@ class VoiceCueService {
     _loading = completer.future;
     try {
       final raw = await rootBundle.loadString(_manifestAsset);
-      final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      final entries = decoded['assets'] as List<dynamic>;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic> || decoded['assets'] is! List) {
+        throw const FormatException('Invalid Resonate voice manifest structure');
+      }
       final indexed = <String, Map<String, dynamic>>{};
-      for (final value in entries) {
-        final entry = value as Map<String, dynamic>;
-        final id = entry['id'] as String?;
-        if (id != null && id.isNotEmpty) indexed[id] = entry;
+      for (final value in decoded['assets'] as List<dynamic>) {
+        if (value is! Map<String, dynamic>) continue;
+        final id = value['id'];
+        if (id is String && id.trim().isNotEmpty && !indexed.containsKey(id)) {
+          indexed[id] = value;
+        }
       }
       _manifest = indexed;
       completer.complete();
@@ -77,10 +81,6 @@ class VoiceCueService {
     }
   }
 
-  /// Play one stable manifest cue for a confirmed application event.
-  ///
-  /// Callers provide a unique event ID. Repeated variants for the same event
-  /// and semantic group are deduplicated by [VoiceCueRouter].
   Future<bool> speak({
     required String cueId,
     required VoiceCueOrigin origin,
@@ -88,25 +88,41 @@ class VoiceCueService {
     bool confirmed = true,
     List<VoiceCueOrigin>? allowedOrigins,
   }) async {
-    if (_speaking || !await isEnabled()) return false;
-
+    if (_requestInFlight || _speaking) return false;
+    _requestInFlight = true;
+    final generation = _generation;
+    String? reservedGroup;
     try {
+      if (!await isEnabled() || generation != _generation) return false;
       await _ensureManifest();
+      if (generation != _generation || !await isEnabled()) return false;
+
       final entry = _manifest?[cueId];
-      if (entry == null ||
-          entry['runtimeEnabled'] != true ||
-          entry['assetPath'] is! String) {
+      if (entry == null || entry['runtimeEnabled'] != true) return false;
+      final assetPath = entry['assetPath'];
+      if (assetPath is! String ||
+          !assetPath.startsWith(_assetRoot) ||
+          assetPath.contains('..') ||
+          assetPath.contains('\\') ||
+          !assetPath.endsWith('.mp3')) {
+        debugPrint('Resonate voice cue has an unsafe asset path ($cueId)');
         return false;
       }
 
-      final route = _parseRoute(entry['routingProposal'] as String?);
+      final route = _parseRoute(entry['routingProposal']);
       if (route == null) return false;
-      final group = entry['semanticGroupProposal'] as String? ?? '';
-      final origins = allowedOrigins ??
-          (entry['allowedOrigins'] as List<dynamic>?)
+      final groupValue = entry['semanticGroupProposal'];
+      if (groupValue is! String || groupValue.trim().isEmpty) return false;
+      final group = groupValue;
+      final manifestOrigins = (entry['allowedOrigins'] as List<dynamic>?)
               ?.map(_parseOrigin)
               .whereType<VoiceCueOrigin>()
-              .toList();
+              .toSet() ??
+          <VoiceCueOrigin>{};
+      final origins = allowedOrigins == null
+          ? manifestOrigins.toList()
+          : manifestOrigins.intersection(allowedOrigins.toSet()).toList();
+      if (route == VoiceCueRoute.conditional && origins.isEmpty) return false;
 
       final decision = _router.evaluate(VoiceCueRequest(
         cueId: cueId,
@@ -120,32 +136,41 @@ class VoiceCueService {
         allowedOrigins: origins,
       ));
       if (!decision.allowed) return false;
+      reservedGroup = group;
 
-      final assetPath = entry['assetPath'] as String;
-      try {
-        await _player.setAudioSource(AudioSource.asset(assetPath));
-        _speaking = true;
-        final playback = _player.play();
-        unawaited(playback.catchError((Object error, StackTrace stack) {
-          _router.release(eventId: eventId, semanticGroup: group);
-          debugPrint('Resonate voice cue failed ($cueId): $error');
-        }).whenComplete(() {
-          _speaking = false;
-        }));
-        return true;
-      } catch (error) {
-        _speaking = false;
+      await _player.setAudioSource(AudioSource.asset(assetPath));
+      if (generation != _generation || !await isEnabled()) {
         _router.release(eventId: eventId, semanticGroup: group);
-        debugPrint('Resonate voice cue could not start ($cueId): $error');
+        reservedGroup = null;
+        try {
+          await _player.stop();
+        } catch (_) {}
         return false;
       }
+
+      _speaking = true;
+      final playback = _player.play();
+      unawaited(playback.catchError((Object error, StackTrace stack) {
+        _router.release(eventId: eventId, semanticGroup: group);
+        debugPrint('Resonate voice cue failed ($cueId): $error');
+      }).whenComplete(() {
+        _speaking = false;
+      }));
+      reservedGroup = null;
+      return true;
     } catch (error) {
-      debugPrint('Resonate voice manifest unavailable: $error');
+      _speaking = false;
+      if (reservedGroup != null) {
+        _router.release(eventId: eventId, semanticGroup: reservedGroup);
+      }
+      debugPrint('Resonate voice cue could not start ($cueId): $error');
       return false;
+    } finally {
+      _requestInFlight = false;
     }
   }
 
-  VoiceCueRoute? _parseRoute(String? value) {
+  VoiceCueRoute? _parseRoute(dynamic value) {
     switch (value) {
       case 'player_auto':
         return VoiceCueRoute.playerAuto;
@@ -176,6 +201,7 @@ class VoiceCueService {
   }
 
   Future<void> dispose() async {
+    _generation++;
     await _player.dispose();
     _router.resetSession();
   }
