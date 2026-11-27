@@ -339,7 +339,7 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
         try {
           await player.stop();
         } catch (_) {}
-      }).whenComplete(() {
+      }).whenComplete(() async {
         _speaking = false;
         _speakingOrigin = null;
         await _setMusicDucked(false);
