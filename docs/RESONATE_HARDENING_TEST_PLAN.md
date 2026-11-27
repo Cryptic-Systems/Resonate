@@ -92,3 +92,18 @@ CI proves software contracts only. The audible scratch response, transition entr
 - [ ] Exercise Repeat One, Repeat All, final queue item, and an unreadable incoming source.
 - [ ] Confirm a completion observation is retained for the expected song occurrence, but cannot advance after the current song/index has changed.
 - [ ] Confirm diagnostics show exactly one terminal outcome: committed, recovered, preempted, or exhausted.
+
+
+### Repeat One and automatic DJ replay separation
+- [ ] With Repeat One enabled and crossfade enabled, verify the current track loops on the same source without preloading/promoting the same track on the standby deck.
+- [ ] With Repeat Off, verify track completion does not restart the current item.
+- [ ] With Repeat All, verify the next distinct queue item starts and the queue wraps only at its end.
+- [ ] Verify ordinary automatic A-to-B crossfades between distinct queue items remain unchanged.
+- [ ] Verify manual DJ deck preparation/crossfade remains available and is not treated as automatic repeat-self.
+
+### Scratch timestamp and history hardening
+- [ ] Verify exact-buffer timestamp matching remains preferred and retries do not duplicate pending entries.
+- [ ] Verify a duplicate/sliced processor buffer consumes the oldest pending timestamp in FIFO order.
+- [ ] Verify the ring retains four seconds at 44.1/48 kHz within its bounded capacity.
+- [ ] On device, record timestamp match/miss counts, valid-anchor count, render count and fallback count while scratching each playing physical deck.
+- [ ] Verify audible forward, reverse, hold and release behavior; fail closed to live PCM on invalid anchors.
