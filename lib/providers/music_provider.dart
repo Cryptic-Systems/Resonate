@@ -4094,8 +4094,6 @@ class MusicProvider extends ChangeNotifier {
     _repeatSelfFadeExecuting = false;
     _repeatSelfTargetSongId = null;
     _repeatSelfDjPlanGeneration++;
-    _repeatSelfDjPlanSongId = null;
-    _repeatSelfDjPlanAttempted = false;
     _repeatSelfDjPlanning = false;
     _repeatSelfDjPreloadInFlight = false;
     _repeatSelfDjPreparation = null;
