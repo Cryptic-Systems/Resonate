@@ -62,8 +62,8 @@ class WorkspaceLifecycleCoordinator extends ChangeNotifier {
       try {
         for (final participant in participants) {
           if (!_participants.contains(participant)) continue;
-          await participant.onWorkspaceChanged(workspace);
           changed.add(participant);
+          await participant.onWorkspaceChanged(workspace);
         }
         if (_disposed) return;
         _active = workspace;
