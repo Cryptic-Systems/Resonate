@@ -25,7 +25,7 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
   /// True only after a non-empty native spectrum sample has arrived for the
   /// current capture generation. A zero-valued sample is still valid silence.
   bool get hasLiveSpectrum => _hasReceivedSpectrumSample &&
-      enabled && _playbackActive && _capturePermissionGranted;
+      enabled && _workspaceActive && _playbackActive && _capturePermissionGranted;
 
   Timer? _captureTimer;
   bool _playbackActive = false;
@@ -41,8 +41,10 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
   VoidCallback? _playbackListener;
   bool Function()? _isPlaybackActive;
 
-  AudioVisualizationProvider() {
+  AudioVisualizationProvider({WorkspaceLifecycleCoordinator? workspaceLifecycle})
+      : _workspaceLifecycle = workspaceLifecycle {
     WidgetsBinding.instance.addObserver(this);
+    _workspaceLifecycle?.register(this);
     _load();
   }
 
@@ -126,6 +128,14 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
       frequencies = List<double>.filled(32, 0.0);
       notifyListeners();
     }
+    _syncCapture();
+  }
+
+  @override
+  void onWorkspaceChanged(ResonateWorkspace workspace) {
+    final active = workspace == ResonateWorkspace.player;
+    if (_workspaceActive == active) return;
+    _workspaceActive = active;
     _syncCapture();
   }
 
@@ -274,6 +284,7 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
   @override
   void dispose() {
     _disposed = true;
+    _workspaceLifecycle?.unregister(this);
     WidgetsBinding.instance.removeObserver(this);
     if (_playbackListenable != null && _playbackListener != null) {
       _playbackListenable!.removeListener(_playbackListener!);
