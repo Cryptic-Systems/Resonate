@@ -85,6 +85,13 @@ class WorkspaceTransitionController extends ChangeNotifier {
     if (ready != null && !ready.isCompleted) ready.complete();
   }
 
+  /// Fails the active handoff when destination initialization cannot complete.
+  void markFailed(ResonateWorkspace workspace, Object error) {
+    if (!_isTransitioning || _destination != workspace) return;
+    final ready = _destinationReady;
+    if (ready != null && !ready.isCompleted) ready.completeError(error);
+  }
+
   @override
   void dispose() {
     _disposed = true;
