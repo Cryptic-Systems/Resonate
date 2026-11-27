@@ -526,6 +526,8 @@ class MusicProvider extends ChangeNotifier {
   set _focusResumeGeneration(int value) =>
       _focusInterruption.resumeGeneration = value;
   int _volumeFadeGen = 0;
+  double _voiceCueDuckScale = 1.0;
+  int _voiceCueDuckGeneration = 0;
   static const double _duckLevel = FocusInterruptionRuntime.duckLevel;
   final AudioFocusSettings _audioFocusSettings = AudioFocusSettings();
   /// Compatibility aliases — focus prefs live in [_audioFocusSettings].
@@ -1062,7 +1064,7 @@ class MusicProvider extends ChangeNotifier {
       trackLevel: _levelingRuntime.composeAdditionalTrackScale(_featureNormalizationScale),
       preamp: _eqPreampScale,
       sleepFade: _sleepFadeScale,
-      focusDuck: _isDucked ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel) : 1.0,
+      focusDuck: (_isDucked ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel) : 1.0) * _voiceCueDuckScale,
     );
     await _media3StateSub?.cancel();
     _media3StateSub = session.stateStream.listen((state) {
@@ -1881,9 +1883,9 @@ class MusicProvider extends ChangeNotifier {
             trackLevel: _levelingRuntime.composeAdditionalTrackScale(_featureNormalizationScale),
             preamp: _eqPreampUserScale,
             sleepFade: _sleepFadeScale,
-            focusDuck: _isDucked
+            focusDuck: (_isDucked
                 ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel)
-                : 1.0,
+                : 1.0) * _voiceCueDuckScale,
           );
           if (!stillOwnsRouteRecovery()) return;
           if (!session.isPlaying) {
@@ -1961,8 +1963,27 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
+  /// Temporarily attenuates music under Resonate voice feedback without
+  /// changing user volume, EQ, track trim, or sleep-timer state.
+  Future<void> setVoiceCueDucking(bool active) async {
+    final generation = ++_voiceCueDuckGeneration;
+    final start = _voiceCueDuckScale;
+    final target = active ? 0.68 : 1.0;
+    const steps = 5;
+    for (var step = 1; step <= steps; step++) {
+      if (_disposed || generation != _voiceCueDuckGeneration) return;
+      _voiceCueDuckScale =
+          start + (target - start) * (step / steps);
+      await _applyActiveMasterVolume();
+      if (step < steps) {
+        await Future<void>.delayed(const Duration(milliseconds: 24));
+      }
+    }
+  }
+
   double get _effectiveCrossfadeMaster {
-    final preamp = (_eqPreampScale * _sleepFadeScale).clamp(0.0, 1.0).toDouble();
+    final preamp = (_eqPreampScale * _sleepFadeScale * _voiceCueDuckScale)
+        .clamp(0.0, 1.0).toDouble();
     if (!_isDucked) return preamp;
     final duck = _audioFocusLevel == 1 ? 0.18 : _duckLevel;
     return (duck * preamp).clamp(0.0, 0.45).toDouble();
@@ -2095,7 +2116,7 @@ class MusicProvider extends ChangeNotifier {
         trackLevel: _levelingRuntime.composeAdditionalTrackScale(_featureNormalizationScale),
         preamp: _eqPreampUserScale,
         sleepFade: _sleepFadeScale,
-        focusDuck: 1.0,
+        focusDuck: _voiceCueDuckScale,
       );
       if (_focusInterruption.ownsFocusEventGeneration(focusGeneration)) {
         unawaited(ResonateDiagnostics.record('audio_focus_unduck', {
