@@ -1,8 +1,8 @@
 # Resonate — Known Issues and Quality Register
 
 **Status:** Active engineering register  
-**Target branch:** `dj-workspace-development`  
-**Last reviewed:** 2026-11-22
+**Target branch:** `resonate-voice-audit`  
+**Last reviewed:** 2026-11-27
 
 ## DJ Console — progressive waveform Phase A
 
@@ -260,8 +260,8 @@ The landscape DJ Console visual foundation may proceed in parallel with playback
 
 ## Release discipline
 
-- All implementation commits target `dj-workspace-development`.
-- Keep PR #221 open; do not merge without explicit user approval.
+- All implementation commits for this hardening pass target `resonate-voice-audit`.
+- Keep PR #225 open; do not merge without explicit user approval.
 - Keep `Resonate-True-Apk` untouched.
 - CI success is not a substitute for physical-device listening and interaction tests.
 
@@ -299,3 +299,38 @@ The DJ Console platter presentation is being enlarged and given more visual prio
 - Exposed those values through the existing native DSP status map. Diagnostics now samples that map on its existing four-second heartbeat and records the per-physical-deck values; no PCM, audio-thread logging, blocking queue, or new player path is introduced.
 - The telemetry describes the latest processed block, not a historical peak window or a detector-confidence score. It is intended to show whether aggressive reductions come from the RMS target, configured max cut/gain budget, peak guard, or silence gate. It does not yet prove the audible cause.
 - Do not tune ducking or alter limiter behaviour until a new device report contains these fields and can be correlated with the reported passage.
+
+## 2026-11-27 — playback and DJ hardening scope
+
+This scope supersedes the 2026-11-22 temporary deferral of RQ-003 and authorizes targeted reliability fixes across crossfade, transport-state reconciliation and DJ performance. Preserve Media3 as the sole production playback authority. Do not merge PR #225 without explicit approval. CI success does not replace physical-device validation.
+
+### RQ-003 follow-up — stale pause display after selection
+
+**New code finding:** the Media3 pause path acknowledged the native pause, released audio focus, then immediately reconciled the UI from the session's cached state projection. The native command can complete before the next asynchronous state event reaches that projection, allowing the stale `isPlaying=true` value to overwrite the immediate pause intent. The runtime already exposes a revision-guarded `refreshState()` operation.
+
+**Targeted fix:** refresh the canonical Media3 snapshot after the pause and focus-release commands, before reconciling the provider/UI state. A regression test now simulates a stale cached playing snapshot after native pause and verifies the refresh resolves it. CI validation is pending; device reproduction remains required.
+
+### RQ-009 — Automatic DJ crossfade can enter too far into the incoming track
+
+**Priority:** P1  
+**Status:** Targeted planner guard implemented; CI and device validation pending  
+**Evidence:** User-observed; code path confirmed as a possible cause.
+
+The automatic candidate generator includes a `breakdownDrop` candidate whose incoming start is the breakdown section timestamp. The legacy beat-alignment fallback can also derive a later seek from phase alignment. Either can cause an automatic transition to begin well into the incoming song rather than near its opening.
+
+**Targeted fix:** automatic incoming entry points are constrained to the first 15% of the track, capped at 45 seconds. Late beat-alignment results are rejected to the start of the incoming track, and their associated tempo stretch is removed. Explicitly reviewed pair presets retain the ability to request a later cue. The candidate generator has regression coverage for rejecting an unreviewed mid-track breakdown entry while retaining the reviewed-preset override.
+
+**Exit criteria:** exact-head CI passes; device tests verify the incoming deck's actual native position before fade, during fade and after promotion across automatic, reviewed-preset and fallback transitions.
+
+### RQ-010 — DJ platter scratch does not audibly manipulate the deck
+
+**Priority:** P1  
+**Status:** Targeted PCM processor fix implemented; end-to-end device validation pending  
+**Evidence:** User-observed; native processor contract defect confirmed by code inspection.
+
+The native timestamped PCM scratch renderer was present in the Media3 audio-processor chain, but its successful render path read from a duplicate input buffer without advancing the original buffer. Media3's `AudioProcessor.queueInput` contract requires the supplied input buffer to be consumed. The existing scratch test covered pass-through consumption but did not assert consumption when rendering was active.
+
+**Targeted fix:** after a complete scratch block is rendered, advance the original input buffer to its limit. A regression assertion now verifies the active scratch render consumes the complete block. The stale client comment claiming the native path was pass-through has also been corrected.
+
+**Remaining investigation:** verify timestamp-ledger matches, PCM history availability, anchor validity and mailbox acceptance on a physical device. Add bounded diagnostics for rejected controls or unavailable timestamp history if the first device test still fails.
+
