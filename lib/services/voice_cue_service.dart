@@ -41,7 +41,7 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
           const AndroidAudioAttributes(
             contentType: AndroidAudioContentType.speech,
             flags: AndroidAudioFlags.none,
-            usage: AndroidAudioUsage.assistanceSonification,
+            usage: AndroidAudioUsage.media,
           ),
         );
       }
