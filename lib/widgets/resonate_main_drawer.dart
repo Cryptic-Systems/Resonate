@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../experience/experience_provider.dart';
+import '../services/workspace_lifecycle_coordinator.dart';
+import '../services/workspace_transition_controller.dart';
 import '../modes/integration/resonate_mode_ports.dart';
 import '../modes/models/resonate_mode.dart';
 import '../modes/providers/mode_provider.dart';
@@ -106,10 +108,24 @@ class ResonateMainDrawer extends StatelessWidget {
               title: const Text('Switch to Resonatix DJ'),
               subtitle: const Text('Open the manual performance workspace'),
               onTap: () async {
+                final transition = context.read<WorkspaceTransitionController>();
+                final experience = context.read<ExperienceProvider>();
+                final messenger = ScaffoldMessenger.of(context);
                 Navigator.of(context).pop();
-                await context.read<ExperienceProvider>().switchExperience(
-                  ResonateExperience.resonatixDj,
-                );
+                try {
+                  await transition.transitionTo(
+                    ResonateWorkspace.dj,
+                    performHandoff: () => experience.switchExperience(
+                      ResonateExperience.resonatixDj,
+                    ),
+                  );
+                } catch (error) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Could not open Resonatix DJ: $error'),
+                    ),
+                  );
+                }
               },
             ),
             ListTile(
