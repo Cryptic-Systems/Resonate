@@ -19,7 +19,7 @@ void main() {
   test('manifest contains 84 unique, filename-audited entries', () {
     expect(manifest['schemaVersion'], 1);
     expect(manifest['status'],
-        'filename_routes_audited_assets_not_extracted_listening_review_pending');
+        'filename_routes_enabled_audio_assets_extracted_listening_review_pending');
     expect(assets, hasLength(84));
 
     final ids = assets.map((entry) => (entry as Map)['id']).toList();
@@ -27,7 +27,7 @@ void main() {
     expect(ids.every((id) => id is String && id.trim().isNotEmpty), isTrue);
   });
 
-  test('entries remain disabled until extracted and listening-reviewed', () {
+  test('extracted filename mappings are enabled but remain listening-review pending', () {
     for (final raw in assets) {
       final entry = raw as Map<String, dynamic>;
       expect(entry['filename'], isA<String>());
@@ -39,8 +39,11 @@ void main() {
       expect(entry['allowedOrigins'], isNotEmpty);
       expect(entry['semanticGroupProposal'], isA<String>());
       expect(entry['evidence'], 'filename_and_routing_document_only');
-      expect(entry['assetPath'], isNull);
-      expect(entry['runtimeEnabled'], isFalse);
+      expect(entry['assetPath'], isA<String>());
+      expect(entry['runtimeEnabled'], isTrue);
+      final asset = File(entry['assetPath'] as String);
+      expect(asset.existsSync(), isTrue, reason: 'Missing cue asset: ${entry['assetPath']}');
+      expect(asset.lengthSync(), greaterThan(0), reason: 'Empty cue asset: ${entry['assetPath']}');
     }
   });
 
