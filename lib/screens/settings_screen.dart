@@ -11,6 +11,7 @@ import 'crossfade_screen.dart';
 import 'dj_mode_settings_screen.dart';
 import 'diagnostics_screen.dart';
 import 'audio_automation_settings_screen.dart';
+import 'voice_feedback_settings_screen.dart';
 import 'audio_leveling_settings_screen.dart';
 import 'intelligence_settings_screen.dart';
 import 'library_management_screen.dart';
@@ -28,6 +29,7 @@ class SettingsScreen extends StatelessWidget {
             _section(context, 'Playback', Icons.play_circle_outline, [
               _item(context, 'Crossfade', 'Transitions + seamless Repeat one loop', Icons.compare_arrows_rounded, const CrossfadeScreen()),
               _item(context, 'Audio automation', 'Audio focus, interruption response and EQ headroom', Icons.settings_suggest_rounded, const AudioAutomationSettingsScreen()),
+              _item(context, 'Voice feedback', 'Choose whether Resonate speaks short event cues', Icons.record_voice_over_rounded, const VoiceFeedbackSettingsScreen()),
               _item(context, 'Audio leveling', 'Analyze track loudness and review a conservative gain recommendation', Icons.graphic_eq_rounded, const AudioLevelingSettingsScreen()),
               _item(context, 'Automatic mixing', 'Optional beat-aware transitions and harmonic blending', Icons.auto_awesome_rounded, const DjModeSettingsScreen(playerFacing: true)),
               // Effects remain grouped under Equalizer; track analysis has its own entry above.
