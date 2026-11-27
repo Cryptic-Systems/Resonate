@@ -1,4 +1,6 @@
-import 'dart:collection';\n\nimport 'workspace_lifecycle_coordinator.dart';
+import 'dart:collection';
+
+import 'workspace_lifecycle_coordinator.dart';
 
 /// The experience that originated a voice event. Automatic DJ mixing still
 /// belongs to the Player; manual deck/Console actions belong to DJ Workspace.
