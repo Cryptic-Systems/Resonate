@@ -7,9 +7,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'music_provider.dart';
 import '../services/playback_engine_session.dart';
 import '../services/loudness_service.dart';
+import '../services/workspace_lifecycle_coordinator.dart';
 
-class PlaybackFeaturesProvider extends ChangeNotifier {
+class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecycleParticipant {
   final MusicProvider music;
+  final WorkspaceLifecycleCoordinator? _workspaceLifecycle;
+  bool _workspaceActive = true;
+  bool _normalizationRefreshPending = false;
   double speed = 1.0;
   double pitch = 1.0;
   bool normalizationEnabled = false;
@@ -203,7 +207,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     }
   }
 
-  static const int _fadeOutSeconds = 45;
+  @override\n  void onWorkspaceChanged(ResonateWorkspace workspace) {\n    final active = workspace == ResonateWorkspace.player;\n    if (_workspaceActive == active) return;\n    _workspaceActive = active;\n    if (!active) {\n      ++_normalizationGeneration;\n      _normalizationRefreshPending = normalizationEnabled;\n      return;\n    }\n    _lastSongId = music.currentSong?.id;\n    _lastEngine = music.activeEngineLabel;\n    unawaited(applyToActiveEngine());\n    if (_normalizationRefreshPending || normalizationEnabled) {\n      _normalizationRefreshPending = false;\n      unawaited(_refreshNormalizationForCurrentSong());\n    }\n  }\n\n  static const int _fadeOutSeconds = 45;
 
   Future<void> startSleepTimer(Duration duration) async {
     if (_disposed) return;
