@@ -87,5 +87,24 @@ void main() {
       expect(controller.destination, isNull);
       controller.dispose();
     });
+
+    test('surfaces destination startup failures without waiting for timeout',
+        () async {
+      final controller = WorkspaceTransitionController();
+      final transition = controller.transitionTo(
+        ResonateWorkspace.dj,
+        performHandoff: () async {},
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      controller.markFailed(
+        ResonateWorkspace.dj,
+        StateError('synthetic destination failure'),
+      );
+
+      await expectLater(transition, throwsA(isA<StateError>()));
+      expect(controller.isTransitioning, isFalse);
+      controller.dispose();
+    });
   });
 }
