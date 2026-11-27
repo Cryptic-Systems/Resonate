@@ -185,6 +185,9 @@ void main() {
     });
 
     test('projects per-deck scratch diagnostics from the native snapshot', () async {
+      await runtime.loadQueue([_song('track-1')]);
+      // Queue loading replaces the backend's prior snapshot. Inject the
+      // diagnostic readback afterwards, then refresh the runtime projection.
       backend.value = _snapshot(
         mediaId: 'track-1',
         scratchDiagnosticsA: const {
@@ -196,7 +199,7 @@ void main() {
           'processorPresent': false,
         },
       );
-      await runtime.loadQueue([_song('track-1')]);
+      await runtime.refreshState();
       await bridge.start();
 
       expect(bridge.current.scratchDiagnosticsA['processorPresent'], isTrue);
