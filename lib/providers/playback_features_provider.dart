@@ -235,21 +235,23 @@ class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecy
   }
 
   @override
-  void onWorkspaceChanged(ResonateWorkspace workspace) {
+  Future<void> onWorkspaceChanged(ResonateWorkspace workspace) async {
     final active = workspace == ResonateWorkspace.player;
     if (_workspaceActive == active) return;
     _workspaceActive = active;
     if (!active) {
+      // Keep the shared sleep timer alive, but cancel Player-only loudness
+      // analysis and stop applying Player rate/normalization controls to DJ decks.
       ++_normalizationGeneration;
       _normalizationRefreshPending = normalizationEnabled;
       return;
     }
     _lastSongId = music.currentSong?.id;
     _lastEngine = music.activeEngineLabel;
-    unawaited(applyToActiveEngine());
+    await applyToActiveEngine();
     if (_normalizationRefreshPending || normalizationEnabled) {
       _normalizationRefreshPending = false;
-      unawaited(_refreshNormalizationForCurrentSong());
+      await _refreshNormalizationForCurrentSong();
     }
   }
 
