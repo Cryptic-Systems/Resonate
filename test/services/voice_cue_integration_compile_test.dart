@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 
 import 'package:resonate/modes/providers/mode_provider.dart';
 import 'package:resonate/providers/music_provider.dart';
@@ -14,6 +15,16 @@ import 'package:resonate/providers/playback_features_provider.dart';
 void _typeCheck<T>() {}
 
 void main() {
+  test('voice cue manifest is bundled and contains the ready test cue', () async {
+    final manifest = await rootBundle.loadString(
+      'assets/audio/resonate_voice/voice_manifest.json',
+    );
+    expect(
+      manifest,
+      contains('system_consent_status.voice_system_ready'),
+    );
+  });
+
   test('voice cue service can be resolved before Flutter audio binding', () {
     expect(VoiceCueService.instance.isSpeaking, isFalse);
   });
