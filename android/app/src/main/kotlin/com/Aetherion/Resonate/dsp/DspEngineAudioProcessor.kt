@@ -297,6 +297,9 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
         createAttempted = false
         createFailuresThisActivation = 0
         consecutiveProcessErrors = 0
+        // Media3 may reconfigure this instance for a different output format.
+        // Do not recreate native DSP from a stale pre-reset sample rate/channels.
+        formatConfigured = false
         DspEngineSinkHook.forgetProcessor(this)
     }
 
