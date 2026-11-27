@@ -9,7 +9,7 @@ This is a **filename-derived audit**, not a completed listening/transcription au
 
 No audio has been re-recorded, renamed, normalized, or edited. Quiet/whispered delivery is intentional where the creator has specified it; loudness alone is not a defect. Actual vocal style per individual clip remains unverified.
 
-The repository currently stores the eight category ZIP archives, not extracted MP3 files. This document therefore does not claim that individual MP3s are already Flutter-loadable assets, and the existing placeholder manifest is intentionally not populated with unusable paths.
+All 84 original MP3s have now been extracted into Flutter asset category folders, and the eight source ZIPs are retained under `assets/audio/resonate_voice/source_archives/`. The manifest has verified asset paths and is runtime-enabled using the filename-derived routes. Spoken delivery and event suitability remain pending listening review.
 
 ## Archive verification update (2026-11-27)
 
