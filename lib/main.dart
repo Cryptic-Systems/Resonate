@@ -335,6 +335,8 @@ class ResonateApp extends StatelessWidget {
               playbackControlArbiter: context.read<PlaybackControlArbiter>(),
               deferMedia3UntilSettingsReady: true,
             );
+            // Voice cues duck the canonical music master without touching user gain settings.
+            VoiceCueService.instance.attachMusicDucking(provider.setVoiceCueDucking);
             // Media3 starts after persisted DSP and playback settings are restored.
             return provider;
           },
