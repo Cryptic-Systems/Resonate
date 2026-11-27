@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/services/workspace_lifecycle_coordinator.dart';
 
@@ -12,6 +14,36 @@ class _Participant implements WorkspaceLifecycleParticipant {
     if ((failOnDj && workspace == ResonateWorkspace.dj) ||
         (failOnPlayer && workspace == ResonateWorkspace.player)) {
       throw StateError('synthetic lifecycle failure');
+    }
+  }
+}
+
+ 
+class _BlockingParticipant implements WorkspaceLifecycleParticipant {
+  final Completer<void> entered = Completer<void>();
+  final Completer<void> release = Completer<void>();
+  final List<ResonateWorkspace> transitions = [];
+
+  @override
+  Future<void> onWorkspaceChanged(ResonateWorkspace workspace) async {
+    transitions.add(workspace);
+    if (workspace == ResonateWorkspace.dj) {
+      if (!entered.isCompleted) entered.complete();
+      await release.future;
+    }
+  }
+}
+
+class _FailOnceParticipant implements WorkspaceLifecycleParticipant {
+  bool failNextDj = true;
+  final List<ResonateWorkspace> transitions = [];
+
+  @override
+  Future<void> onWorkspaceChanged(ResonateWorkspace workspace) async {
+    transitions.add(workspace);
+    if (workspace == ResonateWorkspace.dj && failNextDj) {
+      failNextDj = false;
+      throw StateError('one-time lifecycle failure');
     }
   }
 }
@@ -105,6 +137,47 @@ void main() {
     await coordinator.activate(ResonateWorkspace.dj);
 
     expect(participant.transitions, isEmpty);
+  });
+
+  test('dispose during an in-flight transition rolls participants back', () async {
+    final coordinator = WorkspaceLifecycleCoordinator();
+    final participant = _BlockingParticipant();
+    coordinator.register(participant);
+    await coordinator.activate(ResonateWorkspace.player);
+
+    final transition = coordinator.activate(ResonateWorkspace.dj);
+    await participant.entered.future;
+    coordinator.dispose();
+    participant.release.complete();
+    await transition;
+
+    expect(coordinator.activeWorkspace, ResonateWorkspace.player);
+    expect(participant.transitions, [
+      ResonateWorkspace.player,
+      ResonateWorkspace.dj,
+      ResonateWorkspace.player,
+    ]);
+  });
+
+  test('transition queue recovers after a participant failure', () async {
+    final coordinator = WorkspaceLifecycleCoordinator();
+    final participant = _FailOnceParticipant();
+    coordinator.register(participant);
+    await coordinator.activate(ResonateWorkspace.player);
+
+    await expectLater(
+      coordinator.activate(ResonateWorkspace.dj),
+      throwsStateError,
+    );
+    await coordinator.activate(ResonateWorkspace.dj);
+
+    expect(coordinator.activeWorkspace, ResonateWorkspace.dj);
+    expect(participant.transitions, [
+      ResonateWorkspace.player,
+      ResonateWorkspace.dj,
+      ResonateWorkspace.player,
+      ResonateWorkspace.dj,
+    ]);
   });
 
   test('participant that fails initial synchronization is unregistered', () async {
