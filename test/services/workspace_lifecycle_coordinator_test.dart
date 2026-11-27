@@ -4,11 +4,13 @@ import 'package:resonate/services/workspace_lifecycle_coordinator.dart';
 class _Participant implements WorkspaceLifecycleParticipant {
   final List<ResonateWorkspace> transitions = [];
   bool failOnDj = false;
+  bool failOnPlayer = false;
 
   @override
   Future<void> onWorkspaceChanged(ResonateWorkspace workspace) async {
     transitions.add(workspace);
-    if (failOnDj && workspace == ResonateWorkspace.dj) {
+    if ((failOnDj && workspace == ResonateWorkspace.dj) ||
+        (failOnPlayer && workspace == ResonateWorkspace.player)) {
       throw StateError('synthetic lifecycle failure');
     }
   }
@@ -107,7 +109,7 @@ void main() {
 
   test('participant that fails initial synchronization is unregistered', () async {
     final coordinator = WorkspaceLifecycleCoordinator();
-    final participant = _Participant()..failOnDj = true;
+    final participant = _Participant()..failOnPlayer = true;
 
     // Registration initialization is serialized before this activation.
     coordinator.register(participant);
