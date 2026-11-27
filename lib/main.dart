@@ -692,15 +692,16 @@ class _LifecycleHomeState extends State<_LifecycleHome>
                               ),
                               const SizedBox(height: 14),
                               SizedBox(
-                                width: 180,
-                                child: LinearProgressIndicator(
-                                  minHeight: 3,
-                                  borderRadius: BorderRadius.circular(99),
+                                width: 34,
+                                height: 34,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: colors.primary,
                                 ),
                               ),
                               const SizedBox(height: 18),
                               Text(
-                                'Preparing your workspace',
+                                'Getting your controls ready',
                                 textAlign: TextAlign.center,
                                 style: Theme.of(context).textTheme.bodyMedium,
                               ),
