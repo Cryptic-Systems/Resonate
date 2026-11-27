@@ -149,14 +149,18 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
             return
         }
         if (engineHandle != 0L || createAttempted) return
+        if (createFailuresThisActivation >= MAX_CREATE_FAILURES_PER_ACTIVATION) return
 
         createAttempted = true
         try {
+            if (!nativeApi.ensureLoaded()) {
+                recordCreateFailure("native_library_unavailable")
+                return
+            }
             val h = nativeApi.create(configuredRate.toDouble(), configuredChannels)
             if (h == 0L) {
-                Log.w(TAG, "id=$processorId nativeCreate returned 0 — pass-through")
-                DspSessionGate.noteCreateFailure("null_handle")
-                nativeProcessEnabled = false
+                Log.w(TAG, "id=$processorId nativeCreate returned 0 — pass-through; lifecycle retry remains available")
+                recordCreateFailure("null_handle")
                 return
             }
 
