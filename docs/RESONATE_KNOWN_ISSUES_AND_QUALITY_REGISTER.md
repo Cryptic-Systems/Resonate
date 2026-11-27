@@ -121,8 +121,8 @@ A targeted native DSP change is now on the development branch: after the configu
 ## RQ-003 — Pause control briefly becomes stale after library track selection
 
 **Priority:** P2  
-**Status:** Open — reproduce and trace state synchronization  
-**Evidence:** User-observed; reported to self-correct without another action.
+**Status:** Targeted state-refresh fix implemented; CI/device validation pending  
+**Evidence:** User-observed; asynchronous state-projection race isolated and regression-tested.
 
 **Observed behavior**
 
