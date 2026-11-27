@@ -42,7 +42,12 @@ class _HomeScreenState extends State<HomeScreen> {
     _pageController = PageController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      unawaited(context.read<WorkspaceLifecycleCoordinator>().activate(ResonateWorkspace.player));
+      unawaited(context
+          .read<WorkspaceLifecycleCoordinator>()
+          .activate(ResonateWorkspace.player)
+          .catchError((Object error) {
+        debugPrint('Player workspace activation failed: $error');
+      }));
       _shellNav = context.read<ShellNav>();
       _shellNav?.bind(_selectPage);
     });
