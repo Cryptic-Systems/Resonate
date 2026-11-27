@@ -13,6 +13,8 @@ import '../models/song.dart';
 import '../navigation/shell_nav.dart';
 import '../services/dj_waveform_range_reader.dart';
 import '../services/dj_cue_point_store.dart';
+import '../services/voice_cue_service.dart';
+import '../services/voice_cue_router.dart';
 import '../services/playback_snapshot.dart';
 import '../services/playback_engine_session.dart';
 import '../providers/dj_mode_provider.dart';
@@ -73,6 +75,12 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
     super.initState();
     SystemChrome.setPreferredOrientations(_landscape);
     unawaited(_loadCuePoints());
+    unawaited(VoiceCueService.instance.speak(
+      cueId: 'deck_console_workspace.console_console_open',
+      origin: VoiceCueOrigin.djManual,
+      eventId: 'manual_console_open_${DateTime.now().microsecondsSinceEpoch}',
+      confirmed: true,
+    ));
   }
 
   @override
