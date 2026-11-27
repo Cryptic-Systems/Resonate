@@ -77,6 +77,7 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
           await _player.stop();
         } catch (_) {}
         _speaking = false;
+        _speakingOrigin = null;
         _router.resetSession();
       }
     } finally {
@@ -131,9 +132,11 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
     bool confirmed = true,
     List<VoiceCueOrigin>? allowedOrigins,
   }) async {
-    if (_settingsChangeInFlight || _requestInFlight || _speaking) return false;
+    if (_settingsChangeInFlight || _requestInFlight || _speaking ||
+        !_originAllowedInWorkspace(origin)) return false;
     _requestInFlight = true;
     final generation = _generation;
+    final workspaceGeneration = _workspaceGeneration;
     String? reservedGroup;
     try {
       if (!await isEnabled() || generation != _generation ||
@@ -141,6 +144,8 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
           !_originAllowedInWorkspace(origin)) return false;
       await _ensureManifest();
       if (generation != _generation ||
+          workspaceGeneration != _workspaceGeneration ||
+          !_originAllowedInWorkspace(origin) ||
           _settingsChangeInFlight ||
           !await isEnabled()) {
         return false;
@@ -197,6 +202,8 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
 
       await _player.setAudioSource(AudioSource.asset(assetPath));
       if (generation != _generation ||
+          workspaceGeneration != _workspaceGeneration ||
+          !_originAllowedInWorkspace(origin) ||
           _settingsChangeInFlight ||
           !await isEnabled()) {
         _router.release(eventId: eventId, semanticGroup: group);
@@ -208,17 +215,20 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
       }
 
       _speaking = true;
+      _speakingOrigin = origin;
       final playback = _player.play();
       unawaited(playback.catchError((Object error, StackTrace stack) {
         _router.release(eventId: eventId, semanticGroup: group);
         debugPrint('Resonate voice cue failed ($cueId): $error');
       }).whenComplete(() {
         _speaking = false;
+        _speakingOrigin = null;
       }));
       reservedGroup = null;
       return true;
     } catch (error) {
       _speaking = false;
+      _speakingOrigin = null;
       if (reservedGroup != null) {
         _router.release(eventId: eventId, semanticGroup: reservedGroup);
       }
