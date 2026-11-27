@@ -44,7 +44,8 @@ class VoiceCueService implements WorkspaceLifecycleParticipant {
     coordinator.register(this);
   }
 
-  bool _originAllowedInWorkspace(VoiceCueOrigin origin) =>\n      voiceCueOriginAllowedInWorkspace(origin, _activeWorkspace);
+  bool _originAllowedInWorkspace(VoiceCueOrigin origin) =>
+      voiceCueOriginAllowedInWorkspace(origin, _activeWorkspace);
 
   @override
   Future<void> onWorkspaceChanged(ResonateWorkspace workspace) async {
