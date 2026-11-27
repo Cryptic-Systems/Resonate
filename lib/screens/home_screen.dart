@@ -10,6 +10,7 @@ import '../widgets/mini_player_bar.dart';
 import 'library_screen.dart';
 import 'player_screen.dart';
 import '../navigation/shell_nav.dart';
+import '../services/workspace_lifecycle_coordinator.dart';
 import 'home_dashboard.dart';
 
 class HomeScreen extends StatefulWidget {
