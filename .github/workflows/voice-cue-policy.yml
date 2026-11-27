@@ -8,6 +8,15 @@ on:
       - "test/services/voice_cue_router_test.dart"
       - "test/services/voice_cue_manifest_test.dart"
       - ".github/workflows/voice-cue-policy.yml"
+      - ".github/workflows/voice-cue-extract-assets.yml"
+      - "tool/extract_resonate_voice_assets.py"
+      - "pubspec.yaml"
+      - "assets/audio/resonate_voice/voice_manifest.json"
+      - "lib/screens/dj_console_screen.dart"
+      - "lib/providers/music_provider_crossfade.dart"
+      - "lib/providers/music_provider_media3.dart"
+      - "lib/services/companion_command_executor.dart"
+      - "lib/services/voice_cue_service.dart"
   pull_request:
     branches: [dj-workspace-development]
     paths:
@@ -15,6 +24,15 @@ on:
       - "test/services/voice_cue_router_test.dart"
       - "test/services/voice_cue_manifest_test.dart"
       - ".github/workflows/voice-cue-policy.yml"
+      - ".github/workflows/voice-cue-extract-assets.yml"
+      - "tool/extract_resonate_voice_assets.py"
+      - "pubspec.yaml"
+      - "assets/audio/resonate_voice/voice_manifest.json"
+      - "lib/screens/dj_console_screen.dart"
+      - "lib/providers/music_provider_crossfade.dart"
+      - "lib/providers/music_provider_media3.dart"
+      - "lib/services/companion_command_executor.dart"
+      - "lib/services/voice_cue_service.dart"
   workflow_dispatch:
 
 permissions:
