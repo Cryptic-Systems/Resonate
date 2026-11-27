@@ -116,6 +116,8 @@ class Media3PlaybackService : MediaSessionService() {
             "lastUnderrunBufferSizeMs" to lastUnderrunBufferSizeMs,
             "lastUnderrunElapsedSinceFeedMs" to lastUnderrunElapsedSinceFeedMs,
             "lastUnderrunElapsedRealtimeMs" to lastUnderrunElapsedRealtimeMs,
+            "scratchDeckA" to DspEngineSinkHook.scratchDiagnostics("A"),
+            "scratchDeckB" to DspEngineSinkHook.scratchDiagnostics("B"),
         )
     }
 
