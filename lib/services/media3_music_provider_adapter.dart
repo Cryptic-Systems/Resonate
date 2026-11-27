@@ -11,7 +11,7 @@ import 'playback_snapshot.dart';
 /// Resonate's Song/queue model into immutable Media3 descriptors and forwards
 /// the native state stream. MusicProvider can migrate its transport boundary
 /// through this facade without exposing Media3 implementation details.
-class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackPlaylistSyncBackend, PlaybackSpeedBackend, PlaybackPitchBackend, PlaybackDeckSpeedBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend, PlaybackTransitionPreviewBackend {
+class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackStandbyCueBackend, PlaybackPlaylistSyncBackend, PlaybackSpeedBackend, PlaybackPitchBackend, PlaybackDeckSpeedBackend, PlaybackDeckParametersBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend, PlaybackTransitionPreviewBackend, PlaybackDjDeckBackend, PlaybackDjScratchBackend {
   Media3MusicProviderAdapter({Media3PlaybackClient? client})
       : _client = client ?? Media3PlaybackClient();
 
@@ -157,6 +157,20 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
 
   @override
   Future<void> setPlaybackPitch(double pitch) => _client.setPlaybackPitch(pitch);
+
+  @override
+  Future<void> setDeckPlaybackParameters({
+    required double activeSpeed,
+    required double activePitch,
+    required double standbySpeed,
+    required double standbyPitch,
+  }) =>
+      _client.setDeckPlaybackParameters(
+        activeSpeed: activeSpeed,
+        activePitch: activePitch,
+        standbySpeed: standbySpeed,
+        standbyPitch: standbyPitch,
+      );
 
   @override
   Future<void> setDeckPlaybackSpeeds({
@@ -309,11 +323,126 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
   }
 
   @override
+  Future<void> seekStandby({
+    required Duration position,
+    required String expectedMediaId,
+    required int expectedQueueIndex,
+  }) => _client.seekStandby(
+        position: position,
+        expectedMediaId: expectedMediaId,
+        expectedQueueIndex: expectedQueueIndex,
+      );
+
+  @override
   Future<void> crossfade({required Duration duration}) =>
       _client.crossfade(duration: duration);
 
   @override
   Future<void> cancelCrossfade() => _client.cancelCrossfade();
+
+  @override
+  Future<void> enableDjDualDeckMode() => _client.enableDjDualDeckMode();
+
+  @override
+  Future<void> disableDjDualDeckMode() => _client.disableDjDualDeckMode();
+
+  @override
+  Future<void> setDjCrossfader(double position) => _client.setDjCrossfader(position);
+
+  @override
+  Future<void> setDjDeckChannelGain({
+    required String deckId,
+    required double gain,
+  }) => _client.setDjDeckChannelGain(deckId: deckId, gain: gain);
+
+  @override
+  Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0}) async {
+    final playable = songs.where((song) => song.filePath.trim().isNotEmpty)
+        .toList(growable: false);
+    final playableStart = resolvePlayableStartIndex(songs, startIndex);
+    await _client.loadDjDeck(
+      deckId,
+      playable.map(Media3QueueItem.fromSong).toList(growable: false),
+      startIndex: playableStart,
+    );
+  }
+
+  @override
+  Future<void> playDjDeck(String deckId) => _client.playDjDeck(deckId);
+
+  @override
+  Future<void> pauseDjDeck(String deckId) => _client.pauseDjDeck(deckId);
+
+  @override
+  Future<void> clearDjDeck(String deckId) => _client.clearDjDeck(deckId);
+
+  @override
+  Future<void> setDjDeckPlaybackParameters({
+    required String deckId,
+    required double speed,
+    required double pitch,
+  }) => _client.setDjDeckPlaybackParameters(
+        deckId: deckId,
+        speed: speed,
+        pitch: pitch,
+      );
+
+  @override
+  Future<void> seekDjDeck({
+    required String deckId,
+    required Duration position,
+    required String expectedMediaId,
+  }) => _client.seekDjDeck(
+        deckId: deckId,
+        position: position,
+        expectedMediaId: expectedMediaId,
+      );
+
+  @override
+  Future<void> setDjDeckEq({
+    required String deckId,
+    required List<double> gainsDb,
+  }) => _client.setDjDeckEq(deckId: deckId, gainsDb: gainsDb);
+
+  @override
+  Future<void> clearDjDeckEq({required String deckId}) =>
+      _client.clearDjDeckEq(deckId: deckId);
+
+  @override
+  Future<void> setDjDeckFilter({required String deckId, required int type, required double cutoffHz}) =>
+      _client.setDjDeckFilter(deckId: deckId, type: type, cutoffHz: cutoffHz);
+
+  @override
+  Future<void> setDjDeckLoopRange({
+    required String deckId,
+    required Duration start,
+    required Duration end,
+    required String expectedMediaId,
+  }) => _client.setDjDeckLoopRange(
+        deckId: deckId,
+        start: start,
+        end: end,
+        expectedMediaId: expectedMediaId,
+      );
+
+  @override
+  Future<void> clearDjDeckLoop({required String deckId}) =>
+      _client.clearDjDeckLoop(deckId: deckId);
+
+  @override
+  Future<void> setDjScratchControl({
+    required String deckId,
+    required String expectedMediaId,
+    required bool active,
+    required double velocity,
+    required Duration anchor,
+  }) => _client.setDjScratchControl(
+        deckId: deckId,
+        expectedMediaId: expectedMediaId,
+        active: active,
+        velocity: velocity,
+        anchor: anchor,
+      );
 
   @override
   Future<PlaybackSnapshot> currentState() async =>
@@ -344,11 +473,56 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
         crossfadeProgress: state.crossfadeProgress,
         activeDeckVolume: state.activeDeckVolume,
         standbyDeckVolume: state.standbyDeckVolume,
+        activeDeckSpeed: state.activeDeckSpeed,
+        activeDeckPitch: state.activeDeckPitch,
+        standbyDeckSpeed: state.standbyDeckSpeed,
+        standbyDeckPitch: state.standbyDeckPitch,
+        incomingMediaId: state.incomingMediaId,
+        incomingReady: state.incomingReady,
+        incomingPosition: state.incomingPosition,
+        djDualDeckMode: state.djDualDeckMode,
+        djCrossfaderPosition: state.djCrossfaderPosition,
+        deckA: _deckSnapshot(state.deckA),
+        deckB: _deckSnapshot(state.deckB),
+        audioUnderrunCountA: state.audioUnderrunCountA,
+        audioUnderrunCountB: state.audioUnderrunCountB,
+        lastUnderrunDeck: state.lastUnderrunDeck,
+        lastUnderrunBufferSizeFrames: state.lastUnderrunBufferSizeFrames,
+        lastUnderrunBufferSizeMs: state.lastUnderrunBufferSizeMs,
+        lastUnderrunElapsedSinceFeedMs: state.lastUnderrunElapsedSinceFeedMs,
+        lastUnderrunElapsedRealtimeMs: state.lastUnderrunElapsedRealtimeMs,
         repeatMode: state.repeatMode,
         shuffleModeEnabled: state.shuffleModeEnabled,
         hasError: state.hasError,
         error: state.error,
       );
+
+  static PlaybackDeckSnapshot? _deckSnapshot(Media3DjDeckSnapshot? deck) {
+    if (deck == null) return null;
+    return PlaybackDeckSnapshot(
+      deckId: deck.deckId,
+      mediaId: deck.mediaId,
+      title: deck.title,
+      artist: deck.artist,
+      album: deck.album,
+      position: deck.position,
+      bufferedPosition: deck.bufferedPosition,
+      duration: deck.duration,
+      isPlaying: deck.isPlaying,
+      playWhenReady: deck.playWhenReady,
+      playbackState: deck.playbackState,
+      mediaItemIndex: deck.mediaItemIndex,
+      mediaItemCount: deck.mediaItemCount,
+      volume: deck.volume,
+      channelGain: deck.channelGain,
+      speed: deck.speed,
+      pitch: deck.pitch,
+      audioSessionId: deck.audioSessionId,
+      loopActive: deck.loopActive,
+      loopStart: deck.loopStart,
+      loopEnd: deck.loopEnd,
+    );
+  }
 
   static Uri sourceUriForPath(String path) {
     final trimmed = path.trim();

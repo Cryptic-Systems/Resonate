@@ -33,6 +33,20 @@ PlaybackSnapshot _snapshot({
   double crossfadeProgress = 0.0,
   double activeDeckVolume = 1.0,
   double standbyDeckVolume = 0.0,
+  String? incomingMediaId,
+  bool incomingReady = false,
+  Duration incomingPosition = Duration.zero,
+  int audioUnderrunCountA = 0,
+  int audioUnderrunCountB = 0,
+  String? lastUnderrunDeck,
+  int lastUnderrunBufferSizeFrames = 0,
+  int lastUnderrunBufferSizeMs = 0,
+  int lastUnderrunElapsedSinceFeedMs = 0,
+  int lastUnderrunElapsedRealtimeMs = 0,
+  bool djDualDeckMode = false,
+  double djCrossfaderPosition = 0.5,
+  PlaybackDeckSnapshot? deckA,
+  PlaybackDeckSnapshot? deckB,
 }) =>
     PlaybackSnapshot(
       connected: true,
@@ -58,6 +72,20 @@ PlaybackSnapshot _snapshot({
       crossfadeProgress: crossfadeProgress,
       activeDeckVolume: activeDeckVolume,
       standbyDeckVolume: standbyDeckVolume,
+      incomingMediaId: incomingMediaId,
+      incomingReady: incomingReady,
+      incomingPosition: incomingPosition,
+      djDualDeckMode: djDualDeckMode,
+      djCrossfaderPosition: djCrossfaderPosition,
+      deckA: deckA,
+      deckB: deckB,
+      audioUnderrunCountA: audioUnderrunCountA,
+      audioUnderrunCountB: audioUnderrunCountB,
+      lastUnderrunDeck: lastUnderrunDeck,
+      lastUnderrunBufferSizeFrames: lastUnderrunBufferSizeFrames,
+      lastUnderrunBufferSizeMs: lastUnderrunBufferSizeMs,
+      lastUnderrunElapsedSinceFeedMs: lastUnderrunElapsedSinceFeedMs,
+      lastUnderrunElapsedRealtimeMs: lastUnderrunElapsedRealtimeMs,
       repeatMode: repeatMode,
       shuffleModeEnabled: shuffleModeEnabled,
       hasError: false,
@@ -132,6 +160,26 @@ void main() {
       await backend.controller.close();
     });
 
+    test('projects live standby readiness, identity and position', () async {
+      await runtime.loadQueue([_song('outgoing')]);
+      backend.value = _snapshot(
+        mediaId: 'outgoing',
+        activeDeckId: 'B',
+        crossfadeStatus: 'ready',
+        incomingMediaId: 'incoming',
+        incomingReady: true,
+        incomingPosition: const Duration(seconds: 12),
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+      await bridge.start();
+
+      expect(bridge.current.activeDeckId, 'B');
+      expect(bridge.current.incomingMediaId, 'incoming');
+      expect(bridge.current.incomingReady, isTrue);
+      expect(bridge.current.incomingPosition, const Duration(seconds: 12));
+    });
+
     test('projects reconciled Media3 state without optimistic changes', () async {
       backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
       await runtime.loadQueue([_song('track-1')]);
@@ -182,6 +230,49 @@ void main() {
       expect(projected.shuffleModeEnabled, isTrue);
     });
 
+    test('projects persistent physical A/B deck telemetry and crossfader', () async {
+      await runtime.loadQueue([_song('track-a')]);
+      backend.value = _snapshot(
+        mediaId: 'track-a',
+        djDualDeckMode: true,
+        djCrossfaderPosition: 0.35,
+        deckA: const PlaybackDeckSnapshot(
+          deckId: 'A',
+          mediaId: 'track-a',
+          title: 'Deck A',
+          artist: 'Artist A',
+          position: Duration(seconds: 10),
+          duration: Duration(minutes: 3),
+          isPlaying: true,
+          volume: 0.8,
+          audioSessionId: 51,
+        ),
+        deckB: const PlaybackDeckSnapshot(
+          deckId: 'B',
+          mediaId: 'track-b',
+          title: 'Deck B',
+          artist: 'Artist B',
+          position: Duration(seconds: 4),
+          duration: Duration(minutes: 4),
+          isPlaying: false,
+          volume: 0.3,
+          audioSessionId: 52,
+        ),
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+      await bridge.start();
+
+      expect(bridge.current.djDualDeckMode, isTrue);
+      expect(bridge.current.djCrossfaderPosition, 0.35);
+      expect(bridge.current.deckA?.mediaId, 'track-a');
+      expect(bridge.current.deckA?.isPlaying, isTrue);
+      expect(bridge.current.deckA?.audioSessionId, 51);
+      expect(bridge.current.deckB?.mediaId, 'track-b');
+      expect(bridge.current.deckB?.isPlaying, isFalse);
+      expect(bridge.current.deckB?.volume, 0.3);
+    });
+
     test('projects native crossfade phase and both physical deck gains', () async {
       await bridge.start();
       final fading = bridge.states.first;
@@ -201,6 +292,32 @@ void main() {
       expect(projected.crossfadeProgress, 0.5);
       expect(projected.activeDeckVolume, 0.7071);
       expect(projected.standbyDeckVolume, 0.7071);
+    });
+
+    test('projects per-deck underrun counters and last native underrun context', () async {
+      await runtime.loadQueue([_song('track-1')]);
+      backend.value = _snapshot(
+        mediaId: 'track-1',
+        activeDeckId: 'B',
+        audioUnderrunCountA: 2,
+        audioUnderrunCountB: 1,
+        lastUnderrunDeck: 'B',
+        lastUnderrunBufferSizeFrames: 4096,
+        lastUnderrunBufferSizeMs: 84,
+        lastUnderrunElapsedSinceFeedMs: 126,
+        lastUnderrunElapsedRealtimeMs: 987654,
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+      await bridge.start();
+
+      expect(bridge.current.audioUnderrunCountA, 2);
+      expect(bridge.current.audioUnderrunCountB, 1);
+      expect(bridge.current.lastUnderrunDeck, 'B');
+      expect(bridge.current.lastUnderrunBufferSizeFrames, 4096);
+      expect(bridge.current.lastUnderrunBufferSizeMs, 84);
+      expect(bridge.current.lastUnderrunElapsedSinceFeedMs, 126);
+      expect(bridge.current.lastUnderrunElapsedRealtimeMs, 987654);
     });
 
     test('projects the active physical A/B deck identity', () async {

@@ -286,7 +286,7 @@ class DjBpmEstimator {
 
   /// Extract a decoded PCM window for the V2 profile analyzer.
   /// The source codec is intentionally irrelevant at this boundary.
-  Future<({Uint8List pcm, int sampleRate, int channels})?> extractDecodedPcmWindow(
+  Future<({Uint8List pcm, int sampleRate, int channels, int startMs})?> extractDecodedPcmWindow(
     String uri, {
     double maxSeconds = 15.0,
     int startMs = 0,
@@ -300,7 +300,8 @@ class DjBpmEstimator {
       if (raw is! Map) return null;
       final sampleRate = (raw['sampleRate'] as num?)?.toInt();
       final channels = (raw['channels'] as num?)?.toInt() ?? 2;
-      if (sampleRate == null || sampleRate < 8000 || channels < 1) return null;
+      final decodedStartMs = (raw['startMs'] as num?)?.toInt() ?? startMs;
+      if (sampleRate == null || sampleRate < 8000 || channels < 1 || decodedStartMs < 0) return null;
       final value = raw['pcm'];
       final pcm = value is Uint8List
           ? value
@@ -308,7 +309,7 @@ class DjBpmEstimator {
               ? Uint8List.fromList(value)
               : null;
       if (pcm == null || pcm.length < sampleRate) return null;
-      return (pcm: pcm, sampleRate: sampleRate, channels: channels);
+      return (pcm: pcm, sampleRate: sampleRate, channels: channels, startMs: decodedStartMs);
     } catch (e) {
       debugPrint('DjBpmEstimator.extractDecodedPcmWindow: $e');
       return null;

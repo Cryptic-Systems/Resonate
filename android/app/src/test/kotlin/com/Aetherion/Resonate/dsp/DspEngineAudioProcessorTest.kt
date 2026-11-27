@@ -15,6 +15,7 @@ class DspEngineAudioProcessorTest {
     private class FakeProcessorApi : DspEngineAudioProcessor.NativeDspApi {
         var nextHandle = 100L
         var createCalls = 0
+        var failCreateCalls = 0
         var destroyCalls = 0
         val destroyed = mutableListOf<Long>()
         var processResult = 0
@@ -23,6 +24,7 @@ class DspEngineAudioProcessorTest {
 
         override fun create(sampleRate: Double, channels: Int): Long {
             createCalls++
+            if (createCalls <= failCreateCalls) return 0L
             return nextHandle++
         }
 
@@ -169,6 +171,22 @@ class DspEngineAudioProcessorTest {
         processor.setDeckActive(true)
         assertEquals(2, api.createCalls)
         assertEquals(1, DspEngineRegistry.activeCount())
+    }
+
+    @Test
+    fun transient_native_create_failure_recovers_on_audio_processor_flush() {
+        api.failCreateCalls = 1
+        val processor = configure()
+
+        assertEquals(1, api.createCalls)
+        assertEquals(0, DspEngineRegistry.activeCount())
+        assertTrue(processor.nativeProcessEnabledForTest())
+
+        processor.flush()
+
+        assertEquals(2, api.createCalls)
+        assertEquals(1, DspEngineRegistry.activeCount())
+        assertTrue(processor.nativeProcessEnabledForTest())
     }
 
     @Test

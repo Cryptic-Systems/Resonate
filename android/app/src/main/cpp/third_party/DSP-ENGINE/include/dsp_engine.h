@@ -5,7 +5,7 @@
  * multi-band parametric EQ, true-peak / two-band limiter, preamp, speaker-mode
  * virtual bass, dither, sample-rate conversion, and optional platform backends.
  *
- * Version 0.6.0 — Full intelligent stack (budget, auto-VB, auto-preamp, crest, silence)
+ * Version 0.6.1 — Psychic adaptive control and track-analysis integration
  *
  * THREAD SAFETY
  * -------------
@@ -122,7 +122,7 @@ typedef struct {
 
 /** Maximum parametric EQ bands accepted by dsp_eq_set_bands / dsp_eq_set_band.
  *  Matches the engine-side storage and MultiBandEq capacity. */
-#define DSP_EQ_MAX_BANDS 31
+#define DSP_EQ_MAX_BANDS 32
 
 /**
  * Gain-reduction metering for UI.
@@ -174,6 +174,21 @@ typedef struct {
     /** Short-term RMS (dBFS), ~window set by auto-gain / default ~400 ms. */
     float short_term_rms_db;
 } DspLevelMeter;
+
+/**
+ * Snapshot of the auto-DVC controller decision for the most recently processed
+ * block. Values are best-effort telemetry, not control inputs.
+ */
+typedef struct {
+    float pre_dvc_peak_db;
+    float target_rms_db;
+    float rms_error_db;
+    float constrained_target_db;
+    float peak_gain_cap_db;
+    float applied_gain_db;
+    int peak_limited;
+    int silence_gate_active;
+} DspAutoGainMeter;
 
 DSP_API const char* dsp_version(void);
 DSP_API DspEngine* dsp_create(const DspConfig* cfg);
@@ -345,6 +360,7 @@ DSP_API DspError dsp_auto_gain_set_window_ms(DspEngine* eng, float window_ms);
 DSP_API float    dsp_auto_gain_get_window_ms(const DspEngine* eng);
 DSP_API float    dsp_auto_gain_get_applied_db(const DspEngine* eng);
 DSP_API float    dsp_get_short_term_rms_db(const DspEngine* eng);
+DSP_API DspError dsp_auto_gain_get_meter(const DspEngine* eng, DspAutoGainMeter* out);
 
 /* ---------- Extended intelligence (v0.6) ---------- */
 

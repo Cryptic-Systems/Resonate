@@ -29,7 +29,7 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   int _autonomy = 1;
   bool _autopilotGraduated = false;
   String? _observedSongId;
-  bool _lastPlaying = false;
+  bool _recommendationsDirty = true;
   List<IntelligenceRecommendation> _recommendations = const [];
   List<IntelligenceRecommendation> _candidatePool = const [];
   Map<String, double> _feedback = <String, double>{};
@@ -52,6 +52,7 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   void _invalidateRecommendationSnapshot() {
     _recommendationRevision++;
+    _recommendationsDirty = true;
     if (_refreshInFlight && _enabled) _refreshQueued = true;
   }
   /// When true, skip scheduled ranking while app is backgrounded / screen off.
@@ -72,7 +73,6 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(_loadSettings());
     unawaited(_loadQuietMode());
     _observePlayback();
-    unawaited(refreshRecommendations());
   }
 
   bool get quietWhenBackground => _quietWhenBackground;
@@ -112,7 +112,7 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden;
     _appInBackground = background;
-    if (!background && _enabled) {
+    if (!background && _enabled && _recommendationsDirty) {
       _scheduleRefreshRecommendations();
     }
   }
@@ -285,14 +285,11 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   void _observePlayback() {
     final id = music.currentSong?.id;
-    final playing = music.isPlaying;
     final changedSong = id != _observedSongId;
-    final resumed = playing && !_lastPlaying;
     _observedSongId = id;
-    _lastPlaying = playing;
     if (changedSong) _invalidateRecommendationSnapshot();
     if (!_enabled) return;
-    if (changedSong || resumed) _scheduleRefreshRecommendations();
+    if (changedSong) _scheduleRefreshRecommendations();
   }
 
   /// Coalesce rapid triggers so ranking does not stampede on low-end devices.
@@ -504,6 +501,7 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
       if (!refreshIsCurrent()) return;
       _candidatePool = nextCandidatePool;
       _recommendations = nextRecommendations;
+      _recommendationsDirty = false;
       await _evaluateAutopilotGraduation(shouldContinue: refreshIsCurrent);
       if (refreshIsCurrent() && notify && !_disposed) notifyListeners();
     } catch (e, stack) {

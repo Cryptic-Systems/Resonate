@@ -5,6 +5,96 @@ import 'package:flutter/services.dart';
 import '../models/song.dart';
 import 'resonate_diagnostics.dart';
 
+/// Physical A/B deck telemetry published by the native DJ mixer.
+class Media3DjDeckSnapshot {
+  const Media3DjDeckSnapshot({
+    required this.deckId,
+    this.mediaId,
+    this.title,
+    this.artist,
+    this.album,
+    this.position = Duration.zero,
+    this.bufferedPosition = Duration.zero,
+    this.duration,
+    this.isPlaying = false,
+    this.playWhenReady = false,
+    this.playbackState = 0,
+    this.mediaItemIndex = -1,
+    this.mediaItemCount = 0,
+    this.volume = 0,
+    this.channelGain = 1,
+    this.speed = 1,
+    this.pitch = 1,
+    this.audioSessionId,
+    this.loopActive = false,
+    this.loopStart,
+    this.loopEnd,
+  });
+
+  final String deckId;
+  final String? mediaId;
+  final String? title;
+  final String? artist;
+  final String? album;
+  final Duration position;
+  final Duration bufferedPosition;
+  final Duration? duration;
+  final bool isPlaying;
+  final bool playWhenReady;
+  final int playbackState;
+  final int mediaItemIndex;
+  final int mediaItemCount;
+  final double volume;
+  final double channelGain;
+  final double speed;
+  final double pitch;
+  final int? audioSessionId;
+  final bool loopActive;
+  final Duration? loopStart;
+  final Duration? loopEnd;
+
+  factory Media3DjDeckSnapshot.fromMap(
+    String deckId,
+    Map<Object?, Object?> map,
+  ) {
+    int integer(Object? value, [int fallback = 0]) =>
+        value is num && value.isFinite ? value.toInt() : fallback;
+    double decimal(Object? value, [double fallback = 0]) =>
+        value is num && value.isFinite ? value.toDouble() : fallback;
+    String? string(Object? value) => value is String ? value : null;
+    final rawDuration = map['durationMs'];
+    final sessionId = integer(map['audioSessionId']);
+    Duration? optionalDuration(Object? value) => value is num && value.isFinite && value >= 0
+        ? Duration(milliseconds: value.toInt().clamp(0, 0x7fffffff))
+        : null;
+    return Media3DjDeckSnapshot(
+      deckId: deckId,
+      mediaId: string(map['mediaId']),
+      title: string(map['title']),
+      artist: string(map['artist']),
+      album: string(map['album']),
+      position: Duration(milliseconds: integer(map['positionMs']).clamp(0, 0x7fffffff)),
+      bufferedPosition: Duration(milliseconds: integer(map['bufferedPositionMs']).clamp(0, 0x7fffffff)),
+      duration: rawDuration is num && rawDuration.isFinite && rawDuration >= 0
+          ? Duration(milliseconds: rawDuration.toInt().clamp(0, 0x7fffffff))
+          : null,
+      isPlaying: map['isPlaying'] == true,
+      playWhenReady: map['playWhenReady'] == true,
+      playbackState: integer(map['playbackState']),
+      mediaItemIndex: integer(map['mediaItemIndex'], -1),
+      mediaItemCount: integer(map['mediaItemCount']),
+      volume: decimal(map['volume']).clamp(0.0, 1.0).toDouble(),
+      channelGain: decimal(map['channelGain'], 1.0).clamp(0.0, 1.0).toDouble(),
+      speed: decimal(map['speed'], 1.0),
+      pitch: decimal(map['pitch'], 1.0),
+      audioSessionId: sessionId > 0 ? sessionId : null,
+      loopActive: map['loopActive'] == true,
+      loopStart: optionalDuration(map['loopStartMs']),
+      loopEnd: optionalDuration(map['loopEndMs']),
+    );
+  }
+}
+
 /// Immutable playback snapshot published by the native Media3 session.
 class Media3PlaybackState {
   const Media3PlaybackState({
@@ -31,6 +121,10 @@ class Media3PlaybackState {
     this.crossfadeProgress = 0.0,
     this.activeDeckVolume = 1.0,
     this.standbyDeckVolume = 0.0,
+    this.activeDeckSpeed,
+    this.activeDeckPitch,
+    this.standbyDeckSpeed,
+    this.standbyDeckPitch,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     this.audioUnderrunCountA = 0,
@@ -49,6 +143,12 @@ class Media3PlaybackState {
     this.lastPreloadInvalidationElapsedRealtimeMs = 0,
     this.preloadInvalidationCount = 0,
     this.incomingMediaId,
+    this.incomingReady = false,
+    this.incomingPosition = Duration.zero,
+    this.djDualDeckMode = false,
+    this.djCrossfaderPosition = 0.5,
+    this.deckA,
+    this.deckB,
     required this.hasError,
     required this.error,
   });
@@ -80,6 +180,11 @@ class Media3PlaybackState {
   final double crossfadeProgress;
   final double activeDeckVolume;
   final double standbyDeckVolume;
+  /// Native Media3 parameters; null means the service did not report them.
+  final double? activeDeckSpeed;
+  final double? activeDeckPitch;
+  final double? standbyDeckSpeed;
+  final double? standbyDeckPitch;
   final String repeatMode;
   final bool shuffleModeEnabled;
   final int audioUnderrunCountA;
@@ -98,6 +203,12 @@ class Media3PlaybackState {
   final int lastPreloadInvalidationElapsedRealtimeMs;
   final int preloadInvalidationCount;
   final String? incomingMediaId;
+  final bool incomingReady;
+  final Duration incomingPosition;
+  final bool djDualDeckMode;
+  final double djCrossfaderPosition;
+  final Media3DjDeckSnapshot? deckA;
+  final Media3DjDeckSnapshot? deckB;
   final bool hasError;
   final String? error;
 
@@ -106,11 +217,15 @@ class Media3PlaybackState {
         value is num && value.isFinite ? value.toInt() : fallback;
     double doubleValue(Object? value, [double fallback = 1.0]) =>
         value is num && value.isFinite ? value.toDouble() : fallback;
+    double? nullableDoubleValue(Object? value) =>
+        value is num && value.isFinite ? value.toDouble() : null;
     bool boolValue(Object? value) => value == true;
     String? stringValue(Object? value) => value is String ? value : null;
 
     final rawDuration = map['durationMs'];
     final rawAudioDiagnostics = map['audioDiagnostics'];
+    final rawDeckA = map['deckA'];
+    final rawDeckB = map['deckB'];
     final audioDiagnostics = rawAudioDiagnostics is Map
         ? Map<Object?, Object?>.from(rawAudioDiagnostics)
         : const <Object?, Object?>{};
@@ -160,6 +275,10 @@ class Media3PlaybackState {
           .clamp(0.0, 1.0).toDouble(),
       standbyDeckVolume: doubleValue(map['standbyDeckVolume'], 0.0)
           .clamp(0.0, 1.0).toDouble(),
+      activeDeckSpeed: nullableDoubleValue(map['activeSpeed']),
+      activeDeckPitch: nullableDoubleValue(map['activePitch']),
+      standbyDeckSpeed: nullableDoubleValue(map['standbySpeed']),
+      standbyDeckPitch: nullableDoubleValue(map['standbyPitch']),
       repeatMode: const {'off', 'one', 'all'}.contains(map['repeatMode'])
           ? map['repeatMode'] as String
           : 'off',
@@ -180,6 +299,16 @@ class Media3PlaybackState {
       lastPreloadInvalidationElapsedRealtimeMs: integerValue(map['lastPreloadInvalidationElapsedRealtimeMs']),
       preloadInvalidationCount: integerValue(map['preloadInvalidationCount']),
       incomingMediaId: stringValue(map['incomingMediaId']),
+      incomingReady: boolValue(map['incomingReady']),
+      incomingPosition: Duration(milliseconds: integerValue(map['incomingPositionMs']).clamp(0, 0x7fffffff).toInt()),
+      djDualDeckMode: boolValue(map['djDualDeckMode']),
+      djCrossfaderPosition: doubleValue(map['djCrossfaderPosition'], 0.5).clamp(0.0, 1.0).toDouble(),
+      deckA: rawDeckA is Map
+          ? Media3DjDeckSnapshot.fromMap('A', Map<Object?, Object?>.from(rawDeckA))
+          : null,
+      deckB: rawDeckB is Map
+          ? Media3DjDeckSnapshot.fromMap('B', Map<Object?, Object?>.from(rawDeckB))
+          : null,
       hasError: boolValue(map['hasError']),
       error: stringValue(map['error']),
     );
@@ -418,6 +547,28 @@ class Media3PlaybackClient {
     await _invokeAccepted('setPlaybackPitch', <String, Object>{'pitch': pitch});
   }
 
+  Future<void> setDeckPlaybackParameters({
+    required double activeSpeed,
+    required double activePitch,
+    required double standbySpeed,
+    required double standbyPitch,
+  }) async {
+    final values = <String, double>{
+      'activeSpeed': activeSpeed,
+      'activePitch': activePitch,
+      'standbySpeed': standbySpeed,
+      'standbyPitch': standbyPitch,
+    };
+    for (final entry in values.entries) {
+      if (!entry.value.isFinite || entry.value < 0.5 || entry.value > 2.0) {
+        throw ArgumentError.value(
+          entry.value, entry.key, 'Must be finite and between 0.5 and 2.0.',
+        );
+      }
+    }
+    await _invokeAccepted('setDeckPlaybackParameters', values);
+  }
+
   Future<void> setDeckPlaybackSpeeds({
     required double activeSpeed,
     required double standbySpeed,
@@ -550,6 +701,197 @@ class Media3PlaybackClient {
     );
   }
 
+  /// Enables the persistent physical A/B deck lifecycle for Resonatix DJ.
+  Future<void> enableDjDualDeckMode() => _command('enableDjDualDeckMode');
+
+  /// Returns to Player's rolling active/standby lifecycle.
+  Future<void> disableDjDualDeckMode() => _command('disableDjDualDeckMode');
+
+  /// Applies the operator's physical A/B crossfader position (0 = A, 1 = B).
+  Future<void> setDjCrossfader(double position) async {
+    if (!position.isFinite || position < 0.0 || position > 1.0) {
+      throw ArgumentError.value(
+        position,
+        'position',
+        'Must be finite and between 0 and 1.',
+      );
+    }
+    await _invokeAccepted(
+      'setDjCrossfader',
+      <String, Object>{'position': position},
+    );
+  }
+
+  /// Sets one physical deck's channel gain independently of the crossfader.
+  Future<void> setDjDeckChannelGain({
+    required String deckId,
+    required double gain,
+  }) async {
+    _validatePhysicalDeck(deckId);
+    if (!gain.isFinite || gain < 0.0 || gain > 1.0) {
+      throw ArgumentError.value(gain, 'gain', 'Must be finite and between 0 and 1.');
+    }
+    await _invokeAccepted('setDjDeckChannelGain', <String, Object>{
+      'deckId': deckId,
+      'gain': gain,
+    });
+  }
+
+  /// Loads an isolated queue into one physical DJ deck without touching the other.
+  Future<void> loadDjDeck(
+    String deckId,
+    List<Media3QueueItem> items, {
+    int startIndex = 0,
+  }) async {
+    if (deckId != 'A' && deckId != 'B') {
+      throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
+    }
+    if (items.isEmpty || startIndex < 0 || startIndex >= items.length) {
+      throw ArgumentError('A non-empty deck queue and valid start index are required.');
+    }
+    await _invokeAccepted('loadDjDeck', <String, Object>{
+      'deckId': deckId,
+      'items': items.map((item) => item.toMap()).toList(growable: false),
+      'startIndex': startIndex,
+    });
+  }
+
+  Future<void> playDjDeck(String deckId) async {
+    _validatePhysicalDeck(deckId);
+    await _invokeAccepted('playDjDeck', <String, Object>{'deckId': deckId});
+  }
+
+  Future<void> pauseDjDeck(String deckId) async {
+    _validatePhysicalDeck(deckId);
+    await _invokeAccepted('pauseDjDeck', <String, Object>{'deckId': deckId});
+  }
+
+  Future<void> seekDjDeck({
+    required String deckId,
+    required Duration position,
+    required String expectedMediaId,
+  }) async {
+    _validatePhysicalDeck(deckId);
+    if (position.isNegative || expectedMediaId.trim().isEmpty) {
+      throw ArgumentError('A nonnegative position and expected media identity are required.');
+    }
+    await _invokeAccepted('seekDjDeck', <String, Object>{
+      'deckId': deckId,
+      'positionMs': position.inMilliseconds,
+      'expectedMediaId': expectedMediaId,
+    });
+  }
+
+  /// Publishes one platter's signed velocity to its identity-checked native deck.
+  /// This is a control primitive; the native PCM path remains pass-through for now.
+  Future<void> setDjScratchControl({
+    required String deckId,
+    required String expectedMediaId,
+    required bool active,
+    required double velocity,
+    required Duration anchor,
+  }) async {
+    _validatePhysicalDeck(deckId);
+    if (expectedMediaId.trim().isEmpty || !velocity.isFinite ||
+        velocity.abs() > 4.0 || anchor.isNegative) {
+      throw ArgumentError('Scratch control requires a track identity, finite velocity within ±4x and a nonnegative anchor.');
+    }
+    await _invokeAccepted('setDjScratchControl', <String, Object>{
+      'deckId': deckId,
+      'expectedMediaId': expectedMediaId,
+      'active': active,
+      'velocity': velocity,
+      'anchorMediaTimeUs': anchor.inMicroseconds,
+    });
+  }
+
+  Future<void> setDjDeckLoopRange({
+    required String deckId,
+    required Duration start,
+    required Duration end,
+    required String expectedMediaId,
+  }) async {
+    _validatePhysicalDeck(deckId);
+    if (start.isNegative || end <= start ||
+        end - start < const Duration(milliseconds: 120) ||
+        expectedMediaId.trim().isEmpty) {
+      throw ArgumentError('A DJ loop requires ordered points at least 120 ms apart and a track identity.');
+    }
+    await _invokeAccepted('setDjDeckLoopRange', <String, Object>{
+      'deckId': deckId,
+      'startMs': start.inMilliseconds,
+      'endMs': end.inMilliseconds,
+      'expectedMediaId': expectedMediaId,
+    });
+  }
+
+  Future<void> clearDjDeckLoop({required String deckId}) async {
+    _validatePhysicalDeck(deckId);
+    await _invokeAccepted('clearDjDeckLoop', <String, Object>{'deckId': deckId});
+  }
+
+  Future<void> clearDjDeck(String deckId) async {
+    _validatePhysicalDeck(deckId);
+    await _invokeAccepted('clearDjDeck', <String, Object>{'deckId': deckId});
+  }
+
+  Future<void> setDjDeckPlaybackParameters({
+    required String deckId,
+    required double speed,
+    required double pitch,
+  }) async {
+    _validatePhysicalDeck(deckId);
+    for (final entry in <String, double>{'speed': speed, 'pitch': pitch}.entries) {
+      if (!entry.value.isFinite || entry.value < 0.5 || entry.value > 2.0) {
+        throw ArgumentError.value(
+          entry.value,
+          entry.key,
+          'Must be finite and between 0.5 and 2.0.',
+        );
+      }
+    }
+    await _invokeAccepted('setDjDeckPlaybackParameters', <String, Object>{
+      'deckId': deckId,
+      'speed': speed,
+      'pitch': pitch,
+    });
+  }
+
+  Future<void> setDjDeckEq({
+    required String deckId,
+    required List<double> gainsDb,
+  }) async {
+    _validatePhysicalDeck(deckId);
+    if (gainsDb.length != 3 ||
+        gainsDb.any((gain) => !gain.isFinite || gain < -12.0 || gain > 12.0)) {
+      throw ArgumentError('DJ EQ requires three finite gains from -12 to +12 dB.');
+    }
+    await _invokeAccepted('setDjDeckEq', <String, Object>{
+      'deckId': deckId,
+      'centersHz': const [80.0, 1000.0, 12000.0],
+      'gainsDb': gainsDb,
+    });
+  }
+
+  Future<void> clearDjDeckEq({required String deckId}) async {
+    _validatePhysicalDeck(deckId);
+    await _invokeAccepted('clearDjDeckEq', <String, Object>{'deckId': deckId});
+  }
+
+  Future<void> setDjDeckFilter({required String deckId, required int type, required double cutoffHz}) async {
+    _validatePhysicalDeck(deckId);
+    if (!const [0, 3, 4].contains(type) || !cutoffHz.isFinite || cutoffHz < 40 || cutoffHz > 18000) {
+      throw ArgumentError('DJ filter requires bypass/low-pass/high-pass and cutoff from 40 to 18000 Hz.');
+    }
+    await _invokeAccepted('setDjDeckFilter', <String, Object>{'deckId': deckId, 'type': type, 'cutoffHz': cutoffHz});
+  }
+
+  void _validatePhysicalDeck(String deckId) {
+    if (deckId != 'A' && deckId != 'B') {
+      throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
+    }
+  }
+
   Future<void> setVolume(double volume) async {
     if (!volume.isFinite) {
       throw ArgumentError.value(volume, 'volume', 'Must be finite.');
@@ -620,6 +962,32 @@ class Media3PlaybackClient {
         'items': items.map((entry) => entry.toMap()).toList(growable: false),
         'startIndex': startIndex,
         'positionMs': startPosition.inMilliseconds,
+      },
+    );
+  }
+
+  /// Repositions only the prepared standby deck. Native code verifies that
+  /// the expected media identity is still loaded and no transition is running.
+  Future<void> seekStandby({
+    required Duration position,
+    required String expectedMediaId,
+    required int expectedQueueIndex,
+  }) async {
+    if (position.isNegative) {
+      throw ArgumentError.value(position, 'position', 'Must not be negative.');
+    }
+    if (expectedMediaId.trim().isEmpty) {
+      throw ArgumentError.value(expectedMediaId, 'expectedMediaId', 'Must not be empty.');
+    }
+    if (expectedQueueIndex < 0) {
+      throw ArgumentError.value(expectedQueueIndex, 'expectedQueueIndex', 'Must not be negative.');
+    }
+    await _invokeAccepted(
+      'seekStandby',
+      <String, Object>{
+        'positionMs': position.inMilliseconds,
+        'expectedMediaId': expectedMediaId,
+        'expectedQueueIndex': expectedQueueIndex,
       },
     );
   }

@@ -40,7 +40,7 @@ PlaybackSnapshot snapshot({
       error: null,
     );
 
-class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackPitchBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend, PlaybackTransitionPreviewBackend {
+class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackStandbyCueBackend, PlaybackSpeedBackend, PlaybackPitchBackend, PlaybackDeckEqOverlayBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend, PlaybackTransitionPreviewBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   PlaybackSnapshot value = snapshot();
@@ -59,6 +59,9 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, 
   int? preloadedQueueIndex;
   Duration? preloadedStartPosition;
   Duration? crossfadeDuration;
+  Duration? standbyCuePosition;
+  String? standbyCueMediaId;
+  int? standbyCueQueueIndex;
   int cancelCrossfadeCalls = 0;
   final List<String> deckEqCalls = <String>[];
   final List<String> auxiliaryCalls = <String>[];
@@ -186,6 +189,12 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, 
     preloadedStartPosition = startPosition;
   }
   @override
+  Future<void> seekStandby({required Duration position, required String expectedMediaId, required int expectedQueueIndex}) async {
+    standbyCuePosition = position;
+    standbyCueMediaId = expectedMediaId;
+    standbyCueQueueIndex = expectedQueueIndex;
+  }
+  @override
   Future<void> crossfade({required Duration duration}) async { crossfadeDuration = duration; }
   @override
   Future<void> cancelCrossfade() async {
@@ -210,6 +219,64 @@ void main() {
     tearDown(() async {
       await runtime.dispose();
       await backend.controller.close();
+    });
+
+    test('maps standby cue to the exact playable duplicate occurrence', () async {
+      final songs = <Song>[
+        makeSong('missing', path: ''),
+        makeSong('duplicate', path: '/music/first-copy.mp3'),
+        makeSong('middle'),
+        makeSong('duplicate', path: '/music/second-copy.mp3'),
+      ];
+      await runtime.loadQueue(songs, startIndex: 1);
+
+      await runtime.seekStandby(
+        position: const Duration(seconds: 47),
+        expectedMediaId: 'duplicate',
+        expectedQueueIndex: 2,
+      );
+
+      expect(runtime.queue.map((song) => song.filePath), [
+        '/music/first-copy.mp3',
+        '/music/middle.mp3',
+        '/music/second-copy.mp3',
+      ]);
+      expect(backend.standbyCuePosition, const Duration(seconds: 47));
+      expect(backend.standbyCueMediaId, 'duplicate');
+      expect(backend.standbyCueQueueIndex, 2);
+    });
+
+    test('rejects standby cues for stale or unplayable queue occurrences', () async {
+      await runtime.loadQueue([
+        makeSong('first'),
+        makeSong('second'),
+      ]);
+
+      await expectLater(
+        runtime.seekStandby(
+          position: Duration.zero,
+          expectedMediaId: 'wrong-id',
+          expectedQueueIndex: 1,
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        runtime.seekStandby(
+          position: Duration.zero,
+          expectedMediaId: 'second',
+          expectedQueueIndex: 2,
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        runtime.seekStandby(
+          position: const Duration(milliseconds: -1),
+          expectedMediaId: 'second',
+          expectedQueueIndex: 1,
+        ),
+        throwsArgumentError,
+      );
+      expect(backend.standbyCueQueueIndex, isNull);
     });
 
     test('serializes auxiliary sample lifecycle on the backend command lane', () async {

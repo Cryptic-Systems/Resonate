@@ -33,32 +33,49 @@ object DspEngineSinkHook {
     fun createProcessors(): Array<AudioProcessor> = createProcessors("legacy")
 
     @JvmStatic
-    fun createProcessors(deckId: String): Array<AudioProcessor> {
+    fun createProcessors(deckId: String): Array<AudioProcessor> =
+        createDspProcessors(deckId)
+
+    /** Media3-only chain: timestamp probe first, then the unchanged native DSP stage. */
+    @JvmStatic
+    internal fun createProcessors(
+        deckId: String,
+        timestampLedger: DjScratchTimestampLedger,
+        controlMailbox: DjScratchControlMailbox,
+    ): Array<AudioProcessor> {
         return try {
-            val allow = ENABLE_NATIVE_LIVE_DSP && DspSessionGate.isNativeAllowed()
-            val proc = DspEngineAudioProcessor(deckId)
-            proc.setNativeProcessEnabled(allow)
-            proc.setDeckActive(deckId == "legacy" || deckId.startsWith("preview_") || DspEngineRegistry.isActiveDeck(deckId))
-            processorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(proc)
-            val active = DspEngineRegistry.activeCount()
-            if (allow) {
-                Log.i(
-                    TAG,
-                    "Injected 1 host AudioProcessor(s) native=ON deck=$deckId " +
-                        "(session ok; registry_active=$active — dual A/B uses 2 injects)"
-                )
-            } else {
-                Log.i(
-                    TAG,
-                    "Injected 1 host AudioProcessor(s) pass-through deck=$deckId " +
-                        "(ENABLE=$ENABLE_NATIVE_LIVE_DSP gate_tripped=${DspSessionGate.isTripped()})"
-                )
-            }
-            arrayOf(proc)
+            val timestampProcessor = DjScratchTimestampProcessor(timestampLedger, controlMailbox)
+            val dspProcessor = createDspProcessor(deckId)
+            arrayOf(timestampProcessor, dspProcessor)
         } catch (t: Throwable) {
-            Log.e(TAG, "Failed to create DspEngineAudioProcessor", t)
+            Log.e(TAG, "Failed to create timestamp-aware DJ processor chain", t)
             emptyArray()
         }
+    }
+
+    private fun createDspProcessors(deckId: String): Array<AudioProcessor> = try {
+        arrayOf(createDspProcessor(deckId))
+    } catch (t: Throwable) {
+        Log.e(TAG, "Failed to create DspEngineAudioProcessor", t)
+        emptyArray()
+    }
+
+    private fun createDspProcessor(deckId: String): DspEngineAudioProcessor {
+        val allow = ENABLE_NATIVE_LIVE_DSP && DspSessionGate.isNativeAllowed()
+        val proc = DspEngineAudioProcessor(deckId)
+        proc.setNativeProcessEnabled(allow)
+        proc.setDeckActive(
+            deckId == "legacy" || deckId.startsWith("preview_") ||
+                DspEngineRegistry.isActiveDeck(deckId)
+        )
+        processorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(proc)
+        val active = DspEngineRegistry.activeCount()
+        Log.i(
+            TAG,
+            "Injected native DSP processor native=${if (allow) "ON" else "pass-through"} " +
+                "deck=$deckId registry_active=$active"
+        )
+        return proc
     }
 
     /** Re-registers a processor if Media3 resets and later reconfigures its sink. */

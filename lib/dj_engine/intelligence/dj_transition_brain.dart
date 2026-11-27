@@ -175,7 +175,8 @@ class DjTransitionBrain {
     final phrase = _phraseScore(a, b, inPos);
     final structure = _structureScore(a, b, outPos, inPos);
     final silence = _outgoingSilenceScore(a, outPos);
-    return {
+    final psychic = _psychicPairScore(a, b);
+    final scores = <String, double>{
       'tempo': tempo,
       'harmonic': harmonic,
       'energy': energy.clamp(0.0, 1.0).toDouble(),
@@ -185,18 +186,73 @@ class DjTransitionBrain {
       'silence': silence,
       'confidence': _analysisConfidence(a, b),
     };
+    if (psychic != null) scores['psychic'] = psychic;
+    return scores;
+  }
+
+  /// Compares measured Psychic loudness, bass prominence and transient shape.
+  /// Missing/low-confidence reports remain neutral and never penalize a track.
+  double? _psychicPairScore(DjTrackProfile a, DjTrackProfile b) {
+    Map<String, dynamic>? usable(DjTrackProfile profile) {
+      final report = profile.psychicAnalysis;
+      if (report == null || report['sufficientData'] != true) return null;
+      final duration = report['sampledDurationSeconds'];
+      if (duration is! num || !duration.isFinite || duration < 8.0) return null;
+      return report;
+    }
+
+    final x = usable(a);
+    final y = usable(b);
+    if (x == null || y == null) return null;
+
+    double? metric(Map<String, dynamic> report, String key) {
+      final value = report[key];
+      return value is num && value.isFinite ? value.toDouble() : null;
+    }
+
+    final loudnessA = metric(x, 'integratedRmsDb');
+    final loudnessB = metric(y, 'integratedRmsDb');
+    final bassA = metric(x, 'bassProminenceDb');
+    final bassB = metric(y, 'bassProminenceDb');
+    final crestA = metric(x, 'crestP90Db');
+    final crestB = metric(y, 'crestP90Db');
+    if ([loudnessA, loudnessB, bassA, bassB, crestA, crestB].any((v) => v == null)) {
+      return null;
+    }
+
+    final loudnessMatch = (1.0 - (loudnessA! - loudnessB!).abs() / 12.0)
+        .clamp(0.0, 1.0).toDouble();
+    final bassMatch = (1.0 - (bassA! - bassB!).abs() / 10.0)
+        .clamp(0.0, 1.0).toDouble();
+    final transientMatch = (1.0 - (crestA! - crestB!).abs() / 12.0)
+        .clamp(0.0, 1.0).toDouble();
+    return loudnessMatch * 0.40 + bassMatch * 0.35 + transientMatch * 0.25;
   }
 
   double _weightedScore(Map<String, double> s, {DjPolicy policy = DjPolicy.balanced}) {
     final phraseBoost = policy.phraseWeightBoost;
-    return (s['tempo'] ?? 0.5) * 0.22 +
-        (s['harmonic'] ?? 0.5) * 0.18 +
-        (s['energy'] ?? 0.5) * 0.14 +
-        (s['spectrum'] ?? 0.5) * 0.09 +
+    final psychic = s['psychic'];
+    if (psychic == null || psychic < 0) {
+      // Preserve the established recommendation weights until both tracks
+      // have a sufficiently sampled Psychic report.
+      return (s['tempo'] ?? 0.5) * 0.22 +
+          (s['harmonic'] ?? 0.5) * 0.18 +
+          (s['energy'] ?? 0.5) * 0.14 +
+          (s['spectrum'] ?? 0.5) * 0.09 +
+          (s['phrase'] ?? 0.5) * (0.14 + phraseBoost) +
+          (s['structure'] ?? 0.5) * 0.10 +
+          (s['silence'] ?? 0.5) * 0.06 +
+          (s['confidence'] ?? 0.5) * 0.07;
+    }
+    return (s['tempo'] ?? 0.5) * 0.20 +
+        (s['harmonic'] ?? 0.5) * 0.16 +
+        (s['energy'] ?? 0.5) * 0.12 +
+        (s['spectrum'] ?? 0.5) * 0.07 +
         (s['phrase'] ?? 0.5) * (0.14 + phraseBoost) +
         (s['structure'] ?? 0.5) * 0.10 +
         (s['silence'] ?? 0.5) * 0.06 +
-        (s['confidence'] ?? 0.5) * 0.07;
+        (s['confidence'] ?? 0.5) * 0.07 +
+        psychic * 0.08;
   }
 
 
@@ -357,8 +413,13 @@ class DjTransitionBrain {
       (a.analysisConfidence * 0.5 + b.analysisConfidence * 0.5).clamp(0.0, 1.0).toDouble();
 
   double _confidence(DjTrackProfile a, DjTrackProfile b, Map<String, double> s) {
-    final known = s.values.where((v) => v > 0).length;
-    return ((known / s.length) * _analysisConfidence(a, b)).clamp(0.0, 1.0).toDouble();
+    final evidence = s.entries
+        .where((entry) => entry.key != 'psychic' || entry.value >= 0)
+        .map((entry) => entry.value)
+        .toList(growable: false);
+    final known = evidence.where((value) => value > 0).length;
+    return ((known / evidence.length) * _analysisConfidence(a, b))
+        .clamp(0.0, 1.0).toDouble();
   }
 
   List<DjRiskType> _risks(DjTrackProfile a, DjTrackProfile b, int outPos, int inPos) {

@@ -14,7 +14,7 @@ import 'playback_engine_session.dart';
 /// constructing multiple clients or listening to native snapshots independently.
 /// The app composition root injects it and commits the provider handoff after
 /// settings and queue restoration.
-class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryEffectsBackend, PlaybackPitchSession, PlaybackStateRefreshSession, PlaybackTransitionPreviewBackend {
+class Media3ProviderSession implements PlaybackEngineSession, PlaybackStandbyCueBackend, PlaybackAuxiliaryEffectsBackend, PlaybackPitchSession, PlaybackDeckParametersSession, PlaybackStateRefreshSession, PlaybackTransitionPreviewBackend, PlaybackDjDeckSession, PlaybackDjScratchSession {
   Media3ProviderSession({PlaybackBackend? backend})
       : _runtime = Media3PlaybackRuntime(
           backend ?? Media3MusicProviderAdapter(),
@@ -242,6 +242,20 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryE
       _runtime.setPlaybackPitch(pitch);
 
   @override
+  Future<void> setDeckPlaybackParameters({
+    required double activeSpeed,
+    required double activePitch,
+    required double standbySpeed,
+    required double standbyPitch,
+  }) =>
+      _runtime.setDeckPlaybackParameters(
+        activeSpeed: activeSpeed,
+        activePitch: activePitch,
+        standbySpeed: standbySpeed,
+        standbyPitch: standbyPitch,
+      );
+
+  @override
   Future<void> setDeckPlaybackSpeeds({
     required double activeSpeed,
     required double standbySpeed,
@@ -338,10 +352,118 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackAuxiliaryE
         startPosition: startPosition,
       );
   @override
+  Future<void> seekStandby({
+    required Duration position,
+    required String expectedMediaId,
+    required int expectedQueueIndex,
+  }) =>
+      _runtime.seekStandby(
+        position: position,
+        expectedMediaId: expectedMediaId,
+        expectedQueueIndex: expectedQueueIndex,
+      );
+
+  @override
   Future<void> crossfade({required Duration duration}) =>
       _runtime.crossfade(duration: duration);
   @override
   Future<void> cancelCrossfade() => _runtime.cancelCrossfade();
+
+  @override
+  Future<void> enableDjDualDeckMode() => _runtime.enableDjDualDeckMode();
+
+  @override
+  Future<void> disableDjDualDeckMode() => _runtime.disableDjDualDeckMode();
+
+  @override
+  Future<void> setDjCrossfader(double position) => _runtime.setDjCrossfader(position);
+
+  @override
+  Future<void> setDjDeckChannelGain({
+    required String deckId,
+    required double gain,
+  }) => _runtime.setDjDeckChannelGain(deckId: deckId, gain: gain);
+
+  @override
+  Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0}) =>
+      _runtime.loadDjDeck(deckId, songs, startIndex: startIndex);
+
+  @override
+  Future<void> playDjDeck(String deckId) => _runtime.playDjDeck(deckId);
+
+  @override
+  Future<void> pauseDjDeck(String deckId) => _runtime.pauseDjDeck(deckId);
+
+  @override
+  Future<void> clearDjDeck(String deckId) => _runtime.clearDjDeck(deckId);
+
+  @override
+  Future<void> setDjDeckPlaybackParameters({
+    required String deckId,
+    required double speed,
+    required double pitch,
+  }) => _runtime.setDjDeckPlaybackParameters(
+        deckId: deckId,
+        speed: speed,
+        pitch: pitch,
+      );
+
+  @override
+  Future<void> seekDjDeck({
+    required String deckId,
+    required Duration position,
+    required String expectedMediaId,
+  }) => _runtime.seekDjDeck(
+        deckId: deckId,
+        position: position,
+        expectedMediaId: expectedMediaId,
+      );
+
+  @override
+  Future<void> setDjDeckEq({
+    required String deckId,
+    required List<double> gainsDb,
+  }) => _runtime.setDjDeckEq(deckId: deckId, gainsDb: gainsDb);
+
+  @override
+  Future<void> clearDjDeckEq({required String deckId}) =>
+      _runtime.clearDjDeckEq(deckId: deckId);
+
+  @override
+  Future<void> setDjDeckFilter({required String deckId, required int type, required double cutoffHz}) =>
+      _runtime.setDjDeckFilter(deckId: deckId, type: type, cutoffHz: cutoffHz);
+
+  @override
+  Future<void> setDjDeckLoopRange({
+    required String deckId,
+    required Duration start,
+    required Duration end,
+    required String expectedMediaId,
+  }) => _runtime.setDjDeckLoopRange(
+        deckId: deckId,
+        start: start,
+        end: end,
+        expectedMediaId: expectedMediaId,
+      );
+
+  @override
+  Future<void> clearDjDeckLoop({required String deckId}) =>
+      _runtime.clearDjDeckLoop(deckId: deckId);
+
+  @override
+  Future<void> setDjScratchControl({
+    required String deckId,
+    required String expectedMediaId,
+    required bool active,
+    required double velocity,
+    required Duration anchor,
+  }) => _runtime.setDjScratchControl(
+        deckId: deckId,
+        expectedMediaId: expectedMediaId,
+        active: active,
+        velocity: velocity,
+        anchor: anchor,
+      );
 
   void _ensureAlive() {
     if (_disposed) throw StateError('Media3ProviderSession is disposed.');

@@ -415,6 +415,33 @@ class Media3PlaybackBridge(
                         null,
                     )
                 }
+                "setDeckPlaybackParameters" -> {
+                    val activeSpeed = call.argument<Number>("activeSpeed")?.toFloat()
+                    val activePitch = call.argument<Number>("activePitch")?.toFloat()
+                    val standbySpeed = call.argument<Number>("standbySpeed")?.toFloat()
+                    val standbyPitch = call.argument<Number>("standbyPitch")?.toFloat()
+                    val activeValid = activeSpeed != null && activePitch != null &&
+                        Media3DeckPlaybackParametersPolicy.create(activeSpeed, activePitch) != null
+                    val standbyValid = standbySpeed != null && standbyPitch != null &&
+                        Media3DeckPlaybackParametersPolicy.create(standbySpeed, standbyPitch) != null
+                    if (!activeValid || !standbyValid) {
+                        result.error(
+                            "INVALID_DECK_PLAYBACK_PARAMETERS",
+                            "Active and standby speed/pitch values must be finite and between 0.5 and 2.0.",
+                            null,
+                        )
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDeckPlaybackParameters(
+                        activeSpeed!!, activePitch!!, standbySpeed!!, standbyPitch!!,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "MEDIA3_TRANSPORT_UNAVAILABLE",
+                        "Independent Media3 deck playback parameters are unavailable.",
+                        null,
+                    )
+                }
                 "setDeckEqOverlay" -> {
                     val deck = call.argument<String>("deck")
                     val centers = call.argument<List<Number>>("centersHz")?.map { it.toDouble() }
@@ -450,6 +477,50 @@ class Media3PlaybackBridge(
                     val accepted = Media3PlaybackService.instance?.clearDeckEqOverlay(deck!!) == true
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_DSP_UNAVAILABLE", "The deck EQ overlay could not be cleared.", null)
+                }
+                "setDjDeckEq" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val centers = call.argument<List<Number>>("centersHz")?.map { it.toDouble() }
+                    val gains = call.argument<List<Number>>("gainsDb")?.map { it.toDouble() }
+                    if (deckId !in setOf("A", "B") ||
+                        centers == null || centers.size != 3 ||
+                        gains == null || gains.size != 3 ||
+                        centers.any { !it.isFinite() || it !in 20.0..20000.0 } ||
+                        gains.any { !it.isFinite() || it !in -12.0..12.0 } ||
+                        centers.zipWithNext().any { it.first >= it.second }
+                    ) {
+                        result.error("INVALID_DJ_DECK_EQ", "Physical deck A/B and three ordered EQ bands with gains -12 to +12 dB are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDjDeckEq(
+                        deckId!!, centers.toDoubleArray(), gains.toDoubleArray(),
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_DSP_UNAVAILABLE", "DJ deck EQ could not be applied.", null)
+                }
+                "clearDjDeckEq" -> {
+                    val deckId = call.argument<String>("deckId")
+                    if (deckId !in setOf("A", "B")) {
+                        result.error("INVALID_DJ_DECK_EQ", "deckId must be A or B.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.clearDjDeckEq(deckId!!) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_DSP_UNAVAILABLE", "DJ deck EQ could not be reset.", null)
+                }
+                "setDjDeckFilter" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val type = call.argument<Number>("type")?.toInt()
+                    val cutoffHz = call.argument<Number>("cutoffHz")?.toDouble()
+                    if (deckId !in setOf("A", "B") || type !in setOf(0, 3, 4) ||
+                        cutoffHz == null || !cutoffHz.isFinite() || cutoffHz !in 40.0..18000.0
+                    ) {
+                        result.error("INVALID_DJ_DECK_FILTER", "Physical deck A/B, filter type 0/3/4 and cutoff 40–18000 Hz are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDjDeckFilter(deckId!!, type!!, cutoffHz) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_DSP_UNAVAILABLE", "DJ deck filter could not be applied.", null)
                 }
                 "previewTransition" -> {
                     val outRaw = call.argument<String>("outgoingUri")
@@ -517,6 +588,221 @@ class Media3PlaybackBridge(
                     val accepted = Media3PlaybackService.instance?.setAudioFocusHandling(enabled) == true
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_FOCUS_UNAVAILABLE", "Media3 audio-focus policy is unavailable.", null)
+                }
+                "enableDjDualDeckMode" -> {
+                    val accepted = Media3PlaybackService.instance?.enableDjDualDeckMode() == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "DJ_DECK_MODE_UNAVAILABLE",
+                        "DJ dual-deck mode could not be enabled while a transition or prepared incoming deck is active.",
+                        null,
+                    )
+                }
+                "disableDjDualDeckMode" -> {
+                    val accepted = Media3PlaybackService.instance?.disableDjDualDeckMode() == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "DJ_DECK_MODE_BUSY",
+                        "DJ dual-deck mode cannot be disabled during an active handoff.",
+                        null,
+                    )
+                }
+                "setDjCrossfader" -> {
+                    val position = call.argument<Number>("position")?.toFloat()
+                    if (position == null || !position.isFinite() || position !in 0f..1f) {
+                        result.error(
+                            "INVALID_DJ_CROSSFADER",
+                            "Crossfader position must be finite and between 0 and 1.",
+                            null,
+                        )
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDjCrossfader(position) == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "DJ_CROSSFADER_REJECTED",
+                        "The DJ crossfader is unavailable outside DJ mode or during an active handoff.",
+                        null,
+                    )
+                }
+                "setDjDeckChannelGain" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val gain = call.argument<Number>("gain")?.toFloat()
+                    if (deckId !in setOf("A", "B") || gain == null ||
+                        !gain.isFinite() || gain !in 0f..1f
+                    ) {
+                        result.error("INVALID_DJ_CHANNEL_GAIN", "A physical deck and finite gain from 0 to 1 are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDjDeckChannelGain(deckId!!, gain) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_CHANNEL_GAIN_REJECTED", "Channel gain is unavailable outside DJ mode or during a handoff.", null)
+                }
+                "loadDjDeck" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val rawItems = call.argument<List<Map<String, Any?>>>("items")
+                    val startIndex = call.argument<Number>("startIndex")?.toInt() ?: 0
+                    if (deckId !in setOf("A", "B") || rawItems.isNullOrEmpty() ||
+                        startIndex !in rawItems.indices
+                    ) {
+                        result.error("INVALID_DJ_DECK_QUEUE", "A physical A/B deck and non-empty queue with a valid start index are required.", null)
+                        return
+                    }
+                    val items = mutableListOf<MediaItem>()
+                    for (raw in rawItems) {
+                        val source = raw["uri"] as? String
+                        if (source.isNullOrBlank()) {
+                            result.error("INVALID_DJ_DECK_QUEUE", "Every deck queue item needs a non-empty URI.", null)
+                            return
+                        }
+                        val uri = Uri.parse(source)
+                        val title = (raw["title"] as? String)?.takeIf { it.isNotBlank() }
+                            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+                            ?: "Unknown track"
+                        val metadata = MediaMetadata.Builder()
+                            .setTitle(title)
+                            .setArtist(raw["artist"] as? String)
+                            .setAlbumTitle(raw["album"] as? String)
+                            .apply {
+                                val artwork = raw["artworkUri"] as? String
+                                if (!artwork.isNullOrBlank()) setArtworkUri(Uri.parse(artwork))
+                            }
+                            .build()
+                        items += MediaItem.Builder()
+                            .setMediaId((raw["id"] as? String)?.takeIf { it.isNotBlank() } ?: source)
+                            .setUri(uri)
+                            .setMediaMetadata(metadata)
+                            .build()
+                    }
+                    val accepted = Media3PlaybackService.instance?.loadDjDeck(
+                        deckId!!,
+                        items,
+                        startIndex,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_LOAD_REJECTED", "The selected physical deck could not load its independent queue.", null)
+                }
+                "playDjDeck" -> {
+                    val deckId = call.argument<String>("deckId")
+                    if (deckId !in setOf("A", "B")) {
+                        result.error("INVALID_DJ_DECK", "deckId must be A or B.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.playDjDeck(deckId!!) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_PLAY_REJECTED", "The deck is not ready or playback is blocked by an active communication session.", null)
+                }
+                "pauseDjDeck" -> {
+                    val deckId = call.argument<String>("deckId")
+                    if (deckId !in setOf("A", "B")) {
+                        result.error("INVALID_DJ_DECK", "deckId must be A or B.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.pauseDjDeck(deckId!!) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_PAUSE_REJECTED", "The selected physical deck could not be paused.", null)
+                }
+                "seekDjDeck" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val positionMs = call.argument<Number>("positionMs")?.toLong()
+                    val expectedMediaId = call.argument<String>("expectedMediaId")
+                    if (deckId !in setOf("A", "B") || positionMs == null ||
+                        positionMs < 0L || expectedMediaId.isNullOrBlank()
+                    ) {
+                        result.error("INVALID_DJ_DECK_SEEK", "A physical deck, nonnegative position and expected media ID are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.seekDjDeck(
+                        deckId!!,
+                        positionMs,
+                        expectedMediaId,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_SEEK_REJECTED", "The deck identity changed or the requested position is invalid.", null)
+                }
+                "setDjScratchControl" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val expectedMediaId = call.argument<String>("expectedMediaId")
+                    val active = call.argument<Boolean>("active")
+                    val velocity = call.argument<Number>("velocity")?.toDouble()
+                    val anchorMediaTimeUs = call.argument<Number>("anchorMediaTimeUs")?.toLong()
+                    if (deckId !in setOf("A", "B") || expectedMediaId.isNullOrBlank() ||
+                        active == null || velocity == null || !velocity.isFinite() ||
+                        kotlin.math.abs(velocity) > 4.0 || anchorMediaTimeUs == null ||
+                        anchorMediaTimeUs < 0L
+                    ) {
+                        result.error(
+                            "INVALID_DJ_SCRATCH_CONTROL",
+                            "A physical deck, media identity, finite velocity within ±4x and nonnegative anchor are required.",
+                            null,
+                        )
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDjScratchControl(
+                        deckId!!, expectedMediaId, active, velocity, anchorMediaTimeUs,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "DJ_SCRATCH_CONTROL_REJECTED",
+                        "The physical deck is not playing the expected track or DJ scratch control is unavailable.",
+                        null,
+                    )
+                }
+                "setDjDeckLoopRange" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val startMs = call.argument<Number>("startMs")?.toLong()
+                    val endMs = call.argument<Number>("endMs")?.toLong()
+                    val expectedMediaId = call.argument<String>("expectedMediaId")
+                    if (deckId !in setOf("A", "B") || startMs == null || endMs == null ||
+                        startMs < 0L || endMs <= startMs || expectedMediaId.isNullOrBlank()
+                    ) {
+                        result.error("INVALID_DJ_DECK_LOOP", "A physical deck, ordered nonnegative loop points and expected media ID are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDjDeckLoopRange(
+                        deckId!!, startMs, endMs, expectedMediaId,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_LOOP_REJECTED", "The native deck rejected the loop range or its media identity changed.", null)
+                }
+                "clearDjDeckLoop" -> {
+                    val deckId = call.argument<String>("deckId")
+                    if (deckId !in setOf("A", "B")) {
+                        result.error("INVALID_DJ_DECK_LOOP", "deckId must be A or B.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.clearDjDeckLoop(deckId!!) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_LOOP_CLEAR_REJECTED", "The native deck loop could not be cleared.", null)
+                }
+                "clearDjDeck" -> {
+                    val deckId = call.argument<String>("deckId")
+                    if (deckId == null || deckId !in setOf("A", "B")) {
+                        result.error("INVALID_DJ_DECK", "deckId must be A or B.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.clearDjDeck(deckId) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_CLEAR_REJECTED", "The selected physical deck could not be cleared.", null)
+                }
+                "setDjDeckPlaybackParameters" -> {
+                    val deckId = call.argument<String>("deckId")
+                    val speed = call.argument<Number>("speed")?.toFloat()
+                    val pitch = call.argument<Number>("pitch")?.toFloat()
+                    if (deckId == null || deckId !in setOf("A", "B") ||
+                        speed == null || pitch == null ||
+                        Media3DeckPlaybackParametersPolicy.create(speed, pitch) == null
+                    ) {
+                        result.error("INVALID_DJ_DECK_PARAMETERS", "A physical deck and finite speed/pitch values from 0.5 to 2.0 are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setDjDeckPlaybackParameters(
+                        deckId,
+                        speed,
+                        pitch,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("DJ_DECK_PARAMETERS_REJECTED", "The selected deck parameters could not be applied.", null)
                 }
                 "setVolume" -> {
                     val volume = call.argument<Number>("value")?.toFloat()
@@ -613,6 +899,24 @@ class Media3PlaybackBridge(
                     ) == true
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_PRELOAD_FAILED", "The incoming deck could not be prepared.", null)
+                }
+                "seekStandby" -> {
+                    val positionMs = call.argument<Number>("positionMs")?.toLong()
+                    val expectedMediaId = call.argument<String>("expectedMediaId")
+                    val expectedQueueIndex = call.argument<Number>("expectedQueueIndex")?.toInt()
+                    if (positionMs == null || positionMs < 0L || expectedMediaId.isNullOrBlank() ||
+                        expectedQueueIndex == null || expectedQueueIndex < 0
+                    ) {
+                        result.error("INVALID_STANDBY_SEEK", "A nonnegative position and expected incoming media ID are required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.seekStandby(
+                        positionMs,
+                        expectedMediaId,
+                        expectedQueueIndex,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("STANDBY_SEEK_REJECTED", "The incoming deck is not safely cueable or its identity changed.", null)
                 }
                 "crossfade" -> {
                     val durationMs = call.argument<Number>("durationMs")?.toLong()
@@ -725,6 +1029,10 @@ class Media3PlaybackBridge(
         "audioSessionId" to (Media3PlaybackService.instance?.activeAudioSessionId() ?: 0),
         "standbyAudioSessionId" to (Media3PlaybackService.instance?.standbyAudioSessionId() ?: 0),
         "activeDeckId" to (Media3PlaybackService.instance?.activeDeckId() ?: "A"),
+        "djDualDeckMode" to (crossfade["djDualDeckMode"] == true),
+        "djCrossfaderPosition" to (crossfade["djCrossfaderPosition"] ?: 0.5f),
+        "deckA" to crossfade["deckA"],
+        "deckB" to crossfade["deckB"],
         "crossfadeStatus" to (crossfade["status"] ?: "idle"),
         "crossfadeProgress" to (crossfade["progress"] ?: 0f),
         "activeDeckVolume" to (crossfade["activeVolume"] ?: player.volume),
@@ -738,6 +1046,8 @@ class Media3PlaybackBridge(
         "lastPreloadInvalidationElapsedRealtimeMs" to crossfade["lastPreloadInvalidationElapsedRealtimeMs"],
         "preloadInvalidationCount" to crossfade["preloadInvalidationCount"],
         "incomingMediaId" to crossfade["incomingMediaId"],
+        "incomingReady" to (crossfade["incomingReady"] == true),
+        "incomingPositionMs" to (crossfade["incomingPositionMs"] ?: 0L),
         "audioDiagnostics" to Media3PlaybackService.instance?.audioDiagnosticsState(),
         "hasError" to (player.playerError != null),
         "error" to player.playerError?.message,

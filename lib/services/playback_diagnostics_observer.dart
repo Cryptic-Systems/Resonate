@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart' hide PlaybackEvent;
 import '../providers/music_provider.dart';
 import 'playback_authority.dart';
 import 'resonate_diagnostics.dart';
+import 'resonate_dsp_pipeline.dart';
 
 /// Watches both app-level MusicProvider state and native just_audio state.
 /// Emphasizes silent-load / auto-next failures: app wants play but native is not playing.
@@ -241,7 +242,11 @@ class PlaybackDiagnosticsObserver extends ChangeNotifier {
     if (music.currentSong == null && !music.isPlaying && state.processingState == ProcessingState.idle) {
       return;
     }
-    unawaited(_writeSnapshot(stage: 'heartbeat', state: state));
+    unawaited(_writeSnapshot(
+      stage: 'heartbeat',
+      state: state,
+      includeDspStatus: true,
+    ));
     _maybeFlagMismatch(state);
   }
 
@@ -249,7 +254,11 @@ class PlaybackDiagnosticsObserver extends ChangeNotifier {
     required String stage,
     required PlayerState state,
     Map<String, dynamic> extra = const {},
+    bool includeDspStatus = false,
   }) async {
+    final dspStatus = includeDspStatus
+        ? await ResonateNativeDspBridge.readDiagnosticsStatus()
+        : null;
     final song = music.currentSong;
     await ResonateDiagnostics.recordPlayerSnapshot(
       stage: stage,
@@ -275,6 +284,7 @@ class PlaybackDiagnosticsObserver extends ChangeNotifier {
         'playerVolume': music.audioPlayer.volume,
         'appVolume': music.volume,
         'activeEngineA': true,
+        if (dspStatus != null) 'dspLiveStatus': dspStatus,
       },
     );
   }

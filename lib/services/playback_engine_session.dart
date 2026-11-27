@@ -88,6 +88,52 @@ abstract interface class PlaybackEngineSession
 }
 
 
+/// Explicit capability for the persistent independent A/B DJ deck session.
+abstract interface class PlaybackDjDeckSession {
+  Future<void> enableDjDualDeckMode();
+  Future<void> disableDjDualDeckMode();
+  Future<void> setDjCrossfader(double position);
+  Future<void> setDjDeckChannelGain({required String deckId, required double gain});
+  Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0});
+  Future<void> playDjDeck(String deckId);
+  Future<void> pauseDjDeck(String deckId);
+  Future<void> clearDjDeck(String deckId);
+  Future<void> setDjDeckPlaybackParameters({
+    required String deckId,
+    required double speed,
+    required double pitch,
+  });
+  Future<void> seekDjDeck({
+    required String deckId,
+    required Duration position,
+    required String expectedMediaId,
+  });
+  Future<void> setDjDeckEq({
+    required String deckId,
+    required List<double> gainsDb,
+  });
+  Future<void> clearDjDeckEq({required String deckId});
+  Future<void> setDjDeckFilter({required String deckId, required int type, required double cutoffHz});
+  Future<void> setDjDeckLoopRange({
+    required String deckId,
+    required Duration start,
+    required Duration end,
+    required String expectedMediaId,
+  });
+  Future<void> clearDjDeckLoop({required String deckId});
+}
+
+/// Optional physical-deck scratch control capability.
+abstract interface class PlaybackDjScratchSession {
+  Future<void> setDjScratchControl({
+    required String deckId,
+    required String expectedMediaId,
+    required bool active,
+    required double velocity,
+    required Duration anchor,
+  });
+}
+
 /// Optional explicit snapshot refresh for lifecycle/focus reconciliation.
 abstract interface class PlaybackStateRefreshSession {
   Future<void> refreshState();
@@ -96,6 +142,16 @@ abstract interface class PlaybackStateRefreshSession {
 /// Optional session-level playback-pitch control.
 abstract interface class PlaybackPitchSession {
   Future<void> setPlaybackPitch(double pitch);
+}
+
+/// Optional atomic speed/pitch control for independent logical DJ decks.
+abstract interface class PlaybackDeckParametersSession {
+  Future<void> setDeckPlaybackParameters({
+    required double activeSpeed,
+    required double activePitch,
+    required double standbySpeed,
+    required double standbyPitch,
+  });
 }
 
 

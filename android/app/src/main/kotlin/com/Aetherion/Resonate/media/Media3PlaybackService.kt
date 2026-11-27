@@ -9,6 +9,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.PlayerMessage
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -18,6 +19,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.aetherion.resonate.dsp.DspEngineSinkHook
+import com.aetherion.resonate.dsp.DjScratchTimestampLedger
+import com.aetherion.resonate.dsp.DjScratchControlMailbox
 import com.aetherion.resonate.dsp.DspEngineRegistry
 import com.Aetherion.Resonate.R
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -60,6 +63,25 @@ class Media3PlaybackService : MediaSessionService() {
     // isPlaying. ExoPlayer's play() request can precede audible output startup.
     private var startingCrossfadeDurationMs: Long? = null
     private var activeDeckId = "A"
+    private var djDualDeckMode = false
+    private var djCrossfaderPosition = 0.5f
+    private var djDeckGainA = 1f
+    private var djDeckGainB = 1f
+    private var suppressDjPeerPauseDeckId: String? = null
+
+    private data class DjLoopState(
+        val expectedMediaId: String,
+        val range: Media3DjLoopRange,
+        var boundaryMessage: PlayerMessage? = null,
+    )
+
+    // Loop state follows physical A/B identity across canonical deck promotion.
+    private val djLoops = mutableMapOf<String, DjLoopState>()
+    // Mailboxes follow physical A/B identity across canonical-player promotion.
+    private val djScratchMailboxes = mapOf(
+        "A" to DjScratchControlMailbox(),
+        "B" to DjScratchControlMailbox(),
+    )
     private fun standbyDeckId(): String = if (activeDeckId == "A") "B" else "A"
     // ExoPlayer focus handling is opt-in at the migration boundary. The legacy
     // audio_session owner remains untouched until an explicit provider cutover.
@@ -98,9 +120,427 @@ class Media3PlaybackService : MediaSessionService() {
     }
 
     private fun applyDeckVolumes() {
-        if (::activePlayer.isInitialized) activePlayer.volume = gainPolicy.activeVolume()
-        standbyPlayer?.volume = gainPolicy.standbyVolume()
+        if (!::activePlayer.isInitialized) return
+        val standby = standbyPlayer
+        val transitionOwnsGain = crossfadeStatus == "starting" || crossfadeStatus == "fading"
+        if (djDualDeckMode && standby != null && !transitionOwnsGain) {
+            val (deckAGain, deckBGain) = Media3DjCrossfaderPolicy.gainsForPosition(djCrossfaderPosition)
+            val activeId = activeDeckId
+            val standbyId = standbyDeckId()
+            val activeGain = if (activeId == "A") deckAGain else deckBGain
+            val standbyGain = if (standbyId == "A") deckAGain else deckBGain
+            val activeChannelGain = if (activeId == "A") djDeckGainA else djDeckGainB
+            val standbyChannelGain = if (standbyId == "A") djDeckGainA else djDeckGainB
+            activePlayer.volume = gainPolicy.djDeckVolume(activeGain, activeChannelGain)
+            standby.volume = gainPolicy.djDeckVolume(standbyGain, standbyChannelGain)
+            return
+        }
+        activePlayer.volume = gainPolicy.activeVolume()
+        standby?.let { it.volume = gainPolicy.standbyVolume() }
     }
+
+    /** Enter the persistent two-deck policy without changing the canonical queue. */
+    fun enableDjDualDeckMode(): Boolean {
+        if (!::activePlayer.isInitialized || isDestroyed ||
+            crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        // A Player preload is not a DJ deck queue. Retire it before promoting
+        // the same physical standby player into the persistent DJ lifecycle.
+        if (standbyPlayer != null || crossfadeStatus in setOf("preparing", "waiting_ready", "ready")) {
+            clearPreload("enter_dj_dual_deck_mode")
+        }
+        if ((standbyPlayer?.mediaItemCount ?: 0) > 0) return false
+        val standby = standbyPlayer ?: newPlayer(
+            handleAudioFocus = false,
+            deckId = standbyDeckId(),
+        ).also { standbyPlayer = it }
+        djDualDeckMode = true
+        djCrossfaderPosition = 0.5f
+        djDeckGainA = 1f
+        djDeckGainB = 1f
+        standby.setAudioAttributes(audioAttributes(), false)
+        standby.setHandleAudioBecomingNoisy(false)
+        standby.pause()
+        DspEngineSinkHook.suspendDeck(standbyDeckId())
+        applyDeckVolumes()
+        return true
+    }
+
+    /** Exit persistent DJ mixing and retire only the non-canonical deck. */
+    fun disableDjDualDeckMode(): Boolean {
+        if (!djDualDeckMode) return true
+        if (crossfadeStatus in setOf("starting", "fading")) return false
+        // DJ channel EQ must never leak into the canonical Player after exit.
+        if (!DspEngineRegistry.clearDjEqOverlay("A") ||
+            !DspEngineRegistry.clearDjEqOverlay("B") ||
+            !DspEngineRegistry.clearDjDeckFilter("A") ||
+            !DspEngineRegistry.clearDjDeckFilter("B")) return false
+        clearDjDeckLoopInternal("A")
+        clearDjDeckLoopInternal("B")
+        djScratchMailboxes.values.forEach { it.clear() }
+        djDualDeckMode = false
+        djDeckGainA = 1f
+        djDeckGainB = 1f
+        val retiringDeckId = standbyDeckId()
+        val standby = standbyPlayer
+        standbyPlayer = null
+        if (standby != null) {
+            runCatching { standby.pause(); standby.stop(); standby.clearMediaItems() }
+            DspEngineRegistry.setDeckTrack(retiringDeckId, null)
+            DspEngineSinkHook.suspendDeck(retiringDeckId)
+            DspEngineSinkHook.forgetDeck(retiringDeckId)
+            standby.release()
+        }
+        // Clearing the DJ queues suspends both physical DSP processors.
+        // The canonical player survives mode exit, so explicitly reactivate its
+        // processor even when it is already physical deck A. Without this,
+        // returning to Player on A leaves playback in PCM pass-through and the
+        // live DSP meter registry empty until the service is rebuilt.
+        DspEngineRegistry.setActiveDeck(activeDeckId)
+        DspEngineSinkHook.activateDeck(activeDeckId)
+        gainPolicy.resetDecks()
+        applyDeckVolumes()
+        crossfadeStatus = "idle"
+        return true
+    }
+
+    /** Operator-owned physical A/B crossfader; automation never calls this. */
+    fun setDjCrossfader(position: Float): Boolean {
+        if (!::activePlayer.isInitialized || !djDualDeckMode) return false
+        val standby = standbyPlayer
+        if (!Media3DjCrossfaderPolicy.canApply(
+                position = position,
+                djDualDeckMode = djDualDeckMode,
+                activeHasMedia = activePlayer.mediaItemCount > 0,
+                standbyHasMedia = standby?.mediaItemCount?.let { it > 0 } == true,
+                transitionOwnsGain = crossfadeStatus in setOf("starting", "fading"),
+            )
+        ) return false
+        djCrossfaderPosition = position
+        applyDeckVolumes()
+        return true
+    }
+
+    /** Operator-owned channel gain (0 = mute, 1 = unity); independent of crossfader. */
+    fun setDjDeckChannelGain(deckId: String, gain: Float): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") ||
+            !gain.isFinite() || gain !in 0f..1f ||
+            crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        if (deckId == "A") djDeckGainA = gain else djDeckGainB = gain
+        applyDeckVolumes()
+        return true
+    }
+
+    private fun playerForPhysicalDeck(deckId: String): ExoPlayer? = when {
+        deckId == activeDeckId -> activePlayer
+        deckId == standbyDeckId() -> standbyPlayer
+        else -> null
+    }
+
+    /** Rebind the single MediaSession/focus owner to the requested physical deck. */
+    private fun promoteDjCanonicalDeck(deckId: String): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B")) return false
+        if (deckId == activeDeckId) return true
+        val target = standbyPlayer ?: return false
+        val outgoing = activePlayer
+        val outgoingDeckId = activeDeckId
+        activePlayer = target
+        standbyPlayer = outgoing
+        activeDeckId = deckId
+        target.setAudioAttributes(
+            audioAttributes(),
+            AudioOutputPolicy.handlesAudioFocus(
+                isCanonicalActiveDeck = true,
+                focusHandlingEnabled = media3AudioFocusEnabled,
+            ),
+        )
+        target.setHandleAudioBecomingNoisy(AudioOutputPolicy.handlesBecomingNoisy(true))
+        outgoing.setAudioAttributes(audioAttributes(), false)
+        outgoing.setHandleAudioBecomingNoisy(false)
+        DspEngineRegistry.setActiveDeck(deckId)
+        if (target.isPlaying) DspEngineSinkHook.activateDeck(deckId)
+        if (outgoing.isPlaying) DspEngineSinkHook.activateDeck(outgoingDeckId)
+        else DspEngineSinkHook.suspendDeck(outgoingDeckId)
+        mediaSession?.setPlayer(target)
+        applyDeckVolumes()
+        return true
+    }
+
+    /** Replace only the selected physical deck's queue; the other deck is untouched. */
+    fun loadDjDeck(deckId: String, items: List<MediaItem>, startIndex: Int): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") || items.isEmpty() ||
+            startIndex !in items.indices || items.any { it.localConfiguration?.uri == null } ||
+            crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        val player = playerForPhysicalDeck(deckId) ?: return false
+        clearDjDeckLoopInternal(deckId)
+        djScratchMailboxes[deckId]?.clear()
+        val peerDeckId = if (deckId == "A") "B" else "A"
+        val peer = playerForPhysicalDeck(peerDeckId)
+        return try {
+            if (player === activePlayer && player.playWhenReady) {
+                suppressDjPeerPauseDeckId = deckId
+            }
+            player.pause()
+            player.stop()
+            player.clearMediaItems()
+            // Tempo/pitch belongs to the loaded track, not the physical deck.
+            // A replacement track starts neutral without changing its partner.
+            player.playbackParameters = Media3DeckPlaybackParametersPolicy.forNewTrack()
+            DspEngineRegistry.setDeckTrack(deckId, null)
+            player.setMediaItems(items, startIndex, 0L)
+            player.prepare()
+            DspEngineSinkHook.suspendDeck(deckId)
+            if (player === activePlayer && peer?.isPlaying == true) {
+                suppressDjPeerPauseDeckId = null
+                promoteDjCanonicalDeck(peerDeckId)
+                setAudioFocusHandling(true)
+            }
+            true
+        } catch (_: Exception) {
+            suppressDjPeerPauseDeckId = null
+            false
+        }
+    }
+
+    /** Play one physical deck; the playing deck becomes the sole focus owner. */
+    fun playDjDeck(deckId: String): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") ||
+            isCommunicationActive() || crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        val target = playerForPhysicalDeck(deckId) ?: return false
+        if (target.mediaItemCount == 0 ||
+            !Media3DeckTransportPolicy.canStart(target.playbackState)
+        ) return false
+        if (!promoteDjCanonicalDeck(deckId) || !setAudioFocusHandling(true)) return false
+        val player = activePlayer
+        DspEngineSinkHook.activateDeck(deckId)
+        return try {
+            if (Media3DeckTransportPolicy.shouldRestartFromBeginning(player.playbackState)) {
+                player.seekTo(djLoops[deckId]?.range?.startMs ?: 0L)
+            }
+            player.play()
+            true
+        } catch (_: Exception) {
+            DspEngineSinkHook.suspendDeck(deckId)
+            false
+        }
+    }
+
+    /** Pause one physical deck; the other deck continues unless system transport owns the pause. */
+    fun pauseDjDeck(deckId: String): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") ||
+            crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        val player = playerForPhysicalDeck(deckId) ?: return false
+        val wasCanonical = player === activePlayer
+        val peerDeckId = if (deckId == "A") "B" else "A"
+        val peer = playerForPhysicalDeck(peerDeckId)
+        if (wasCanonical && player.playWhenReady) suppressDjPeerPauseDeckId = deckId
+        return try {
+            player.pause()
+            djScratchMailboxes[deckId]?.snapshot()?.let { snapshot ->
+                djScratchMailboxes[deckId]?.clear(snapshot.mediaId)
+            }
+            DspEngineSinkHook.suspendDeck(deckId)
+            if (wasCanonical && peer?.isPlaying == true) {
+                suppressDjPeerPauseDeckId = null
+                promoteDjCanonicalDeck(peerDeckId)
+                setAudioFocusHandling(true)
+            }
+            true
+        } catch (_: Exception) {
+            suppressDjPeerPauseDeckId = null
+            false
+        }
+    }
+
+    /** Apply tempo/pitch to one physical deck without changing its partner. */
+    fun setDjDeckPlaybackParameters(deckId: String, speed: Float, pitch: Float): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") ||
+            crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        val parameters = Media3DeckPlaybackParametersPolicy.create(speed, pitch) ?: return false
+        val player = playerForPhysicalDeck(deckId) ?: return false
+        if (player.mediaItemCount == 0) return false
+        return try {
+            player.playbackParameters = parameters
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Clear only the named physical deck while preserving the partner. */
+    fun clearDjDeck(deckId: String): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") ||
+            crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        val player = playerForPhysicalDeck(deckId) ?: return false
+        clearDjDeckLoopInternal(deckId)
+        djScratchMailboxes[deckId]?.clear()
+        val wasCanonical = player === activePlayer
+        val peerDeckId = if (deckId == "A") "B" else "A"
+        val peer = playerForPhysicalDeck(peerDeckId)
+        if (wasCanonical && player.playWhenReady) suppressDjPeerPauseDeckId = deckId
+        return try {
+            player.pause()
+            player.stop()
+            player.clearMediaItems()
+            DspEngineRegistry.setDeckTrack(deckId, null)
+            DspEngineSinkHook.suspendDeck(deckId)
+            if (wasCanonical && peer?.isPlaying == true) {
+                suppressDjPeerPauseDeckId = null
+                promoteDjCanonicalDeck(peerDeckId)
+                setAudioFocusHandling(true)
+            }
+            true
+        } catch (_: Exception) {
+            suppressDjPeerPauseDeckId = null
+            false
+        }
+    }
+
+    /** Seek only the named physical deck, with duration and identity checked natively. */
+    fun seekDjDeck(deckId: String, positionMs: Long, expectedMediaId: String): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") || positionMs < 0L ||
+            expectedMediaId.isBlank() || crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        val player = playerForPhysicalDeck(deckId) ?: return false
+        if (player.currentMediaItem?.mediaId != expectedMediaId ||
+            player.mediaItemCount == 0
+        ) return false
+        val duration = player.duration
+        if (duration != C.TIME_UNSET && positionMs > duration) return false
+        return try {
+            val loop = djLoops[deckId]
+            if (loop != null && (positionMs < loop.range.startMs || positionMs >= loop.range.endMs)) {
+                clearDjDeckLoopInternal(deckId)
+            } else if (loop != null) {
+                loop.boundaryMessage?.cancel()
+                loop.boundaryMessage = null
+            }
+            player.seekTo(positionMs)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Publish validated platter control to the scratch renderer for one physical deck. */
+    fun setDjScratchControl(
+        deckId: String,
+        expectedMediaId: String,
+        active: Boolean,
+        velocity: Double,
+        anchorMediaTimeUs: Long,
+    ): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") ||
+            expectedMediaId.isBlank() || crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        val player = playerForPhysicalDeck(deckId) ?: return false
+        if (player.mediaItemCount == 0 ||
+            player.currentMediaItem?.mediaId != expectedMediaId ||
+            !player.isPlaying || anchorMediaTimeUs < 0L
+        ) return false
+        val mailbox = djScratchMailboxes[deckId] ?: return false
+        return mailbox.publish(
+            mediaId = expectedMediaId,
+            active = active,
+            velocity = velocity,
+            anchorMediaTimeUs = anchorMediaTimeUs,
+        )
+    }
+
+    /** Activate a native A/B loop on the selected physical deck. */
+    fun setDjDeckLoopRange(
+        deckId: String,
+        startMs: Long,
+        endMs: Long,
+        expectedMediaId: String,
+    ): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") ||
+            expectedMediaId.isBlank() || crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        val player = playerForPhysicalDeck(deckId) ?: return false
+        if (player.mediaItemCount == 0 ||
+            player.currentMediaItem?.mediaId != expectedMediaId ||
+            !player.isCurrentMediaItemSeekable
+        ) return false
+        val duration = player.duration.takeIf { it != C.TIME_UNSET && it > 0L }
+        val range = Media3DjLoopPolicy.create(startMs, endMs, duration) ?: return false
+        clearDjDeckLoopInternal(deckId)
+        val loop = DjLoopState(expectedMediaId, range)
+        djLoops[deckId] = loop
+        if (player.currentPosition < range.startMs || player.currentPosition >= range.endMs) {
+            player.seekTo(range.startMs)
+        }
+        armDjLoopBoundary(deckId, player, loop, allowPastEnd = false)
+        return true
+    }
+
+    /** Disable and forget the selected physical deck's loop points. */
+    fun clearDjDeckLoop(deckId: String): Boolean {
+        if (!djDualDeckMode || deckId !in setOf("A", "B") ||
+            crossfadeStatus in setOf("starting", "fading")
+        ) return false
+        clearDjDeckLoopInternal(deckId)
+        return true
+    }
+
+    private fun clearDjDeckLoopInternal(deckId: String) {
+        djLoops.remove(deckId)?.boundaryMessage?.cancel()
+    }
+
+    private fun armDjLoopBoundary(
+        deckId: String,
+        player: ExoPlayer,
+        loop: DjLoopState,
+        allowPastEnd: Boolean,
+    ) {
+        if (djLoops[deckId] !== loop || playerForPhysicalDeck(deckId) !== player ||
+            player.currentMediaItem?.mediaId != loop.expectedMediaId ||
+            player.currentMediaItemIndex < 0
+        ) return
+        if (player.currentPosition >= loop.range.endMs) {
+            if (allowPastEnd && player.isPlaying) {
+                player.seekTo(loop.range.startMs)
+            }
+            return
+        }
+        loop.boundaryMessage?.cancel()
+        val target = object : PlayerMessage.Target {
+            override fun handleMessage(messageType: Int, payload: Any?) {
+                loop.boundaryMessage = null
+                if (djLoops[deckId] !== loop ||
+                    playerForPhysicalDeck(deckId) !== player ||
+                    player.currentMediaItem?.mediaId != loop.expectedMediaId
+                ) return
+                if (!player.isPlaying) return
+                if (Media3DjLoopPolicy.shouldWrap(
+                        loopActive = true,
+                        expectedMediaId = loop.expectedMediaId,
+                        currentMediaId = player.currentMediaItem?.mediaId,
+                        positionMs = player.currentPosition,
+                        endMs = loop.range.endMs,
+                    )
+                ) {
+                    // The player's seek-discontinuity callback re-arms the
+                    // next native boundary after the playback thread accepts it.
+                    player.seekTo(loop.range.startMs)
+                } else {
+                    armDjLoopBoundary(deckId, player, loop, allowPastEnd = true)
+                }
+            }
+        }
+        loop.boundaryMessage = player.createMessage(target)
+            .setLooper(player.applicationLooper)
+            .setPosition(player.currentMediaItemIndex, loop.range.endMs)
+            .setDeleteAfterDelivery(true)
+            .send()
+    }
+
 
     /**
      * Plays a short auxiliary sound without changing the canonical MediaSession
@@ -391,6 +831,22 @@ class Media3PlaybackService : MediaSessionService() {
         return true
     }
 
+    /** Apply complete speed/pitch parameters to logical decks in one command. */
+    fun setDeckPlaybackParameters(
+        activeSpeed: Float,
+        activePitch: Float,
+        standbySpeed: Float,
+        standbyPitch: Float,
+    ): Boolean {
+        val activeParameters = Media3DeckPlaybackParametersPolicy.create(activeSpeed, activePitch)
+            ?: return false
+        val standbyParameters = Media3DeckPlaybackParametersPolicy.create(standbySpeed, standbyPitch)
+            ?: return false
+        activePlayer.playbackParameters = activeParameters
+        standbyPlayer?.playbackParameters = standbyParameters
+        return true
+    }
+
     fun setShuffleMode(enabled: Boolean): Boolean {
         activePlayer.shuffleModeEnabled = enabled
         standbyPlayer?.shuffleModeEnabled = enabled
@@ -403,6 +859,17 @@ class Media3PlaybackService : MediaSessionService() {
 
     fun clearDeckEqOverlay(deckRole: String): Boolean =
         DspEngineRegistry.clearTemporaryEqOverlay(deckRole)
+
+    /** Physical-deck DJ EQ; independent of active/standby transition overlays. */
+    fun setDjDeckEq(deckId: String, centersHz: DoubleArray, gainsDb: DoubleArray): Boolean =
+        djDualDeckMode && DspEngineRegistry.setDjEqOverlay(deckId, centersHz, gainsDb)
+
+    fun clearDjDeckEq(deckId: String): Boolean =
+        DspEngineRegistry.clearDjEqOverlay(deckId)
+
+    /** Independent per-deck low-pass/high-pass filter; type 0 bypasses. */
+    fun setDjDeckFilter(deckId: String, type: Int, cutoffHz: Double): Boolean =
+        djDualDeckMode && DspEngineRegistry.setDjDeckFilter(deckId, type, cutoffHz)
 
     fun setGainFactors(
         trackLevel: Float,
@@ -440,11 +907,21 @@ class Media3PlaybackService : MediaSessionService() {
                 context: Context,
                 enableFloatOutput: Boolean,
                 enableAudioOutputPlaybackParams: Boolean,
-            ): AudioSink = DefaultAudioSink.Builder(context)
-                .setAudioProcessors(DspEngineSinkHook.createProcessors(deckId))
-                .setEnableFloatOutput(enableFloatOutput)
-                .setEnableAudioTrackPlaybackParams(enableAudioOutputPlaybackParams)
-                .build()
+            ): AudioSink {
+                val timestampLedger = DjScratchTimestampLedger()
+                val delegate = DefaultAudioSink.Builder(context)
+                    .setAudioProcessors(
+                        DspEngineSinkHook.createProcessors(
+                            deckId,
+                            timestampLedger,
+                            djScratchMailboxes[deckId] ?: DjScratchControlMailbox(),
+                        ),
+                    )
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioOutputPlaybackParams)
+                    .build()
+                return TimestampedDjAudioSink(delegate, timestampLedger)
+            }
         },
     ).build().apply {
         val deck = this
@@ -479,7 +956,42 @@ class Media3PlaybackService : MediaSessionService() {
         )
         repeatMode = Player.REPEAT_MODE_OFF
         addListener(object : Player.Listener {
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                if (reason != Player.DISCONTINUITY_REASON_SEEK || !djDualDeckMode) return
+                val physicalDeckId = when {
+                    deck === activePlayer -> activeDeckId
+                    deck === standbyPlayer -> standbyDeckId()
+                    else -> null
+                } ?: return
+                val loop = djLoops[physicalDeckId] ?: return
+                if (playerForPhysicalDeck(physicalDeckId) === deck &&
+                    deck.currentMediaItem?.mediaId == loop.expectedMediaId
+                ) {
+                    armDjLoopBoundary(physicalDeckId, deck, loop, allowPastEnd = false)
+                }
+            }
+
             override fun onPlaybackStateChanged(playbackState: Int) {
+                // If the canonical DJ deck ends naturally while its physical
+                // partner is already playing, hand MediaSession/focus ownership
+                // to that audible deck. Do not do this for pause or buffering:
+                // those states are handled by the operator/transport policies.
+                if (djDualDeckMode && deck === activePlayer &&
+                    playbackState == Player.STATE_ENDED
+                ) {
+                    val peerDeckId = standbyDeckId()
+                    if (standbyPlayer?.isPlaying == true && !isCommunicationActive()) {
+                        promoteDjCanonicalDeck(peerDeckId)
+                        setAudioFocusHandling(true)
+                    } else {
+                        applyDeckVolumes()
+                    }
+                    return
+                }
                 // The standby deck identity changes after promotion. Attach
                 // readiness handling to both physical players so later preloads
                 // receive the same deferred-start behavior.
@@ -531,6 +1043,10 @@ class Media3PlaybackService : MediaSessionService() {
                 lastMediaTransitionReason = reason
                 lastMediaTransitionElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime()
                 if (physicalDeckId != null) {
+                    val loop = djLoops[physicalDeckId]
+                    if (loop != null && loop.expectedMediaId != mediaItem?.mediaId) {
+                        clearDjDeckLoopInternal(physicalDeckId)
+                    }
                     DspEngineRegistry.setDeckTrack(physicalDeckId, mediaItem?.mediaId)
                 }
                 // MediaSession controllers (headsets, Bluetooth, notification,
@@ -568,8 +1084,15 @@ class Media3PlaybackService : MediaSessionService() {
                 // standby deck even when it is only preparing and no fade clock
                 // is active.
                 if (deck === activePlayer && !playWhenReady) {
-                    standbyPlayer?.pause()
-                    pauseCrossfade()
+                    val deckId = activeDeckId
+                    val isIndependentDeckPause =
+                        djDualDeckMode && suppressDjPeerPauseDeckId == deckId
+                    if (isIndependentDeckPause) {
+                        suppressDjPeerPauseDeckId = null
+                    } else {
+                        standbyPlayer?.pause()
+                    }
+                    if (!djDualDeckMode) pauseCrossfade()
                     stopTransitionPreview()
                 }
                 // Never allow a deck to continue output in call/VoIP mode.
@@ -580,6 +1103,30 @@ class Media3PlaybackService : MediaSessionService() {
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (!::activePlayer.isInitialized) return
+                // In persistent DJ mode, either physical deck can start or
+                // stop independently. Recompute physical A/B gains on both
+                // callbacks so the surviving deck returns to unity when its
+                // partner pauses, and the stored crossfader is restored when
+                // the second deck becomes audible. A native transition owns
+                // gain exclusively while starting/fading.
+                if (djDualDeckMode) {
+                    if (crossfadeStatus !in setOf("starting", "fading")) {
+                        applyDeckVolumes()
+                    }
+                    if (isPlaying) {
+                        val physicalDeckId = when {
+                            deck === activePlayer -> activeDeckId
+                            deck === standbyPlayer -> standbyDeckId()
+                            else -> null
+                        }
+                        if (physicalDeckId != null) {
+                            djLoops[physicalDeckId]?.let { loop ->
+                                armDjLoopBoundary(physicalDeckId, deck, loop, allowPastEnd = true)
+                            }
+                        }
+                    }
+                    return
+                }
                 if (deck === standbyPlayer) {
                     // Do not attenuate the outgoing deck while ExoPlayer is
                     // still starting the incoming audio output. The fade clock
@@ -756,6 +1303,23 @@ class Media3PlaybackService : MediaSessionService() {
         ) return false
         pendingCrossfadeDurationMs = null
         cancelCrossfade(clearOverlays = false, resetStandbySpeed = false)
+        // A crossfade owns both outputs; release active platters through
+        // their short native fade before either deck enters the transition.
+        for (deckId in listOf("A", "B")) {
+            val player = playerForPhysicalDeck(deckId)
+            val mediaId = player?.currentMediaItem?.mediaId
+            val mailbox = djScratchMailboxes[deckId] ?: continue
+            if (player != null && !mediaId.isNullOrBlank()) {
+                mailbox.publish(
+                    mediaId = mediaId,
+                    active = false,
+                    velocity = 1.0,
+                    anchorMediaTimeUs = player.currentPosition.coerceAtLeast(0L) * 1_000L,
+                )
+            } else {
+                mailbox.clear()
+            }
+        }
         val generation = ++fadeGeneration
         startingCrossfadeDurationMs = durationMs
         crossfadeStatus = "starting"
@@ -827,11 +1391,22 @@ class Media3PlaybackService : MediaSessionService() {
                     // The old physical deck is no longer needed after promotion.
                     // Release it instead of keeping a second ExoPlayer alive.
                     oldPlayer.pause()
-                    oldPlayer.release()
-                    DspEngineSinkHook.forgetDeck(outgoingDeckId)
+                    if (djDualDeckMode) {
+                        // DJ mode keeps both physical ExoPlayers alive. The
+                        // outgoing deck becomes the new standby instead of
+                        // being destroyed after every handoff.
+                        oldPlayer.setAudioAttributes(audioAttributes(), false)
+                        oldPlayer.setHandleAudioBecomingNoisy(false)
+                        standbyPlayer = oldPlayer
+                        DspEngineSinkHook.suspendDeck(outgoingDeckId)
+                    } else {
+                        standbyPlayer = null
+                        oldPlayer.release()
+                        DspEngineSinkHook.forgetDeck(outgoingDeckId)
+                    }
                     gainPolicy.resetDecks()
-                    applyDeckVolumes()
                     crossfadeStatus = "completed"
+                    applyDeckVolumes()
                     fadeRunnable = null
                     crossfadeClock.reset()
                 } else {
@@ -942,12 +1517,19 @@ class Media3PlaybackService : MediaSessionService() {
             DspEngineRegistry.setDeckTrack(retiringDeckId, null)
             standby.pause()
             standby.clearMediaItems()
-            standbyPlayer = null
-            DspEngineSinkHook.suspendDeck(retiringDeckId)
-            DspEngineSinkHook.forgetDeck(retiringDeckId)
-            standby.release()
+            if (djDualDeckMode) {
+                // Preserve the physical player and DSP attachment for the
+                // next independently prepared DJ deck occurrence.
+                DspEngineSinkHook.suspendDeck(retiringDeckId)
+            } else {
+                standbyPlayer = null
+                DspEngineSinkHook.suspendDeck(retiringDeckId)
+                DspEngineSinkHook.forgetDeck(retiringDeckId)
+                standby.release()
+            }
         }
         crossfadeStatus = "idle"
+        if (djDualDeckMode) applyDeckVolumes()
         return true
     }
 
@@ -958,6 +1540,16 @@ class Media3PlaybackService : MediaSessionService() {
      */
     fun restorePrimaryDeckForNewSelection(): Boolean {
         if (!::activePlayer.isInitialized) return false
+        // Player selection can bypass the explicit DJ-mode exit action. Clear
+        // all DJ-only processing before either physical deck returns to the
+        // ordinary Player lifecycle.
+        if (!DspEngineRegistry.clearDjEqOverlay("A") ||
+            !DspEngineRegistry.clearDjEqOverlay("B") ||
+            !DspEngineRegistry.clearDjDeckFilter("A") ||
+            !DspEngineRegistry.clearDjDeckFilter("B")) return false
+        // A new Player selection exits DJ's persistent pair and restores the
+        // ordinary single-user-deck lifecycle before loading its queue.
+        djDualDeckMode = false
         clearPreload("restore_primary_deck_for_new_selection")
         stopTransitionPreview()
         if (activeDeckId == "A") return true
@@ -996,7 +1588,44 @@ class Media3PlaybackService : MediaSessionService() {
         if (!::activePlayer.isInitialized) return null
         if (positionMs < 0L) return false
         return try {
+            if (djDualDeckMode) {
+                val loop = djLoops[activeDeckId]
+                if (loop != null &&
+                    (positionMs < loop.range.startMs || positionMs >= loop.range.endMs)
+                ) {
+                    clearDjDeckLoopInternal(activeDeckId)
+                }
+            }
             activePlayer.seekTo(positionMs)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Cue the prepared incoming deck without touching canonical transport.
+     * Only an idle, ready standby occurrence may be repositioned; the media ID
+     * is supplied by the caller to fail closed if the preload was replaced.
+     */
+    fun seekStandby(
+        positionMs: Long,
+        expectedMediaId: String,
+        expectedQueueIndex: Int,
+    ): Boolean {
+        if (!::activePlayer.isInitialized || positionMs < 0L || expectedQueueIndex < 0 ||
+            expectedMediaId.isBlank() || crossfadeStatus != "ready" ||
+            pendingCrossfadeDurationMs != null || startingCrossfadeDurationMs != null
+        ) return false
+        val standby = standbyPlayer ?: return false
+        if (standby.isPlaying || standby.playbackState != Player.STATE_READY ||
+            standby.currentMediaItemIndex != expectedQueueIndex ||
+            standby.currentMediaItem?.mediaId != expectedMediaId
+        ) return false
+        val duration = standby.duration
+        if (duration != C.TIME_UNSET && positionMs > duration) return false
+        return try {
+            standby.seekTo(positionMs)
             true
         } catch (_: Exception) {
             false
@@ -1056,6 +1685,12 @@ class Media3PlaybackService : MediaSessionService() {
             else -> 0f
         },
         "activeDeckId" to activeDeckId,
+        "djDualDeckMode" to djDualDeckMode,
+        "djCrossfaderPosition" to djCrossfaderPosition,
+        "djDeckGainA" to djDeckGainA,
+        "djDeckGainB" to djDeckGainB,
+        "deckA" to physicalDeckState("A"),
+        "deckB" to physicalDeckState("B"),
         "activeMediaId" to activePlayer.currentMediaItem?.mediaId,
         "incomingReady" to (standbyPlayer?.playbackState == Player.STATE_READY),
         "incomingMediaId" to standbyPlayer?.currentMediaItem?.mediaId,
@@ -1063,6 +1698,10 @@ class Media3PlaybackService : MediaSessionService() {
         "incomingPositionMs" to (standbyPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L),
         "activeVolume" to activePlayer.volume,
         "incomingVolume" to (standbyPlayer?.volume ?: 0f),
+        "activeSpeed" to activePlayer.playbackParameters.speed,
+        "activePitch" to activePlayer.playbackParameters.pitch,
+        "standbySpeed" to standbyPlayer?.playbackParameters?.speed,
+        "standbyPitch" to standbyPlayer?.playbackParameters?.pitch,
         "lastMediaTransitionDeckId" to lastMediaTransitionDeckId,
         "lastMediaTransitionMediaId" to lastMediaTransitionMediaId,
         "lastMediaTransitionReason" to lastMediaTransitionReason,
@@ -1079,12 +1718,50 @@ class Media3PlaybackService : MediaSessionService() {
         "preloadInvalidationCount" to preloadInvalidationCount,
     )
 
+    private fun physicalDeckState(deckId: String): Map<String, Any?>? {
+        val player = when {
+            activeDeckId == deckId -> activePlayer
+            standbyDeckId() == deckId -> standbyPlayer
+            else -> null
+        } ?: return null
+        return mapOf(
+            "deckId" to deckId,
+            "mediaId" to player.currentMediaItem?.mediaId,
+            "title" to player.mediaMetadata.title?.toString(),
+            "artist" to player.mediaMetadata.artist?.toString(),
+            "album" to player.mediaMetadata.albumTitle?.toString(),
+            "positionMs" to player.currentPosition.coerceAtLeast(0L),
+            "bufferedPositionMs" to player.bufferedPosition.coerceAtLeast(0L),
+            "durationMs" to player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L),
+            "isPlaying" to player.isPlaying,
+            "playWhenReady" to player.playWhenReady,
+            "playbackState" to player.playbackState,
+            "mediaItemIndex" to player.currentMediaItemIndex,
+            "mediaItemCount" to player.mediaItemCount,
+            "volume" to player.volume,
+            "channelGain" to if (deckId == "A") djDeckGainA else djDeckGainB,
+            "speed" to player.playbackParameters.speed,
+            "pitch" to player.playbackParameters.pitch,
+            "audioSessionId" to player.audioSessionId,
+            "loopActive" to (djLoops[deckId] != null),
+            "loopStartMs" to djLoops[deckId]?.range?.startMs,
+            "loopEndMs" to djLoops[deckId]?.range?.endMs,
+        )
+    }
+
     private var isDestroyed = false
 
     override fun onDestroy() {
         isDestroyed = true
         cancelCrossfade()
+        djLoops.values.forEach { it.boundaryMessage?.cancel() }
+        djLoops.clear()
+        djScratchMailboxes.values.forEach { it.clear() }
         mainHandler.removeCallbacksAndMessages(null)
+        // Clear process-local DJ EQ/filter state even if teardown bypassed the
+        // normal mode-exit command. This prevents stale overlays from leaking
+        // into the next Media3 service instance or ordinary Player session.
+        DspEngineRegistry.resetDjDeckOverlaysForServiceTeardown()
         mediaSession?.release()
         mediaSession = null
         DspEngineSinkHook.suspendDeck("A")

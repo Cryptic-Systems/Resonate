@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/audio_effects_bridge.dart';
+import '../services/workspace_lifecycle_coordinator.dart';
 
 /// Shared settings and a single low-rate feed for the orb and main visualizer.
-class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObserver {
+class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObserver implements WorkspaceLifecycleParticipant {
   bool enabled = true;
   String visualizationType = 'bars';
   double sensitivity = 0.65;
@@ -18,9 +19,18 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
   bool smoothAnimation = true;
   double frameRate = 24;
   List<double> frequencies = List<double>.filled(32, 0.0);
+  bool _hasReceivedSpectrumSample = false;
+  int _captureGeneration = 0;
+
+  /// True only after a non-empty native spectrum sample has arrived for the
+  /// current capture generation. A zero-valued sample is still valid silence.
+  bool get hasLiveSpectrum => _hasReceivedSpectrumSample &&
+      enabled && _workspaceActive && _playbackActive && _capturePermissionGranted;
 
   Timer? _captureTimer;
   bool _playbackActive = false;
+  bool _workspaceActive = true;
+  final WorkspaceLifecycleCoordinator? _workspaceLifecycle;
   bool _captureInFlight = false;
   bool _permissionRequestInFlight = false;
   bool _permissionChecked = false;
@@ -31,8 +41,10 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
   VoidCallback? _playbackListener;
   bool Function()? _isPlaybackActive;
 
-  AudioVisualizationProvider() {
+  AudioVisualizationProvider({WorkspaceLifecycleCoordinator? workspaceLifecycle})
+      : _workspaceLifecycle = workspaceLifecycle {
     WidgetsBinding.instance.addObserver(this);
+    _workspaceLifecycle?.register(this);
     _load();
   }
 
@@ -43,7 +55,7 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
   }
 
   Future<void> _refreshCaptureAfterResume() async {
-    if (!_preferencesLoaded || !enabled || !_playbackActive) return;
+    if (!_workspaceActive || !_preferencesLoaded || !enabled || !_playbackActive) return;
     if (_capturePermissionGranted) {
       await AudioEffectsBridge.refreshVisualizers();
       if (!_disposed) _syncCapture();
@@ -87,7 +99,10 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
     if (enabled == value) return;
     enabled = value;
     if (value) _permissionChecked = false;
-    if (!value) frequencies = List<double>.filled(32, 0.0);
+    if (!value) {
+      _hasReceivedSpectrumSample = false;
+      frequencies = List<double>.filled(32, 0.0);
+    }
     _save();
     _syncCapture();
     notifyListeners();
@@ -109,16 +124,31 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
     if (_playbackActive == value) return;
     _playbackActive = value;
     if (!value) {
+      _hasReceivedSpectrumSample = false;
       frequencies = List<double>.filled(32, 0.0);
       notifyListeners();
     }
     _syncCapture();
   }
 
+  @override
+  void onWorkspaceChanged(ResonateWorkspace workspace) {
+    final active = workspace == ResonateWorkspace.player;
+    if (_workspaceActive == active) return;
+    _workspaceActive = active;
+    _syncCapture();
+  }
+
   void _syncCapture() {
+    _captureGeneration++;
+    final hadLiveSpectrum = _hasReceivedSpectrumSample;
+    final hadLevels = frequencies.any((value) => value != 0.0);
+    _hasReceivedSpectrumSample = false;
+    frequencies = List<double>.filled(32, 0.0);
+    if (hadLiveSpectrum || hadLevels) notifyListeners();
     _captureTimer?.cancel();
     _captureTimer = null;
-    if (_disposed || !_preferencesLoaded || !enabled || !_playbackActive) return;
+    if (_disposed || !_workspaceActive || !_preferencesLoaded || !enabled || !_playbackActive) return;
     if (!_permissionChecked) {
       if (!_permissionRequestInFlight) _requestCapturePermission();
       return;
@@ -150,20 +180,25 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
   }
 
   Future<void> _captureSpectrum() async {
-    if (_captureInFlight || _disposed || !enabled || !_playbackActive) return;
+    if (_captureInFlight || _disposed || !_workspaceActive || !enabled || !_playbackActive) return;
+    final generation = _captureGeneration;
     _captureInFlight = true;
     try {
       final next = await AudioEffectsBridge.getAudioSpectrum();
-      // A request may complete after pause, disable, or session teardown.
-      // Never let that late reply resurrect a stale spectrum.
-      if (_disposed || !enabled || !_playbackActive) return;
-      if (next.isEmpty) {
-        if (frequencies.any((value) => value != 0.0)) {
-          frequencies = List<double>.filled(32, 0.0);
-          notifyListeners();
-        }
+      // A request may complete after pause, disable, restart or session
+      // teardown. Generation fencing also rejects replies from an earlier
+      // playback/capture session if playback resumed before they completed.
+      if (_disposed || generation != _captureGeneration || !_workspaceActive || !enabled || !_playbackActive) return;
+      if (next.isEmpty || !next.any((value) => value.isFinite)) {
+        final hadLiveSpectrum = _hasReceivedSpectrumSample;
+        final hadLevels = frequencies.any((value) => value != 0.0);
+        _hasReceivedSpectrumSample = false;
+        if (hadLevels) frequencies = List<double>.filled(32, 0.0);
+        if (hadLiveSpectrum || hadLevels) notifyListeners();
         return;
       }
+      final availabilityChanged = !_hasReceivedSpectrumSample;
+      _hasReceivedSpectrumSample = true;
       final count = next.length < frequencies.length ? next.length : frequencies.length;
       final alpha = 1.0 - smoothing * 0.88;
       final updated = List<double>.filled(32, 0.0);
@@ -174,12 +209,13 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
         if ((updated[i] - frequencies[i]).abs() > 0.002) changed = true;
       }
       // Avoid rebuilding both consumers for imperceptible numerical noise.
-      if (changed) {
+      if (changed || availabilityChanged) {
         frequencies = updated;
         notifyListeners();
       }
     } catch (_) {
-      if (!_disposed && _playbackActive && frequencies.any((v) => v != 0.0)) {
+      if (!_disposed && generation == _captureGeneration && _workspaceActive && _playbackActive) {
+        _hasReceivedSpectrumSample = false;
         frequencies = List<double>.filled(32, 0.0);
         notifyListeners();
       }
@@ -248,6 +284,7 @@ class AudioVisualizationProvider extends ChangeNotifier with WidgetsBindingObser
   @override
   void dispose() {
     _disposed = true;
+    _workspaceLifecycle?.unregister(this);
     WidgetsBinding.instance.removeObserver(this);
     if (_playbackListenable != null && _playbackListener != null) {
       _playbackListenable!.removeListener(_playbackListener!);

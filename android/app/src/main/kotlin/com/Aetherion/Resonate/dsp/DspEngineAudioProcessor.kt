@@ -23,6 +23,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
         fun destroy(handle: Long)
         fun process(handle: Long, buffer: ByteBuffer, frames: Int, channels: Int, sampleRate: Double): Int
         fun setEnabled(handle: Long, enabled: Boolean)
+        fun ensureLoaded(): Boolean = true
     }
 
     companion object {
@@ -36,6 +37,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
                 DspEngineJni.nativeProcessPcm16Direct(handle, buffer, frames, channels, sampleRate)
             override fun setEnabled(handle: Long, enabled: Boolean) =
                 DspEngineJni.nativeSetEnabled(handle, enabled)
+            override fun ensureLoaded(): Boolean = DspEngineJni.ensureLoaded()
         }
 
         @Volatile
@@ -43,6 +45,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
         const val MAX_FRAMES = 4096
         const val MAX_BYTES = MAX_FRAMES * 2 * 2
         private const val MAX_PROCESS_ERRORS = 8
+        private const val MAX_CREATE_FAILURES_PER_ACTIVATION = 3
         private const val MAX_SUPPORTED_CHANNELS = 2
 
         private val nextId = AtomicInteger(1)
@@ -65,6 +68,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
     private var configuredRate: Int = 44100
     private var configuredChannels: Int = 2
     private var createAttempted = false
+    private var createFailuresThisActivation = 0
     private var formatConfigured = false
     private var consecutiveProcessErrors = 0
 
@@ -72,6 +76,8 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
         nativeProcessEnabled = enabled && DspSessionGate.isNativeAllowed()
         if (!nativeProcessEnabled) {
             destroyEngineLocked()
+            createAttempted = false
+            createFailuresThisActivation = 0
             return@synchronized
         }
         if (engineHandle != 0L) {
@@ -88,12 +94,18 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
 
     /** The service toggles this when a physical player enters/leaves the active or fading role. */
     fun setDeckActive(active: Boolean) = synchronized(engineLock) {
+        val wasActive = deckActive
         deckActive = active
         if (active) {
+            if (!wasActive || (engineHandle == 0L && createFailuresThisActivation >= MAX_CREATE_FAILURES_PER_ACTIVATION)) {
+                createFailuresThisActivation = 0
+                createAttempted = false
+            }
             if (nativeProcessEnabled) maybeCreateEngineLocked()
         } else {
             destroyEngineLocked()
             createAttempted = false
+            createFailuresThisActivation = 0
         }
     }
 
@@ -113,6 +125,7 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
             Log.i(TAG, "id=$processorId format change $configuredRate/$configuredChannels → $rate/$ch")
             destroyEngine()
             createAttempted = false
+            createFailuresThisActivation = 0
         }
 
         configuredRate = rate
@@ -140,14 +153,18 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
             return
         }
         if (engineHandle != 0L || createAttempted) return
+        if (createFailuresThisActivation >= MAX_CREATE_FAILURES_PER_ACTIVATION) return
 
         createAttempted = true
         try {
+            if (!nativeApi.ensureLoaded()) {
+                recordCreateFailure("native_library_unavailable")
+                return
+            }
             val h = nativeApi.create(configuredRate.toDouble(), configuredChannels)
             if (h == 0L) {
-                Log.w(TAG, "id=$processorId nativeCreate returned 0 — pass-through")
-                DspSessionGate.noteCreateFailure("null_handle")
-                nativeProcessEnabled = false
+                Log.w(TAG, "id=$processorId nativeCreate returned 0 — pass-through; lifecycle retry remains available")
+                recordCreateFailure("null_handle")
                 return
             }
 
@@ -160,18 +177,30 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
                     Log.w(TAG, "id=$processorId rejected handle destroy failed", t)
                 }
                 engineHandle = 0
-                nativeProcessEnabled = false
+                recordCreateFailure("registry_rejected")
                 return
             }
 
+            createFailuresThisActivation = 0
             DspSessionGate.noteCreateSuccess()
             Log.i(TAG, "id=$processorId engine ok handle=$h sr=$configuredRate ch=$configuredChannels active=$deckActive")
         } catch (t: Throwable) {
             Log.e(TAG, "id=$processorId nativeCreate failed", t)
             engineHandle = 0
-            nativeProcessEnabled = false
-            DspSessionGate.noteCreateFailure(t.javaClass.simpleName)
+            recordCreateFailure(t.javaClass.simpleName)
         }
+    }
+
+    /** Retry only on explicit lifecycle events, never on every PCM block. */
+    private fun recordCreateFailure(reason: String) {
+        createAttempted = false
+        createFailuresThisActivation++
+        DspSessionGate.noteCreateFailure(reason)
+        Log.w(
+            TAG,
+            "id=$processorId native engine creation attempt $createFailuresThisActivation/" +
+                "$MAX_CREATE_FAILURES_PER_ACTIVATION failed reason=$reason; playback remains pass-through",
+        )
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
@@ -258,12 +287,15 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
     }
 
     override fun onFlush() {
-        // Continuous engine; no hard reset.
+        // Media3 may flush immediately after initial configure. Retry transient
+        // library/engine initialization here, outside the real-time PCM callback.
+        maybeCreateEngine()
     }
 
     override fun onReset() {
         destroyEngine()
         createAttempted = false
+        createFailuresThisActivation = 0
         consecutiveProcessErrors = 0
         DspEngineSinkHook.forgetProcessor(this)
     }

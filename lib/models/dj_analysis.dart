@@ -10,7 +10,7 @@ class DjAnalysis {
   /// Bump when the analyzer pipeline changes in a meaningful way.
   /// v8 adds measured PCM level metrics; v9 adds DSP-ENGINE's measured
   /// per-track maximum-safe-bass probe to the persisted DSP profile.
-  static const int currentVersion = 9;
+  static const int currentVersion = 10;
 
   final String songId;
   final double? bpm;

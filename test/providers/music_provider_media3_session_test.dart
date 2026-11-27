@@ -8,6 +8,7 @@ import 'package:resonate/models/song.dart';
 import 'package:resonate/models/dj_analysis.dart';
 import 'package:resonate/dj_engine/core/dj_types.dart';
 import 'package:resonate/playback/queue_store.dart';
+import 'package:resonate/playback/playback_control_arbiter.dart';
 import 'package:resonate/providers/music_provider.dart';
 import 'package:resonate/providers/crossfade_provider.dart';
 import 'package:resonate/providers/playback_features_provider.dart';
@@ -71,7 +72,7 @@ Media3ProviderState _state({
       error: null,
     );
 
-class _FakePlaybackSession implements PlaybackEngineSession {
+class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueBackend, PlaybackDjDeckSession {
   _FakePlaybackSession({bool synchronousStates = false})
       : states = StreamController<Media3ProviderState>.broadcast(
           sync: synchronousStates,
@@ -100,9 +101,13 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   (double, double)? deckSpeeds;
   bool disposed = false;
   bool throwOnCrossfade = false;
+  Completer<void>? djCrossfaderGate;
+  Completer<void>? djDeckCommandGate;
   bool throwOnPreloadNext = false;
   bool throwOnDeckSpeedOnce = false;
   bool throwOnClearDeckEqOverlay = false;
+  bool throwOnClearDjDeckOnce = false;
+  bool throwOnDisableDjModeOnce = false;
   bool deferLoadQueueState = false;
   Completer<void>? cancelCrossfadeGate;
   Completer<void>? crossfadeGate;
@@ -121,6 +126,8 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   Duration positionValue = Duration.zero;
   Duration? durationValue;
   double playbackSpeedValue = 1.0;
+  bool djDualDeckModeValue = false;
+  final Map<String, List<Song>> djDeckQueues = <String, List<Song>>{};
 
   @override
   Stream<int?> get audioSessionIdStream => audioSessions.stream;
@@ -303,6 +310,23 @@ class _FakePlaybackSession implements PlaybackEngineSession {
     preloadedIndex = queueIndex;
     preloadedStartPosition = startPosition;
     await preloadNextGate?.future;
+    calls.add('preloadNext:settled');
+    crossfadeStatusValue = 'ready';
+  }
+
+  @override
+  Future<void> seekStandby({
+    required Duration position,
+    required String expectedMediaId,
+    required int expectedQueueIndex,
+  }) async {
+    calls.add('seekStandby:${position.inMilliseconds}:$expectedMediaId:$expectedQueueIndex');
+    if (crossfadeStatusValue != 'ready' ||
+        preloadedSong?.id != expectedMediaId ||
+        preloadedIndex != expectedQueueIndex) {
+      throw StateError('simulated standby identity mismatch');
+    }
+    preloadedStartPosition = position;
   }
 
   @override
@@ -389,6 +413,114 @@ class _FakePlaybackSession implements PlaybackEngineSession {
   Future<void> dispose() async {
     disposed = true;
     calls.add('dispose');
+  }
+
+  @override
+  Future<void> enableDjDualDeckMode() async {
+    djDualDeckModeValue = true;
+    calls.add('enableDjDualDeckMode');
+  }
+
+  @override
+  Future<void> disableDjDualDeckMode() async {
+    calls.add('disableDjDualDeckMode');
+    if (throwOnDisableDjModeOnce) {
+      throwOnDisableDjModeOnce = false;
+      throw StateError('simulated DJ mode teardown failure');
+    }
+    djDualDeckModeValue = false;
+  }
+
+  @override
+  Future<void> setDjCrossfader(double position) async {
+    calls.add('setDjCrossfader:$position');
+    final gate = djCrossfaderGate;
+    if (gate != null) {
+      djCrossfaderGate = null;
+      await gate.future;
+    }
+  }
+
+  @override
+  Future<void> setDjDeckChannelGain({required String deckId, required double gain}) async {
+    calls.add('setDjDeckChannelGain:$deckId:$gain');
+  }
+
+  @override
+  Future<void> setDjDeckEq({
+    required String deckId,
+    required List<double> gainsDb,
+  }) async {
+    calls.add('setDjDeckEq:$deckId:${gainsDb.join(',')}');
+  }
+
+  @override
+  Future<void> clearDjDeckEq({required String deckId}) async {
+    calls.add('clearDjDeckEq:$deckId');
+  }
+
+  @override
+  Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0}) async {
+    calls.add('loadDjDeck:$deckId');
+    final gate = djDeckCommandGate;
+    if (gate != null) {
+      djDeckCommandGate = null;
+      await gate.future;
+    }
+    djDeckQueues[deckId] = List<Song>.of(songs);
+  }
+
+  @override
+  Future<void> playDjDeck(String deckId) async {
+    calls.add('playDjDeck:$deckId');
+  }
+
+  @override
+  Future<void> pauseDjDeck(String deckId) async {
+    calls.add('pauseDjDeck:$deckId');
+  }
+
+  @override
+  Future<void> clearDjDeck(String deckId) async {
+    calls.add('clearDjDeck:$deckId');
+    if (throwOnClearDjDeckOnce) {
+      throwOnClearDjDeckOnce = false;
+      throw StateError('simulated DJ deck cleanup failure');
+    }
+    djDeckQueues.remove(deckId);
+  }
+
+  @override
+  Future<void> setDjDeckPlaybackParameters({
+    required String deckId,
+    required double speed,
+    required double pitch,
+  }) async {
+    calls.add('setDjDeckPlaybackParameters:$deckId:$speed:$pitch');
+  }
+
+  @override
+  Future<void> seekDjDeck({
+    required String deckId,
+    required Duration position,
+    required String expectedMediaId,
+  }) async {
+    calls.add('seekDjDeck:$deckId:${position.inMilliseconds}:$expectedMediaId');
+  }
+
+  @override
+  Future<void> setDjDeckLoopRange({
+    required String deckId,
+    required Duration start,
+    required Duration end,
+    required String expectedMediaId,
+  }) async {
+    calls.add('setDjDeckLoopRange:$deckId:${start.inMilliseconds}:${end.inMilliseconds}:$expectedMediaId');
+  }
+
+  @override
+  Future<void> clearDjDeckLoop({required String deckId}) async {
+    calls.add('clearDjDeckLoop:$deckId');
   }
 
   @override
@@ -3607,6 +3739,1030 @@ void main() {
       );
       provider.dispose();
     });
+    test('manual DJ handoff maps original queue positions to filtered Media3 positions', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-filtered-outgoing');
+      final filteredMiddle = _song('manual-filtered-middle');
+      final incoming = _song('manual-filtered-incoming');
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(
+          await provider.playSong(
+            outgoing,
+            queue: <Song>[outgoing, filteredMiddle, incoming],
+          ),
+          isTrue,
+        );
+
+        // Simulate a native queue that omits a provider-queue entry while
+        // retaining the original ordered queue in MusicProvider. Native index
+        // 1 therefore represents UI index 2 for this handoff.
+        expect(provider.queueIndex, 0);
+        session.queue = <Song>[outgoing, incoming];
+        await provider.prepareManualDjDeck(incomingQueueIndex: 2);
+
+        expect(session.preloadedIndex, 1);
+        expect(
+          session.calls,
+          contains('preloadNext:${incoming.id}:1:0'),
+          reason: 'The native preload must use the filtered playable index.',
+        );
+
+        await provider.cuePreparedManualDjDeck(const Duration(seconds: 12));
+        expect(
+          session.calls,
+          contains('seekStandby:12000:${incoming.id}:1'),
+          reason: 'Standby cueing must use the same translated native index.',
+        );
+
+        await provider.crossfadePreparedManualDjDeck(
+          duration: const Duration(seconds: 2),
+        );
+        expect(session.currentSongValue?.id, incoming.id);
+        expect(session.queueIndexValue, 1);
+        expect(provider.currentSong?.id, incoming.id);
+        expect(
+          provider.queueIndex,
+          2,
+          reason: 'The promoted native item must reconcile to its original UI queue occurrence.',
+        );
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(arbiter.activeOwner, isNull);
+      } finally {
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('manual DJ preparation is retired when a queue edit shifts its incoming occurrence', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-queue-edit-outgoing');
+      final incoming = _song('manual-queue-edit-incoming');
+      final inserted = _song('manual-queue-edit-inserted');
+
+      try {
+        expect(
+          await provider.playSong(outgoing, queue: <Song>[outgoing, incoming]),
+          isTrue,
+        );
+        await provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        expect(provider.hasPreparedManualDjDeck, isTrue);
+        expect(arbiter.activeOwner, 'dj_manual_transition');
+
+        // playNext inserts at index 1, shifting the reviewed incoming
+        // occurrence to index 2 while native standby still reflects the old
+        // queue. The mutation must retire the standby and its retained lease.
+        expect(await provider.playNext(inserted), isTrue);
+        for (var attempt = 0;
+            attempt < 50 && provider.hasPreparedManualDjDeck;
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(arbiter.activeOwner, isNull);
+        expect(session.calls, contains('cancelCrossfade'));
+        expect(session.calls, contains('clearDeckEqOverlay:standby'));
+        expect(provider.currentSong?.id, outgoing.id);
+        expect(provider.queue.map((song) => song.id).toList(),
+            <String>[outgoing.id, inserted.id, incoming.id]);
+      } finally {
+        await provider.cancelPreparedManualDjDeck();
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+        await arbiter.close();
+      }
+    });
+
+    test('manual DJ queue removal invalidates a preload that is still in flight', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-inflight-remove-outgoing');
+      final incoming = _song('manual-inflight-remove-incoming');
+      final tail = _song('manual-inflight-remove-tail');
+      final preloadGate = Completer<void>();
+      session.preloadNextGate = preloadGate;
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(
+          await provider.playSong(
+            outgoing,
+            queue: <Song>[outgoing, incoming, tail],
+          ),
+          isTrue,
+        );
+
+        final preparation = provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        for (var attempt = 0;
+            attempt < 50 &&
+                !session.calls.any((call) => call.startsWith('preloadNext:'));
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+        expect(
+          session.calls.any((call) => call.startsWith('preloadNext:')),
+          isTrue,
+          reason: 'The manual standby preload must be in flight before editing the queue.',
+        );
+        expect(arbiter.activeOwner, 'dj_manual_transition');
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+
+        expect(await provider.removeFromQueue(1), isTrue);
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(
+          arbiter.activeOwner,
+          'dj_manual_transition',
+          reason: 'The in-flight operation retains authority until it can clean up safely.',
+        );
+        expect(session.calls, contains('cancelCrossfade'));
+
+        preloadGate.complete();
+        await expectLater(preparation, throwsStateError);
+
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(arbiter.activeOwner, isNull);
+        expect(session.calls, contains('clearDeckEqOverlay:standby'));
+        expect(session.crossfadeCancelled, isTrue);
+        expect(provider.currentSong?.id, outgoing.id);
+        expect(
+          provider.queue.map((song) => song.id).toList(),
+          <String>[outgoing.id, tail.id],
+        );
+      } finally {
+        if (!preloadGate.isCompleted) preloadGate.complete();
+        await provider.cancelPreparedManualDjDeck();
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+        await arbiter.close();
+      }
+    });
+
+    test('user transport waits for a revoked manual preload to settle and clean up', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-preempt-outgoing');
+      final incoming = _song('manual-preempt-incoming');
+      final preloadGate = Completer<void>();
+      session.preloadNextGate = preloadGate;
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(
+          await provider.playSong(
+            outgoing,
+            queue: <Song>[outgoing, incoming],
+          ),
+          isTrue,
+        );
+
+        final preparation = provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        final preparationExpectation = expectLater(preparation, throwsStateError);
+        for (var attempt = 0;
+            attempt < 50 &&
+                !session.calls.any((call) => call.startsWith('preloadNext:'));
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+        expect(
+          session.calls.any((call) => call.startsWith('preloadNext:')),
+          isTrue,
+          reason: 'Manual preload must be blocked before user transport preempts it.',
+        );
+
+        final cancelCountBeforePreemption =
+            session.calls.where((call) => call == 'cancelCrossfade').length;
+        var userLeaseGranted = false;
+        final userLeaseFuture = arbiter.acquire(
+          owner: 'user_transport',
+          priority: PlaybackControlPriority.userTransport,
+        ).then((lease) {
+          userLeaseGranted = lease != null;
+          return lease;
+        });
+
+        for (var attempt = 0;
+            attempt < 50 &&
+                session.calls.where((call) => call == 'cancelCrossfade').length <=
+                    cancelCountBeforePreemption;
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+        expect(
+          session.calls.where((call) => call == 'cancelCrossfade').length,
+          greaterThan(cancelCountBeforePreemption),
+        );
+        expect(
+          userLeaseGranted,
+          isFalse,
+          reason: 'The arbiter must wait for the dispatched native preload to settle.',
+        );
+        expect(arbiter.activeOwner, isNull);
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+
+        preloadGate.complete();
+        await preparationExpectation;
+        final userLease = await userLeaseFuture;
+
+        expect(userLease, isNotNull);
+        expect(arbiter.activeOwner, 'user_transport');
+        expect(userLeaseGranted, isTrue);
+        final preloadSettledIndex = session.calls.indexOf('preloadNext:settled');
+        expect(preloadSettledIndex, greaterThanOrEqualTo(0));
+        expect(
+          session.calls.lastIndexOf('cancelCrossfade'),
+          greaterThan(preloadSettledIndex),
+          reason: 'A final standby cancellation must run after native preload settles.',
+        );
+        expect(
+          session.calls.lastIndexOf('clearDeckEqOverlay:standby'),
+          greaterThan(preloadSettledIndex),
+          reason: 'The standby overlay must be cleared after native preload settles.',
+        );
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(provider.currentSong?.id, outgoing.id);
+        await userLease!.release();
+      } finally {
+        if (!preloadGate.isCompleted) preloadGate.complete();
+        await provider.cancelPreparedManualDjDeck();
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+        await arbiter.close();
+      }
+    });
+
+    test('manual DJ preparation is retired when its incoming queue occurrence is removed', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-remove-outgoing');
+      final incoming = _song('manual-remove-incoming');
+      final tail = _song('manual-remove-tail');
+
+      try {
+        expect(
+          await provider.playSong(
+            outgoing,
+            queue: <Song>[outgoing, incoming, tail],
+          ),
+          isTrue,
+        );
+        await provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        expect(provider.hasPreparedManualDjDeck, isTrue);
+        expect(arbiter.activeOwner, 'dj_manual_transition');
+
+        expect(await provider.removeFromQueue(1), isTrue);
+        for (var attempt = 0;
+            attempt < 50 && provider.hasPreparedManualDjDeck;
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(arbiter.activeOwner, isNull);
+        expect(session.calls, contains('cancelCrossfade'));
+        expect(session.calls, contains('clearDeckEqOverlay:standby'));
+        expect(provider.currentSong?.id, outgoing.id);
+        expect(
+          provider.queue.map((song) => song.id).toList(),
+          <String>[outgoing.id, tail.id],
+        );
+      } finally {
+        await provider.cancelPreparedManualDjDeck();
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+        await arbiter.close();
+      }
+    });
+
+    test('manual DJ preparation is retired when its incoming queue occurrence is reordered', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-reorder-outgoing');
+      final incoming = _song('manual-reorder-incoming');
+      final tail = _song('manual-reorder-tail');
+
+      try {
+        expect(
+          await provider.playSong(
+            outgoing,
+            queue: <Song>[outgoing, incoming, tail],
+          ),
+          isTrue,
+        );
+        await provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        expect(provider.hasPreparedManualDjDeck, isTrue);
+        expect(arbiter.activeOwner, 'dj_manual_transition');
+
+        // Move the prepared occurrence behind the tail. Its queue index and
+        // ordering no longer match the reviewed standby identity.
+        expect(await provider.reorderQueue(1, 3), isTrue);
+        for (var attempt = 0;
+            attempt < 50 && provider.hasPreparedManualDjDeck;
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(arbiter.activeOwner, isNull);
+        expect(session.calls, contains('cancelCrossfade'));
+        expect(session.calls, contains('clearDeckEqOverlay:standby'));
+        expect(provider.currentSong?.id, outgoing.id);
+        expect(
+          provider.queue.map((song) => song.id).toList(),
+          <String>[outgoing.id, tail.id, incoming.id],
+        );
+      } finally {
+        await provider.cancelPreparedManualDjDeck();
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+        await arbiter.close();
+      }
+    });
+
+    test('manual standby lease blocks automatic replacement and cleans up on user preemption', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-lease-outgoing');
+      final incoming = _song('manual-lease-incoming');
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(
+          await provider.playSong(outgoing, queue: <Song>[outgoing, incoming]),
+          isTrue,
+        );
+
+        await provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        expect(provider.hasPreparedManualDjDeck, isTrue);
+        expect(session.crossfadeStatus, 'ready');
+        final playCallsAfterPrepare =
+            session.calls.where((call) => call == 'play').length;
+        // Preparing a manual deck may first cancel a stale/previous preload.
+        // Only cancellations added by the rejected automatic acquisition
+        // would indicate that automatic DJ displaced this prepared deck.
+        final cancelCallsAfterPrepare =
+            session.calls.where((call) => call == 'cancelCrossfade').length;
+
+        final automaticLease = await arbiter.acquire(
+          owner: 'dj_automatic_test',
+          priority: PlaybackControlPriority.automatic,
+        );
+        expect(
+          automaticLease,
+          isNull,
+          reason: 'Automatic DJ must not replace a manually prepared standby deck.',
+        );
+        expect(provider.hasPreparedManualDjDeck, isTrue);
+        expect(
+          session.calls.where((call) => call == 'cancelCrossfade').length,
+          cancelCallsAfterPrepare,
+          reason: 'A denied automatic lease must not cancel the manually prepared standby deck.',
+        );
+
+        final userLease = await arbiter.acquire(
+          owner: 'user_transport_test',
+          priority: PlaybackControlPriority.userTransport,
+        );
+        expect(userLease, isNotNull);
+        expect(
+          provider.hasPreparedManualDjDeck,
+          isFalse,
+          reason: 'User transport must revoke manual standby ownership.',
+        );
+        expect(session.calls, contains('cancelCrossfade'));
+        expect(session.calls, contains('clearDeckEqOverlay:standby'));
+        expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+        expect(
+          session.calls.where((call) => call == 'play').length,
+          playCallsAfterPrepare,
+          reason: 'Revocation cleanup must not start or restart either deck.',
+        );
+        await userLease!.release();
+      } finally {
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('stale native queue identity retires manual standby before crossfade', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-stale-outgoing');
+      final incoming = _song('manual-stale-incoming');
+      final replacement = _song('manual-stale-replacement');
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(
+          await provider.playSong(outgoing, queue: <Song>[outgoing, incoming]),
+          isTrue,
+        );
+        await provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        expect(provider.hasPreparedManualDjDeck, isTrue);
+
+        // Simulate a native queue replacement while the previously prepared
+        // standby remains marked ready. The old queue index is no longer a
+        // valid identity token for the incoming deck.
+        session.queue = <Song>[outgoing, replacement];
+        session.calls.clear();
+
+        await expectLater(
+          provider.crossfadePreparedManualDjDeck(
+            duration: const Duration(seconds: 2),
+          ),
+          throwsStateError,
+        );
+
+        expect(
+          session.calls.where((call) => call.startsWith('crossfade:')),
+          isEmpty,
+          reason: 'A stale prepared occurrence must never start a native fade.',
+        );
+        expect(session.calls, contains('cancelCrossfade'));
+        expect(session.calls, contains('clearDeckEqOverlay:standby'));
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(arbiter.activeOwner, isNull);
+        expect(session.currentSongValue, same(outgoing));
+        expect(session.queueIndexValue, 0);
+      } finally {
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('user transport preemption cancels an in-flight manual crossfade', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-preempt-outgoing');
+      final incoming = _song('manual-preempt-incoming');
+      final fadeGate = Completer<void>();
+      session.crossfadeGate = fadeGate;
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(
+          await provider.playSong(outgoing, queue: <Song>[outgoing, incoming]),
+          isTrue,
+        );
+        await provider.prepareManualDjDeck(incomingQueueIndex: 1);
+        expect(provider.hasPreparedManualDjDeck, isTrue);
+
+        final transition = provider.crossfadePreparedManualDjDeck(
+          duration: const Duration(seconds: 2),
+        );
+        for (var attempt = 0;
+            attempt < 50 &&
+                !session.calls.any((call) => call.startsWith('crossfade:'));
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+        expect(
+          session.calls.any((call) => call.startsWith('crossfade:')),
+          isTrue,
+          reason: 'The manual crossfade must have entered its native operation.',
+        );
+
+        final userLease = await arbiter.acquire(
+          owner: 'user_transport_during_fade_test',
+          priority: PlaybackControlPriority.userTransport,
+        );
+        expect(userLease, isNotNull);
+        expect(
+          session.crossfadeCancelled,
+          isTrue,
+          reason: 'User transport preemption must cancel the in-flight native fade.',
+        );
+        expect(provider.hasPreparedManualDjDeck, isFalse);
+        expect(session.calls, contains('clearDeckEqOverlay:standby'));
+        expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+
+        // Let the fake native call return after cancellation. It must not
+        // promote the incoming track or retain the manual lease.
+        fadeGate.complete();
+        await expectLater(transition, throwsStateError);
+        expect(session.currentSongValue, same(outgoing));
+        expect(session.queueIndexValue, 0);
+        expect(arbiter.activeOwner, 'user_transport_during_fade_test');
+        await userLease!.release();
+        expect(arbiter.activeOwner, isNull);
+      } finally {
+        if (!fadeGate.isCompleted) fadeGate.complete();
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('provider disposal retires manual standby and releases external arbiter lease', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final provider = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final outgoing = _song('manual-dispose-outgoing');
+      final incoming = _song('manual-dispose-incoming');
+
+      try {
+        await provider.prepareMedia3ProviderSession();
+        expect(
+          await provider.playSong(outgoing, queue: <Song>[outgoing, incoming]),
+          isTrue,
+        );
+        await provider.prepareManualDjDeck(incomingQueueIndex: 1);
+
+        expect(provider.hasPreparedManualDjDeck, isTrue);
+        expect(arbiter.activeOwner, 'dj_manual_transition');
+
+        provider.dispose();
+
+        expect(
+          provider.hasPreparedManualDjDeck,
+          isFalse,
+          reason: 'Disposal must synchronously invalidate the UI-facing prepared state.',
+        );
+        for (var attempt = 0; attempt < 50; attempt++) {
+          if (arbiter.activeOwner == null && session.disposed) break;
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+
+        expect(session.calls, contains('cancelCrossfade'));
+        expect(session.calls, contains('clearDeckEqOverlay:standby'));
+        expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+        expect(arbiter.activeOwner, isNull);
+        expect(session.disposed, isTrue);
+        expect(
+          arbiter.isClosed,
+          isFalse,
+          reason: 'An injected arbiter remains owned by its caller after provider disposal.',
+        );
+
+        final replacementLease = await arbiter.acquire(
+          owner: 'post_disposal_controller',
+          priority: PlaybackControlPriority.automatic,
+        );
+        expect(replacementLease, isNotNull);
+        await replacementLease!.release();
+      } finally {
+        provider.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('disposed provider rejects a DJ deck command queued for control authority', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final music = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final revocationGate = Completer<void>();
+      final track = _song('dj-command-after-dispose');
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        final backgroundLease = await arbiter.acquire(
+          owner: 'background_dj_test',
+          priority: PlaybackControlPriority.background,
+          onRevoked: (_) async => revocationGate.future,
+        );
+        expect(backgroundLease, isNotNull);
+
+        final load = music.loadDjDeck('A', <Song>[track]);
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          arbiter.activeOwner,
+          isNull,
+          reason: 'The DJ command must be waiting for the current owner cleanup.',
+        );
+
+        // Dispose while the higher-priority DJ acquisition is still queued.
+        // Once the old owner settles, the acquired lease must not dispatch
+        // against the now-disposed provider/session.
+        music.dispose();
+        revocationGate.complete();
+
+        await expectLater(load, throwsStateError);
+        expect(
+          session.calls.where((call) => call == 'loadDjDeck:A'),
+          isEmpty,
+          reason: 'A queued command must not reach native after provider disposal.',
+        );
+        await backgroundLease!.release();
+      } finally {
+        if (!revocationGate.isCompleted) revocationGate.complete();
+        music.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await session.audioSessions.close();
+        await session.states.close();
+        await arbiter.close();
+      }
+    });
+
+    test('user transport waits for an accepted native DJ deck command to drain', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final music = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final commandGate = Completer<void>();
+      final track = _song('dj-command-drain');
+      session.djDeckCommandGate = commandGate;
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        await music.enableDjDualDeckMode();
+
+        final load = music.loadDjDeck('A', <Song>[track]);
+        for (var attempt = 0;
+            attempt < 50 && !session.calls.contains('loadDjDeck:A');
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+        expect(
+          session.calls,
+          contains('loadDjDeck:A'),
+          reason: 'The DJ deck load must enter its native operation before preemption.',
+        );
+
+        final userLeaseFuture = arbiter.acquire(
+          owner: 'user_transport_during_dj_load',
+          priority: PlaybackControlPriority.userTransport,
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          arbiter.activeOwner,
+          isNull,
+          reason: 'User transport must wait while the accepted native deck command drains.',
+        );
+
+        commandGate.complete();
+        await load;
+        final userLease = await userLeaseFuture;
+        expect(userLease, isNotNull);
+        expect(arbiter.activeOwner, 'user_transport_during_dj_load');
+        expect(session.djDeckQueues['A'], <Song>[track]);
+        await userLease!.release();
+        expect(arbiter.activeOwner, isNull);
+      } finally {
+        if (!commandGate.isCompleted) commandGate.complete();
+        music.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await session.audioSessions.close();
+        await session.states.close();
+        await arbiter.close();
+      }
+    });
+
+    test('crossfader drag retains authority and drains writes on user preemption', () async {
+      final session = _FakePlaybackSession();
+      final arbiter = PlaybackControlArbiter();
+      final music = MusicProvider(
+        media3ProviderSession: session,
+        playbackControlArbiter: arbiter,
+      );
+      final writeGate = Completer<void>();
+      session.djCrossfaderGate = writeGate;
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        await music.enableDjDualDeckMode();
+        expect(await music.beginDjCrossfaderGesture(), isTrue);
+        expect(arbiter.activeOwner, 'dj_deck_operator');
+
+        final write = music.setDjCrossfader(0.35);
+        for (var attempt = 0;
+            attempt < 50 &&
+                !session.calls.contains('setDjCrossfader:0.35');
+            attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+        expect(session.calls, contains('setDjCrossfader:0.35'));
+
+        final userLeaseFuture = arbiter.acquire(
+          owner: 'user_transport',
+          priority: PlaybackControlPriority.userTransport,
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          arbiter.activeOwner,
+          isNull,
+          reason: 'User transport must wait while an accepted native write drains.',
+        );
+
+        writeGate.complete();
+        await write;
+        final userLease = await userLeaseFuture;
+        expect(userLease, isNotNull);
+        expect(arbiter.activeOwner, 'user_transport');
+        await userLease!.release();
+
+        await expectLater(
+          music.setDjCrossfader(0.7),
+          throwsStateError,
+          reason: 'A preempted drag must not reacquire authority after transport ends.',
+        );
+        expect(
+          session.calls.where((call) => call.startsWith('setDjCrossfader:')),
+          hasLength(1),
+        );
+
+        expect(await music.beginDjCrossfaderGesture(), isTrue);
+        await music.setDjCrossfader(0.65);
+        expect(session.calls, contains('setDjCrossfader:0.65'));
+        await music.endDjCrossfaderGesture();
+        expect(arbiter.activeOwner, isNull);
+      } finally {
+        await music.endDjCrossfaderGesture();
+        music.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await session.audioSessions.close();
+        await session.states.close();
+        await arbiter.close();
+      }
+    });
+
+    test('routes deck loop ranges and clear through the DJ session authority', () async {
+      final session = _FakePlaybackSession();
+      final music = MusicProvider(media3ProviderSession: session);
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        await music.enableDjDualDeckMode();
+        await music.setDjDeckLoopRange(
+          deckId: 'B',
+          start: const Duration(seconds: 12),
+          end: const Duration(seconds: 16),
+          expectedMediaId: 'loop-track-b',
+        );
+        await music.clearDjDeckLoop(deckId: 'B');
+
+        expect(
+          session.calls,
+          contains('setDjDeckLoopRange:B:12000:16000:loop-track-b'),
+        );
+        expect(session.calls, contains('clearDjDeckLoop:B'));
+      } finally {
+        music.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('rejects invalid loop range before sending a deck command', () async {
+      final session = _FakePlaybackSession();
+      final music = MusicProvider(media3ProviderSession: session);
+      try {
+        await music.prepareMedia3ProviderSession();
+        await music.enableDjDualDeckMode();
+        expect(
+          () => music.setDjDeckLoopRange(
+            deckId: 'A',
+            start: const Duration(seconds: 4),
+            end: const Duration(seconds: 4),
+            expectedMediaId: 'loop-track-a',
+          ),
+          throwsArgumentError,
+        );
+        expect(
+          session.calls.where((call) => call.startsWith('setDjDeckLoopRange:')),
+          isEmpty,
+        );
+      } finally {
+        music.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('clearing a physical deck EQ resets its published control state', () async {
+      final session = _FakePlaybackSession();
+      final music = MusicProvider(media3ProviderSession: session);
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        await music.enableDjDualDeckMode();
+        await music.setDjDeckEq(deckId: 'A', gainsDb: const [4.0, -3.0, 1.5]);
+        expect(music.djDeckEqGains('A'), const [4.0, -3.0, 1.5]);
+
+        await music.clearDjDeckEq(deckId: 'A');
+
+        expect(music.djDeckEqGains('A'), const [0.0, 0.0, 0.0]);
+        expect(session.calls, contains('clearDjDeckEq:A'));
+      } finally {
+        music.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('partial DJ session initialization rolls back and restores Player state', () async {
+      final session = _FakePlaybackSession();
+      final music = MusicProvider(media3ProviderSession: session);
+      final first = _song('rollback-first');
+      final second = _song('rollback-second');
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        expect(
+          await music.playSong(second, queue: <Song>[first, second]),
+          isTrue,
+        );
+        session.positionValue = const Duration(seconds: 31);
+        session.playingValue = true;
+        session.throwOnClearDjDeckOnce = true;
+
+        await expectLater(
+          music.beginDjSession(),
+          throwsA(isA<StateError>()),
+        );
+
+        expect(session.djDualDeckModeValue, isFalse,
+            reason: 'A failed partial initialization must disable native DJ mode.');
+        expect(session.djDeckQueues, isEmpty,
+            reason: 'Rollback must clear any partially initialized DJ deck.');
+        expect(session.queue.map((song) => song.id), ['rollback-first', 'rollback-second']);
+        expect(session.loadedIndex, 1);
+        expect(session.currentSongValue?.id, 'rollback-second');
+        expect(session.positionValue, const Duration(seconds: 31));
+        expect(session.playingValue, isFalse,
+            reason: 'Rollback restores Player paused; it must not autoplay.');
+        expect(session.focusHandling, isTrue);
+        expect(session.calls, contains('disableDjDualDeckMode'));
+
+        // The failed attempt must release its lifecycle snapshot so a fresh
+        // DJ session can begin without being blocked by stale recovery state.
+        await music.beginDjSession();
+        expect(session.djDualDeckModeValue, isTrue);
+        await music.endDjSession();
+        expect(session.djDualDeckModeValue, isFalse);
+      } finally {
+        music.dispose();
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('failed DJ teardown retains Player snapshot for a later safe retry', () async {
+      final session = _FakePlaybackSession();
+      final music = MusicProvider(media3ProviderSession: session);
+      final first = _song('retry-first');
+      final second = _song('retry-second');
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        expect(
+          await music.playSong(second, queue: <Song>[first, second]),
+          isTrue,
+        );
+        session.positionValue = const Duration(seconds: 52);
+        await music.beginDjSession();
+        await music.loadDjDeck('A', <Song>[first]);
+        await music.loadDjDeck('B', <Song>[second]);
+        session.throwOnDisableDjModeOnce = true;
+        final loadQueueCallsBeforeTeardown =
+            session.calls.where((call) => call == 'loadQueue').length;
+
+        await expectLater(
+          music.endDjSession(),
+          throwsA(isA<StateError>()),
+        );
+
+        expect(session.djDualDeckModeValue, isTrue,
+            reason: 'Native DJ mode must remain authoritative after failed teardown.');
+        expect(
+          session.calls.where((call) => call == 'loadQueue').length,
+          loadQueueCallsBeforeTeardown,
+          reason: 'Player restoration must not be dispatched while native DJ mode is active.',
+        );
+        expect(session.queue.map((song) => song.id), ['retry-first', 'retry-second'],
+            reason: 'The fake session retains its original Player queue until a restoration load is dispatched.');
+        expect(session.djDeckQueues, isEmpty,
+            reason: 'Deck cleanup may complete, but the mode still blocks Player restoration.');
+
+        await music.endDjSession();
+
+        expect(session.calls.where((call) => call == 'loadQueue').length,
+            loadQueueCallsBeforeTeardown + 1,
+            reason: 'A safe retry must dispatch exactly one Player queue restoration.');
+        expect(session.djDualDeckModeValue, isFalse);
+        expect(session.queue.map((song) => song.id), ['retry-first', 'retry-second']);
+        expect(session.loadedIndex, 1);
+        expect(session.currentSongValue?.id, 'retry-second');
+        expect(session.positionValue, const Duration(seconds: 52));
+        expect(session.playingValue, isFalse);
+        expect(session.focusHandling, isTrue);
+      } finally {
+        music.dispose();
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
+    test('DJ session exit restores Player queue, selected occurrence and paused position', () async {
+      final session = _FakePlaybackSession();
+      final music = MusicProvider(media3ProviderSession: session);
+      final first = _song('return-first');
+      final second = _song('return-second');
+
+      try {
+        await music.prepareMedia3ProviderSession();
+        expect(
+          await music.playSong(second, queue: <Song>[first, second]),
+          isTrue,
+        );
+        session.positionValue = const Duration(seconds: 47);
+        session.playingValue = true;
+
+        await music.beginDjSession();
+
+        expect(session.djDualDeckModeValue, isTrue);
+        expect(session.playingValue, isFalse);
+        expect(session.djDeckQueues, isEmpty);
+        expect(music.queue.map((song) => song.id), ['return-first', 'return-second']);
+
+        await music.loadDjDeck('A', <Song>[first]);
+        await music.loadDjDeck('B', <Song>[second]);
+        await music.endDjSession();
+
+        expect(session.djDualDeckModeValue, isFalse);
+        expect(session.queue.map((song) => song.id), ['return-first', 'return-second']);
+        expect(session.loadedIndex, 1);
+        expect(session.currentSongValue?.id, 'return-second');
+        expect(session.positionValue, const Duration(seconds: 47));
+        expect(session.playingValue, isFalse,
+            reason: 'Returning to Player restores its queue paused; it must not autoplay.');
+        expect(session.calls, contains('disableDjDualDeckMode'));
+        expect(session.calls, contains('focus:true'));
+      } finally {
+        music.dispose();
+        await session.audioSessions.close();
+        await session.states.close();
+      }
+    });
+
   });
 }
 

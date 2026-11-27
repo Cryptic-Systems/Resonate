@@ -13,6 +13,7 @@ import 'providers/bluetooth_provider.dart';
 import 'providers/crossfade_provider.dart';
 import 'providers/dj_mode_provider.dart';
 import 'providers/equalizer_provider.dart';
+import 'experience/experience_provider.dart';
 import 'providers/intelligence_provider.dart';
 import 'providers/intelligence_mix_controller.dart';
 import 'providers/library_provider.dart';
@@ -28,10 +29,13 @@ import 'providers/theme_provider.dart';
 import 'navigation/shell_nav.dart';
 import 'widgets/ask_resonate/ask_resonate_controller.dart';
 import 'screens/home_screen.dart';
+import 'screens/experience_selector_screen.dart';
+import 'screens/dj_experience_shell.dart';
 import 'services/media3_provider_session.dart';
 import 'playback/playback_control_arbiter.dart';
 import 'services/playback_diagnostics_observer.dart';
 import 'services/resonate_diagnostics.dart';
+import 'services/workspace_lifecycle_coordinator.dart';
 
 /// Brand spectrum from the Resonate mark: cyan-blue → violet → pink → orange.
 class ResonateBrand {
@@ -313,6 +317,8 @@ class ResonateApp extends StatelessWidget {
           dispose: (_, arbiter) => unawaited(arbiter.close()),
         ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => ExperienceProvider()),
+        ChangeNotifierProvider(create: (_) => WorkspaceLifecycleCoordinator()),
         ChangeNotifierProvider(create: (_) => ShellNav()),
         ChangeNotifierProvider(create: (_) => AskResonateController()),
         ChangeNotifierProvider(
@@ -412,7 +418,9 @@ class ResonateApp extends StatelessWidget {
           lazy: false,
           create: (context) {
             final music = context.read<MusicProvider>();
-            return AudioVisualizationProvider()
+            return AudioVisualizationProvider(
+              workspaceLifecycle: context.read<WorkspaceLifecycleCoordinator>(),
+            )
               ..bindPlayback(
                 listenable: music,
                 isPlaying: () => music.isPlaying,
@@ -478,9 +486,16 @@ class _LifecycleHomeState extends State<_LifecycleHome>
     }));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _startForegroundAnalysisOpportunities();
+      final foreground = WidgetsBinding.instance.lifecycleState ==
+          AppLifecycleState.resumed;
       try {
-        context.read<DjModeProvider>().onAnalysisOpportunity('app_started');
+        context.read<DjModeProvider>().setAppForeground(foreground);
+      } catch (_) {}
+      if (foreground) _startForegroundAnalysisOpportunities();
+      try {
+        if (foreground) {
+          context.read<DjModeProvider>().onAnalysisOpportunity('app_started');
+        }
       } catch (_) {}
     });
   }
@@ -585,6 +600,8 @@ class _LifecycleHomeState extends State<_LifecycleHome>
       'crossfadeEnabled': music.crossfadeEnabled,
       'transitionInProgress': music.transitionInProgress,
     }));
+    final djMode = context.read<DjModeProvider>();
+    djMode.setAppForeground(state == AppLifecycleState.resumed);
     if (state == AppLifecycleState.resumed) {
       unawaited(context.read<MusicProvider>().onAppForegrounded());
       _startForegroundAnalysisOpportunities();
@@ -614,5 +631,22 @@ class _LifecycleHomeState extends State<_LifecycleHome>
   }
 
   @override
-  Widget build(BuildContext context) => const HomeScreen();
+  Widget build(BuildContext context) {
+    return Consumer<ExperienceProvider>(
+      builder: (context, experience, _) {
+        if (!experience.isReady) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (experience.needsInitialSelection) {
+          return const ExperienceSelectorScreen();
+        }
+        return switch (experience.selected!) {
+          ResonateExperience.player => const HomeScreen(),
+          ResonateExperience.resonatixDj => const DjExperienceShell(),
+        };
+      },
+    );
+  }
 }

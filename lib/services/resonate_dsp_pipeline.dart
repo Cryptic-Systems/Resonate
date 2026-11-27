@@ -144,6 +144,39 @@ class ResonateNativeDspBridge {
   static bool available = false;
   static String engineLabel = 'Resonate DSP Engine';
 
+  /// Low-frequency diagnostics snapshot. This is called from the diagnostics
+  /// heartbeat only, never from the PCM processing path.
+  static Future<Map<String, dynamic>?> readDiagnosticsStatus() async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('getLiveDspStatus');
+      if (raw is! Map) return null;
+      const keys = <String>[
+        'activeEngines',
+        'nativeAllowed',
+        'activeDeckId',
+        'limiterEnabled',
+        'autoGainEnabled',
+        'autoGainTargetRmsDb',
+        'autoGainBiasDb',
+        'autoGainMaxBoostDb',
+        'autoGainMaxCutDb',
+        'autoGainWindowMs',
+        'liveMetersByDeck',
+        'processCalls',
+        'avgUs',
+        'maxUs',
+        'overruns',
+      ];
+      final snapshot = <String, dynamic>{};
+      for (final key in keys) {
+        if (raw.containsKey(key)) snapshot[key] = raw[key];
+      }
+      return snapshot;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<bool> attachSession(int sessionId) async {
     if (sessionId <= 0) return false;
     try {

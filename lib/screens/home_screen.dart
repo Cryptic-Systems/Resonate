@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,8 +11,8 @@ import '../providers/music_provider.dart';
 import '../widgets/mini_player_bar.dart';
 import 'library_screen.dart';
 import 'player_screen.dart';
-import 'settings_screen.dart';
 import '../navigation/shell_nav.dart';
+import '../services/workspace_lifecycle_coordinator.dart';
 import 'home_dashboard.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -32,7 +34,6 @@ class _HomeScreenState extends State<HomeScreen> {
     HomeDashboard(),
     LibraryScreen(),
     PlayerScreen(),
-    SettingsScreen(),
   ];
 
   @override
@@ -41,6 +42,12 @@ class _HomeScreenState extends State<HomeScreen> {
     _pageController = PageController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      unawaited(context
+          .read<WorkspaceLifecycleCoordinator>()
+          .activate(ResonateWorkspace.player)
+          .catchError((Object error) {
+        debugPrint('Player workspace activation failed: $error');
+      }));
       _shellNav = context.read<ShellNav>();
       _shellNav?.bind(_selectPage);
     });
@@ -77,9 +84,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _selectPage(int index) {
-    if (index == 3) {
-      context.read<AskResonateController>().close();
-    }
     setState(() {
       _selectedIndex = index;
       _navigationVisible = true;
@@ -111,10 +115,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final showAsk = _selectedIndex <= 2;
 
-    final labels = const ['For You', 'Library', 'Player', 'Settings'];
+    final labels = const ['For You', 'Library', 'Player'];
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      context.read<AskResonateController>().setContext(labels[_selectedIndex.clamp(0, 3)]);
+      context.read<AskResonateController>().setContext(labels[_selectedIndex.clamp(0, 2)]);
     });
 
     return Scaffold(
@@ -130,9 +134,6 @@ class _HomeScreenState extends State<HomeScreen> {
               controller: _pageController,
               itemCount: _screens.length,
               onPageChanged: (index) {
-                if (index == 3) {
-                  context.read<AskResonateController>().close();
-                }
                 setState(() {
                   _selectedIndex = index;
                   _navigationVisible = true;
@@ -158,13 +159,14 @@ class _HomeScreenState extends State<HomeScreen> {
               height: _navigationVisible ? 80 : 20,
               child: _navigationVisible
                   ? NavigationBar(
-                      selectedIndex: _selectedIndex,
-                      onDestinationSelected: _selectPage,
+                      selectedIndex: _selectedIndex == 0 ? 0 : _selectedIndex == 2 ? 1 : 2,
+                      onDestinationSelected: (index) => _selectPage(
+                        index == 0 ? 0 : index == 1 ? 2 : 1,
+                      ),
                       destinations: const [
                         NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'For You'),
-                        NavigationDestination(icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music), label: 'Library'),
                         NavigationDestination(icon: Icon(Icons.music_note_outlined), selectedIcon: Icon(Icons.music_note), label: 'Player'),
-                        NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Settings'),
+                        NavigationDestination(icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music), label: 'Library'),
                       ],
                     )
                   : GestureDetector(

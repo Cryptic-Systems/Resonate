@@ -13,6 +13,7 @@ import 'library_management_screen.dart';
 import 'player_screen.dart';
 import '../navigation/shell_nav.dart';
 import 'playlists_screen.dart';
+import 'listening_history_screen.dart';
 import 'album_screen.dart';
 import 'artist_screen.dart';
 import '../services/duplicate_detection.dart';
@@ -475,6 +476,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 );
                 return;
               }
+              if (value == 'history') {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ListeningHistoryScreen()),
+                );
+                return;
+              }
               if (value == 'refresh') {
                 await library.loadAllSongs();
                 await library.loadFavoriteSongs();
@@ -505,6 +513,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               PopupMenuItem(value: 'select', child: Text('Select tracks')),
               PopupMenuItem(value: 'liked', child: Text('Liked songs')),
               PopupMenuItem(value: 'playlists', child: Text('Playlists')),
+              PopupMenuItem(value: 'history', child: Text('Listening history')),
               PopupMenuItem(value: 'refresh', child: Text('Refresh library')),
               PopupMenuDivider(),
               PopupMenuItem(value: 'title', child: Text('Sort by Title')),

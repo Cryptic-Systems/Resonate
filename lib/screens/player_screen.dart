@@ -29,10 +29,13 @@ import '../modes/providers/mode_provider.dart';
 import '../widgets/autopilot_takeover_card.dart';
 import 'equalizer_screen.dart';
 import 'queue_screen.dart';
+import 'dj_workspace_screen.dart';
 import 'album_screen.dart';
 import 'artist_screen.dart';
 import 'lyrics_screen.dart';
 import 'audio_leveling_settings_screen.dart';
+import 'crossfade_screen.dart';
+import '../widgets/resonate_main_drawer.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -120,30 +123,40 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   Widget build(BuildContext context) {
     return ResonateGlassScaffold(
       title: const Text('Now Playing'),
+      leading: Builder(
+        builder: (context) => IconButton(
+          tooltip: 'Player menu',
+          icon: const Icon(Icons.menu_rounded),
+          onPressed: () => Scaffold.of(context).openDrawer(),
+        ),
+      ),
+      drawer: ResonateMainDrawer(
+        onOpen: (screen) {
+          Navigator.of(context).pop();
+          Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+        },
+      ),
       actions: [
-          Consumer<MusicProvider>(
-            builder: (_, music, __) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Center(
-                  child: Tooltip(
-                    message: 'Engine ${music.activeEngineLabel} is the active playback deck',
-                    child: Chip(
-                      avatar: Icon(
-                        music.activeEngineLabel == 'A'
-                            ? Icons.looks_one_rounded
-                            : Icons.looks_two_rounded,
-                        size: 17,
-                      ),
-                      label: Text('Engine ${music.activeEngineLabel}'),
-                    ),
+        Consumer<MusicProvider>(
+          builder: (_, music, __) => Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Center(
+              child: Tooltip(
+                message: 'Engine ${music.activeEngineLabel} is the active playback deck',
+                child: Chip(
+                  avatar: Icon(
+                    music.activeEngineLabel == 'A'
+                        ? Icons.looks_one_rounded
+                        : Icons.looks_two_rounded,
+                    size: 17,
                   ),
+                  label: Text('Engine ${music.activeEngineLabel}'),
                 ),
-              );
-            },
+              ),
+            ),
           ),
-        ],
-
+        ),
+      ],
       body: Consumer2<MusicProvider, ModeProvider>(
         builder: (context, music, modes, _) {
           final activeSong = music.currentSong;
@@ -285,11 +298,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     runSpacing: 4,
                     children: [
                       ResonateModeChip(dense: false),
-                      DjModeStatusChip(dense: false, showWhenOff: true),
+                      DjModeStatusChip(dense: false, showWhenOff: true, interactive: false),
                     ],
                   ),
                   const SizedBox(height: 6),
-                  const DjTransitionReasonChip(),
+                  const DjTransitionReasonChip(interactive: false),
                   if (density.hintLabel != null) ...[
                     const SizedBox(height: 6),
                     Text(
@@ -657,6 +670,20 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             shareTile,
             replayTile,
             if (density.sleepTimerSuggested) sleepTile,
+            ListTile(
+              leading: const Icon(Icons.graphic_eq_rounded),
+              title: const Text('Mix monitoring'),
+              subtitle: const Text('View automatic transition activity and incoming-track preparation'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const PlayerMixMonitorScreen(),
+                  ),
+                );
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.equalizer_rounded),
               title: const Text('Equalizer'),
@@ -1228,3 +1255,4 @@ class _SwipeTutorialDialogState extends State<_SwipeTutorialDialog>
     );
   }
 }
+

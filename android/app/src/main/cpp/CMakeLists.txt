@@ -15,6 +15,7 @@ find_library(log-lib log)
 add_library(dsp_jni SHARED dsp_engine_jni.cpp)
 target_include_directories(dsp_jni PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/DSP-ENGINE/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/DSP-ENGINE/src
 )
 target_compile_features(dsp_jni PRIVATE cxx_std_17)
 target_compile_options(dsp_jni PRIVATE -O2 -fPIC -fno-exceptions -fno-rtti)

@@ -22,6 +22,13 @@ void main() {
         'crossfadeProgress': 0.5,
         'activeDeckVolume': 0.7071,
         'standbyDeckVolume': 0.7071,
+        'activeSpeed': 1.04,
+        'activePitch': 1.0,
+        'standbySpeed': 0.97,
+        'standbyPitch': 0.97,
+        'incomingMediaId': 'track-incoming',
+        'incomingReady': true,
+        'incomingPositionMs': 4567,
         'repeatMode': 'all',
         'shuffleModeEnabled': true,
         'hasError': false,
@@ -42,9 +49,86 @@ void main() {
       expect(state.crossfadeProgress, 0.5);
       expect(state.activeDeckVolume, 0.7071);
       expect(state.standbyDeckVolume, 0.7071);
+      expect(state.activeDeckSpeed, 1.04);
+      expect(state.activeDeckPitch, 1.0);
+      expect(state.standbyDeckSpeed, 0.97);
+      expect(state.standbyDeckPitch, 0.97);
+      expect(state.incomingMediaId, 'track-incoming');
+      expect(state.incomingReady, isTrue);
+      expect(state.incomingPosition, const Duration(milliseconds: 4567));
       expect(state.repeatMode, 'all');
       expect(state.shuffleModeEnabled, isTrue);
       expect(state.hasError, isFalse);
+    });
+
+    test('parses persistent DJ physical deck telemetry and crossfader', () {
+      final state = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'djDualDeckMode': true,
+        'djCrossfaderPosition': 0.25,
+        'deckA': <Object?, Object?>{
+          'mediaId': 'track-a',
+          'title': 'Deck A Track',
+          'artist': 'Artist A',
+          'positionMs': 12500,
+          'durationMs': 240000,
+          'isPlaying': true,
+          'playWhenReady': true,
+          'playbackState': 3,
+          'mediaItemCount': 1,
+          'volume': 0.9,
+          'channelGain': 0.82,
+          'speed': 1.02,
+          'pitch': 1.0,
+          'audioSessionId': 41,
+          'loopActive': true,
+          'loopStartMs': 12000,
+          'loopEndMs': 16000,
+        },
+        'deckB': <Object?, Object?>{
+          'mediaId': 'track-b',
+          'title': 'Deck B Track',
+          'artist': 'Artist B',
+          'positionMs': 3000,
+          'durationMs': 180000,
+          'isPlaying': false,
+          'playWhenReady': false,
+          'playbackState': 2,
+          'mediaItemCount': 1,
+          'volume': 0.2,
+          'speed': 0.98,
+          'pitch': 0.98,
+          'audioSessionId': 42,
+        },
+      });
+
+      expect(state.djDualDeckMode, isTrue);
+      expect(state.djCrossfaderPosition, 0.25);
+      expect(state.deckA?.mediaId, 'track-a');
+      expect(state.deckA?.title, 'Deck A Track');
+      expect(state.deckA?.isPlaying, isTrue);
+      expect(state.deckA?.position, const Duration(milliseconds: 12500));
+      expect(state.deckA?.audioSessionId, 41);
+      expect(state.deckA?.channelGain, 0.82);
+      expect(state.deckA?.loopActive, isTrue);
+      expect(state.deckA?.loopStart, const Duration(milliseconds: 12000));
+      expect(state.deckA?.loopEnd, const Duration(milliseconds: 16000));
+      expect(state.deckB?.mediaId, 'track-b');
+      expect(state.deckB?.isPlaying, isFalse);
+      expect(state.deckB?.speed, 0.98);
+      expect(state.deckB?.volume, 0.2);
+    });
+
+    test('leaves missing or malformed native deck parameters unavailable', () {
+      final state = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'activeSpeed': double.nan,
+        'activePitch': 'unknown',
+        'standbySpeed': double.infinity,
+      });
+
+      expect(state.activeDeckSpeed, isNull);
+      expect(state.activeDeckPitch, isNull);
+      expect(state.standbyDeckSpeed, isNull);
+      expect(state.standbyDeckPitch, isNull);
     });
 
     test('parses native underrun counters and timing context', () {
@@ -209,6 +293,37 @@ void main() {
       expect((captured?.arguments as Map)['pitch'], 0.9);
       await expectLater(client.setPlaybackPitch(2.1), throwsArgumentError);
       await expectLater(client.setPlaybackPitch(double.nan), throwsArgumentError);
+    });
+
+    test('sends independent deck speed and pitch atomically to native Media3', () async {
+      MethodCall? captured;
+      channel.setMockMethodCallHandler((call) async {
+        captured = call;
+        return true;
+      });
+      await client.setDeckPlaybackParameters(
+        activeSpeed: 1.04, activePitch: 1.0,
+        standbySpeed: 0.97, standbyPitch: 0.97,
+      );
+      expect(captured?.method, 'setDeckPlaybackParameters');
+      expect(captured?.arguments, {
+        'activeSpeed': 1.04, 'activePitch': 1.0,
+        'standbySpeed': 0.97, 'standbyPitch': 0.97,
+      });
+      await expectLater(
+        client.setDeckPlaybackParameters(
+          activeSpeed: 1.04, activePitch: 2.1,
+          standbySpeed: 1.0, standbyPitch: 1.0,
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setDeckPlaybackParameters(
+          activeSpeed: double.nan, activePitch: 1.0,
+          standbySpeed: 1.0, standbyPitch: 1.0,
+        ),
+        throwsArgumentError,
+      );
     });
 
     test('sends validated independent deck speeds to native Media3', () async {
@@ -473,6 +588,43 @@ void main() {
       );
     });
 
+    test('forwards guarded standby cue identity and position', () async {
+      MethodCall? captured;
+      channel.setMockMethodCallHandler((call) async {
+        captured = call;
+        return true;
+      });
+
+      await client.seekStandby(
+        position: const Duration(milliseconds: 12345),
+        expectedMediaId: 'incoming-occurrence-7',
+        expectedQueueIndex: 7,
+      );
+
+      expect(captured?.method, 'seekStandby');
+      final arguments = Map<Object?, Object?>.from(captured!.arguments as Map);
+      expect(arguments['positionMs'], 12345);
+      expect(arguments['expectedMediaId'], 'incoming-occurrence-7');
+      expect(arguments['expectedQueueIndex'], 7);
+
+      await expectLater(
+        client.seekStandby(
+          position: const Duration(milliseconds: -1),
+          expectedMediaId: 'incoming-occurrence-7',
+          expectedQueueIndex: 7,
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.seekStandby(
+          position: Duration.zero,
+          expectedMediaId: ' ',
+          expectedQueueIndex: 7,
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('rejects a volume command when native gain policy declines it', () async {
       channel.setMockMethodCallHandler((call) async => false);
 
@@ -599,6 +751,178 @@ void main() {
         title: 'One',
       );
       expect(item.toMap, throwsArgumentError);
+    });
+  });
+
+  group('Media3 persistent DJ deck commands', () {
+    const channel = MethodChannel('resonate/media3_test_dj_decks');
+    late Media3PlaybackClient client;
+
+    setUp(() {
+      client = Media3PlaybackClient(methodChannel: channel);
+    });
+
+    tearDown(() {
+      channel.setMockMethodCallHandler(null);
+    });
+
+    test('sends isolated deck queue, transport, cue, tempo and mixer commands', () async {
+      final calls = <MethodCall>[];
+      channel.setMockMethodCallHandler((call) async {
+        calls.add(call);
+        return true;
+      });
+      final item = Media3QueueItem(
+        id: 'dj-track-a',
+        uri: Uri.file('/music/dj-track-a.flac'),
+        title: 'DJ Track A',
+        artist: 'Artist',
+      );
+
+      await client.enableDjDualDeckMode();
+      await client.loadDjDeck('A', <Media3QueueItem>[item]);
+      await client.playDjDeck('A');
+      await client.pauseDjDeck('B');
+      await client.seekDjDeck(
+        deckId: 'A',
+        position: const Duration(seconds: 42),
+        expectedMediaId: 'dj-track-a',
+      );
+      await client.setDjDeckPlaybackParameters(
+        deckId: 'B',
+        speed: 1.04,
+        pitch: 1.0,
+      );
+      await client.setDjCrossfader(0.35);
+      await client.setDjDeckChannelGain(deckId: 'A', gain: 0.82);
+      await client.clearDjDeck('B');
+      await client.disableDjDualDeckMode();
+
+      expect(calls.map((call) => call.method).toList(), [
+        'enableDjDualDeckMode',
+        'loadDjDeck',
+        'playDjDeck',
+        'pauseDjDeck',
+        'seekDjDeck',
+        'setDjDeckPlaybackParameters',
+        'setDjCrossfader',
+        'setDjDeckChannelGain',
+        'clearDjDeck',
+        'disableDjDualDeckMode',
+      ]);
+      final loadArgs = Map<Object?, Object?>.from(calls[1].arguments as Map);
+      expect(loadArgs['deckId'], 'A');
+      expect(loadArgs['startIndex'], 0);
+      expect((loadArgs['items'] as List).single['id'], 'dj-track-a');
+      final seekArgs = Map<Object?, Object?>.from(calls[4].arguments as Map);
+      expect(seekArgs['positionMs'], 42000);
+      expect(seekArgs['expectedMediaId'], 'dj-track-a');
+      final tempoArgs = Map<Object?, Object?>.from(calls[5].arguments as Map);
+      expect(tempoArgs['deckId'], 'B');
+      expect(tempoArgs['speed'], 1.04);
+      expect(tempoArgs['pitch'], 1.0);
+      final faderArgs = Map<Object?, Object?>.from(calls[6].arguments as Map);
+      expect(faderArgs['position'], 0.35);
+      final gainArgs = Map<Object?, Object?>.from(calls[7].arguments as Map);
+      expect(gainArgs['deckId'], 'A');
+      expect(gainArgs['gain'], 0.82);
+    });
+
+    test('sends and clears native A/B loop ranges with track identity', () async {
+      final calls = <MethodCall>[];
+      channel.setMockMethodCallHandler((call) async {
+        calls.add(call);
+        return true;
+      });
+
+      await client.setDjDeckLoopRange(
+        deckId: 'B',
+        start: const Duration(seconds: 12),
+        end: const Duration(seconds: 16),
+        expectedMediaId: 'track-b',
+      );
+      await client.clearDjDeckLoop(deckId: 'B');
+
+      expect(calls.map((call) => call.method), [
+        'setDjDeckLoopRange',
+        'clearDjDeckLoop',
+      ]);
+      final args = Map<Object?, Object?>.from(calls.first.arguments as Map);
+      expect(args['deckId'], 'B');
+      expect(args['startMs'], 12000);
+      expect(args['endMs'], 16000);
+      expect(args['expectedMediaId'], 'track-b');
+    });
+
+    test('rejects invalid deck identities, queue indices and mixer values', () async {
+      await expectLater(client.playDjDeck('C'), throwsArgumentError);
+      await expectLater(client.clearDjDeck(''), throwsArgumentError);
+      await expectLater(
+        client.loadDjDeck('A', const <Media3QueueItem>[]),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.loadDjDeck(
+          'B',
+          <Media3QueueItem>[
+            Media3QueueItem(
+              id: 'one',
+              uri: Uri.file('/music/one.mp3'),
+              title: 'One',
+            ),
+          ],
+          startIndex: 1,
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(client.setDjCrossfader(double.nan), throwsArgumentError);
+      await expectLater(client.setDjCrossfader(1.01), throwsArgumentError);
+      await expectLater(
+        client.setDjDeckChannelGain(deckId: 'A', gain: double.nan),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setDjDeckChannelGain(deckId: 'C', gain: 0.8),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setDjDeckChannelGain(deckId: 'B', gain: 1.01),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setDjDeckPlaybackParameters(
+          deckId: 'A',
+          speed: 2.01,
+          pitch: 1.0,
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.seekDjDeck(
+          deckId: 'B',
+          position: const Duration(milliseconds: -1),
+          expectedMediaId: 'track-b',
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setDjDeckLoopRange(
+          deckId: 'A',
+          start: const Duration(seconds: 2),
+          end: const Duration(seconds: 2),
+          expectedMediaId: 'track-a',
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setDjDeckLoopRange(
+          deckId: 'C',
+          start: const Duration(seconds: 2),
+          end: const Duration(seconds: 4),
+          expectedMediaId: 'track-a',
+        ),
+        throwsArgumentError,
+      );
     });
   });
 

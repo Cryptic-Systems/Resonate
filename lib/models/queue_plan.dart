@@ -9,6 +9,7 @@ class QueuePlan {
     required this.analysisCoverage, required this.analyzedTrackCount,
     required this.eligibleTrackCount, this.excludedSongIds = const [],
     this.reason,
+    this.exclusionCounts = const {},
   });
   final String intentId;
   final List<Song> songs;
@@ -17,6 +18,8 @@ class QueuePlan {
   final int analyzedTrackCount, eligibleTrackCount;
   final List<String> excludedSongIds;
   final String? reason;
+  /// Non-exclusive rejection counters; one track may fail more than one signal.
+  final Map<String, int> exclusionCounts;
   bool get isUsable => songs.isNotEmpty;
   bool get isComplete => status == QueuePlanStatus.ready;
 }

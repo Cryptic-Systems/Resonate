@@ -51,6 +51,16 @@ abstract interface class PlaybackDeckSpeedBackend {
   });
 }
 
+/// Optional atomic speed/pitch capability for independent logical DJ decks.
+abstract interface class PlaybackDeckParametersBackend {
+  Future<void> setDeckPlaybackParameters({
+    required double activeSpeed,
+    required double activePitch,
+    required double standbySpeed,
+    required double standbyPitch,
+  });
+}
+
 /// Optional capability for DJ transition filters that target one deck only.
 abstract interface class PlaybackDeckEqOverlayBackend {
   Future<void> setDeckEqOverlay({
@@ -91,6 +101,15 @@ abstract interface class PlaybackPlaylistSyncBackend {
   Future<void> synchronizeQueue(List<Song> songs);
 }
 
+/// Optional capability for safely cueing a prepared incoming deck.
+abstract interface class PlaybackStandbyCueBackend {
+  Future<void> seekStandby({
+    required Duration position,
+    required String expectedMediaId,
+    required int expectedQueueIndex,
+  });
+}
+
 /// Optional crossfade capability for engines that own two synchronized decks.
 /// A backend without this capability must not emulate a crossfade by starting a
 /// second independent playback authority.
@@ -103,6 +122,53 @@ abstract interface class PlaybackCrossfadeBackend {
   });
   Future<void> crossfade({required Duration duration});
   Future<void> cancelCrossfade();
+}
+
+/// Optional capability for the dedicated persistent A/B DJ deck lifecycle.
+abstract interface class PlaybackDjDeckBackend {
+  Future<void> enableDjDualDeckMode();
+  Future<void> disableDjDualDeckMode();
+  Future<void> setDjCrossfader(double position);
+  Future<void> setDjDeckChannelGain({required String deckId, required double gain});
+  Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0});
+  Future<void> playDjDeck(String deckId);
+  Future<void> pauseDjDeck(String deckId);
+  Future<void> clearDjDeck(String deckId);
+  Future<void> setDjDeckPlaybackParameters({
+    required String deckId,
+    required double speed,
+    required double pitch,
+  });
+  Future<void> seekDjDeck({
+    required String deckId,
+    required Duration position,
+    required String expectedMediaId,
+  });
+  Future<void> setDjDeckEq({
+    required String deckId,
+    required List<double> gainsDb,
+  });
+  Future<void> clearDjDeckEq({required String deckId});
+  Future<void> setDjDeckFilter({required String deckId, required int type, required double cutoffHz});
+  Future<void> setDjDeckLoopRange({
+    required String deckId,
+    required Duration start,
+    required Duration end,
+    required String expectedMediaId,
+  });
+  Future<void> clearDjDeckLoop({required String deckId});
+
+}
+
+/// Optional low-latency control channel for native DJ scratch.
+abstract interface class PlaybackDjScratchBackend {
+  Future<void> setDjScratchControl({
+    required String deckId,
+    required String expectedMediaId,
+    required bool active,
+    required double velocity,
+    required Duration anchor,
+  });
 }
 
 /// Repeat behavior shared by backend implementations.

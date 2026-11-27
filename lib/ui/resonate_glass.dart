@@ -61,6 +61,7 @@ class ResonateGlassScaffold extends StatelessWidget {
     this.actions,
     this.floatingActionButton,
     this.leading,
+    this.drawer,
   });
 
   final Widget title;
@@ -68,11 +69,13 @@ class ResonateGlassScaffold extends StatelessWidget {
   final List<Widget>? actions;
   final Widget? floatingActionButton;
   final Widget? leading;
+  final Widget? drawer;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
+      drawer: drawer,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,

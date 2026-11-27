@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../services/dj_analysis_service.dart';
+import '../models/song.dart';
 import '../services/dj_idle_analysis_service.dart';
 import '../services/dj_mode_settings_store.dart';
 import '../dj_engine/core/dj_policy.dart';
@@ -16,8 +17,12 @@ import 'music_provider.dart';
 class DjModeProvider extends ChangeNotifier {
   DjModeProvider({required this.music, DjAnalysisService? analysis})
       : _analysis = analysis ?? DjAnalysisService() {
-    _idle = DjIdleAnalysisService(analysis: _analysis);
+    _idle = DjIdleAnalysisService(
+      analysis: _analysis,
+      onWaveformUpdated: _onWaveformUpdated,
+    );
     _lastObservedPlaying = music.isPlaying;
+    _lastObservedTransition = music.transitionInProgress;
     music.addListener(_onMusicChanged);
     ready = _load();
   }
@@ -38,9 +43,14 @@ class DjModeProvider extends ChangeNotifier {
   bool _loaded = false;
   late final Future<void> ready;
   bool _lastObservedPlaying = false;
+  bool _lastObservedTransition = false;
+  bool _appForeground = false;
+  bool _disposed = false;
+  int _waveformRevision = 0;
   Timer? _eventScanDebounce;
 
   bool get isLoaded => _loaded;
+  int get waveformRevision => _waveformRevision;
   bool get isEnabled => _enabled;
 
   /// Effective gates: always false when master is off (like Intelligence).
@@ -172,20 +182,85 @@ class DjModeProvider extends ChangeNotifier {
     _maybeStartIdleScan();
   }
 
+  void _onWaveformUpdated() {
+    if (_disposed) return;
+    _waveformRevision++;
+    notifyListeners();
+  }
+
+  /// Prioritizes analysis for a deck-loaded song immediately, including during
+  /// playback. Full waveform chunk decoding remains idle-only.
+  Future<void> ensureTrackWaveform(Song song) async {
+    if (!_loaded || _disposed) return;
+    try {
+      await _idle.ensureTrackAnalysis(
+        song,
+        isSafeToAnalyze: _isDeckAnalysisSafe,
+        isStillIdle: _isAnalysisStillIdle,
+      );
+      await _idle.ensureTrackWaveform(
+        song,
+        isStillIdle: _isAnalysisStillIdle,
+      );
+    } catch (error) {
+      debugPrint('DJ deck analysis deferred for ${song.id}: $error');
+    }
+  }
+
+  bool _isDeckAnalysisSafe() =>
+      !_disposed &&
+      !music.transitionInProgress &&
+      (_appForeground || _idle.canContinueInBackground);
+
+  void _resumePriorityAnalysis() {
+    if (!_loaded || _disposed || !_isDeckAnalysisSafe()) return;
+    unawaited(_idle.resumePriorityAnalysis(
+      isSafeToAnalyze: _isDeckAnalysisSafe,
+      isStillIdle: _isAnalysisStillIdle,
+    ));
+  }
+
   void _maybeStartIdleScan() {
-    if (!_loaded || music.isPlaying) return;
+    // Start the Android foreground service while the Activity is visible.
+    // Once started, the current serial scan may continue after backgrounding.
+    if (!_loaded || !_appForeground || !_isAnalysisStillIdle()) return;
     // One resumable pass covers the complete library. Each completed track is
     // persisted before advancing, so a process stop resumes by skipping it.
-    unawaited(_idle.startIfNeeded(maxSongs: 1 << 30));
+    unawaited(_idle.startIfNeeded(
+      maxSongs: 1 << 30,
+      maxWaveformChunks: 2,
+      isStillIdle: _isAnalysisStillIdle,
+    ));
+  }
+
+  bool _isAnalysisStillIdle() =>
+      !music.isPlaying && !music.transitionInProgress;
+
+  /// A new scan must be started while the Activity is foregrounded. An
+  /// already-running foreground service may continue the scan in background.
+  /// Console visibility and route changes are not treated as foreground proof.
+  void setAppForeground(bool foreground) {
+    if (_appForeground == foreground) return;
+    _appForeground = foreground;
+    if (!foreground) {
+      _eventScanDebounce?.cancel();
+      _eventScanDebounce = null;
+      // Do not cancel an already-started scan: its native foreground service
+      // and partial wake lock now support background execution.
+      if (!_idle.canContinueInBackground) _idle.stop();
+    } else {
+      _maybeStartIdleScan();
+    }
+    _resumePriorityAnalysis();
   }
 
   /// Called by app lifecycle and audio-route events. Work is intentionally
   /// small and rate-limited so unlock/BT event bursts do not start many scans.
   void onAnalysisOpportunity(String reason) {
-    if (!_loaded) return;
+    if (!_loaded || !_appForeground) return;
     _eventScanDebounce?.cancel();
     _eventScanDebounce = Timer(const Duration(seconds: 8), () {
-      if (music.isPlaying || _idle.isRunning) {
+      if (!_isAnalysisStillIdle() || _idle.isRunning) {
         return;
       }
 
@@ -194,24 +269,35 @@ class DjModeProvider extends ChangeNotifier {
         outcome: 'scheduled',
         reason: reason,
       ));
-      unawaited(_idle.startIfNeeded(maxSongs: 1 << 30));
+      unawaited(_idle.startIfNeeded(
+        maxSongs: 1 << 30,
+        maxWaveformChunks: 2,
+        isStillIdle: _isAnalysisStillIdle,
+      ));
     });
   }
 
   void _onMusicChanged() {
     final playing = music.isPlaying;
-    if (playing == _lastObservedPlaying) return;
+    final transitioning = music.transitionInProgress;
+    final playbackChanged = playing != _lastObservedPlaying;
+    final transitionEnded = _lastObservedTransition && !transitioning;
     _lastObservedPlaying = playing;
-    if (playing) {
-      _eventScanDebounce?.cancel();
-      _idle.stop();
-    } else {
-      _maybeStartIdleScan();
+    _lastObservedTransition = transitioning;
+    if (playbackChanged) {
+      if (playing) {
+        _eventScanDebounce?.cancel();
+        _idle.stop();
+      } else {
+        _maybeStartIdleScan();
+      }
     }
+    if (transitionEnded || !transitioning) _resumePriorityAnalysis();
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _eventScanDebounce?.cancel();
     music.removeListener(_onMusicChanged);
     _idle.stop();
@@ -220,6 +306,10 @@ class DjModeProvider extends ChangeNotifier {
 
   /// Manual trigger from settings / diagnostics.
   Future<void> runIdleScanNow({int maxSongs = 1 << 30}) async {
-    await _idle.startIfNeeded(maxSongs: maxSongs);
+    await _idle.startIfNeeded(
+      maxSongs: maxSongs,
+      maxWaveformChunks: 2,
+      isStillIdle: _isAnalysisStillIdle,
+    );
   }
 }

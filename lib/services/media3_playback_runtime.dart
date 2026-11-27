@@ -423,6 +423,41 @@ class Media3PlaybackRuntime {
     return _run(() => pitchBackend.setPlaybackPitch(pitch));
   }
 
+  Future<void> setDeckPlaybackParameters({
+    required double activeSpeed,
+    required double activePitch,
+    required double standbySpeed,
+    required double standbyPitch,
+  }) {
+    _ensureAlive();
+    final values = <String, double>{
+      'activeSpeed': activeSpeed,
+      'activePitch': activePitch,
+      'standbySpeed': standbySpeed,
+      'standbyPitch': standbyPitch,
+    };
+    for (final entry in values.entries) {
+      if (!entry.value.isFinite || entry.value < 0.5 || entry.value > 2.0) {
+        throw ArgumentError.value(
+          entry.value, entry.key, 'Must be finite and between 0.5 and 2.0.',
+        );
+      }
+    }
+    final backend = _backend;
+    if (backend is! PlaybackDeckParametersBackend) {
+      throw UnsupportedError(
+        'The active playback backend does not support independent deck parameters.',
+      );
+    }
+    final parametersBackend = backend as PlaybackDeckParametersBackend;
+    return _run(() => parametersBackend.setDeckPlaybackParameters(
+      activeSpeed: activeSpeed,
+      activePitch: activePitch,
+      standbySpeed: standbySpeed,
+      standbyPitch: standbyPitch,
+    ));
+  }
+
   Future<void> setDeckPlaybackSpeeds({
     required double activeSpeed,
     required double standbySpeed,
@@ -627,6 +662,40 @@ class Media3PlaybackRuntime {
     return uniqueMatch;
   }
 
+  /// Cue a prepared incoming occurrence through the serialized backend lane.
+  /// This is deliberately separate from the active-deck seek transport command.
+  Future<void> seekStandby({
+    required Duration position,
+    required String expectedMediaId,
+    required int expectedQueueIndex,
+  }) async {
+    _ensureAlive();
+    if (position.isNegative) {
+      throw ArgumentError.value(position, 'position', 'Must not be negative.');
+    }
+    if (expectedMediaId.trim().isEmpty) {
+      throw ArgumentError.value(expectedMediaId, 'expectedMediaId', 'Must not be empty.');
+    }
+    if (expectedQueueIndex < 0 || expectedQueueIndex >= _queue.length ||
+        _queue[expectedQueueIndex].id != expectedMediaId ||
+        _queue[expectedQueueIndex].filePath.trim().isEmpty) {
+      throw ArgumentError.value(expectedQueueIndex, 'expectedQueueIndex',
+          'Must identify the expected playable occurrence in the committed queue.');
+    }
+    final nativeQueueIndex = _queue
+        .take(expectedQueueIndex)
+        .where((song) => song.filePath.trim().isNotEmpty)
+        .length;
+    if (_backend is! PlaybackStandbyCueBackend) {
+      throw UnsupportedError('This playback backend does not support standby cueing.');
+    }
+    await _run(() => (_backend as PlaybackStandbyCueBackend).seekStandby(
+          position: position,
+          expectedMediaId: expectedMediaId,
+          expectedQueueIndex: nativeQueueIndex,
+        ));
+  }
+
   Future<void> crossfade({required Duration duration}) async {
     _ensureAlive();
     if (duration < const Duration(milliseconds: 250) ||
@@ -638,6 +707,209 @@ class Media3PlaybackRuntime {
     }
     await _run(() => (_backend as PlaybackCrossfadeBackend).crossfade(duration: duration));
   }
+
+  Future<void> enableDjDualDeckMode() => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support persistent DJ decks.');
+        }
+        await (backend as PlaybackDjDeckBackend).enableDjDualDeckMode();
+      });
+
+  Future<void> disableDjDualDeckMode() => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support persistent DJ decks.');
+        }
+        await (backend as PlaybackDjDeckBackend).disableDjDualDeckMode();
+      });
+
+  Future<void> setDjCrossfader(double position) => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support a DJ crossfader.');
+        }
+        await (backend as PlaybackDjDeckBackend).setDjCrossfader(position);
+      });
+
+  Future<void> setDjDeckChannelGain({
+    required String deckId,
+    required double gain,
+  }) => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support DJ channel gain.');
+        }
+        await (backend as PlaybackDjDeckBackend).setDjDeckChannelGain(
+          deckId: deckId,
+          gain: gain,
+        );
+      });
+
+  Future<void> loadDjDeck(String deckId, List<Song> songs, {int startIndex = 0}) =>
+      _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support independent DJ deck queues.');
+        }
+        await (backend as PlaybackDjDeckBackend).loadDjDeck(deckId, songs, startIndex: startIndex);
+      });
+
+  Future<void> playDjDeck(String deckId) => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support independent DJ deck transport.');
+        }
+        await (backend as PlaybackDjDeckBackend).playDjDeck(deckId);
+      });
+
+  Future<void> pauseDjDeck(String deckId) => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support independent DJ deck transport.');
+        }
+        await (backend as PlaybackDjDeckBackend).pauseDjDeck(deckId);
+      });
+
+  Future<void> clearDjDeck(String deckId) => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support clearing DJ decks.');
+        }
+        await (backend as PlaybackDjDeckBackend).clearDjDeck(deckId);
+      });
+
+  Future<void> setDjDeckPlaybackParameters({
+    required String deckId,
+    required double speed,
+    required double pitch,
+  }) => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support physical DJ deck tempo.');
+        }
+        await (backend as PlaybackDjDeckBackend).setDjDeckPlaybackParameters(
+          deckId: deckId,
+          speed: speed,
+          pitch: pitch,
+        );
+      });
+
+  Future<void> setDjDeckEq({
+    required String deckId,
+    required List<double> gainsDb,
+  }) => _run(() async {
+        if (deckId != 'A' && deckId != 'B') {
+          throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
+        }
+        if (gainsDb.length != 3 ||
+            gainsDb.any((gain) => !gain.isFinite || gain < -12.0 || gain > 12.0)) {
+          throw ArgumentError('DJ EQ requires three finite gains from -12 to +12 dB.');
+        }
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support physical DJ deck EQ.');
+        }
+        await (backend as PlaybackDjDeckBackend).setDjDeckEq(
+          deckId: deckId,
+          gainsDb: List<double>.unmodifiable(gainsDb),
+        );
+      });
+
+  Future<void> clearDjDeckEq({required String deckId}) => _run(() async {
+        if (deckId != 'A' && deckId != 'B') {
+          throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
+        }
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support physical DJ deck EQ.');
+        }
+        await (backend as PlaybackDjDeckBackend).clearDjDeckEq(deckId: deckId);
+      });
+
+  Future<void> setDjDeckFilter({required String deckId, required int type, required double cutoffHz}) => _run(() async {
+    if ((deckId != 'A' && deckId != 'B') || !const [0, 3, 4].contains(type) || !cutoffHz.isFinite || cutoffHz < 40 || cutoffHz > 18000) {
+      throw ArgumentError('DJ filter requires physical deck A/B, type 0/3/4 and cutoff 40–18000 Hz.');
+    }
+    final backend = _backend;
+    if (backend is! PlaybackDjDeckBackend) throw UnsupportedError('The active backend does not support DJ filters.');
+    await (backend as PlaybackDjDeckBackend).setDjDeckFilter(deckId: deckId, type: type, cutoffHz: cutoffHz);
+  });
+
+  Future<void> setDjDeckLoopRange({
+    required String deckId,
+    required Duration start,
+    required Duration end,
+    required String expectedMediaId,
+  }) => _run(() async {
+        if ((deckId != 'A' && deckId != 'B') || start.isNegative ||
+            end <= start || end - start < const Duration(milliseconds: 120) ||
+            expectedMediaId.trim().isEmpty) {
+          throw ArgumentError('DJ loop requires a physical deck, ordered points at least 120 ms apart and a track identity.');
+        }
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support native DJ looping.');
+        }
+        await (backend as PlaybackDjDeckBackend).setDjDeckLoopRange(
+          deckId: deckId,
+          start: start,
+          end: end,
+          expectedMediaId: expectedMediaId,
+        );
+      });
+
+  Future<void> setDjScratchControl({
+    required String deckId,
+    required String expectedMediaId,
+    required bool active,
+    required double velocity,
+    required Duration anchor,
+  }) => _run(() async {
+        if ((deckId != 'A' && deckId != 'B') ||
+            expectedMediaId.trim().isEmpty || !velocity.isFinite ||
+            velocity.abs() > 4.0 || anchor.isNegative) {
+          throw ArgumentError('Scratch control requires a physical deck, track identity, finite velocity within ±4x and a nonnegative anchor.');
+        }
+        final backend = _backend;
+        if (backend is! PlaybackDjScratchBackend) {
+          throw UnsupportedError('The active backend does not support native DJ scratch control.');
+        }
+        await (backend as PlaybackDjScratchBackend).setDjScratchControl(
+          deckId: deckId,
+          expectedMediaId: expectedMediaId,
+          active: active,
+          velocity: velocity,
+          anchor: anchor,
+        );
+      });
+
+  Future<void> clearDjDeckLoop({required String deckId}) => _run(() async {
+        if (deckId != 'A' && deckId != 'B') {
+          throw ArgumentError.value(deckId, 'deckId', 'Must be A or B.');
+        }
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support native DJ looping.');
+        }
+        await (backend as PlaybackDjDeckBackend).clearDjDeckLoop(deckId: deckId);
+      });
+
+  Future<void> seekDjDeck({
+    required String deckId,
+    required Duration position,
+    required String expectedMediaId,
+  }) => _run(() async {
+        final backend = _backend;
+        if (backend is! PlaybackDjDeckBackend) {
+          throw UnsupportedError('The active backend does not support independent DJ deck seeking.');
+        }
+        await (backend as PlaybackDjDeckBackend).seekDjDeck(
+          deckId: deckId,
+          position: position,
+          expectedMediaId: expectedMediaId,
+        );
+      });
 
   Future<void> cancelCrossfade() async {
     _ensureAlive();

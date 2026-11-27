@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import '../models/song.dart';
 import 'database_helper.dart';
 import 'dj_analysis_service.dart';
+import 'dj_analysis_foreground_service.dart';
+import 'dj_waveform_chunk_analysis_service.dart';
 import 'resonate_diagnostics.dart';
 
 /// Background BPM/key tag scan when DJ Mode "Analyze library when idle" is on.
@@ -18,41 +20,243 @@ class DjIdleAnalysisService {
   DjIdleAnalysisService({
     DatabaseHelper? database,
     DjAnalysisService? analysis,
+    DjWaveformChunkAnalysisService? waveformChunks,
+    VoidCallback? onWaveformUpdated,
   })  : _db = database ?? DatabaseHelper(),
-        _analysis = analysis ?? DjAnalysisService();
+        _analysis = analysis ?? DjAnalysisService(),
+        _waveformChunks = waveformChunks ?? DjWaveformChunkAnalysisService(),
+        _onWaveformUpdated = onWaveformUpdated;
 
   final DatabaseHelper _db;
   final DjAnalysisService _analysis;
+  final DjWaveformChunkAnalysisService _waveformChunks;
+  final VoidCallback? _onWaveformUpdated;
 
   bool _running = false;
   bool _stopRequested = false;
+  bool _backgroundServiceStarting = false;
+  bool _backgroundServiceStarted = false;
   int _scanned = 0;
   int _updated = 0;
   int _failed = 0;
   final Map<String, DateTime> _lastProfileAttemptAt = <String, DateTime>{};
+  final Map<String, Song> _priorityWaveformTracks = <String, Song>{};
+  final Map<String, Song> _priorityAnalysisTracks = <String, Song>{};
+  final Map<String, DateTime> _lastPriorityAttemptAt = <String, DateTime>{};
+  bool _priorityWaveformDrainRunning = false;
+  bool _priorityAnalysisDrainRunning = false;
+  bool _priorityAnalysisServiceActive = false;
+  bool Function()? _priorityAnalysisAllowed;
   static const Duration _retryCooldown = Duration(hours: 6);
 
   bool get isRunning => _running;
+  bool get canContinueInBackground =>
+      _backgroundServiceStarting ||
+      _backgroundServiceStarted ||
+      _priorityAnalysisServiceActive;
   int get scanned => _scanned;
   int get updated => _updated;
   int get failed => _failed;
 
-  Future<void> startIfNeeded({int maxSongs = 40}) async {
-    if (_running) return;
+  /// Queue a complete waveform build for a track loaded on a DJ deck.
+  /// Work waits until playback is idle, then drains in the same foreground
+  /// analysis service used by the library scanner.
+  Future<int> ensureTrackWaveform(
+    Song song, {
+    required bool Function() isStillIdle,
+  }) async {
+    if (song.id.trim().isEmpty ||
+        song.filePath.trim().isEmpty ||
+        song.duration <= Duration.zero) {
+      return 0;
+    }
+    _priorityWaveformTracks[song.id] = song;
+    // Only the currently relevant deck tracks and a small preload tail should
+    // survive an extended playback session; never let this queue grow with
+    // every track the operator auditions.
+    while (_priorityWaveformTracks.length > 4) {
+      _priorityWaveformTracks.remove(_priorityWaveformTracks.keys.first);
+    }
+    if (_running || _priorityWaveformDrainRunning || !isStillIdle()) return 0;
+    return _drainPriorityWaveforms(isStillIdle: isStillIdle);
+  }
+
+  Future<int> _drainPriorityWaveforms({
+    required bool Function() isStillIdle,
+    bool serviceAlreadyStarted = false,
+  }) async {
+    if (_priorityWaveformDrainRunning ||
+        _priorityWaveformTracks.isEmpty ||
+        !isStillIdle()) {
+      return 0;
+    }
+    _priorityWaveformDrainRunning = true;
+    var startedHere = false;
+    var processed = 0;
+    try {
+      if (!serviceAlreadyStarted) {
+        startedHere = await DjAnalysisForegroundService.start();
+      }
+      for (final entry in _priorityWaveformTracks.entries.toList()) {
+        if (!isStillIdle()) break;
+        await DjAnalysisForegroundService.heartbeat();
+        processed += await _waveformChunks.processMissingChunks(
+          entry.value,
+          maxChunks: 128,
+          isStillIdle: isStillIdle,
+        );
+        if (await _waveformChunks.hasCompleteWaveform(entry.value)) {
+          _priorityWaveformTracks.remove(entry.key);
+        }
+      }
+      if (processed > 0) _onWaveformUpdated?.call();
+      return processed;
+    } finally {
+      if (startedHere) await DjAnalysisForegroundService.stop();
+      _priorityWaveformDrainRunning = false;
+    }
+  }
+
+  /// Queue analysis for a deck-loaded track. Unlike the library backlog,
+  /// this small priority queue may run while music is playing. It serializes
+  /// one track at a time and checks the safety predicate between PCM windows.
+  Future<void> ensureTrackAnalysis(
+    Song song, {
+    required bool Function() isSafeToAnalyze,
+    required bool Function() isStillIdle,
+  }) async {
+    if (song.id.trim().isEmpty || song.filePath.trim().isEmpty ||
+        song.duration <= Duration.zero) {
+      return;
+    }
+    _priorityAnalysisAllowed = isSafeToAnalyze;
+    _priorityAnalysisTracks[song.id] = song;
+    // Keep only the two decks and a short audition/preload tail.
+    while (_priorityAnalysisTracks.length > 4) {
+      _priorityAnalysisTracks.remove(_priorityAnalysisTracks.keys.first);
+    }
+    if (_running || _priorityAnalysisDrainRunning || !isSafeToAnalyze()) return;
+    await _drainPriorityAnalyses(
+      isSafeToAnalyze: isSafeToAnalyze,
+      isStillIdle: isStillIdle,
+    );
+  }
+
+  Future<void> _drainPriorityAnalyses({
+    required bool Function() isSafeToAnalyze,
+    required bool Function() isStillIdle,
+  }) async {
+    if (_running || _priorityAnalysisDrainRunning ||
+        _priorityAnalysisTracks.isEmpty || !isSafeToAnalyze()) {
+      return;
+    }
+    _priorityAnalysisDrainRunning = true;
+    var startedHere = false;
+    try {
+      startedHere = await DjAnalysisForegroundService.start();
+      _priorityAnalysisServiceActive = startedHere;
+      for (final entry in _priorityAnalysisTracks.entries.toList()) {
+        if (!isSafeToAnalyze()) break;
+        await DjAnalysisForegroundService.heartbeat();
+        final lastAttempt = _lastPriorityAttemptAt[entry.key];
+        if (lastAttempt != null &&
+            DateTime.now().difference(lastAttempt) < _retryCooldown) {
+          continue;
+        }
+        final existing = await _analysis.getAnalysis(entry.key);
+        final profile = await _analysis.getProfile(entry.key);
+        if (!isSafeToAnalyze()) break;
+        if (existing == null || existing.isStale || profile == null) {
+          await _analysis.analyzeSong(
+            entry.value,
+            force: true,
+            shouldContinue: isSafeToAnalyze,
+          );
+          if (!isSafeToAnalyze()) break;
+          _lastPriorityAttemptAt[entry.key] = DateTime.now();
+        }
+        final updated = await _analysis.getAnalysis(entry.key);
+        final completedProfile = await _analysis.getProfile(entry.key);
+        if (updated != null && !updated.isStale && completedProfile != null) {
+          _priorityAnalysisTracks.remove(entry.key);
+          _onWaveformUpdated?.call();
+          await ResonateDiagnostics.recordDj(
+            stage: 'deck_priority_analysis',
+            songId: entry.key,
+            outcome: 'profile_ready',
+          );
+        } else {
+          await ResonateDiagnostics.recordDj(
+            stage: 'deck_priority_analysis',
+            songId: entry.key,
+            outcome: 'deferred_or_unsupported',
+          );
+          // Keep unsupported/temporarily unavailable files queued for a later
+          // retry, but let the other loaded deck proceed in this pass.
+          continue;
+        }
+        // Never run a second deck decode back-to-back without yielding.
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        if (!isSafeToAnalyze()) break;
+      }
+      // Full-track waveform chunks remain lower priority and are only decoded
+      // while transport is idle. Playback analysis never competes with them.
+      if (isStillIdle() && _priorityWaveformTracks.isNotEmpty) {
+        await _drainPriorityWaveforms(
+          isStillIdle: isStillIdle,
+          serviceAlreadyStarted: true,
+        );
+      }
+    } finally {
+      if (startedHere) await DjAnalysisForegroundService.stop();
+      _priorityAnalysisServiceActive = false;
+      _priorityAnalysisDrainRunning = false;
+    }
+  }
+
+  Future<void> resumePriorityAnalysis({
+    required bool Function() isSafeToAnalyze,
+    required bool Function() isStillIdle,
+  }) async {
+    _priorityAnalysisAllowed = isSafeToAnalyze;
+    if (_running || !isSafeToAnalyze()) return;
+    await _drainPriorityAnalyses(
+      isSafeToAnalyze: isSafeToAnalyze,
+      isStillIdle: isStillIdle,
+    );
+  }
+
+  Future<void> startIfNeeded({
+    int maxSongs = 40,
+    int maxWaveformChunks = 2,
+    bool Function()? isStillIdle,
+  }) async {
+    if (_running || _priorityAnalysisDrainRunning) return;
     _running = true;
     _stopRequested = false;
     _scanned = 0;
     _updated = 0;
     _failed = 0;
     try {
+      // Start while the Activity is foregrounded. Android then keeps the
+      // process eligible for background execution with a visible notification.
+      _backgroundServiceStarting = true;
+      try {
+        _backgroundServiceStarted = await DjAnalysisForegroundService.start();
+      } finally {
+        _backgroundServiceStarting = false;
+      }
       await ResonateDiagnostics.recordDj(
         stage: 'idle_scan_start',
         outcome: 'started',
-        extra: {'maxSongs': maxSongs},
+        extra: {
+          'maxSongs': maxSongs,
+          'backgroundExecution': _backgroundServiceStarted,
+        },
       );
       final songs = await _db.getAllSongs();
       for (final song in songs) {
-        if (_stopRequested) break;
+        if (_stopRequested || (isStillIdle != null && !isStillIdle())) break;
         if (_scanned >= maxSongs) break;
         if (song.filePath.trim().isEmpty) continue;
         try {
@@ -61,14 +265,38 @@ class DjIdleAnalysisService {
               (existing.hasUsableBpm || existing.hasUsableKey);
           final hasSectionProfile = existing?.sectionHint != null &&
               existing?.sectionHint != 'unknown';
+          final hasWaveformProfile = await _analysis.hasWaveformProfile(song.id);
+          final hasPsychicReport = await _analysis.hasPsychicReport(song.id);
+          final hasUsablePsychicAnalysis =
+              await _analysis.hasPsychicAnalysis(song.id);
+          final now = DateTime.now();
+          final psychicRetryDue = hasPsychicReport &&
+              !hasUsablePsychicAnalysis &&
+              existing?.analyzedAt != null &&
+              now.difference(existing!.analyzedAt!) >= _retryCooldown;
           if (existing != null &&
               !existing.isStale &&
               hasUsableTags &&
-              hasSectionProfile) {
+              hasSectionProfile &&
+              hasWaveformProfile &&
+              hasPsychicReport &&
+              !psychicRetryDue) {
             continue;
           }
 
-          final now = DateTime.now();
+          // Persisted attempt timestamps provide a retry backoff across process
+          // death. In particular, a missing Psychic report must not trigger
+          // an immediate full decode on every app launch.
+          final recentlyAttempted = existing?.analyzedAt != null &&
+              now.difference(existing!.analyzedAt!) < _retryCooldown;
+          if (recentlyAttempted &&
+              existing?.isStale != true &&
+              (!hasPsychicReport ||
+                  !hasWaveformProfile ||
+                  !hasUsableTags ||
+                  !hasSectionProfile)) {
+            continue;
+          }
           final lastAttempt = _lastProfileAttemptAt[song.id];
           if (lastAttempt != null &&
               now.difference(lastAttempt) < _retryCooldown) {
@@ -85,11 +313,15 @@ class DjIdleAnalysisService {
           }
 
           _scanned++;
+          await DjAnalysisForegroundService.heartbeat();
           final before = existing;
           final needsFullProfile = before == null ||
               before.isStale ||
               !hasUsableTags ||
-              !hasSectionProfile;
+              !hasSectionProfile ||
+              !hasWaveformProfile ||
+              !hasPsychicReport ||
+              psychicRetryDue;
 
           // Do not wrap this in Future.timeout: Dart timeout only stops waiting,
           // not the native decode. Keep the scan serial until the analyzer
@@ -102,7 +334,7 @@ class DjIdleAnalysisService {
           // Cancellation is not a completed analysis attempt. The analyzer may
           // return an empty placeholder when its generation is invalidated;
           // do not mislabel that as missing tags or suppress a later retry.
-          if (_stopRequested) {
+          if (_stopRequested || (isStillIdle != null && !isStillIdle())) {
             await ResonateDiagnostics.recordDj(
               stage: 'idle_scan_song',
               songId: song.id,
@@ -122,12 +354,13 @@ class DjIdleAnalysisService {
               extra: {
                 'bpm': after.bpm,
                 'hasKey': after.hasUsableKey,
+                'psychicReportReady': await _analysis.hasPsychicAnalysis(song.id),
                 'stopRequestedDuringAnalysis': false,
               },
             );
           }
         } catch (e) {
-          if (_stopRequested) {
+          if (_stopRequested || (isStillIdle != null && !isStillIdle())) {
             // A stop racing with a thrown platform error is still a
             // cancellation, not a failed analysis and not a retry cooldown.
             await ResonateDiagnostics.recordDj(
@@ -147,8 +380,52 @@ class DjIdleAnalysisService {
             );
           }
         }
+        // A deck-loaded track takes priority over the library backlog. Drain
+        // its full waveform as soon as the current serial profile decode settles.
+        if (_priorityWaveformTracks.isNotEmpty &&
+            !_stopRequested &&
+            (isStillIdle?.call() ?? true)) {
+          await _drainPriorityWaveforms(
+            isStillIdle: isStillIdle ?? () => true,
+            serviceAlreadyStarted: _backgroundServiceStarted,
+          );
+        }
         // Yield to the UI and re-check stop state before the next song.
         await Future<void>.delayed(const Duration(milliseconds: 120));
+      }
+      // Waveform extraction is a separate serial pass after compact profile
+      // analysis. A single idle opportunity may decode only a tiny bounded
+      // number of chunks across the entire library, never per track.
+      var waveformChunksRemaining = maxWaveformChunks.clamp(0, 4).toInt();
+      var waveformChunksProcessed = 0;
+      var waveformChunksEvicted = 0;
+      if (!_stopRequested && waveformChunksRemaining > 0) {
+        for (final song in songs) {
+          if (_stopRequested ||
+              (isStillIdle != null && !isStillIdle()) ||
+              waveformChunksRemaining <= 0) {
+            break;
+          }
+          if (song.filePath.trim().isEmpty ||
+              song.duration.inMilliseconds <= 0) {
+            continue;
+          }
+          await DjAnalysisForegroundService.heartbeat();
+          final processed = await _waveformChunks.processMissingChunks(
+            song,
+            maxChunks: waveformChunksRemaining,
+            isStillIdle: () =>
+                !_stopRequested && (isStillIdle?.call() ?? true),
+          );
+          waveformChunksRemaining -= processed;
+          waveformChunksProcessed += processed;
+        }
+      }
+      if (waveformChunksProcessed > 0 &&
+          !_stopRequested &&
+          (isStillIdle?.call() ?? true)) {
+        waveformChunksEvicted =
+            await _db.pruneDjWaveformChunks();
       }
       await ResonateDiagnostics.recordDj(
         stage: 'idle_scan_done',
@@ -157,6 +434,10 @@ class DjIdleAnalysisService {
           'scanned': _scanned,
           'updated': _updated,
           'failed': _failed,
+          'waveformChunksProcessed': waveformChunksProcessed,
+          'waveformChunksEvicted': waveformChunksEvicted,
+          'waveformChunkBudgetRemaining': waveformChunksRemaining,
+          'idlePredicateStillTrue': isStillIdle?.call() ?? true,
         },
       );
     } catch (e) {
@@ -167,6 +448,25 @@ class DjIdleAnalysisService {
       );
     } finally {
       _running = false;
+      if (_priorityWaveformTracks.isNotEmpty &&
+          isStillIdle != null &&
+          isStillIdle()) {
+        await _drainPriorityWaveforms(
+          isStillIdle: isStillIdle,
+          serviceAlreadyStarted: _backgroundServiceStarted,
+        );
+      }
+      await DjAnalysisForegroundService.stop();
+      _backgroundServiceStarted = false;
+      _backgroundServiceStarting = false;
+      final priorityAllowed = _priorityAnalysisAllowed;
+      if (_priorityAnalysisTracks.isNotEmpty &&
+          priorityAllowed != null && priorityAllowed()) {
+        unawaited(_drainPriorityAnalyses(
+          isSafeToAnalyze: priorityAllowed,
+          isStillIdle: isStillIdle ?? () => false,
+        ));
+      }
     }
   }
 
@@ -175,7 +475,11 @@ class DjIdleAnalysisService {
   /// Native decoding does not currently expose cancellation, so this method
   /// must not pretend it can interrupt an in-flight platform operation.
   void stop() {
+    // Playback should stop the broad library scan, not the deck-priority
+    // analysis queue. Priority work is independently bounded and serialized.
+    if (!_running) return;
     _stopRequested = true;
     _analysis.cancelCurrentAnalysis();
+    _waveformChunks.cancel();
   }
 }

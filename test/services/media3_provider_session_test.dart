@@ -51,7 +51,7 @@ PlaybackSnapshot _snapshot({
       error: null,
     );
 
-class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackDeckSpeedBackend, PlaybackPlaylistSyncBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend {
+class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackDeckSpeedBackend, PlaybackDeckParametersBackend, PlaybackPlaylistSyncBackend, PlaybackAudioFocusBackend, PlaybackAuxiliaryEffectsBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   final List<String> calls = <String>[];
@@ -60,6 +60,7 @@ class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpe
   double? lastSpeed;
   bool? lastAudioFocusHandling;
   (double, double)? lastDeckSpeeds;
+  (double, double, double, double)? lastDeckParameters;
   Duration? lastPreloadStartPosition;
   PlaybackSnapshot value = _snapshot();
 
@@ -110,6 +111,16 @@ class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpe
   Future<void> setPlaybackSpeed(double speed) async {
     lastSpeed = speed;
     calls.add('speed');
+  }
+  @override
+  Future<void> setDeckPlaybackParameters({
+    required double activeSpeed,
+    required double activePitch,
+    required double standbySpeed,
+    required double standbyPitch,
+  }) async {
+    lastDeckParameters = (activeSpeed, activePitch, standbySpeed, standbyPitch);
+    calls.add('deckParameters');
   }
   @override
   Future<void> setDeckPlaybackSpeeds({
@@ -249,6 +260,25 @@ void main() {
       expect(backend.calls, ['speed']);
       expect(() => session.setPlaybackSpeed(2.1), throwsArgumentError);
       expect(backend.calls, ['speed']);
+    });
+
+    test('forwards atomic independent deck speed and pitch parameters', () async {
+      await session.start();
+      final deckParameters = session as PlaybackDeckParametersSession;
+      await deckParameters.setDeckPlaybackParameters(
+        activeSpeed: 1.05, activePitch: 1.0,
+        standbySpeed: 0.96, standbyPitch: 0.96,
+      );
+      expect(backend.lastDeckParameters, (1.05, 1.0, 0.96, 0.96));
+      expect(backend.calls, ['deckParameters']);
+      expect(
+        () => deckParameters.setDeckPlaybackParameters(
+          activeSpeed: 1.05, activePitch: 2.1,
+          standbySpeed: 1.0, standbyPitch: 1.0,
+        ),
+        throwsArgumentError,
+      );
+      expect(backend.calls, ['deckParameters']);
     });
 
     test('forwards independent active and standby deck speeds through the session', () async {

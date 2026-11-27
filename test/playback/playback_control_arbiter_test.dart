@@ -176,6 +176,33 @@ void main() {
       );
     });
 
+    test('manual DJ authority preempts automation but not user transport', () async {
+      final arbiter = PlaybackControlArbiter();
+      final automatic = await arbiter.acquire(
+        owner: 'media3_automatic_crossfade',
+        priority: PlaybackControlPriority.automatic,
+      );
+      final manual = await arbiter.acquire(
+        owner: 'dj_manual_transition',
+        priority: PlaybackControlPriority.interactive,
+      );
+
+      expect(automatic!.isCurrent, isFalse);
+      expect(manual, isNotNull);
+      expect(manual!.isCurrent, isTrue);
+      expect(manual.authorizeWrite('dj_manual_crossfade'), isTrue);
+
+      final userTransport = await arbiter.acquire(
+        owner: 'user_transport',
+        priority: PlaybackControlPriority.userTransport,
+      );
+      expect(manual.isCurrent, isFalse);
+      expect(userTransport, isNotNull);
+      expect(userTransport!.isCurrent, isTrue);
+      expect(manual.authorizeWrite('late_dj_gain_write'), isFalse);
+      expect(arbiter.activeOwner, 'user_transport');
+    });
+
     test('close revokes the owner and rejects all future acquisitions', () async {
       final events = <PlaybackControlDiagnostic>[];
       final arbiter = PlaybackControlArbiter(onDiagnostic: events.add);

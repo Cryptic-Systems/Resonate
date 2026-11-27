@@ -104,6 +104,19 @@ class MusicProvider extends ChangeNotifier {
   StreamSubscription<int?>? _media3AudioSessionSub;
   StreamSubscription<Media3ProviderState>? _media3StateSub;
   Media3ProviderState? _media3ShadowState;
+  bool _djDualDeckModeRequested = false;
+  final Map<String, List<double>> _djDeckEqGains = <String, List<double>>{
+    'A': <double>[0.0, 0.0, 0.0],
+    'B': <double>[0.0, 0.0, 0.0],
+  };
+  final Map<String, int> _djDeckFilterTypes = <String, int>{'A': 0, 'B': 0};
+  final Map<String, double> _djDeckFilterCutoffs = <String, double>{'A': 1000.0, 'B': 1000.0};
+  int djDeckFilterType(String deckId) => _djDeckFilterTypes[deckId] ?? 0;
+  double djDeckFilterCutoff(String deckId) => _djDeckFilterCutoffs[deckId] ?? 1000.0;
+  _DjSessionReturnState? _djSessionReturnState;
+  Future<void> _djSessionLifecycleTail = Future<void>.value();
+  final Set<Future<void>> _djDeckCommandsInFlight = <Future<void>>{};
+  PlaybackControlLease? _djCrossfaderGestureLease;
   // A library selection may commit before Media3 publishes its replacement timeline.
   // Fence delayed snapshots from the previous item until the selected occurrence arrives.
   String? _media3PendingSelectionSongId;
@@ -119,8 +132,32 @@ class MusicProvider extends ChangeNotifier {
   Future<void>? _media3HandoffFuture;
   bool _media3ProviderSessionPrepared = false;
   bool _media3ProviderSessionActive = false;
+  ManualDjPreparedDeck? _manualDjPreparedDeck;
+  PlaybackControlLease? _manualDjPreparedLease;
+  bool _manualDjParameterWriteInFlight = false;
+  Completer<void>? _manualDjParameterWriteSettled;
+  ManualDjPreparedDeck? _manualDjPreparingDeck;
+  PlaybackControlLease? _manualDjPreparingLease;
+  Completer<void>? _manualDjPreparationDone;
+  Completer<void>? _manualDjPreparationSettled;
+  bool _manualDjPreparationInvalidated = false;
   bool get media3ProviderSessionPrepared => _media3ProviderSessionPrepared;
   bool get media3ProviderSessionActive => _media3ProviderSessionActive;
+  List<double> djDeckEqGains(String deckId) =>
+      List<double>.unmodifiable(_djDeckEqGains[deckId] ?? const [0.0, 0.0, 0.0]);
+  bool get _djDualDeckSessionActive =>
+      _djDualDeckModeRequested || _media3ShadowState?.djDualDeckMode == true;
+  bool get isDjDualDeckSessionActive => _djDualDeckSessionActive;
+  /// True only while the operator's prepared standby deck still owns its lease.
+  /// UI should derive readiness from this instead of caching a local flag: a
+  /// higher-priority user transport can revoke the lease asynchronously.
+  bool get hasPreparedManualDjDeck =>
+      _manualDjPreparedDeck != null &&
+      _manualDjPreparedLease != null &&
+      _manualDjPreparedLease!.isCurrent;
+  /// Returns the prepared operator deck only while its interactive lease is current.
+  ManualDjPreparedDeck? get manualDjPreparedDeck =>
+      hasPreparedManualDjDeck ? _manualDjPreparedDeck : null;
   @visibleForTesting
   bool get debugLegacyEngineConstructed => _engines != null;
   /// The exact session that owns canonical playback after provider handoff.
@@ -2495,6 +2532,9 @@ class MusicProvider extends ChangeNotifier {
   int? resumePositionFor(String songId) => _resumeStore.positionFor(songId);
 
   void _maybeStartAutomaticCrossfade(Duration position) {
+    // Resonatix DJ owns both physical decks directly. Player's queue scheduler
+    // must never preload or advance either DJ deck behind the operator.
+    if (_djDualDeckSessionActive) return;
     // The injected session is authoritative from construction onward. During
     // startup it may not own playback yet, so do not fall through to a lazy
     // just_audio getter while waiting for the Media3 handoff to complete.
@@ -3453,6 +3493,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _advanceAfterCompletionInternal(String completedSongId, int intentToken) async {
+    if (_djDualDeckSessionActive) return;
     bool ownsCompletionAdvance() =>
         !_disposed &&
         _playbackIntentGate.isCurrent(intentToken);
@@ -3714,11 +3755,16 @@ class MusicProvider extends ChangeNotifier {
             owner: 'user_transport',
             priority: PlaybackControlPriority.userTransport,
           );
-          if (lease == null ||
-              !lease.authorizeWrite('transport:$command')) {
-            // The established transport epoch/coordinator remains the
-            // fail-safe authority if the arbiter is closing or unavailable.
-            return await operation();
+          if (lease == null) {
+            throw StateError(
+              'Playback control authority is unavailable; refusing transport write.',
+            );
+          }
+          if (!lease.authorizeWrite('transport:$command')) {
+            await lease.release();
+            throw StateError(
+              'Playback control lease was rejected; refusing transport write.',
+            );
           }
           try {
             return await operation();
@@ -4209,6 +4255,79 @@ class MusicProvider extends ChangeNotifier {
   }) {
     final nextTarget = _crossfadeTargetSong;
     final nextIndex = _crossfadeTargetIndex;
+
+    // A manual standby lease is pinned to two provider-queue occurrences,
+    // not merely media IDs. Queue edits before either occurrence can shift its
+    // index while leaving the native standby loaded. Retire that preparation
+    // immediately rather than holding the interactive lease until the next
+    // operator action discovers the stale mapping.
+    final manualPreparing = _manualDjPreparingDeck;
+    if (manualPreparing != null) {
+      final outgoingStillMatches =
+          manualPreparing.outgoingQueueIndex == _queueIndex &&
+          _queueIndex >= 0 &&
+          _queueIndex < _queue.length &&
+          _sameManualDjEntry(
+            _queue[_queueIndex],
+            manualPreparing.outgoingSong,
+          );
+      final incomingStillMatches =
+          manualPreparing.incomingQueueIndex >= 0 &&
+          manualPreparing.incomingQueueIndex < _queue.length &&
+          _sameManualDjEntry(
+            _queue[manualPreparing.incomingQueueIndex],
+            manualPreparing.incomingSong,
+          );
+      if (!outgoingStillMatches || !incomingStillMatches) {
+        _manualDjPreparationInvalidated = true;
+        unawaited(cancelPreparedManualDjDeck());
+        unawaited(ResonateDiagnostics.recordDj(
+          stage: 'manual_deck_prepare',
+          outcome: 'invalidated',
+          reason: 'provider_queue_occurrence_changed_during_prepare',
+          songId: manualPreparing.incomingSong.id,
+          extra: {
+            'outgoingQueueIndex': manualPreparing.outgoingQueueIndex,
+            'incomingQueueIndex': manualPreparing.incomingQueueIndex,
+            'currentQueueIndex': _queueIndex,
+          },
+        ));
+      }
+    }
+
+    final manualPrepared = _manualDjPreparedDeck;
+    if (manualPrepared != null) {
+      final outgoingStillMatches =
+          manualPrepared.outgoingQueueIndex == _queueIndex &&
+          _queueIndex >= 0 &&
+          _queueIndex < _queue.length &&
+          _sameManualDjEntry(
+            _queue[_queueIndex],
+            manualPrepared.outgoingSong,
+          );
+      final incomingStillMatches =
+          manualPrepared.incomingQueueIndex >= 0 &&
+          manualPrepared.incomingQueueIndex < _queue.length &&
+          _sameManualDjEntry(
+            _queue[manualPrepared.incomingQueueIndex],
+            manualPrepared.incomingSong,
+          );
+      if (!outgoingStillMatches || !incomingStillMatches) {
+        unawaited(cancelPreparedManualDjDeck());
+        unawaited(ResonateDiagnostics.recordDj(
+          stage: 'manual_deck_prepare',
+          outcome: 'invalidated',
+          reason: 'provider_queue_occurrence_changed',
+          songId: manualPrepared.incomingSong.id,
+          extra: {
+            'outgoingQueueIndex': manualPrepared.outgoingQueueIndex,
+            'incomingQueueIndex': manualPrepared.incomingQueueIndex,
+            'currentQueueIndex': _queueIndex,
+          },
+        ));
+      }
+    }
+
     if (previousTargetId == nextTarget?.id &&
         previousTargetIndex == nextIndex) {
       return;
@@ -4833,10 +4952,38 @@ class MusicProvider extends ChangeNotifier {
     _media3ShadowState = null;
     _activeAndroidAudioSessionId = null;
     final media3Session = _media3ProviderSession;
-    if (media3Session != null) unawaited(media3Session.dispose());
-    if (_ownsPlaybackControlArbiter) {
-      unawaited(playbackControlArbiter.close());
-    }
+    // Invalidate the UI-facing prepared state synchronously. Native standby
+    // retirement and lease release remain asynchronous below, but disposed
+    // widgets must stop observing this deck immediately.
+    _manualDjPreparedDeck = null;
+    // A manual DJ standby lease can outlive the workspace that prepared it,
+    // especially when the arbiter is injected and therefore externally owned.
+    // Retire the standby deck and release that lease before disposing Media3
+    // or closing an arbiter owned by this provider.
+    unawaited(() async {
+      try {
+        await endDjCrossfaderGesture();
+      } catch (error) {
+        debugPrint('DJ crossfader gesture disposal cleanup failed: $error');
+      }
+      try {
+        await cancelPreparedManualDjDeck();
+      } catch (error) {
+        debugPrint('Manual DJ disposal cleanup failed: $error');
+      }
+      try {
+        await media3Session?.dispose();
+      } catch (error) {
+        debugPrint('Media3 session disposal failed: $error');
+      }
+      if (_ownsPlaybackControlArbiter) {
+        try {
+          await playbackControlArbiter.close();
+        } catch (error) {
+          debugPrint('Playback control arbiter disposal failed: $error');
+        }
+      }
+    }());
     final legacyEngines = _engines;
     if (legacyEngines != null) unawaited(legacyEngines.dispose());
     super.dispose();

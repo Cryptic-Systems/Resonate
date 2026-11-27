@@ -103,10 +103,10 @@ class CrossfadeScreen extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: ActionChip(
                   avatar: const Icon(Icons.headphones_rounded, size: 18),
-                  label: const Text('DJ Mode settings'),
+                  label: const Text('Automatic mixing settings'),
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => const DjModeSettingsScreen(),
+                      builder: (_) => const DjModeSettingsScreen(playerFacing: true),
                     ),
                   ),
                 ),

@@ -17,6 +17,7 @@ object DspEngineRegistry {
 
     private data class RegisteredEngine(val handle: Long, val deckId: String)
     private data class EqOverlay(val centersHz: DoubleArray, val gainsDb: DoubleArray)
+    private data class DeckFilter(val type: Int, val cutoffHz: Double)
     private data class DeckAnalysisHint(
         val songId: String,
         val samplePeakDb: Float,
@@ -29,6 +30,11 @@ object DspEngineRegistry {
 
     private val handles = ConcurrentHashMap<Int, RegisteredEngine>()
     private val temporaryEqOverlays = mutableMapOf<String, EqOverlay>()
+    // Persistent DJ channel EQ is keyed to physical A/B decks and never shares
+    // ownership with the short-lived transition overlay above.
+    private val djEqOverlays = mutableMapOf<String, EqOverlay>()
+    // One mutually-exclusive LP/HP filter per physical DJ deck; type 0 means bypass.
+    private val djDeckFilters = mutableMapOf<String, DeckFilter>()
     // Analysis belongs to a physical deck + current media identity, never to
     // the global sticky profile shared by both crossfade engines.
     private val deckTracks = mutableMapOf<String, String>()
@@ -205,6 +211,8 @@ object DspEngineRegistry {
         handles.clear()
         stickyState = StickyState()
         temporaryEqOverlays.clear()
+        djEqOverlays.clear()
+        djDeckFilters.clear()
         deckTracks.clear()
         deckAnalysisHints.clear()
         activeDeckId = "A"
@@ -403,6 +411,7 @@ object DspEngineRegistry {
             "activeEngines" to activeCount(),
             "gateTripped" to DspSessionGate.isTripped(),
             "nativeAllowed" to DspSessionGate.isNativeAllowed(),
+            "nativeCreateFailures" to DspSessionGate.createFailureCount(),
             "linearGain" to stickyState.linearGain,
             "eqEnabled" to stickyState.eqEnabled,
             "dspEnabled" to stickyState.dspEnabled,
@@ -452,7 +461,7 @@ object DspEngineRegistry {
             .mapNotNull { (deckId, engines) ->
                 val snapshot = engines.firstNotNullOfOrNull { engine ->
                     runCatching { nativeApi.getMeters(engine.handle) }.getOrNull()
-                }?.takeIf { it.size >= 12 } ?: return@mapNotNull null
+                }?.takeIf { it.size >= 20 } ?: return@mapNotNull null
                 deckId to mapOf(
                     "inputPeakDb" to snapshot[0],
                     "inputTruePeakDb" to snapshot[1],
@@ -466,13 +475,21 @@ object DspEngineRegistry {
                     "autoGainAppliedDb" to snapshot[9],
                     "autoPreampAppliedDb" to snapshot[10],
                     "autoVirtualBassApplied" to snapshot[11],
+                    "autoGainPreDvcPeakDb" to snapshot[12],
+                    "autoGainTargetRmsDb" to snapshot[13],
+                    "autoGainRmsErrorDb" to snapshot[14],
+                    "autoGainConstrainedTargetDb" to snapshot[15],
+                    "autoGainPeakGainCapDb" to snapshot[16],
+                    "autoGainAppliedTelemetryDb" to snapshot[17],
+                    "autoGainPeakLimited" to (snapshot[18] >= 0.5f),
+                    "autoGainSilenceGateActive" to (snapshot[19] >= 0.5f),
                     "analysisHintActive" to deckAnalysisHints.containsKey(deckId),
                     "songId" to (deckTracks[deckId] ?: ""),
                 )
             }.toMap()
         base["liveMetersByDeck"] = metersByDeck
         base["activeDeckId"] = activeDeckId
-        base["dspVersion"] = "0.6.0"
+        base["dspVersion"] = "0.6.1"
         base.putAll(latencySnapshot())
         return base
     }
@@ -510,16 +527,18 @@ object DspEngineRegistry {
         val g = linearGain.coerceIn(0.0, 4.0)
         stickyState = stickyState.copy(preamp = g)
         val state = stickyState
-        val effective = effectivePreamp(state)
-        val list = snapshotHandles()
-        for (h in list) {
+        val engines = handles.values.toList()
+        for (engine in engines) {
             try {
-                nativeApi.setPreamp(h, effective)
+                nativeApi.setPreamp(
+                    engine.handle,
+                    effectivePreampForEngine(state, engine.deckId),
+                )
             } catch (t: Throwable) {
-                Log.w(TAG, "setPreamp failed handle=$h", t)
+                Log.w(TAG, "setPreamp failed handle=${engine.handle}", t)
             }
         }
-        Log.i(TAG, "applyPreampAll gain=$g targets=${list.size}")
+        Log.i(TAG, "applyPreampAll gain=$g targets=${engines.size}")
     }
 
     @JvmStatic
@@ -557,19 +576,22 @@ object DspEngineRegistry {
         val g = linearGain.coerceIn(0.0, 4.0)
         stickyState = stickyState.copy(linearGain = g, dvcDb = (20.0 * kotlin.math.log10(g.coerceAtLeast(1.0e-6))).toFloat())
         val state = stickyState
-        val list = snapshotHandles()
-        for (h in list) {
+        val engines = handles.values.toList()
+        for (engine in engines) {
             try {
                 if (state.dvcEnabled) {
-                    nativeApi.setVolume(h, g)
+                    nativeApi.setVolume(engine.handle, g)
                 } else {
-                    nativeApi.setPreamp(h, effectivePreamp(state))
+                    nativeApi.setPreamp(
+                        engine.handle,
+                        effectivePreampForEngine(state, engine.deckId),
+                    )
                 }
             } catch (t: Throwable) {
-                Log.w(TAG, "setVolume failed handle=$h", t)
+                Log.w(TAG, "setVolume failed handle=${engine.handle}", t)
             }
         }
-        Log.i(TAG, "applyVolumeAll gain=$g targets=${list.size}")
+        Log.i(TAG, "applyVolumeAll gain=$g targets=${engines.size}")
     }
 
     @JvmStatic
@@ -586,7 +608,7 @@ object DspEngineRegistry {
         handles.values.forEach { engine ->
             runCatching {
                 nativeApi.setDvc(engine.handle, state.dvcEnabled, state.dvcDb, state.dvcSmoothing, state.dvcSmoothingMs)
-                nativeApi.setPreamp(engine.handle, effectivePreamp(state))
+                nativeApi.setPreamp(engine.handle, effectivePreampForEngine(state, engine.deckId))
             }.onFailure { Log.w(TAG, "setDvc failed handle=${engine.handle}", it) }
         }
     }
@@ -828,15 +850,7 @@ object DspEngineRegistry {
         val engines = handles.values.filter { it.deckId == deckId }
         for (engine in engines) {
             try {
-                val gains = state.gainsDb
-                if (gains != null && gains.isNotEmpty()) {
-                    nativeApi.setParametricEqBands(engine.handle, state.centersHz?.map { it.toFloat() }?.toFloatArray() ?: defaultCenters(gains.size).map { it.toFloat() }.toFloatArray(), gains.map { it.toFloat() }.toFloatArray(), state.eqQ ?: defaultEqQ(gains.size), state.eqTypes ?: IntArray(gains.size), true)
-                } else {
-                    // Restore a neutral 31-band curve when there is no saved
-                    // user curve, rather than leaving the last DJ filter active.
-                    val centers = defaultCenters(31)
-                    nativeApi.setParametricEqBands(engine.handle, centers.map { it.toFloat() }.toFloatArray(), FloatArray(31), defaultEqQ(31), IntArray(31), true)
-                }
+                applyEqForEngine(engine.handle, deckId, state)
             } catch (t: Throwable) {
                 Log.w(TAG, "clearTemporaryEqOverlay failed deck=$deckRole handle=${engine.handle}", t)
                 if (previous != null) temporaryEqOverlays[deckId] = previous
@@ -849,6 +863,91 @@ object DspEngineRegistry {
         return true
     }
 
+    /** Persistent three-band DJ channel EQ, isolated from transition overlays. */
+    @JvmStatic
+    @Synchronized
+    fun setDjEqOverlay(
+        deckId: String,
+        centersHz: DoubleArray,
+        gainsDb: DoubleArray,
+    ): Boolean {
+        if (deckId !in setOf("A", "B") ||
+            centersHz.size != 3 || gainsDb.size != 3 ||
+            centersHz.any { !it.isFinite() || it !in 20.0..20000.0 } ||
+            gainsDb.any { !it.isFinite() || it !in -12.0..12.0 } ||
+            centersHz.asList().zipWithNext().any { it.first >= it.second }
+        ) return false
+        val previous = djEqOverlays[deckId]
+        djEqOverlays[deckId] = EqOverlay(centersHz.copyOf(), gainsDb.copyOf())
+        val state = stickyState
+        val engines = handles.values.filter { it.deckId == deckId }
+        for (engine in engines) {
+            try {
+                applyEqForEngine(engine.handle, deckId, state)
+            } catch (t: Throwable) {
+                Log.w(TAG, "setDjEqOverlay failed deck=$deckId handle=${engine.handle}", t)
+                if (previous == null) djEqOverlays.remove(deckId)
+                else djEqOverlays[deckId] = previous
+                engines.forEach { registered ->
+                    runCatching { applyEqForEngine(registered.handle, deckId, state) }
+                }
+                return false
+            }
+        }
+        return true
+    }
+
+    @JvmStatic
+    @Synchronized
+    fun clearDjEqOverlay(deckId: String): Boolean {
+        if (deckId !in setOf("A", "B")) return false
+        val previous = djEqOverlays.remove(deckId)
+        val state = stickyState
+        val engines = handles.values.filter { it.deckId == deckId }
+        for (engine in engines) {
+            try {
+                applyEqForEngine(engine.handle, deckId, state)
+            } catch (t: Throwable) {
+                Log.w(TAG, "clearDjEqOverlay failed deck=$deckId handle=${engine.handle}", t)
+                if (previous != null) djEqOverlays[deckId] = previous
+                engines.forEach { registered ->
+                    runCatching { applyEqForEngine(registered.handle, deckId, state) }
+                }
+                return false
+            }
+        }
+        return true
+    }
+
+    /** Independent DJ filter: 0=bypass, 3=low-pass, 4=high-pass. */
+    @JvmStatic
+    @Synchronized
+    fun setDjDeckFilter(deckId: String, type: Int, cutoffHz: Double): Boolean {
+        if (deckId !in setOf("A", "B") || type !in setOf(0, 3, 4) ||
+            !cutoffHz.isFinite() || cutoffHz !in 40.0..18000.0
+        ) return false
+        val previous = djDeckFilters[deckId]
+        if (type == 0) djDeckFilters.remove(deckId)
+        else djDeckFilters[deckId] = DeckFilter(type, cutoffHz)
+        val state = stickyState
+        val engines = handles.values.filter { it.deckId == deckId }
+        for (engine in engines) {
+            try {
+                applyEqForEngine(engine.handle, deckId, state)
+            } catch (t: Throwable) {
+                Log.w(TAG, "setDjDeckFilter failed deck=$deckId handle=${engine.handle}", t)
+                if (previous == null) djDeckFilters.remove(deckId) else djDeckFilters[deckId] = previous
+                engines.forEach { registered -> runCatching { applyEqForEngine(registered.handle, deckId, state) } }
+                return false
+            }
+        }
+        return true
+    }
+
+    @JvmStatic
+    @Synchronized
+    fun clearDjDeckFilter(deckId: String): Boolean = setDjDeckFilter(deckId, 0, 1000.0)
+
     @JvmStatic
     @Synchronized
     fun clearAllTemporaryEqOverlays() {
@@ -856,33 +955,61 @@ object DspEngineRegistry {
         clearTemporaryEqOverlay("standby")
     }
 
+    /**
+     * Service teardown is not a normal DJ-session exit: remove process-local
+     * DJ overlays even if a native processor is already failing or retiring.
+     * Reapply the non-DJ sticky curve to any still-registered physical deck.
+     */
+    @JvmStatic
+    @Synchronized
+    fun resetDjDeckOverlaysForServiceTeardown() {
+        val state = stickyState
+        for (deckId in listOf("A", "B")) {
+            djEqOverlays.remove(deckId)
+            djDeckFilters.remove(deckId)
+            handles.values.filter { it.deckId == deckId }.forEach { engine ->
+                runCatching { applyEqForEngine(engine.handle, deckId, state) }
+                    .onFailure { error ->
+                        Log.w(TAG, "resetDjDeckOverlaysForServiceTeardown failed deck=$deckId handle=${engine.handle}", error)
+                    }
+            }
+        }
+    }
+
     private fun applyEqForEngine(handle: Long, deckId: String, state: StickyState) {
         val base = state.gainsDb
-        val overlay = temporaryEqOverlays[deckId]
-        if (overlay == null) {
-            val count = base?.size ?: 0
-            nativeApi.setParametricEqBands(
-                handle,
-                state.centersHz?.map { it.toFloat() }?.toFloatArray()
-                    ?: defaultCenters(count).map { it.toFloat() }.toFloatArray(),
-                base?.map { it.toFloat() }?.toFloatArray() ?: FloatArray(0),
-                state.eqQ ?: defaultEqQ(count),
-                state.eqTypes ?: IntArray(count),
-                true,
-            )
-            return
+        val temporaryOverlay = temporaryEqOverlays[deckId]
+        val djOverlay = djEqOverlays[deckId]
+        val filter = djDeckFilters[deckId]
+        nativeApi.setPreamp(handle, effectivePreampForEngine(state, deckId))
+
+        // Keep the full 31-band Player/DJ EQ grid and append one dedicated
+        // filter biquad. DSP capacity is 32, so no existing EQ band is sacrificed.
+        val count = base?.size?.takeIf { it > 0 } ?: 31
+        val centers = state.centersHz?.takeIf { base != null && it.size >= count }
+            ?.copyOf(count) ?: defaultCenters(count)
+        val hasFilter = filter != null
+        val total = count + if (hasFilter) 1 else 0
+        val frequencies = FloatArray(total)
+        val gains = FloatArray(total)
+        val qs = FloatArray(total)
+        val types = IntArray(total)
+        for (index in 0 until count) {
+            frequencies[index] = centers[index].toFloat()
+            gains[index] = ((base?.getOrNull(index) ?: 0.0) +
+                (temporaryOverlay?.let { interpolateDb(it, centers[index]) } ?: 0.0) +
+                (djOverlay?.let { interpolateDb(it, centers[index]) } ?: 0.0))
+                .coerceIn(-24.0, 24.0).toFloat()
+            qs[index] = state.eqQ?.getOrNull(index) ?: if (count >= 24) 4.3f else 1.4f
+            types[index] = state.eqTypes?.getOrNull(index) ?: 0
         }
-        if (base == null || base.isEmpty()) {
-            nativeApi.setParametricEqBands(handle, overlay.centersHz.map { it.toFloat() }.toFloatArray(), overlay.gainsDb.map { it.toFloat() }.toFloatArray(), defaultEqQ(overlay.gainsDb.size), IntArray(overlay.gainsDb.size), true)
-            return
+        if (filter != null) {
+            frequencies[count] = filter.cutoffHz.toFloat()
+            gains[count] = 0f
+            qs[count] = 0.707f
+            types[count] = filter.type
         }
-        val persistentGains = base
-        val centers = state.centersHz?.takeIf { it.size >= persistentGains.size }?.copyOf(persistentGains.size)
-            ?: defaultCenters(persistentGains.size)
-        val combined = DoubleArray(persistentGains.size) { index ->
-            (persistentGains[index] + interpolateDb(overlay, centers[index])).coerceIn(-24.0, 24.0)
-        }
-        nativeApi.setParametricEqBands(handle, centers.map { it.toFloat() }.toFloatArray(), combined.map { it.toFloat() }.toFloatArray(), state.eqQ ?: defaultEqQ(combined.size), state.eqTypes ?: IntArray(combined.size), true)
+        nativeApi.setParametricEqBands(handle, frequencies, gains, qs, types, true)
     }
 
     private fun interpolateDb(overlay: EqOverlay, frequencyHz: Double): Double {
@@ -914,6 +1041,46 @@ object DspEngineRegistry {
     private fun effectivePreamp(state: StickyState): Double =
         (state.preamp * if (state.dvcEnabled) 1.0 else state.linearGain).coerceIn(0.0, 4.0)
 
+    /**
+     * DJ EQ is a boost-capable filter stage. Reserve 1 dB of additional
+     * inter-sample margin and attenuate the deck preamp by the largest positive
+     * DJ-band gain before the EQ stage. This keeps bass boosts from exceeding
+     * digital full scale without relying on the optional peak limiter.
+     */
+    private fun effectivePreampForEngine(state: StickyState, deckId: String): Double {
+        val djOverlay = djEqOverlays[deckId]
+            ?: return effectivePreamp(state)
+
+        // Headroom must cover the curve the DSP actually receives, not just
+        // the three DJ knob values. Player EQ and a live transition overlay
+        // are summed into the same 31-band bank before the DJ overlay is added.
+        val base = state.gainsDb
+        val count = base?.size?.takeIf { it > 0 } ?: 31
+        val centers = state.centersHz?.takeIf { base != null && it.size >= count }
+            ?.copyOf(count) ?: defaultCenters(count)
+        val temporaryOverlay = temporaryEqOverlays[deckId]
+        var maxCompositeBoostDb = 0.0
+        for (index in 0 until count) {
+            val frequencyHz = centers[index]
+            val compositeGainDb = (
+                (base?.getOrNull(index) ?: 0.0) +
+                    (temporaryOverlay?.let { interpolateDb(it, frequencyHz) } ?: 0.0) +
+                    (interpolateDb(djOverlay, frequencyHz))
+                ).coerceIn(-24.0, 24.0)
+            maxCompositeBoostDb = maxOf(maxCompositeBoostDb, compositeGainDb)
+        }
+
+        // Keep 1 dB of inter-sample margin above the largest combined band
+        // gain. The calculation is per physical deck and never touches the
+        // normal Player path when no DJ EQ overlay is installed.
+        val safetyMarginDb = if (maxCompositeBoostDb > 0.0) 1.0 else 0.0
+        val headroomLinear = Math.pow(
+            10.0,
+            -(maxCompositeBoostDb + safetyMarginDb) / 20.0,
+        )
+        return (effectivePreamp(state) * headroomLinear).coerceIn(0.0, 4.0)
+    }
+
     private fun applyStickyToHandle(handle: Long, deckId: String): Boolean {
         val state = stickyState
         try {
@@ -921,7 +1088,7 @@ object DspEngineRegistry {
             nativeApi.setProcessingEnabled(handle, state.dspEnabled)
             nativeApi.setDvc(handle, state.dvcEnabled, state.dvcDb, state.dvcSmoothing, state.dvcSmoothingMs)
             val gains = state.gainsDb
-            if (gains != null && gains.isNotEmpty()) {
+            if (gains != null && gains.isNotEmpty() || temporaryEqOverlays[deckId] != null || djEqOverlays[deckId] != null || djDeckFilters[deckId] != null) {
                 applyEqForEngine(handle, deckId, state)
             } else {
                 // With no persistent curve, a deck-local overlay can still
@@ -943,7 +1110,7 @@ object DspEngineRegistry {
             }
             nativeApi.setSpeakerMode(handle, state.speakerMode)
             nativeApi.setVirtualBass(handle, state.virtualBass)
-            nativeApi.setPreamp(handle, effectivePreamp(state))
+            nativeApi.setPreamp(handle, effectivePreampForEngine(state, deckId))
             nativeApi.setLimiterCeiling(handle, state.limiterHigh, state.limiterLow)
             nativeApi.setCrossoverHz(handle, state.crossoverHz)
             nativeApi.setLimiterConfig(handle, state.limiterEnabled, state.limiterMode, state.limiterThresholdDb, state.limiterReleaseMs, state.limiterAttackMs, state.limiterLookaheadMs, state.limiterKneeDb)

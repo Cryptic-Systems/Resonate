@@ -2,6 +2,8 @@
 #include <android/log.h>
 
 #include "dsp_engine.h"
+#include "core/track_scan_session.h"
+#include "core/track_analysis_cache.h"
 
 #include <algorithm>
 #include <array>
@@ -11,12 +13,16 @@
 #include <cstdint>
 #include <mutex>
 #include <vector>
+#include <string>
 #include <new>
 
 #define LOG_TAG "DspEngineJni"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 namespace {
+
+std::mutex gTrackCacheMutex;
+dsp::AdaptiveTrackAnalysisCache gTrackAnalysisCache{512};
 
 constexpr int kMaxFrames = 4096;
 constexpr int kMaxChannels = 2;
@@ -750,13 +756,15 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeProbeMaxBassGainDb(
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_aetherion_resonate_dsp_DspEngineJni_nativeGetMeters(
         JNIEnv* env, jclass, jlong value) {
-    jfloatArray arr = env->NewFloatArray(12);
+    jfloatArray arr = env->NewFloatArray(20);
     if (!arr) return nullptr;
-    float vals[12] = {-160.f, -160.f, -160.f, -160.f, 0.f, -160.f,
-                      0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+    float vals[20] = {-160.f, -160.f, -160.f, -160.f, 0.f, -160.f,
+                      0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+                      -120.f, -18.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
     if (auto* h = fromHandle(value); h && h->engine) {
         DspLevelMeter levels{};
         DspLimiterMeter limiter{};
+        DspAutoGainMeter autoGain{};
         if (dsp_get_level_meter(h->engine, &levels) == DSP_OK) {
             vals[0] = levels.in_peak_db;
             vals[1] = levels.in_true_peak_db;
@@ -770,11 +778,21 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeGetMeters(
             vals[7] = limiter.gr_peak_db;
         }
         vals[8] = dsp_auto_bass_get_applied_db(h->engine);
-        vals[9] = dsp_auto_gain_get_applied_db(h->engine);
         vals[10] = dsp_auto_preamp_get_applied_db(h->engine);
         vals[11] = dsp_auto_vb_get_applied(h->engine);
+        if (dsp_auto_gain_get_meter(h->engine, &autoGain) == DSP_OK) {
+            vals[9] = autoGain.applied_gain_db;
+            vals[12] = autoGain.pre_dvc_peak_db;
+            vals[13] = autoGain.target_rms_db;
+            vals[14] = autoGain.rms_error_db;
+            vals[15] = autoGain.constrained_target_db;
+            vals[16] = autoGain.peak_gain_cap_db;
+            vals[17] = autoGain.applied_gain_db;
+            vals[18] = static_cast<float>(autoGain.peak_limited);
+            vals[19] = static_cast<float>(autoGain.silence_gate_active);
+        }
     }
-    env->SetFloatArrayRegion(arr, 0, 12, vals);
+    env->SetFloatArrayRegion(arr, 0, 20, vals);
     return arr;
 }
 
@@ -807,4 +825,139 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeResetStats(
         h->overruns.store(0, std::memory_order_relaxed);
         h->lastFrames.store(0, std::memory_order_relaxed);
     }
+}
+
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeAnalyzeTrackMetrics(
+        JNIEnv* env, jclass, jstring stableId, jlong fileSizeBytes,
+        jlong modifiedTimeNs, jfloatArray rmsValues, jfloatArray peakValues,
+        jfloatArray bassValues, jfloatArray durations) {
+    if (!stableId || !rmsValues || !peakValues || !bassValues || !durations)
+        return nullptr;
+    const jsize count = env->GetArrayLength(rmsValues);
+    if (count <= 0 || count > 128 ||
+        env->GetArrayLength(peakValues) != count ||
+        env->GetArrayLength(bassValues) != count ||
+        env->GetArrayLength(durations) != count) return nullptr;
+
+    const char* chars = env->GetStringUTFChars(stableId, nullptr);
+    if (!chars) return nullptr;
+    dsp::TrackCacheIdentity identity{};
+    identity.stable_id = chars;
+    identity.file_size_bytes = fileSizeBytes > 0
+        ? static_cast<uint64_t>(fileSizeBytes) : 0;
+    identity.modified_time_ns = modifiedTimeNs > 0
+        ? static_cast<int64_t>(modifiedTimeNs) : 0;
+    env->ReleaseStringUTFChars(stableId, chars);
+    if (!identity.valid()) return nullptr;
+
+    std::vector<jfloat> rms(static_cast<size_t>(count));
+    std::vector<jfloat> peak(static_cast<size_t>(count));
+    std::vector<jfloat> bass(static_cast<size_t>(count));
+    std::vector<jfloat> duration(static_cast<size_t>(count));
+    env->GetFloatArrayRegion(rmsValues, 0, count, rms.data());
+    env->GetFloatArrayRegion(peakValues, 0, count, peak.data());
+    env->GetFloatArrayRegion(bassValues, 0, count, bass.data());
+    env->GetFloatArrayRegion(durations, 0, count, duration.data());
+
+    // Include measured PCM values in the revision key. This still detects
+    // changed content when MediaStore does not expose filesystem timestamps.
+    uint64_t fingerprint = 1469598103934665603ULL;
+    const std::vector<jfloat>* metricArrays[] = {&rms, &peak, &bass, &duration};
+    for (const auto* values : metricArrays) {
+        const auto* bytes = reinterpret_cast<const unsigned char*>(values->data());
+        const size_t byteCount = values->size() * sizeof(jfloat);
+        for (size_t i = 0; i < byteCount; ++i) {
+            fingerprint ^= bytes[i];
+            fingerprint *= 1099511628211ULL;
+        }
+    }
+    identity.content_fingerprint = std::to_string(fingerprint);
+    for (jsize i = 0; i < count; ++i) {
+        if (!std::isfinite(duration[static_cast<size_t>(i)]) ||
+            duration[static_cast<size_t>(i)] <= 0.f ||
+            !std::isfinite(rms[static_cast<size_t>(i)]) ||
+            !std::isfinite(peak[static_cast<size_t>(i)]) ||
+            !std::isfinite(bass[static_cast<size_t>(i)])) return nullptr;
+    }
+
+    dsp::TrackScanSnapshot snapshot{};
+    bool cacheHit = false;
+    {
+        std::lock_guard<std::mutex> lock(gTrackCacheMutex);
+        cacheHit = gTrackAnalysisCache.lookup(identity, snapshot);
+    }
+    if (!cacheHit) {
+        dsp::AdaptiveTrackScanSession session;
+        double expectedSeconds = 0.0;
+        for (jsize i = 0; i < count; ++i) {
+            if (!std::isfinite(duration[static_cast<size_t>(i)]) ||
+                duration[static_cast<size_t>(i)] <= 0.f ||
+                !std::isfinite(rms[static_cast<size_t>(i)]) ||
+                !std::isfinite(peak[static_cast<size_t>(i)]) ||
+                !std::isfinite(bass[static_cast<size_t>(i)])) return nullptr;
+            expectedSeconds += duration[static_cast<size_t>(i)];
+        }
+        if (!session.begin(expectedSeconds)) return nullptr;
+        for (jsize i = 0; i < count; ++i) {
+            if (!session.add_block(rms[static_cast<size_t>(i)],
+                    peak[static_cast<size_t>(i)], bass[static_cast<size_t>(i)],
+                    duration[static_cast<size_t>(i)])) return nullptr;
+        }
+        if (!session.finalize()) return nullptr;
+        snapshot = session.snapshot();
+        {
+            std::lock_guard<std::mutex> lock(gTrackCacheMutex);
+            gTrackAnalysisCache.store(identity, snapshot);
+        }
+    }
+
+    // Fixed schema: cacheHit, duration, active, silence, integratedRms,
+    // bassRms, bassProminence, peak, meanCrest, crestP90, loudnessRange,
+    // highCrestRatio, sufficientData, findingCount, then six trait/confidence pairs.
+    jfloat values[26]{};
+    const auto& a = snapshot.analysis;
+    values[0] = cacheHit ? 1.f : 0.f;
+    values[1] = static_cast<float>(a.duration_seconds);
+    values[2] = static_cast<float>(a.active_seconds);
+    values[3] = static_cast<float>(a.silence_seconds);
+    values[4] = a.integrated_rms_db;
+    values[5] = a.bass_rms_db;
+    values[6] = a.bass_prominence_db;
+    values[7] = a.sample_peak_db;
+    values[8] = a.mean_crest_db;
+    values[9] = a.crest_p90_db;
+    values[10] = a.loudness_range_db;
+    values[11] = a.high_crest_seconds_ratio;
+    values[12] = snapshot.intelligence.sufficient_data ? 1.f : 0.f;
+    values[13] = static_cast<float>(snapshot.intelligence.finding_count);
+    for (std::size_t i = 0; i < snapshot.intelligence.finding_count && i < 6; ++i) {
+        values[14 + i * 2] = static_cast<float>(
+            static_cast<uint32_t>(snapshot.intelligence.findings[i].trait));
+        values[15 + i * 2] = snapshot.intelligence.findings[i].confidence;
+    }
+    jfloatArray result = env->NewFloatArray(26);
+    if (!result) return nullptr;
+    env->SetFloatArrayRegion(result, 0, 26, values);
+    return result;
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeGetTrackCacheStats(
+        JNIEnv* env, jclass) {
+    jlong values[5]{};
+    {
+        std::lock_guard<std::mutex> lock(gTrackCacheMutex);
+        const auto stats = gTrackAnalysisCache.stats();
+        values[0] = static_cast<jlong>(stats.entries);
+        values[1] = static_cast<jlong>(stats.capacity);
+        values[2] = static_cast<jlong>(stats.hits);
+        values[3] = static_cast<jlong>(stats.misses);
+        values[4] = static_cast<jlong>(stats.stale_invalidations + stats.evictions);
+    }
+    jlongArray result = env->NewLongArray(5);
+    if (!result) return nullptr;
+    env->SetLongArrayRegion(result, 0, 5, values);
+    return result;
 }

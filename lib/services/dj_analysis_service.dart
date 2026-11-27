@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/dj_analysis.dart';
 import '../models/song.dart';
 import 'database_helper.dart';
+import 'psychic_track_analysis_bridge.dart';
 import 'dj_bpm_estimator.dart';
 import '../dj_engine/analysis/dj_pcm_profile_analyzer.dart';
 import '../dj_engine/analysis/dj_profile_serializer.dart';
@@ -21,7 +22,6 @@ class DjAnalysisService {
 
   final DatabaseHelper _db;
   final DjBpmEstimator _estimator;
-  final DjPcmProfileAnalyzer _profileAnalyzer = const DjPcmProfileAnalyzer();
   final DjProfileSerializer _profileSerializer = const DjProfileSerializer();
   final Map<String, DjTrackProfile> _profileMemory = {};
   final Map<String, DjAnalysis> _memory = {};
@@ -79,6 +79,37 @@ class DjAnalysisService {
       debugPrint('DjAnalysisService.getProfile: $e');
       return null;
     }
+  }
+
+  /// Psychic's advisory whole-track report persisted alongside the DJ profile.
+  /// Null means the profile predates Psychic integration or the scan lacked data.
+  Future<Map<String, dynamic>?> getPsychicAnalysis(String songId) async {
+    final profile = await getProfile(songId);
+    final report = profile?.psychicAnalysis;
+    return report == null ? null : Map<String, dynamic>.from(report);
+  }
+
+  /// Whether the persisted profile contains measured waveform coverage.
+  /// Missing segments are a cache capability gap, not evidence of silence.
+  Future<bool> hasWaveformProfile(String songId) async {
+    final profile = await getProfile(songId);
+    return profile != null && profile.waveformSegments.isNotEmpty;
+  }
+
+  /// True when this profile has a persisted Psychic attempt, including a
+  /// report that explicitly records insufficient sampled coverage.
+  Future<bool> hasPsychicReport(String songId) async {
+    if (!Platform.isAndroid) return true;
+    return await getPsychicAnalysis(songId) != null;
+  }
+
+  /// True only when Psychic has a usable, persisted report for this track.
+  Future<bool> hasPsychicAnalysis(String songId) async {
+    if (!await hasPsychicReport(songId)) return false;
+    final report = await getPsychicAnalysis(songId);
+    if (report == null || report['sufficientData'] != true) return false;
+    final sampled = report['sampledDurationSeconds'];
+    return sampled is num && sampled.isFinite && sampled >= 8.0;
   }
 
   bool _profileIsValid(DjTrackProfile profile, DjAnalysis? analysis) {
@@ -152,9 +183,14 @@ class DjAnalysisService {
   /// Ensure we have a cached row. Safe to call from preload / idle (async).
   ///
   /// Re-analyzes when [force] is true, version is stale, or file identity changed.
-  Future<DjAnalysis> analyzeSong(Song song, {bool force = false}) async {
+  Future<DjAnalysis> analyzeSong(
+    Song song, {
+    bool force = false,
+    bool Function()? shouldContinue,
+  }) async {
     final generation = _analysisGeneration;
-    bool cancelled() => generation != _analysisGeneration;
+    bool cancelled() =>
+        generation != _analysisGeneration || !(shouldContinue?.call() ?? true);
     if (!force) {
       final existing = await getAnalysis(song.id);
       if (existing != null) {
@@ -316,7 +352,7 @@ class DjAnalysisService {
           pcm: decoded.pcm,
           sampleRate: decoded.sampleRate,
           channels: decoded.channels,
-          startMs: startMs,
+          startMs: decoded.startMs,
           role: role,
         ),
       );
@@ -334,6 +370,9 @@ class DjAnalysisService {
           : (startMs >= durationMs - windowMs - 1000 ? 'end' : 'mid');
       await addWindow(startMs, role, sampleSeconds);
       if (isCancelled?.call() ?? false) return null;
+      // Yield between bounded decoder windows so UI and playback work can
+      // retain scheduling priority on lower-powered devices.
+      await Future<void>.delayed(const Duration(milliseconds: 90));
     }
 
     if (windows.isEmpty) {
@@ -356,14 +395,28 @@ class DjAnalysisService {
       );
     }
 
-    final profile = _profileAnalyzer.analyze(
-      songId: song.id,
-      durationMs: durationMs,
-      windows: windows,
-      maxSafeBassDb: maxSafeBassDb,
-      analysisVersion: DjAnalysis.currentVersion,
+    if (isCancelled?.call() ?? false) return null;
+    // PCM profiling is CPU-bound. Run it on a worker isolate so the UI
+    // isolate remains responsive while library analysis is in progress.
+    final profile = await compute(
+      _analyzeDjProfileInBackground,
+      <String, dynamic>{
+        'songId': song.id,
+        'durationMs': durationMs,
+        'windows': windows,
+        'maxSafeBassDb': maxSafeBassDb,
+        'analysisVersion': DjAnalysis.currentVersion,
+      },
+      debugLabel: 'dj_pcm_profile_analysis',
     );
-    await saveProfile(profile);
+    if (isCancelled?.call() ?? false) return null;
+    final psychicAnalysis =
+        await PsychicTrackAnalysisBridge.analyze(song, windows);
+    if (isCancelled?.call() ?? false) return null;
+    final enrichedProfile = psychicAnalysis == null
+        ? profile
+        : profile.copyWith(psychicAnalysis: psychicAnalysis);
+    await saveProfile(enrichedProfile);
 
     final bpm = profile.beatGrid.bpm ?? legacy?.bpm ?? 0;
     final bpmConfidence = profile.hasTempo
@@ -451,4 +504,17 @@ class DjAnalysisService {
     _memory.clear();
     _profileMemory.clear();
   }
+}
+
+
+/// Isolate entry point for CPU-heavy PCM profiling. Keep this top-level so
+/// Flutter can execute it away from the UI isolate.
+DjTrackProfile _analyzeDjProfileInBackground(Map<String, dynamic> args) {
+  return const DjPcmProfileAnalyzer().analyze(
+    songId: args['songId'] as String,
+    durationMs: args['durationMs'] as int,
+    windows: (args['windows'] as List).cast<DjDecodedPcmWindow>(),
+    maxSafeBassDb: args['maxSafeBassDb'] as double?,
+    analysisVersion: args['analysisVersion'] as int,
+  );
 }

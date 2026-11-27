@@ -170,6 +170,23 @@ class DspAnalysisMetrics {
           (maxSafeBassDb!.isFinite && maxSafeBassDb! >= 0 && maxSafeBassDb! <= 18));
 }
 
+/// A measured peak-envelope slice from one decoded PCM window.
+/// The interval is track-relative and does not imply coverage outside it.
+class DjWaveformSegment {
+  final int startMs;
+  final int endMs;
+  /// Normalized absolute peak per time bin, in the inclusive range [0, 1].
+  final List<double> peaks;
+
+  const DjWaveformSegment({
+    required this.startMs,
+    required this.endMs,
+    required this.peaks,
+  });
+
+  int get durationMs => (endMs - startMs).clamp(0, 1 << 30);
+}
+
 class DjTrackProfile {
   final String songId;
   final int? durationMs;
@@ -185,8 +202,10 @@ class DjTrackProfile {
   final DspAnalysisMetrics dspAnalysis;
   final DjTransitionMarkers transitions;
   final List<DjSilenceRegion> silenceRegions;
+  final List<DjWaveformSegment> waveformSegments;
   final double analysisConfidence;
   final int analysisVersion;
+  final Map<String, dynamic>? psychicAnalysis;
 
   const DjTrackProfile({
     required this.songId,
@@ -203,9 +222,33 @@ class DjTrackProfile {
     this.dspAnalysis = const DspAnalysisMetrics(),
     this.transitions = const DjTransitionMarkers(),
     this.silenceRegions = const [],
+    this.waveformSegments = const [],
     this.analysisConfidence = 0,
     this.analysisVersion = 1,
+    this.psychicAnalysis,
   });
+
+  DjTrackProfile copyWith({Map<String, dynamic>? psychicAnalysis}) =>
+      DjTrackProfile(
+        songId: songId,
+        durationMs: durationMs,
+        fingerprint: fingerprint,
+        beatGrid: beatGrid,
+        keyRoot: keyRoot,
+        keyMode: keyMode,
+        keyConfidence: keyConfidence,
+        harmonicChanges: harmonicChanges,
+        sections: sections,
+        energyCurve: energyCurve,
+        spectrum: spectrum,
+        dspAnalysis: dspAnalysis,
+        transitions: transitions,
+        silenceRegions: silenceRegions,
+        waveformSegments: waveformSegments,
+        analysisConfidence: analysisConfidence,
+        analysisVersion: analysisVersion,
+        psychicAnalysis: psychicAnalysis ?? this.psychicAnalysis,
+      );
 
   bool get hasKey => keyRoot != null && keyRoot! >= 0 && keyRoot! < 12 && keyMode != null;
   bool get hasTempo => beatGrid.usable;

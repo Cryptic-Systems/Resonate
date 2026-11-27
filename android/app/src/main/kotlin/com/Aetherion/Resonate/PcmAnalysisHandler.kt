@@ -5,6 +5,7 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
 
@@ -97,6 +98,7 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
             pcmExecutor.execute {
                 var extractor: MediaExtractor? = null
                 var codec: MediaCodec? = null
+                var sourcePfd: ParcelFileDescriptor? = null
                 try {
                     extractor = MediaExtractor()
                     val uri = Uri.parse(uriString)
@@ -109,11 +111,20 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
                     } catch (_: Exception) {}
                     if (!opened) {
                         try {
-                            activity.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                                extractor.setDataSource(pfd.fileDescriptor)
+                            // MediaExtractor may continue reading the descriptor
+                            // throughout decode. Keep it open until extractor release;
+                            // closing it immediately after setDataSource can truncate
+                            // or fail provider-backed sources on some Android builds.
+                            sourcePfd = activity.contentResolver.openFileDescriptor(uri, "r")
+                            val descriptor = sourcePfd?.fileDescriptor
+                            if (descriptor != null) {
+                                extractor.setDataSource(descriptor)
                                 opened = true
                             }
-                        } catch (_: Exception) {}
+                        } catch (_: Exception) {
+                            try { sourcePfd?.close() } catch (_: Exception) {}
+                            sourcePfd = null
+                        }
                     }
                     if (!opened) {
                         try { extractor.setDataSource(uriString); opened = true } catch (_: Exception) {}
@@ -130,7 +141,7 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
                     extractor.selectTrack(audioTrack)
                     if (startMs > 0L) {
                         try {
-                            extractor.seekTo(startMs * 1000L, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                            extractor.seekTo(startMs * 1000L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
                         } catch (_: Exception) {}
                     }
                     val mime = format.getString(MediaFormat.KEY_MIME) ?: run {
@@ -138,15 +149,26 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
                     }
                     val sampleRate = if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) format.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 44100
                     val channelCount = if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
+                    if (sampleRate !in 8000..192000 || channelCount !in 1..8) {
+                        activity.runOnUiThread { result.success(null) }
+                        return@execute
+                    }
+                    // Decoder output can differ from the compressed source format
+                    // (for example, a codec may downmix or resample). Report the
+                    // actual PCM format consumed by all Dart-side analyzers.
+                    var outputSampleRate = sampleRate
+                    var outputChannelCount = channelCount
                     codec = MediaCodec.createDecoderByType(mime)
                     codec.configure(format, null, null, 0)
                     codec.start()
-                    val maxUs = (maxSeconds.coerceIn(4.0, 25.0) * 1_000_000L).toLong()
-                    val maxPcmBytes = (sampleRate * channelCount * 2 * maxSeconds.coerceIn(4.0, 25.0)).toInt().coerceIn(64 * 1024, 3 * 1024 * 1024)
+                    val boundedSeconds = maxSeconds.coerceIn(4.0, 25.0)
+                    val maxUs = (boundedSeconds * 1_000_000.0).toLong()
+                    var maxPcmBytes = pcmByteBudget(sampleRate, channelCount, boundedSeconds)
                     val outBytes = java.io.ByteArrayOutputStream(maxPcmBytes.coerceAtMost(512 * 1024))
                     val info = MediaCodec.BufferInfo()
                     var inputDone = false
                     var outputDone = false
+                    var firstOutputPresentationTimeUs: Long? = null
                     var safety = 0
                     while (!outputDone &&
                         safety < 800 &&
@@ -172,14 +194,37 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
                             }
                         }
                         val outIndex = codec.dequeueOutputBuffer(info, 100)
-                        if (outIndex >= 0) {
-                            if (info.size > 0 && info.presentationTimeUs <= maxUs) {
+                        if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                            val outputFormat = codec.outputFormat
+                            if (outputFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                                outputSampleRate = outputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                            }
+                            if (outputFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                                outputChannelCount = outputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                            }
+                            if (outputSampleRate !in 8000..192000 || outputChannelCount !in 1..8) {
+                                outputDone = true
+                            } else {
+                                // Recalculate against the PCM format actually
+                                // emitted by this codec (not the compressed input
+                                // format), otherwise resampling can truncate windows.
+                                maxPcmBytes = pcmByteBudget(
+                                    outputSampleRate, outputChannelCount, boundedSeconds,
+                                )
+                            }
+                        } else if (outIndex >= 0) {
+                            if (info.size > 0 && isPcmTimestampWithinRequestedWindow(
+                                    info.presentationTimeUs, startMs, maxUs,
+                                )) {
                                 val outBuf = codec.getOutputBuffer(outIndex)
                                 if (outBuf != null) {
                                     outBuf.position(info.offset)
                                     outBuf.limit(info.offset + info.size)
                                     val chunk = ByteArray(info.size)
                                     outBuf.get(chunk)
+                                    if (chunk.isNotEmpty() && firstOutputPresentationTimeUs == null) {
+                                        firstOutputPresentationTimeUs = info.presentationTimeUs
+                                    }
                                     val room = maxPcmBytes - outBytes.size()
                                     if (room > 0) outBytes.write(chunk, 0, minOf(chunk.size, room))
                                 }
@@ -194,9 +239,23 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
                         return@execute
                     }
                     val pcm = outBytes.toByteArray()
-                    if (pcm.size < sampleRate) { activity.runOnUiThread { result.success(null) }; return@execute }
+                    val pcmFrameBytes = outputChannelCount * 2 // signed PCM16
+                    val minimumPcmBytes = outputSampleRate.toLong() * pcmFrameBytes / 10L
+                    if (outputSampleRate !in 8000..192000 ||
+                        outputChannelCount !in 1..8 ||
+                        pcm.size.toLong() < minimumPcmBytes ||
+                        pcm.size % pcmFrameBytes != 0
+                    ) {
+                        activity.runOnUiThread { result.success(null) }
+                        return@execute
+                    }
                     activity.runOnUiThread {
-                        result.success(hashMapOf("sampleRate" to sampleRate, "channels" to channelCount, "pcm" to pcm))
+                        result.success(hashMapOf(
+                            "sampleRate" to outputSampleRate,
+                            "channels" to outputChannelCount,
+                            "startMs" to (firstOutputPresentationTimeUs?.div(1000L) ?: startMs),
+                            "pcm" to pcm,
+                        ))
                     }
                 } catch (e: Exception) {
                     activity.runOnUiThread { result.success(null) }
@@ -204,9 +263,17 @@ internal class PcmAnalysisHandler(private val activity: Activity) {
                     try { codec?.stop() } catch (_: Exception) {}
                     try { codec?.release() } catch (_: Exception) {}
                     try { extractor?.release() } catch (_: Exception) {}
+                    try { sourcePfd?.close() } catch (_: Exception) {}
                 }
             }
         }
+
+    private fun pcmByteBudget(sampleRate: Int, channels: Int, seconds: Double): Int {
+        val requested = (sampleRate.toLong() * channels.toLong() * 2L * seconds).toLong()
+        // A bounded 24 MiB window covers 25 seconds of 192 kHz stereo PCM16
+        // while preventing malformed provider metadata from allocating without limit.
+        return requested.coerceIn(64L * 1024L, 24L * 1024L * 1024L).toInt()
+    }
 
     fun release() {
         cancellationGeneration += 1L

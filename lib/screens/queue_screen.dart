@@ -243,6 +243,7 @@ class _QueueScreenState extends State<QueueScreen> {
               const Padding(
                 padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
                 child: DjModeStatusBanner(
+                  playerFacing: true,
                   contextLabel:
                       'Next handoff may beat-align and adjust crossfade length.',
                 ),
