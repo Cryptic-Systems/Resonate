@@ -2464,6 +2464,9 @@ void main() {
       await crossfade.ready;
       expect(provider.crossfadeEnabled, isTrue);
       await provider.setPlaybackSpeedForFeatures(1.15);
+      // Ignore the setup-time deck reset; this counter must observe the failed
+      // transition's own cancellation and speed restoration.
+      session.cancelledTransitionSpeedResetCount = 0;
       // Preload belongs to the lead-in window, not the fade-arm window.
       // At 2.4s remaining the ordinary 500ms crossfade is already too late
       // to request a fresh preload, so first place playback 10s from the end.
