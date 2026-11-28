@@ -375,7 +375,11 @@ extension MusicProviderMedia3 on MusicProvider {
       // so a fast-tempo track cannot end before the crossfade finishes.
       final activePlaybackSpeed =
           session.playbackSpeed.clamp(0.5, 2.0).toDouble();
-      final remainingPlaybackMs = (remainingMs / activePlaybackSpeed).floor();
+      final remainingPlaybackMs =
+          _crossfadeRuntime.wallTimeRemainingMilliseconds(
+        mediaTimeRemainingMs: remainingMs,
+        playbackSpeed: activePlaybackSpeed,
+      );
       if (remainingPlaybackMs < 1200) {
         // A standby deck that finishes preparing too close to the outgoing
         // track's end must not force a queue reload. Let the canonical Media3
