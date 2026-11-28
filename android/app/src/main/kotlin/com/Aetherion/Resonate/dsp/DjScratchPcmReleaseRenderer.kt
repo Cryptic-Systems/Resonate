@@ -67,6 +67,7 @@ internal class DjScratchPcmReleaseRenderer(
 
     private var track: Track? = null
     private var acceptedFrames = 0L
+    private var openedContract: Contract? = null
 
     val framesAcceptedByOutput: Long
         get() = acceptedFrames
@@ -109,6 +110,7 @@ internal class DjScratchPcmReleaseRenderer(
                 } else {
                     candidate.setVolume(contract.deckVolume)
                     track = candidate
+                    openedContract = contract
                     true
                 }
             }
@@ -129,7 +131,10 @@ internal class DjScratchPcmReleaseRenderer(
         scratchBuffer: ByteBuffer,
     ): Boolean {
         val output = track ?: return false
-        if (!tail.isSealed || tail.channelCount !in 1..2 ||
+        val contract = openedContract ?: return false
+        if (!tail.isSealed || !tail.hasValidTimestamps ||
+            tail.channelCount != contract.channelCount ||
+            tail.sampleRate != contract.sampleRate ||
             !scratchBuffer.isDirect || !scratchBuffer.hasRemaining()
         ) return false
         val bytesPerFrame = tail.channelCount * Short.SIZE_BYTES
@@ -138,6 +143,10 @@ internal class DjScratchPcmReleaseRenderer(
         ) return false
 
         while (tail.remainingFrames > 0) {
+            if (!routeStillMatches(output, contract)) {
+                close()
+                return false
+            }
             scratchBuffer.clear()
             val copiedFrames = tail.drainTo(scratchBuffer)
             if (copiedFrames <= 0) break
@@ -145,6 +154,10 @@ internal class DjScratchPcmReleaseRenderer(
             val chunkBytes = scratchBuffer.remaining()
             var writtenBytes = 0
             while (scratchBuffer.hasRemaining()) {
+                if (!routeStillMatches(output, contract)) {
+                    close()
+                    return false
+                }
                 val written = try {
                     output.write(scratchBuffer, scratchBuffer.remaining())
                 } catch (_: Throwable) {
@@ -156,7 +169,7 @@ internal class DjScratchPcmReleaseRenderer(
                 }
                 writtenBytes += written
             }
-            if (writtenBytes != chunkBytes) {
+            if (writtenBytes != chunkBytes || !routeStillMatches(output, contract)) {
                 close()
                 return false
             }
@@ -168,6 +181,7 @@ internal class DjScratchPcmReleaseRenderer(
     fun close() {
         val current = track ?: return
         track = null
+        openedContract = null
         runCatching { current.setVolume(0f) }
         runCatching { current.stop() }
         runCatching { current.release() }

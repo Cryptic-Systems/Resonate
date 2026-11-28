@@ -88,7 +88,7 @@ class DjScratchPcmReleaseRendererTest {
         assertTrue(fake.played)
         assertEquals(0.65f, fake.volume)
 
-        val tail = DjScratchReleaseTailBuffer(2, 16)
+        val tail = DjScratchReleaseTailBuffer(2, 16, 48_000)
         val pcm = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
         repeat(4) { pcm.putShort((it + 1).toShort()); pcm.putShort((it + 11).toShort()) }
         pcm.flip()

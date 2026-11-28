@@ -14,6 +14,7 @@ import java.nio.ByteOrder
 internal class DjScratchReleaseTailBuffer(
     val channelCount: Int,
     val capacityFrames: Int,
+    val sampleRate: Int = 0,
 ) {
     private val samples: ShortArray
     private val mediaTimesUs: LongArray
@@ -38,6 +39,7 @@ internal class DjScratchReleaseTailBuffer(
     init {
         require(channelCount in 1..2)
         require(capacityFrames in 1..MAX_CAPACITY_FRAMES)
+        require(sampleRate >= 0)
         samples = ShortArray(capacityFrames * channelCount)
         mediaTimesUs = LongArray(capacityFrames)
     }

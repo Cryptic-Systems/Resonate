@@ -49,7 +49,7 @@ internal class DjScratchReleaseTailCaptureProcessor(
         if (channels !in 1..2 || rate <= 0 || activeBuffer.get() != null) return false
         val capacity = (rate * DjScratchReleaseTailBuffer.DEFAULT_TAIL_MS / 1000)
             .coerceIn(1, DjScratchReleaseTailBuffer.MAX_CAPACITY_FRAMES)
-        val next = DjScratchReleaseTailBuffer(channels, capacity)
+        val next = DjScratchReleaseTailBuffer(channels, capacity, rate)
         sealedBuffer.set(null)
         return activeBuffer.compareAndSet(null, next)
     }
