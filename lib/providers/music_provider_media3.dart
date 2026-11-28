@@ -492,7 +492,8 @@ extension MusicProviderMedia3 on MusicProvider {
       });
       await session.crossfade(duration: Duration(milliseconds: durationMs));
 
-      var elapsedMs = 0;
+      var fadeElapsedMs = 0;
+      var activeElapsedMs = 0;
       var bassDuckCleared = preparation?.incomingBassDuckAmount == null;
       final bassDuckReleaseMs = (preparation?.incomingBassDuckDurationMs ??
               (durationMs ~/ 2))
@@ -518,12 +519,27 @@ extension MusicProviderMedia3 on MusicProvider {
           throw StateError('Media3 crossfade was cancelled before deck promotion.');
         }
         final now = DateTime.now();
+        final tickDeltaMs = now.difference(lastTick).inMilliseconds;
         if (session.isPlaying) {
-          elapsedMs += now.difference(lastTick).inMilliseconds;
+          // This is only a stall watchdog. It must not drive the fade or FX
+          // timeline because the incoming native decoder can buffer alone.
+          activeElapsedMs += tickDeltaMs;
         }
         lastTick = now;
+        if (session.crossfadeStatus == 'fading') {
+          fadeElapsedMs = _crossfadeRuntime.elapsedMillisecondsForNativeProgress(
+            progress: _media3ShadowState?.crossfadeProgress ?? 0.0,
+            durationMs: durationMs,
+          );
+        } else if (session.crossfadeStatus == 'completed') {
+          fadeElapsedMs = durationMs;
+        } else {
+          // Preparing/starting/paused transitions have not consumed native
+          // fade time yet. Resume and buffering are reflected by native progress.
+          fadeElapsedMs = 0;
+        }
         if (!stillOwnsTransition()) return;
-        if (!bassDuckCleared && elapsedMs >= bassDuckReleaseMs) {
+        if (!bassDuckCleared && fadeElapsedMs >= bassDuckReleaseMs) {
           await session.clearDeckEqOverlay(deck: 'standby');
           // Pause/Stop or a new queue selection can take ownership while the
           // native overlay clear is in flight. Do not let this stale transition
@@ -533,10 +549,10 @@ extension MusicProviderMedia3 on MusicProvider {
         }
         if (_djSfxEngaged) {
           await _tickDjClubFxSweep(
-            (elapsedMs / durationMs).clamp(0.0, 1.0).toDouble(),
+            (fadeElapsedMs / durationMs).clamp(0.0, 1.0).toDouble(),
           );
         }
-        if (elapsedMs > durationMs + 8000) {
+        if (activeElapsedMs > durationMs + 8000) {
           throw TimeoutException('Media3 native crossfade did not promote the incoming deck.');
         }
       }
