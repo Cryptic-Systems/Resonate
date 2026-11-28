@@ -59,6 +59,19 @@ class DjScratchRenderPolicyTest {
     }
 
     @Test
+    fun exposesCursorMediaTimestampAfterRenderedScratchBlock() {
+        val ring = DjScratchPcmRingBuffer(1_000, 1, 32)
+        ring.append(pcm16(0, 1_000, 2_000, 3_000, 4_000), 10_000L)
+        val input = pcm16(5_000, 6_000)
+        ring.append(input, 15_000L)
+        val output = ByteBuffer.allocate(input.remaining())
+        val policy = DjScratchRenderPolicy()
+
+        assertTrue(policy.render(input, output, ring, command(1L, true, 1.0, 12_000L)))
+        assertEquals(14_000L, policy.cursorMediaTimeUs(ring))
+    }
+
+    @Test
     fun releaseCrossfadesToLiveMediaAndThenReturnsToPassThrough() {
         val ring = DjScratchPcmRingBuffer(1_000, 1, 32)
         ring.append(pcm16(0, 1_000, 2_000, 3_000, 4_000), 10_000L)
