@@ -1508,6 +1508,7 @@ extension MusicProviderMedia3 on MusicProvider {
         _dspAnalysisHintGenerations[deckId] == generation &&
         (standby
             ? _preloadedNextSongId == song.id &&
+                _preloadedNextQueueIndex == _crossfadeTargetIndex &&
                 (_media3ShadowState?.activeDeckId ?? 'A') != deckId
             : currentSong?.id == song.id &&
                 (_media3ShadowState?.activeDeckId ?? 'A') == deckId);
