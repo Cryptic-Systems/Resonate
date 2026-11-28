@@ -2538,7 +2538,7 @@ void main() {
 
       for (var attempt = 0;
           attempt < 120 &&
-              !session.calls.contains('deckSpeeds:1.0:1.0');
+              !session.calls.contains('clearDeckEqOverlay:standby');
           attempt++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
