@@ -2446,7 +2446,7 @@ void main() {
       await session.states.close();
     });
 
-    test('fails over immediately when the native standby deck reports an error', () async {
+    test('native standby error preserves outgoing playback for canonical queue completion', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'crossfade_enabled': true,
         'crossfade_duration': 500.0,
@@ -2496,13 +2496,19 @@ void main() {
       }
       expect(session.calls, contains('crossfade:incoming_error'));
       for (var attempt = 0;
-          attempt < 100 && session.loadedIndex != 1;
+          attempt < 100 && session.cancelledTransitionSpeedResetCount == 0;
           attempt++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
-      expect(session.loadedIndex, 1,
-          reason: 'A failed standby deck must fall back to the selected queue item without waiting for the transition timeout.');
-      expect(session.calls, contains('play'));
+      expect(session.cancelledTransitionSpeedResetCount, 1);
+      expect(session.calls.where((call) => call == 'loadQueue').length, 1,
+          reason: 'A failed native fade must not reload the incoming queue item.');
+      expect(session.calls.where((call) => call == 'play').length, 1,
+          reason: 'Recovery must not restart either deck.');
+      expect(session.currentSongValue?.id, first.id);
+      expect(session.queueIndexValue, 0);
+      expect(session.positionValue, const Duration(milliseconds: 178000));
+      expect(session.playingValue, isTrue);
       crossfade.dispose();
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
@@ -2594,6 +2600,25 @@ void main() {
       // Simulate a user-selected playback rate; transition cleanup must restore
       // this rate rather than hard-resetting the outgoing deck to 1.0x.
       session.playbackSpeedValue = 1.15;
+
+      // Prepare and settle the standby deck in the lead-in window before asking
+      // the native crossfade command to report its simulated decode error.
+      session.positionValue = const Duration(milliseconds: 170000);
+      session.states.add(_state(
+        song: outgoing,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+      for (var attempt = 0;
+          attempt < 120 &&
+              !session.calls.any((call) => call.startsWith('deckSpeeds:'));
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.preloadedSong?.id, incoming.id);
+      await Future<void>.delayed(const Duration(milliseconds: 40));
 
       session.positionValue = const Duration(seconds: 178);
       session.states.add(_state(
