@@ -940,7 +940,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     _jogLastAngle = angle;
     // One platter revolution previews a bounded 1.8-second seek adjustment.
     // This remains a one-shot transport seek, not reverse PCM scratching.
-    final next = DjConsoleJogSeekPolicy.scratchAnchorPosition(
+    final next = DjConsoleJogSeekPolicy.jogSeekPreviewPosition(
       start: start,
       accumulatedRadians: _jogAccumulatedRadians,
       duration: widget.duration,
