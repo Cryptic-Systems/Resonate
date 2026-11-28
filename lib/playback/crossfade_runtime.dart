@@ -126,6 +126,20 @@ class CrossfadeRuntime {
       currentPath?.trim() == incomingPath.trim() &&
       currentQueueIndex == incomingQueueIndex;
 
+  /// Convert the native Media3 envelope position into the shared
+  /// transition-effects timeline. Native progress pauses with the actual audio
+  /// ramp, unlike wall-clock elapsed time in Flutter.
+  int elapsedMillisecondsForNativeProgress({
+    required double progress,
+    required int durationMs,
+  }) {
+    if (durationMs <= 0) return 0;
+    final normalized = progress.isFinite
+        ? progress.clamp(0.0, 1.0).toDouble()
+        : 0.0;
+    return (normalized * durationMs).round().clamp(0, durationMs).toInt();
+  }
+
   int bumpAutomaticGeneration() => ++automaticTransitionGeneration;
 
   int bumpRepeatSelfGeneration() => ++repeatSelfGeneration;
