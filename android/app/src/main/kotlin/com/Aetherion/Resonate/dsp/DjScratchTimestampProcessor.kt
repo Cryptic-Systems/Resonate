@@ -113,7 +113,6 @@ internal class DjScratchTimestampProcessor(
         val mailboxState = controlMailbox.state()
         if (mailboxState.generation != lastMailboxGeneration) {
             pcmRing?.clear()
-            releaseTailFrames = 0
             renderPolicy.reset()
             latestControlSnapshot = null
             lastMailboxGeneration = mailboxState.generation
@@ -173,7 +172,6 @@ internal class DjScratchTimestampProcessor(
         lastConsumedTimestamp = null
         latestControlSnapshot = null
         pcmRing?.clear()
-        releaseTailFrames = 0
         pcmRing = null
         ringCapacityFrames = 0
         ringAvailableFrames = 0
