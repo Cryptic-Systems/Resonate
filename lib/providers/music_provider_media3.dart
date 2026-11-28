@@ -479,6 +479,7 @@ extension MusicProviderMedia3 on MusicProvider {
           .toInt();
       var lastTick = DateTime.now();
       while (session.currentSong?.id != nextSong.id ||
+          session.currentSong?.filePath.trim() != nextSong.filePath.trim() ||
           session.queueIndex != nextIndex) {
         await Future<void>.delayed(const Duration(milliseconds: 36));
         if (session.crossfadeStatus == 'incoming_error') {
@@ -515,6 +516,7 @@ extension MusicProviderMedia3 on MusicProvider {
       // occurrence, so a second event-stream completer would only add a
       // race where a missed/paused state event could strand the transition.
       if (session.currentSong?.id != nextSong.id ||
+          session.currentSong?.filePath.trim() != nextSong.filePath.trim() ||
           session.queueIndex != nextIndex ||
           !stillOwnsTransition()) return;
 
@@ -565,6 +567,7 @@ extension MusicProviderMedia3 on MusicProvider {
       if (stillOwnsTransition()) {
         final incomingAlreadyPromoted =
             session.currentSong?.id == nextSong.id &&
+            session.currentSong?.filePath.trim() == nextSong.filePath.trim() &&
             session.queueIndex == nextIndex;
         var recoveryStage = incomingAlreadyPromoted
             ? 'recover_promoted_deck'
@@ -715,6 +718,8 @@ extension MusicProviderMedia3 on MusicProvider {
             // is the only authority allowed to advance after a failed fade.
             final outgoingStillActive =
                 session.currentSong?.id == outgoingSong.id &&
+                session.currentSong?.filePath.trim() ==
+                    outgoingSong.filePath.trim() &&
                 session.queueIndex == outgoingIndex;
             _crossfadeRuntime.deferTransition(
               outgoingSongId: outgoingSong.id,
