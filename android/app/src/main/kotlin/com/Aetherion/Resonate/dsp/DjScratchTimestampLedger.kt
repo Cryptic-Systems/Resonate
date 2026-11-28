@@ -32,6 +32,7 @@ internal class DjScratchTimestampLedger {
     private var configuredSourceChannels = 0
     private var configuredEncoderDelayFrames = 0
     private var trimFramesRemaining = 0
+    private var desynchronized = false
 
     @Synchronized
     fun configure(sampleRate: Int, channelCount: Int, encoderDelayFrames: Int) {
@@ -40,11 +41,12 @@ internal class DjScratchTimestampLedger {
         configuredSourceChannels = channelCount.takeIf { it > 0 } ?: 0
         configuredEncoderDelayFrames = encoderDelayFrames.coerceAtLeast(0)
         trimFramesRemaining = configuredEncoderDelayFrames
+        desynchronized = false
     }
 
     @Synchronized
     fun record(buffer: ByteBuffer, presentationTimeUs: Long) {
-        if (presentationTimeUs < 0L || !buffer.hasRemaining() ||
+        if (desynchronized || presentationTimeUs < 0L || !buffer.hasRemaining() ||
             configuredSampleRate <= 0 || configuredSourceChannels <= 0
         ) return
 
@@ -58,8 +60,8 @@ internal class DjScratchTimestampLedger {
         if (pending.size >= MAX_PENDING_BUFFERS) {
             // Losing any span invalidates FIFO association. Fail closed rather
             // than allowing later PCM to inherit an old timestamp.
-            clearPending()
-            trimFramesRemaining = 0
+            invalidateTimeline()
+            return
         }
         val span = PendingSpan(
             buffer = buffer,
@@ -89,7 +91,7 @@ internal class DjScratchTimestampLedger {
         if (sampleRate <= 0 || channelCount !in 1..2 ||
             byteCount <= 0 || byteCount % bytesPerFrame != 0
         ) {
-            clearPending()
+            invalidateTimeline()
             return null
         }
 
@@ -102,13 +104,12 @@ internal class DjScratchTimestampLedger {
 
         while (framesNeeded > 0) {
             val span = pending.peekFirst() ?: run {
-                clearPending()
+                if (framesNeeded != outputFrameCount) invalidateTimeline()
                 return null
             }
 
             if (span.sampleRate != sampleRate || span.sampleRate != configuredSampleRate) {
-                clearPending()
-                trimFramesRemaining = 0
+                invalidateTimeline()
                 return null
             }
 
@@ -147,7 +148,10 @@ internal class DjScratchTimestampLedger {
             if (span.consumedFrames == span.totalFrames) removeFirstSpan()
         }
 
-        if (!contiguous || firstPresentationTimeUs == null) return null
+        if (!contiguous || firstPresentationTimeUs == null) {
+            invalidateTimeline()
+            return null
+        }
         return DjScratchPcmTimestamp(
             presentationTimeUs = firstPresentationTimeUs,
             frameCount = outputFrameCount,
@@ -162,6 +166,7 @@ internal class DjScratchTimestampLedger {
     fun handleDiscontinuity() {
         clearPending()
         trimFramesRemaining = 0
+        desynchronized = false
     }
 
     /** AudioSink.flush resets its trimming processor, so restore encoder delay. */
@@ -169,6 +174,7 @@ internal class DjScratchTimestampLedger {
     fun resetForFlush() {
         clearPending()
         trimFramesRemaining = configuredEncoderDelayFrames
+        desynchronized = false
     }
 
     @Synchronized
@@ -178,6 +184,13 @@ internal class DjScratchTimestampLedger {
         configuredSourceChannels = 0
         configuredEncoderDelayFrames = 0
         trimFramesRemaining = 0
+        desynchronized = false
+    }
+
+    private fun invalidateTimeline() {
+        clearPending()
+        trimFramesRemaining = 0
+        desynchronized = true
     }
 
     private fun removeFirstSpan() {
