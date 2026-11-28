@@ -105,6 +105,27 @@ class CrossfadeRuntime {
     deferredIncomingPath = null;
   }
 
+  /// Native promotion is committed only when Media3 reports its terminal
+  /// completion state, the canonical physical deck has changed, and the exact
+  /// incoming queue occurrence is now active. A media ID alone is not enough:
+  /// duplicate playlist entries can share an ID or URI.
+  bool acknowledgesNativePromotion({
+    required String crossfadeStatus,
+    required String activeDeckId,
+    required String outgoingDeckId,
+    required String? currentSongId,
+    required String? currentPath,
+    required int currentQueueIndex,
+    required String incomingSongId,
+    required String incomingPath,
+    required int incomingQueueIndex,
+  }) =>
+      crossfadeStatus == 'completed' &&
+      activeDeckId != outgoingDeckId &&
+      currentSongId == incomingSongId &&
+      currentPath?.trim() == incomingPath.trim() &&
+      currentQueueIndex == incomingQueueIndex;
+
   int bumpAutomaticGeneration() => ++automaticTransitionGeneration;
 
   int bumpRepeatSelfGeneration() => ++repeatSelfGeneration;
