@@ -946,7 +946,10 @@ class Media3PlaybackService : MediaSessionService() {
                             djScratchMailboxes[deckId] ?: DjScratchControlMailbox(),
                         ),
                     )
-                    .setEnableFloatOutput(enableFloatOutput)
+                    // Media3 1.5.1 omits the user AudioProcessor chain when
+                    // float output is selected. Resonate's native DSP and the
+                    // timestamp/PCM history stages require the PCM16 processor path.
+                    .setEnableFloatOutput(false)
                     .setEnableAudioTrackPlaybackParams(enableAudioOutputPlaybackParams)
                     .build()
                 return TimestampedDjAudioSink(delegate, timestampLedger)
