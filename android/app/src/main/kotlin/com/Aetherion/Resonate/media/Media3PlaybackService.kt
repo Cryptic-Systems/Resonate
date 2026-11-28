@@ -133,7 +133,8 @@ class Media3PlaybackService : MediaSessionService() {
     private fun applyDeckVolumes() {
         if (!::activePlayer.isInitialized) return
         val standby = standbyPlayer
-        val transitionOwnsGain = crossfadeStatus == "starting" || crossfadeStatus == "fading"
+        val transitionOwnsGain = crossfadeStatus == "starting" ||
+            crossfadeStatus == "fading" || cancelRestoreRunnable != null
         if (djDualDeckMode && standby != null && !transitionOwnsGain) {
             val (deckAGain, deckBGain) = Media3DjCrossfaderPolicy.gainsForPosition(djCrossfaderPosition)
             val activeId = activeDeckId
@@ -1790,7 +1791,7 @@ class Media3PlaybackService : MediaSessionService() {
         } else {
             0f
         }
-        val restorePlayer = if (wasAudibleFade && !djDualDeckMode) activePlayer else null
+        val restorePlayer = if (wasAudibleFade) activePlayer else null
         val restoreDeckId = if (restorePlayer != null) activeDeckId else null
         if (wasAudibleFade) recordCrossfadeInterruption(reason, interruptedProgress)
         stopTransitionPreview()
@@ -1820,12 +1821,14 @@ class Media3PlaybackService : MediaSessionService() {
             if (wasAudibleFade && restorePlayer != null && restoreDeckId != null) {
                 val (outgoingGain, _) = Media3CrossfadeEnvelope.gains(interruptedProgress)
                 gainPolicy.setCrossfadeGains(active = outgoingGain, standby = 0f)
-                applyDeckVolumes()
                 restoreOutgoingGainAfterCancellation(
                     startProgress = interruptedProgress,
                     expectedPlayer = restorePlayer,
                     expectedDeckId = restoreDeckId,
                 )
+                // The restore runnable now owns gain composition, including
+                // persistent A/B mode, until the canonical deck is back at unity.
+                applyDeckVolumes()
             } else if (cancelRestoreRunnable == null) {
                 gainPolicy.resetDecks()
                 applyDeckVolumes()
