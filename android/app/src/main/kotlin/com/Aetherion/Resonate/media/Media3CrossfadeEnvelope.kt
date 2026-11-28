@@ -28,14 +28,6 @@ internal object Media3CrossfadeEnvelope {
     }
 
     /** A scheduled gain tick is valid only while this exact fade still owns both outputs. */
-    fun shouldAdvanceRamp(
-        generationMatches: Boolean,
-        status: String,
-        activeIsPlaying: Boolean,
-        incomingIsPlaying: Boolean,
-    ): Boolean =
-        generationMatches &&
-            status == "fading" &&
-            activeIsPlaying &&
-            incomingIsPlaying
+    fun shouldAdvanceRamp(generationMatches: Boolean, status: String): Boolean =
+        generationMatches && status == "fading"
 }
