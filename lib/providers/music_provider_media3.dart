@@ -25,6 +25,7 @@ extension MusicProviderMedia3 on MusicProvider {
 
     final generation = _automaticTransitionGeneration;
     final transportEpoch = _userTransportEpoch;
+    final outgoingDeckId = _media3ShadowState?.activeDeckId ?? 'A';
     final preloadGeneration = ++_media3PreloadGeneration;
     bool stillOwnsPreload() =>
         preloadGeneration == _media3PreloadGeneration &&
@@ -218,6 +219,7 @@ extension MusicProviderMedia3 on MusicProvider {
 
     _crossfadeInProgress = true;
     _transitionArmedAt = DateTime.now();
+    Duration? incomingPositionAtPromotion;
     try {
       // A preload can still be decoding when the end-window trigger arrives.
       // Wait for the in-flight session command rather than racing a second
@@ -431,7 +433,10 @@ extension MusicProviderMedia3 on MusicProvider {
           ? (remainingMs - 150).clamp(500, configuredDurationMs).toInt()
           : configuredDurationMs;
 
-      await session.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
+      // Media3GainPolicy is the only output-gain owner for this session.
+      // Refresh its composed factors from current provider state; never flatten
+      // them into a stale setVolume snapshot around the native fade.
+      await _applyActiveMasterVolume();
       if (!stillOwnsTransition()) return;
       if (_djSfxActive) {
         final plannedSfxMs = preparation?.transitionSfxTriggerMs;
@@ -494,9 +499,17 @@ extension MusicProviderMedia3 on MusicProvider {
           .clamp(1, durationMs)
           .toInt();
       var lastTick = DateTime.now();
-      while (session.currentSong?.id != nextSong.id ||
-          session.currentSong?.filePath.trim() != nextSong.filePath.trim() ||
-          session.queueIndex != nextIndex) {
+      while (!_crossfadeRuntime.acknowledgesNativePromotion(
+        crossfadeStatus: session.crossfadeStatus,
+        activeDeckId: _media3ShadowState?.activeDeckId ?? outgoingDeckId,
+        outgoingDeckId: outgoingDeckId,
+        currentSongId: session.currentSong?.id,
+        currentPath: session.currentSong?.filePath,
+        currentQueueIndex: session.queueIndex,
+        incomingSongId: nextSong.id,
+        incomingPath: nextSong.filePath,
+        incomingQueueIndex: nextIndex,
+      )) {
         await Future<void>.delayed(const Duration(milliseconds: 36));
         if (session.crossfadeStatus == 'incoming_error') {
           throw StateError('Media3 standby deck failed while starting the DJ transition.');
@@ -527,21 +540,20 @@ extension MusicProviderMedia3 on MusicProvider {
           throw TimeoutException('Media3 native crossfade did not promote the incoming deck.');
         }
       }
-      // The native session's current media item/index are the promotion
-      // authority. The polling loop above already waited for this exact
-      // occurrence, so a second event-stream completer would only add a
-      // race where a missed/paused state event could strand the transition.
-      if (session.currentSong?.id != nextSong.id ||
-          session.currentSong?.filePath.trim() != nextSong.filePath.trim() ||
-          session.queueIndex != nextIndex ||
-          !stillOwnsTransition()) return;
+      // The terminal native status plus physical deck change and exact queue
+      // occurrence above form the promotion acknowledgement. Capture the live
+      // incoming position; all recovery below is deliberately transport-neutral.
+      if (!stillOwnsTransition()) return;
+      incomingPositionAtPromotion = session.position;
 
       await session.setDeckPlaybackSpeeds(
         activeSpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
         standbySpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
       );
       if (!stillOwnsTransition()) return;
-      await session.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
+      // Recompose from the latest user/settings state after native ownership
+      // transfers. Do not restore the transition's earlier gain snapshot.
+      await _applyActiveMasterVolume();
       if (!stillOwnsTransition()) return;
       await _restoreDjTransitionSfx();
       if (!stillOwnsTransition()) return;
@@ -672,10 +684,8 @@ extension MusicProviderMedia3 on MusicProvider {
 
           if (incomingAlreadyPromoted) {
             await bestEffortCleanup(
-              'restore_master_volume',
-              () => session.setVolume(
-                _effectiveCrossfadeMaster.clamp(0.0, 1.0),
-              ),
+              'restore_composed_gain',
+              () => _applyActiveMasterVolume(),
             );
           }
           if (!stillOwnsTransition()) {
@@ -714,9 +724,6 @@ extension MusicProviderMedia3 on MusicProvider {
             _media3DjTransitionPreparation = null;
             _crossfadeRuntime.clearDeferredTransition();
             _repeatSelfDjPreparation = null;
-            _repeatSelfDjPlanSongId = null;
-            _repeatSelfDjPlanAttempted = false;
-            _repeatSelfDjPlanGeneration++;
             _repeatSelfDjPreloadInFlight = false;
             _lastCompletionSongId = null;
             _crossfadeInProgress = false;
@@ -732,6 +739,11 @@ extension MusicProviderMedia3 on MusicProvider {
               'incomingSongId': nextSong.id,
               'incomingQueueIndex': nextIndex,
               'positionMs': session.position.inMilliseconds,
+              'positionAtNativePromotionMs': incomingPositionAtPromotion?.inMilliseconds,
+              'incomingPositionPreserved': incomingPositionAtPromotion == null
+                  ? null
+                  : session.position.inMilliseconds >=
+                      incomingPositionAtPromotion.inMilliseconds - 100,
               'playing': session.isPlaying,
               'error': error.toString(),
             });
