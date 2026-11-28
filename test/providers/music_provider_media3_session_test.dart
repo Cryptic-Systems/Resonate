@@ -2645,7 +2645,7 @@ void main() {
       }
       for (var attempt = 0;
           attempt < 120 &&
-              !session.calls.contains('volume:1.0');
+              session.calls.where((call) => call == 'volume:1.0').length < 3;
           attempt++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
