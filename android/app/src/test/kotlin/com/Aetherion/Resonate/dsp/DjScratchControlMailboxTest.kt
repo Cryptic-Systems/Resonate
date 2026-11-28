@@ -54,4 +54,15 @@ class DjScratchControlMailboxTest {
         assertTrue(mailbox.clear("new-track"))
         assertNull(mailbox.snapshot())
     }
+    @Test
+    fun sameMediaIdQueueOccurrenceTransitionRetiresPreviousScratchCommand() {
+        val mailbox = DjScratchControlMailbox()
+        assertTrue(mailbox.publish("same-track-id", true, -2.0, 42_000L))
+
+        // A repeated queue occurrence can have the same mediaId. The native
+        // media-transition callback must clear by occurrence boundary, not ID.
+        assertTrue(mailbox.clear())
+        assertNull(mailbox.snapshot())
+    }
+
 }
