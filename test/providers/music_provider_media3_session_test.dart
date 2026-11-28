@@ -2463,7 +2463,7 @@ void main() {
       final crossfade = CrossfadeProvider(music: provider);
       await crossfade.ready;
       expect(provider.crossfadeEnabled, isTrue);
-      session.playbackSpeedValue = 1.15;
+      await provider.setPlaybackSpeed(1.15);
       // Preload belongs to the lead-in window, not the fade-arm window.
       // At 2.4s remaining the ordinary 500ms crossfade is already too late
       // to request a fresh preload, so first place playback 10s from the end.
