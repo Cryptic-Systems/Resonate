@@ -404,3 +404,6 @@ The scratch processor is positioned among Resonate's Media3 user processors, bef
 The CI test fixture was also updated for the mailbox generation field introduced in the preceding lifecycle pass.
 
 **Scope and limits:** this is the rate-compensation contract for the current processor placement, not proof of audible scratch. It assumes the downstream stage's effective time scaling corresponds to the player's reported playback speed; device-specific AudioTrack behaviour, Sonic buffering/latency and playback-parameter changes during an active gesture still require validation. The feature gate remains closed. The next step is to coordinate playback-speed changes with an active cursor and define a release/catch-up handshake against the audible output boundary, then validate on physical devices.
+
+
+Playback-parameter changes during a published active scratch command now retire that command and advance the mailbox generation. The audio thread consequently discards the old cursor/history at its next processor block; the next platter update must be remapped using the new native playback-speed readback. This intentionally fails closed rather than allowing a stale cursor multiplier to continue through a changed Sonic/AudioTrack rate. The feature remains gated, and the callback-to-audible-boundary timing still needs physical-device verification.
