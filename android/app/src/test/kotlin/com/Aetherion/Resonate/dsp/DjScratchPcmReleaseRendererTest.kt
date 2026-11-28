@@ -109,6 +109,7 @@ class DjScratchPcmReleaseRendererTest {
         assertTrue(renderer.awaitPlaybackDrain(timeoutMs = 100L))
         renderer.close()
         assertTrue(fake.released)
+        assertEquals(0L, renderer.framesAcceptedByOutput)
     }
 
     @Test fun matchingRouteUnmutesOnlyAfterRouteCheckAndWritesPartialChunks() {
