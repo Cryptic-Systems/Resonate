@@ -1,7 +1,9 @@
 package com.aetherion.resonate.dsp
 
 import android.media.AudioAttributes as PlatformAudioAttributes
+import android.content.Context
 import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Build
@@ -17,7 +19,7 @@ import java.nio.ByteBuffer
  * and only then permits PCM writes and restores the deck's effective volume.
  */
 internal class DjScratchPcmReleaseRenderer(
-    private val trackFactory: TrackFactory = AndroidTrackFactory,
+    private val trackFactory: TrackFactory,
     private val routeGeneration: () -> Long,
 ) {
     internal interface Track {
@@ -74,19 +76,11 @@ internal class DjScratchPcmReleaseRenderer(
      * and generation match. No PCM can be written before this succeeds.
      */
     fun open(contract: Contract): Boolean {
-        if (track != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-            !contract.isValid() || routeGeneration() != contract.routeGeneration
+        if (track != null || !contract.isValid() ||
+            routeGeneration() != contract.routeGeneration
         ) return false
 
         val bytesPerFrame = contract.channelCount * Short.SIZE_BYTES
-        val minBuffer = AudioTrack.getMinBufferSize(
-            contract.sampleRate,
-            if (contract.channelCount == 1) AudioFormat.CHANNEL_OUT_MONO
-            else AudioFormat.CHANNEL_OUT_STEREO,
-            AudioFormat.ENCODING_PCM_16BIT,
-        )
-        if (minBuffer <= 0) return false
-
         val candidate = trackFactory.create(
             TrackConfig(
                 sampleRate = contract.sampleRate,
@@ -95,7 +89,7 @@ internal class DjScratchPcmReleaseRenderer(
                 routeDeviceId = contract.routeDeviceId,
                 usage = PlatformAudioAttributes.USAGE_MEDIA,
                 contentType = PlatformAudioAttributes.CONTENT_TYPE_MUSIC,
-                bufferSizeBytes = maxOf(minBuffer, bytesPerFrame * 256),
+                bufferSizeBytes = maxOf(contract.sampleRate / 10 * bytesPerFrame, bytesPerFrame * 256),
             ),
         ) ?: return false
 
@@ -179,7 +173,9 @@ internal class DjScratchPcmReleaseRenderer(
         runCatching { current.release() }
     }
 
-    private object AndroidTrackFactory : TrackFactory {
+    internal class AndroidTrackFactory(context: Context) : TrackFactory {
+        private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
         override fun create(config: TrackConfig): Track? {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return null
             val attributes = PlatformAudioAttributes.Builder()
@@ -205,18 +201,19 @@ internal class DjScratchPcmReleaseRenderer(
                 audioTrack.release()
                 return null
             }
-            return AndroidTrack(audioTrack)
+            return AndroidTrack(audioTrack, audioManager)
         }
     }
 
-    private class AndroidTrack(private val delegate: AudioTrack) : Track {
+    private class AndroidTrack(
+        private val delegate: AudioTrack,
+        private val audioManager: AudioManager,
+    ) : Track {
         override fun preferDevice(deviceId: Int): Boolean {
-            val managerDevice = delegate.preferredDevice
-            if (managerDevice?.id == deviceId) return true
-            // Resolve the requested device from the platform's currently
-            // available output devices; never silently fall back to default.
-            val context = null
-            return false
+            val device: AudioDeviceInfo = audioManager
+                .getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                .firstOrNull { it.id == deviceId } ?: return false
+            return delegate.setPreferredDevice(device)
         }
 
         override fun play() = delegate.play()

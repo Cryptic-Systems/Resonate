@@ -13,8 +13,9 @@ class DjScratchPcmReleaseRendererTest {
         var volume = -1f
         var released = false
         var played = false
+        var onPlay: () -> Unit = {}
         override fun preferDevice(deviceId: Int) = deviceId == 7
-        override fun play() { played = true }
+        override fun play() { played = true; onPlay() }
         override fun routedDeviceId() = actualRouteId
         override fun setVolume(volume: Float) { this.volume = volume }
         override fun write(buffer: ByteBuffer, sizeInBytes: Int): Int {
@@ -60,11 +61,11 @@ class DjScratchPcmReleaseRendererTest {
         val writes = mutableListOf<ByteArray>()
         val fake = FakeTrack(actualRouteId = 7, writes = writes)
         var generation = 4L
+        fake.onPlay = { generation = 5L }
         val renderer = DjScratchPcmReleaseRenderer(
             trackFactory = { fake },
             routeGeneration = { generation },
         )
-        generation = 5L
         assertFalse(renderer.open(contract()))
         assertEquals(0f, fake.volume)
         assertTrue(fake.released)
