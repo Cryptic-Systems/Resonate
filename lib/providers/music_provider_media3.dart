@@ -558,7 +558,9 @@ extension MusicProviderMedia3 on MusicProvider {
       notifyListeners();
       await ResonateDiagnostics.record('media3_crossfade_committed', {
         'outgoingSongId': outgoingSong.id,
+        'outgoingQueueIndex': outgoingIndex,
         'incomingSongId': nextSong.id,
+        'incomingQueueIndex': nextIndex,
         'queueIndex': _queueIndex,
         'positionMs': session.position.inMilliseconds,
         'playing': session.isPlaying,
