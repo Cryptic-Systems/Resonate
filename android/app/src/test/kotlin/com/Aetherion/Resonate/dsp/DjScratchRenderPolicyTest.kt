@@ -30,6 +30,7 @@ class DjScratchRenderPolicyTest {
         anchorUs: Long,
     ) = DjScratchControlMailbox.Snapshot(
         sequence = sequence,
+        generation = 0L,
         mediaId = "track-1",
         active = active,
         velocity = velocity,
