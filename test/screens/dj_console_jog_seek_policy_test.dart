@@ -42,7 +42,7 @@ void main() {
       );
     });
 
-    test('scratch anchors preserve sub-millisecond platter movement', () {
+    test('jog seek previews preserve sub-millisecond platter movement', () {
       final result = DjConsoleJogSeekPolicy.jogSeekPreviewPosition(
         start: const Duration(seconds: 20),
         accumulatedRadians: math.pi / 180,
@@ -51,9 +51,9 @@ void main() {
       expect(result.inMicroseconds, 20000000 + 5000);
     });
 
-    test('scratch anchors clamp at exact microsecond track boundaries', () {
+    test('jog seek previews clamp at exact microsecond track boundaries', () {
       expect(
-        DjConsoleJogSeekPolicy.scratchAnchorPosition(
+        DjConsoleJogSeekPolicy.jogSeekPreviewPosition(
           start: const Duration(microseconds: 500),
           accumulatedRadians: -math.pi * 2,
           duration: const Duration(minutes: 1),
@@ -61,7 +61,7 @@ void main() {
         Duration.zero,
       );
       expect(
-        DjConsoleJogSeekPolicy.scratchAnchorPosition(
+        DjConsoleJogSeekPolicy.jogSeekPreviewPosition(
           start: const Duration(seconds: 59),
           accumulatedRadians: math.pi * 2,
           duration: const Duration(minutes: 1),
