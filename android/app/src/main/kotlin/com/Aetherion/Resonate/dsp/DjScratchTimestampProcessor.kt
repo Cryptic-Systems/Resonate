@@ -31,13 +31,9 @@ internal class DjScratchTimestampProcessor(
 
     // One bounded PCM history and render cursor per physical deck.
     private var pcmRing: DjScratchPcmRingBuffer? = null
-    // Retained across Media3 flush so a future independent renderer can drain
-    // the exact emitted scratch tail while the main deck seeks/catches up.
-    private var releaseTail: DjScratchReleaseTailBuffer? = null
     @Volatile private var ringCapacityFrames = 0
     @Volatile private var configured = false
     @Volatile private var ringAvailableFrames = 0
-    @Volatile private var releaseTailFrames = 0
     @Volatile private var cursorMediaTimeUs: Long? = null
     // Keep audible scratch disabled until timestamp provenance, speed mapping,
     // and release-to-Media3 catch-up are validated end to end on devices.
@@ -69,7 +65,6 @@ internal class DjScratchTimestampProcessor(
             "historyGenerationResets" to historyGenerationResets.get(),
             "ringCapacityFrames" to ringCapacityFrames,
             "ringAvailableFrames" to ringAvailableFrames,
-            "releaseTailFrames" to releaseTailFrames,
             "cursorMediaTimeUs" to cursorMediaTimeUs,
             "lastControlActive" to (control?.active == true),
             "lastControlVelocity" to control?.velocity,
@@ -82,8 +77,6 @@ internal class DjScratchTimestampProcessor(
         lastConsumedTimestamp
 
     internal fun pcmRingForTest(): DjScratchPcmRingBuffer? = pcmRing
-
-    internal fun releaseTailForTest(): DjScratchReleaseTailBuffer? = releaseTail
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         // Timestamp mapping is valid only for the PCM16 path used by the native
@@ -105,18 +98,7 @@ internal class DjScratchTimestampProcessor(
             null
         }
         ringCapacityFrames = pcmRing?.capacityFrames ?: 0
-        releaseTail = if (pcmRing != null) {
-            DjScratchReleaseTailBuffer(
-                channelCount = inputAudioFormat.channelCount,
-                capacityFrames = (inputAudioFormat.sampleRate *
-                    DjScratchReleaseTailBuffer.DEFAULT_TAIL_MS / 1_000)
-                    .coerceIn(1, DjScratchReleaseTailBuffer.MAX_CAPACITY_FRAMES),
-            )
-        } else {
-            null
-        }
         ringAvailableFrames = 0
-        releaseTailFrames = 0
         lastMailboxGeneration = controlMailbox.state().generation
         return inputAudioFormat
     }
@@ -131,7 +113,6 @@ internal class DjScratchTimestampProcessor(
         val mailboxState = controlMailbox.state()
         if (mailboxState.generation != lastMailboxGeneration) {
             pcmRing?.clear()
-            releaseTail?.clear()
             releaseTailFrames = 0
             renderPolicy.reset()
             latestControlSnapshot = null
@@ -164,10 +145,6 @@ internal class DjScratchTimestampProcessor(
             null
         }
         if (rendered) {
-            // Capture only the exact PCM emitted by the scratch renderer. The
-            // fixed tail survives onFlush(), unlike Media3's processor buffers.
-            releaseTail?.append(output)
-            releaseTailFrames = releaseTail?.availableFrames ?: 0
             renderedBlocks.incrementAndGet()
             // AudioProcessor.queueInput must consume its input even when the
             // renderer reads from a duplicate for zero-copy-safe history access.
@@ -185,8 +162,6 @@ internal class DjScratchTimestampProcessor(
         lastConsumedTimestamp = null
         latestControlSnapshot = null
         pcmRing?.clear()
-        // Do not clear releaseTail here: Media3 calls onFlush during seek, and
-        // the preserved tail must outlive that flush for the handoff renderer.
         ringAvailableFrames = 0
         cursorMediaTimeUs = null
         lastMailboxGeneration = controlMailbox.state().generation
@@ -198,8 +173,6 @@ internal class DjScratchTimestampProcessor(
         lastConsumedTimestamp = null
         latestControlSnapshot = null
         pcmRing?.clear()
-        releaseTail?.clear()
-        releaseTail = null
         releaseTailFrames = 0
         pcmRing = null
         ringCapacityFrames = 0
