@@ -377,3 +377,14 @@ The sink timestamp ledger has been advanced from buffer-identity/FIFO lookup to 
 Regression coverage now includes contiguous multi-buffer spans, encoder delay crossing buffer boundaries, stereo-to-mono mapping, float-to-PCM16 frame-size conversion, retried input buffers, discontinuity, flush, non-contiguous PTS rejection and queue invalidation. These tests validate the ledger model; they do not yet prove every codec/renderer combination or enable audible scratch.
 
 **Still outstanding before scratch enablement:** confirm the exact `DefaultAudioSink` lifecycle under partial writes, processor drain/back-pressure and format changes on the supported Media3 renderer configurations; account for playback-speed processing and the actual audible output clock; implement deterministic release/catch-up; then complete physical-device latency, reverse-audio, crackle, underrun and recovery validation.
+
+
+### 2026-11-28 — scratch PCM history generation invalidation
+
+The per-deck scratch mailbox now carries an atomic generation alongside its latest control snapshot. A clear operation advances that generation and removes the old command in one compare-and-set state transition. This makes the invalidation boundary race-safe: a concurrent new publish is either retired before the clear or tagged with the new generation after it, never silently erased or attached to the previous timeline.
+
+At the first Resonate user-processor callback after a generation change, the audio thread clears that deck's PCM history and render cursor before appending the next timestamped PCM block. This retires buffered history on existing native clear boundaries, including seek, media-item/queue occurrence transition, manual physical-deck promotion and other explicit scratch cancellation paths. It also handles repeated queue occurrences that reuse the same media ID, because invalidation is generation-based rather than media-ID-based.
+
+Diagnostics now expose the observed mailbox generation and the number of history-generation resets. Tests cover generation advancement with and without a current command, replacement-track protection, and publishing into the new generation.
+
+**Scope and limits:** this hardens lifecycle invalidation; it does not solve the audible playback-speed clock or release/catch-up. Media3 Sonic/AudioTrack speed processing remains downstream of the current user-processor insertion point, so scratch rendering remains disabled. The next gate is to define and test the relationship between the cursor's media-time rate and downstream speed processing, then coordinate a release handoff at an actual audible output boundary. No physical-device validation or audible scratch enablement is claimed.
