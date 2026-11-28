@@ -20,6 +20,7 @@ class DjScratchControlMailboxTest {
         val second = mailbox.snapshot()!!
         assertTrue(second.sequence > first.sequence)
         assertEquals(2.0, second.velocity, 0.0)
+        assertEquals(first.generation, second.generation)
     }
 
     @Test
@@ -54,15 +55,36 @@ class DjScratchControlMailboxTest {
         assertTrue(mailbox.clear("new-track"))
         assertNull(mailbox.snapshot())
     }
+
     @Test
     fun sameMediaIdQueueOccurrenceTransitionRetiresPreviousScratchCommand() {
         val mailbox = DjScratchControlMailbox()
         assertTrue(mailbox.publish("same-track-id", true, -2.0, 42_000L))
+        val before = mailbox.state().generation
 
         // A repeated queue occurrence can have the same mediaId. The native
         // media-transition callback must clear by occurrence boundary, not ID.
         assertTrue(mailbox.clear())
         assertNull(mailbox.snapshot())
+        assertEquals(before + 1L, mailbox.state().generation)
     }
 
+    @Test
+    fun clearAdvancesGenerationEvenWhenNoCommandIsPublished() {
+        val mailbox = DjScratchControlMailbox()
+        val before = mailbox.state().generation
+        assertTrue(mailbox.clear())
+        assertEquals(before + 1L, mailbox.state().generation)
+    }
+
+    @Test
+    fun publishAfterClearUsesNewGeneration() {
+        val mailbox = DjScratchControlMailbox()
+        assertTrue(mailbox.publish("track", true, 1.0, 0L))
+        val retiredGeneration = mailbox.state().generation
+        assertTrue(mailbox.clear())
+        assertTrue(mailbox.publish("track", true, -1.0, 10_000L))
+        val next = mailbox.snapshot()!!
+        assertEquals(retiredGeneration + 1L, next.generation)
+    }
 }
