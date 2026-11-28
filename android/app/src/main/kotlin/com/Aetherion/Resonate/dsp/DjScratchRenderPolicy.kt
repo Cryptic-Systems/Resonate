@@ -39,6 +39,10 @@ internal class DjScratchRenderPolicy(
     internal fun cursorFrameForTest(): Double = cursorFrame
     internal fun releaseFadeMsForTest(): Int = releaseFadeMs
 
+    /** Cursor destination after the last rendered output frame, in media time. */
+    fun cursorMediaTimeUs(ring: DjScratchPcmRingBuffer): Long? =
+        if (scratchActive) ring.mediaTimeUsAtFramePosition(cursorFrame) else null
+
     /**
      * Renders a complete PCM16 block into [output]. The input buffer is never
      * advanced or modified. Returns true only when output contains a complete
