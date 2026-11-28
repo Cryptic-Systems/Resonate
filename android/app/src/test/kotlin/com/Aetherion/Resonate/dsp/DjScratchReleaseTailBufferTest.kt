@@ -4,7 +4,6 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DjScratchReleaseTailBufferTest {
@@ -62,6 +61,24 @@ class DjScratchReleaseTailBufferTest {
         assertFalse(tail.isSealed)
         assertEquals(0, tail.availableFrames)
         assertEquals(2, tail.append(block))
+    }
+
+
+    @Test
+    fun overflowRetainsNewestFramesInChronologicalOrder() {
+        val tail = DjScratchReleaseTailBuffer(channelCount = 1, capacityFrames = 3)
+        val input = ByteBuffer.allocate(10).order(ByteOrder.LITTLE_ENDIAN)
+            .putShort(1).putShort(2).putShort(3).putShort(4).putShort(5)
+        input.flip()
+        assertEquals(3, tail.append(input))
+        tail.seal()
+
+        val output = ByteBuffer.allocate(6).order(ByteOrder.LITTLE_ENDIAN)
+        assertEquals(3, tail.drainTo(output))
+        output.flip()
+        shortArrayOf(3, 4, 5).forEach {
+            assertEquals(it.toInt(), output.short.toInt())
+        }
     }
 
     @Test
