@@ -1,0 +1,73 @@
+package com.aetherion.resonate.dsp
+
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class DjScratchReleaseTailBufferTest {
+    @Test
+    fun captureKeepsNewestBoundedFramesAndDoesNotAdvanceInput() {
+        val tail = DjScratchReleaseTailBuffer(channelCount = 1, capacityFrames = 3)
+        val input = ByteBuffer.allocate(10).order(ByteOrder.LITTLE_ENDIAN)
+            .putShort(1).putShort(2).putShort(3).putShort(4).putShort(5)
+        input.flip()
+
+        assertEquals(3, tail.append(input))
+        assertEquals(0, input.position())
+        assertEquals(3, tail.availableFrames)
+        assertFalse(tail.isSealed)
+    }
+
+    @Test
+    fun sealedTailDrainsInOrderAcrossPartialDestinationBuffers() {
+        val tail = DjScratchReleaseTailBuffer(channelCount = 2, capacityFrames = 4)
+        val input = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
+            .putShort(1).putShort(2)
+            .putShort(3).putShort(4)
+            .putShort(5).putShort(6)
+            .putShort(7).putShort(8)
+        input.flip()
+        assertEquals(4, tail.append(input))
+        tail.seal()
+
+        val first = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
+        assertEquals(1, tail.drainTo(first))
+        first.flip()
+        assertEquals(1, first.short.toInt())
+        assertEquals(2, first.short.toInt())
+
+        val second = ByteBuffer.allocate(24).order(ByteOrder.LITTLE_ENDIAN)
+        assertEquals(3, tail.drainTo(second))
+        second.flip()
+        val expected = shortArrayOf(3, 4, 5, 6, 7, 8)
+        expected.forEach { assertEquals(it.toInt(), second.short.toInt()) }
+        assertEquals(0, tail.remainingFrames)
+    }
+
+    @Test
+    fun captureStopsAfterSealAndClearStartsNewGeneration() {
+        val tail = DjScratchReleaseTailBuffer(channelCount = 1, capacityFrames = 2)
+        val block = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN)
+            .putShort(10).putShort(20)
+        block.flip()
+        assertEquals(2, tail.append(block))
+        tail.seal()
+        assertEquals(0, tail.append(block))
+        assertEquals(2, tail.remainingFrames)
+
+        tail.clear()
+        assertFalse(tail.isSealed)
+        assertEquals(0, tail.availableFrames)
+        assertEquals(2, tail.append(block))
+    }
+
+    @Test
+    fun malformedPartialFrameIsRejected() {
+        val tail = DjScratchReleaseTailBuffer(channelCount = 2, capacityFrames = 8)
+        assertEquals(0, tail.append(ByteBuffer.allocate(6)))
+        assertEquals(0, tail.availableFrames)
+    }
+}
