@@ -40,7 +40,12 @@ class Media3CrossfadeEnvelopeTest {
         )
         val endGains = Media3CrossfadeEnvelope.gains(endProgress)
 
-        assertEquals(startGains.first, startGains.first, 0f)
+        val initialRestoreProgress = Media3CrossfadeEnvelope.restorationProgress(
+            startProgress = startProgress,
+            elapsedFraction = 0f,
+        )
+        assertEquals(startProgress, initialRestoreProgress, 0f)
+        assertEquals(startGains.first, Media3CrossfadeEnvelope.gains(initialRestoreProgress).first, 0f)
         assertTrue(middleGains.first > startGains.first)
         assertTrue(endGains.first > middleGains.first)
         assertEquals(1f, endGains.first, 0.0001f)
