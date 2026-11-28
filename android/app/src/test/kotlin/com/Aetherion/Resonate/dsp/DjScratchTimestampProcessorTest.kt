@@ -135,16 +135,17 @@ class DjScratchTimestampProcessorTest {
     }
 
     @Test
-    fun media3FactoryInstallsTimestampScratchBeforeNativeDsp() {
+    fun media3FactoryInstallsTimestampScratchBeforeNativeDspAndReleaseCaptureAfterDsp() {
         val chain = DspEngineSinkHook.createProcessors(
             "A",
             DjScratchTimestampLedger(),
             DjScratchControlMailbox(),
         )
         try {
-            assertEquals(2, chain.size)
+            assertEquals(3, chain.size)
             assertTrue(chain[0] is DjScratchTimestampProcessor)
             assertTrue(chain[1] is DspEngineAudioProcessor)
+            assertTrue(chain[2] is DjScratchReleaseTailCaptureProcessor)
             val diagnostics = DspEngineSinkHook.scratchDiagnostics("A")
             assertEquals(true, diagnostics["processorPresent"])
             assertEquals(false, diagnostics["configured"])
