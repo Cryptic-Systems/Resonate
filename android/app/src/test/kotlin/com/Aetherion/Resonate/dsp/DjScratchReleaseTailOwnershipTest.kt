@@ -11,6 +11,7 @@ class DjScratchReleaseTailOwnershipTest {
         channelCount = 2,
         pcmEncoding = 2,
         audioSessionId = 41,
+        routeDeviceId = 9,
         routeGeneration = 7L,
         processingChainId = "resonate-dsp-v1",
     )
@@ -52,12 +53,14 @@ class DjScratchReleaseTailOwnershipTest {
         assertTrue(ownership.seal(1L, retainedFrames = 32))
 
         val wrongSession = output.copy(audioSessionId = 42)
-        val wrongRoute = output.copy(routeGeneration = 8L)
+        val wrongRoute = output.copy(routeDeviceId = 10)
+        val wrongRouteGeneration = output.copy(routeGeneration = 8L)
         val wrongFormat = output.copy(sampleRate = 44_100)
         val wrongChain = output.copy(processingChainId = "raw-audiotrack")
 
         assertFalse(ownership.transfer(1L, "renderer", wrongSession))
         assertFalse(ownership.transfer(1L, "renderer", wrongRoute))
+        assertFalse(ownership.transfer(1L, "renderer", wrongRouteGeneration))
         assertFalse(ownership.transfer(1L, "renderer", wrongFormat))
         assertFalse(ownership.transfer(1L, "renderer", wrongChain))
         assertEquals(
@@ -106,6 +109,7 @@ class DjScratchReleaseTailOwnershipTest {
         val ownership = DjScratchReleaseTailOwnership()
         assertFalse(ownership.beginCapture(1L, "track", output.copy(sampleRate = 0)))
         assertFalse(ownership.beginCapture(1L, "track", output.copy(audioSessionId = 0)))
+        assertFalse(ownership.beginCapture(1L, "track", output.copy(routeDeviceId = 0)))
         assertFalse(ownership.beginCapture(1L, "track", output.copy(processingChainId = " ")))
         assertFalse(ownership.beginCapture(1L, " ", output))
     }
