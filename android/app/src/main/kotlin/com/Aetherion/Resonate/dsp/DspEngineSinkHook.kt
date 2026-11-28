@@ -114,6 +114,11 @@ object DspEngineSinkHook {
         scratchProcessorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(processor)
     }
 
+    /** Configured PCM16 format at the post-DSP capture boundary for a physical deck. */
+    @JvmStatic
+    internal fun releaseTailPcmFormat(deckId: String): Pair<Int, Int>? =
+        releaseTailProcessorsByDeck[deckId]?.lastOrNull()?.configuredPcmFormat()
+
     /** Start a bounded post-DSP PCM capture on the selected physical deck. */
     @JvmStatic
     internal fun beginReleaseTailCapture(deckId: String): Boolean =
