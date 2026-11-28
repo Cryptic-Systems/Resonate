@@ -258,6 +258,10 @@ class Media3PlaybackService : MediaSessionService() {
         val target = standbyPlayer ?: return false
         val outgoing = activePlayer
         val outgoingDeckId = activeDeckId
+        // Manual deck promotion changes which physical deck owns the live
+        // transport. Retire both platter commands before swapping player roles;
+        // a drag cancelled by the UI must never keep scratching the old deck.
+        djScratchMailboxes.values.forEach { it.clear() }
         activePlayer = target
         standbyPlayer = outgoing
         activeDeckId = deckId
