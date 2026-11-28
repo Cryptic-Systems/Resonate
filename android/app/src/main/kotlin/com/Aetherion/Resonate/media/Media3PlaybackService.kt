@@ -160,12 +160,26 @@ class Media3PlaybackService : MediaSessionService() {
                     "pcmEncoding" to contract.pcmEncoding, "audioSessionId" to contract.audioSessionId,
                     "routeGeneration" to contract.routeGeneration, "processingChainId" to contract.processingChainId)
             },
+            "scratchActualRouteA" to scratchActualOutputRoute("A")?.let { route ->
+                mapOf("routeDeviceId" to route.routeDeviceId, "audioSessionId" to route.audioSessionId,
+                    "sampleRate" to route.sampleRate, "channelCount" to route.channelCount,
+                    "pcmEncoding" to route.pcmEncoding, "tunneling" to route.tunneling, "offload" to route.offload)
+            },
+            "scratchActualRouteB" to scratchActualOutputRoute("B")?.let { route ->
+                mapOf("routeDeviceId" to route.routeDeviceId, "audioSessionId" to route.audioSessionId,
+                    "sampleRate" to route.sampleRate, "channelCount" to route.channelCount,
+                    "pcmEncoding" to route.pcmEncoding, "tunneling" to route.tunneling, "offload" to route.offload)
+            },
             "scratchAudibleMediaTimeUsA" to scratchAudibleMediaPositionUs("A"),
             "scratchAudibleMediaTimeUsB" to scratchAudibleMediaPositionUs("B"),
             "scratchDeckA" to DspEngineSinkHook.scratchDiagnostics("A"),
             "scratchDeckB" to DspEngineSinkHook.scratchDiagnostics("B"),
         )
     }
+
+    /** Actual AudioTrack route for a physical deck; null until Android resolves it. */
+    internal fun scratchActualOutputRoute(deckId: String): DjScratchAudioTrackRoute.Snapshot? =
+        if (deckId == "A" || deckId == "B") timestampedSinksByDeck[deckId]?.actualOutputRoute() else null
 
     /** Media3 playback-head media time for a physical deck; null until the sink clock is valid. */
     internal fun scratchAudibleMediaPositionUs(deckId: String): Long? =
@@ -1021,7 +1035,9 @@ class Media3PlaybackService : MediaSessionService() {
                 enableAudioOutputPlaybackParams: Boolean,
             ): AudioSink {
                 val timestampLedger = DjScratchTimestampLedger()
+                val outputRoute = DjScratchAudioTrackRoute()
                 val delegate = DefaultAudioSink.Builder(context)
+                    .setAudioTrackProvider(outputRoute.audioTrackProvider)
                     .setAudioProcessors(
                         DspEngineSinkHook.createProcessors(
                             deckId,
@@ -1035,7 +1051,7 @@ class Media3PlaybackService : MediaSessionService() {
                     .setEnableFloatOutput(false)
                     .setEnableAudioTrackPlaybackParams(enableAudioOutputPlaybackParams)
                     .build()
-                return TimestampedDjAudioSink(delegate, timestampLedger).also { timestampedSinksByDeck[deckId] = it }
+                return TimestampedDjAudioSink(delegate, timestampLedger, outputRoute).also { timestampedSinksByDeck[deckId] = it }
             }
         },
     ).build().apply {
