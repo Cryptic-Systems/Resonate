@@ -31,6 +31,7 @@ internal class DjScratchTimestampProcessor(
     // One bounded PCM history and render cursor per physical deck.
     private var pcmRing: DjScratchPcmRingBuffer? = null
     @Volatile private var ringCapacityFrames = 0
+    @Volatile private var configured = false
     @Volatile private var ringAvailableFrames = 0
     private val renderPolicy = DjScratchRenderPolicy()
     private val pcmBlocks = AtomicLong()
@@ -44,6 +45,7 @@ internal class DjScratchTimestampProcessor(
         val control = latestControlSnapshot
         return mapOf(
             "processorPresent" to true,
+            "configured" to configured,
             "deckId" to deckId,
             "pcmBlocks" to pcmBlocks.get(),
             "timestampMatches" to timestampMatches.get(),
@@ -68,6 +70,7 @@ internal class DjScratchTimestampProcessor(
         // Timestamp mapping is valid only for the PCM16 path used by the native
         // DSP processor. Other formats are passed through without metadata.
         lastConsumedTimestamp = null
+        configured = true
         DspEngineSinkHook.trackScratchProcessor(this, deckId)
         pcmRing = if (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT &&
             inputAudioFormat.sampleRate > 0 && inputAudioFormat.channelCount in 1..2
@@ -139,6 +142,7 @@ internal class DjScratchTimestampProcessor(
         pcmRing = null
         ringCapacityFrames = 0
         ringAvailableFrames = 0
+        configured = false
         renderPolicy.reset()
         ledger.clear()
     }
