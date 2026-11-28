@@ -145,4 +145,31 @@ class DjScratchRenderPolicyTest {
         assertEquals(20, DjScratchRenderPolicy().releaseFadeMsForTest())
     }
 
+    @Test
+    fun defaultReleaseBlendsAcrossPcmBlocksAndEndsAtLiveSignal() {
+        val ring = DjScratchPcmRingBuffer(1_000, 1, 128)
+        ring.append(pcm16(*IntArray(100) { it * 100 }.toTypedArray().toIntArray()), 0L)
+        val activeInput = pcm16(10_000, 10_100)
+        ring.append(activeInput, 100_000L)
+        val output = ByteBuffer.allocate(40)
+        val policy = DjScratchRenderPolicy()
+
+        assertTrue(policy.render(activeInput, output, ring, command(1L, true, 1.0, 10_000L)))
+
+        val releaseFirst = pcm16(*IntArray(10) { 20_000 }.toTypedArray().toIntArray())
+        ring.append(releaseFirst, 102_000L)
+        assertTrue(policy.render(releaseFirst, output, ring, command(2L, false, 1.0, 102_000L)))
+        val firstHalf = samples(output)
+        assertEquals(1_200, firstHalf.first())
+        assertTrue(firstHalf.last() > firstHalf.first())
+        assertTrue(policy.isScratchActiveForTest())
+
+        val releaseSecond = pcm16(*IntArray(10) { 24_000 }.toTypedArray().toIntArray())
+        ring.append(releaseSecond, 112_000L)
+        assertTrue(policy.render(releaseSecond, output, ring, command(2L, false, 1.0, 102_000L)))
+        val secondHalf = samples(output)
+        assertEquals(24_000, secondHalf.last())
+        assertFalse(policy.isScratchActiveForTest())
+    }
+
 }
