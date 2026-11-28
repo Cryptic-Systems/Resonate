@@ -19,7 +19,7 @@ internal class DjScratchRenderPolicy(
     private val releaseFadeMs: Int = DEFAULT_RELEASE_FADE_MS,
 ) {
     companion object {
-        const val DEFAULT_RELEASE_FADE_MS = 5
+        const val DEFAULT_RELEASE_FADE_MS = 20
         private const val MAX_ABS_VELOCITY = 4.0
     }
 
@@ -37,6 +37,7 @@ internal class DjScratchRenderPolicy(
 
     internal fun isScratchActiveForTest(): Boolean = scratchActive
     internal fun cursorFrameForTest(): Double = cursorFrame
+    internal fun releaseFadeMsForTest(): Int = releaseFadeMs
 
     /**
      * Renders a complete PCM16 block into [output]. The input buffer is never
