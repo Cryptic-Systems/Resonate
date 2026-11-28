@@ -407,3 +407,13 @@ The CI test fixture was also updated for the mailbox generation field introduced
 
 
 Playback-parameter changes during a published active scratch command now retire that command and advance the mailbox generation. The audio thread consequently discards the old cursor/history at its next processor block; the next platter update must be remapped using the new native playback-speed readback. This intentionally fails closed rather than allowing a stale cursor multiplier to continue through a changed Sonic/AudioTrack rate. The feature remains gated, and the callback-to-audible-boundary timing still needs physical-device verification.
+
+### 2026-11-28 — deterministic scratch release/catch-up protocol foundation
+
+Added a pure native release-handoff state machine with explicit phases: scratching, release requested, seek issued, waiting for aligned post-seek PCM, crossfade ready, complete, and aborted.
+
+The protocol freezes one cursor-derived media timestamp as the only permitted catch-up seek target. It permits that seek to be claimed once, rejects stale generation/media identities, and refuses to declare the release crossfade ready until a timestamped PCM block is within a bounded tolerance of the frozen target. Transport invalidation advances the generation and aborts the handoff.
+
+Regression tests cover one-shot seek claiming, stale decoder output rejection, alignment tolerance, completion ordering, invalid targets and stale-generation aborts.
+
+**Important integration boundary:** this is the deterministic protocol model, not yet wired to the Media3 service/audio thread. The existing render-policy fade toward the current live decoder stream is not a valid catch-up implementation because that stream may be ahead of the substituted scratch cursor. It must not be enabled. The next implementation stage must bridge the processor's cursor-derived media timestamp to a main-thread one-shot native seek, preserve a bounded scratch tail across Media3's seek/flush, detect the first matching post-seek PCM span, and only then crossfade. The scratch feature gate remains closed; no audible scratch or gapless release is claimed.
