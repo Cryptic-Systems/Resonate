@@ -11,13 +11,14 @@ class DjScratchPcmReleaseRendererTest {
         private val writes: MutableList<ByteArray>,
     ) : DjScratchPcmReleaseRenderer.Track {
         var currentVolume = -1f
+        val volumeHistory = mutableListOf<Float>()
         var released = false
         var played = false
         var onPlay: () -> Unit = {}
         override fun preferDevice(deviceId: Int) = deviceId == 7
         override fun play() { played = true; onPlay() }
         override fun routedDeviceId() = actualRouteId
-        override fun setVolume(volume: Float) { this.currentVolume = volume }
+        override fun setVolume(volume: Float) { this.currentVolume = volume; volumeHistory.add(volume) }
         override fun write(buffer: ByteBuffer, sizeInBytes: Int): Int {
             val count = minOf(sizeInBytes, 4)
             val bytes = ByteArray(count)
@@ -79,7 +80,6 @@ class DjScratchPcmReleaseRendererTest {
                 assertEquals(31, config.audioSessionId)
                 assertEquals(48_000, config.sampleRate)
                 assertEquals(7, config.routeDeviceId)
-                assertEquals(0f, fake.currentVolume)
                 fake
             },
             routeGeneration = { 4L },
@@ -87,6 +87,7 @@ class DjScratchPcmReleaseRendererTest {
         assertTrue(renderer.open(contract()))
         assertTrue(fake.played)
         assertEquals(0.65f, fake.currentVolume)
+        assertEquals(listOf(0f, 0.65f), fake.volumeHistory)
 
         val tail = DjScratchReleaseTailBuffer(2, 16, 48_000)
         val pcm = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
