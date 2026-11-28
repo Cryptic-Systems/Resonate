@@ -412,6 +412,7 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   Future<void> cancelCrossfade() async {
     calls.add('cancelCrossfade');
     crossfadeCancelled = true;
+    crossfadeStatusValue = 'cancelled';
     final gate = cancelCrossfadeGate;
     if (gate != null) {
       calls.add('cancelCrossfade_waiting');
@@ -2565,6 +2566,22 @@ void main() {
       expect(provider.queueIndex, 0);
       expect(provider.media3ProviderSessionActive, isTrue);
       expect(provider.debugLegacyEngineConstructed, isFalse);
+
+      session.positionValue = const Duration(milliseconds: 178500);
+      session.states.add(_state(
+        song: outgoing,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+        crossfadeStatus: 'cancelled',
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(
+        session.calls.where((call) => call == 'crossfade:incoming_error').length,
+        1,
+        reason: 'The failed outgoing/incoming occurrence pair must be deferred until the queue advances.',
+      );
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
