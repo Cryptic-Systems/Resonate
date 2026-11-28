@@ -990,6 +990,11 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     }
   }
 
+  String _format(Duration value) {
+    final seconds = value.inSeconds.clamp(0, 1 << 30);
+    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+  }
+
   Future<void> _commitChannelGain(double value) async {
     if (!widget.canAdjustChannelGain) {
       if (mounted) {
