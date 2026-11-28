@@ -89,6 +89,7 @@ internal class DjScratchTimestampLedger {
         if (sampleRate <= 0 || channelCount !in 1..2 ||
             byteCount <= 0 || byteCount % bytesPerFrame != 0
         ) {
+            clearPending()
             return null
         }
 
