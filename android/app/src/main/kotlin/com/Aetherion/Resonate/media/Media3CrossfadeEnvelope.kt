@@ -30,4 +30,10 @@ internal object Media3CrossfadeEnvelope {
     /** A scheduled gain tick is valid only while this exact fade still owns both outputs. */
     fun shouldAdvanceRamp(generationMatches: Boolean, status: String): Boolean =
         generationMatches && status == "fading"
+
+    /** A cancellation restore belongs to one canonical physical deck occurrence. */
+    fun shouldRestoreCancelledGain(
+        generationMatches: Boolean,
+        canonicalDeckMatches: Boolean,
+    ): Boolean = generationMatches && canonicalDeckMatches
 }
