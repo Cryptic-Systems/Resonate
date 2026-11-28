@@ -1896,7 +1896,8 @@ class Media3PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         isDestroyed = true
-        cancelCrossfade()
+        cancelCrossfade(reason = "service_destroyed")
+        cancelCrossfadeGainRestore()
         djLoops.values.forEach { it.boundaryMessage?.cancel() }
         djLoops.clear()
         djScratchMailboxes.values.forEach { it.clear() }
