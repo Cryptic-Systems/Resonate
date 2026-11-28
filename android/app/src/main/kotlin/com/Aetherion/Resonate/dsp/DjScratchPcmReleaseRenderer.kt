@@ -73,10 +73,13 @@ internal class DjScratchPcmReleaseRenderer(
 
     /**
      * Opens the renderer silently and only unmutes after actual route identity
-     * and generation match. No PCM can be written before this succeeds.
+     * and generation match. The caller must first confirm that the Media3
+     * deck has been silenced for this handoff; this explicit barrier prevents
+     * two audible renderers from playing the same programme concurrently.
+     * No PCM can be written before this succeeds.
      */
-    fun open(contract: Contract): Boolean {
-        if (track != null || !contract.isValid() ||
+    fun open(contract: Contract, media3OutputSilenced: Boolean): Boolean {
+        if (!media3OutputSilenced || track != null || !contract.isValid() ||
             routeGeneration() != contract.routeGeneration
         ) return false
 
