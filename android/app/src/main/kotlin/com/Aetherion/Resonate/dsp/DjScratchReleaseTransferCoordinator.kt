@@ -28,6 +28,13 @@ internal class DjScratchReleaseTransferCoordinator(
         ABORTED,
     }
 
+    /** Cancel an in-flight or sealed transfer on transport/route invalidation. */
+    @Synchronized
+    fun abort(nextGeneration: Long): Boolean {
+        renderer.close()
+        return ownership.abort(nextGeneration)
+    }
+
     /**
      * Transfers a sealed tail exactly once, renders it on the same verified
      * route/session, waits until hardware playback has consumed it, then retires
@@ -65,9 +72,12 @@ internal class DjScratchReleaseTransferCoordinator(
             !scratchBuffer.isDirect
         ) return Result.REJECTED
 
-        if (!ownership.transfer(generation, consumerId, output) ||
-            !ownership.beginDrain(generation, consumerId)
-        ) return Result.REJECTED
+        if (!ownership.transfer(generation, consumerId, output)) return Result.REJECTED
+        if (!ownership.beginDrain(generation, consumerId)) {
+            renderer.close()
+            ownership.abort(generation + 1L)
+            return Result.ABORTED
+        }
 
         val startFrames = renderer.framesAccepted
         val opened = renderer.open(rendererContract, media3OutputSilenced)
