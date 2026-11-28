@@ -362,3 +362,18 @@ The previous scratch experiment had progressed beyond the documented gate: the p
 - The current release policy fades toward the live Media3 input, but Media3 continues decoding while scratch output is substituted. That is not a deterministic handoff to the scratch cursor's media position. Release must instead be coordinated with the actual audible output boundary and one controlled native seek/catch-up, without flushing the stream before the release envelope is heard.
 
 **Next implementation gate:** replace the one-buffer identity/FIFO assumption with a frame-span timeline that accounts for the configured PCM format, encoder-delay trimming, channel mapping, buffer conversion and retries; prove its association under the pinned 1.5.1 pipeline; then solve speed-stage placement and audible-boundary release/catch-up. Only after those tests pass may the scratch feature gate be opened. No physical-device validation is claimed by this source audit or by CI.
+
+
+### 2026-11-28 — frame-span timestamp association foundation
+
+The sink timestamp ledger has been advanced from buffer-identity/FIFO lookup to a bounded FIFO frame-span timeline:
+
+- `TimestampedDjAudioSink.configure` captures the accepted raw PCM source sample rate, channel count, PCM frame size and encoder delay from the Media3 `Format`. Non-raw sink formats are not treated as PCM history.
+- Each sink input buffer contributes a frame span. Retry calls for the same `ByteBuffer` retain the original PTS and do not enqueue a duplicate span.
+- The first user processor consumes output frame counts from those spans in FIFO order. The timeline skips configured encoder-delay frames across input-buffer boundaries, tolerates channel remapping, and accounts for source sample-width conversion (including float-to-PCM16) without assuming source and processor bytes-per-frame are identical.
+- A processor output spanning a non-contiguous PTS range, an unsupported sample rate/layout, or a bounded-queue overflow invalidates the timeline. The ledger stays fail-closed until a new format, flush or explicit discontinuity; it never shifts later PCM onto stale metadata.
+- Sink flush restores the configured encoder-delay trim because Media3 flushes its trimming processor. Explicit discontinuity clears queued spans without reapplying the initial encoder delay.
+
+Regression coverage now includes contiguous multi-buffer spans, encoder delay crossing buffer boundaries, stereo-to-mono mapping, float-to-PCM16 frame-size conversion, retried input buffers, discontinuity, flush, non-contiguous PTS rejection and queue invalidation. These tests validate the ledger model; they do not yet prove every codec/renderer combination or enable audible scratch.
+
+**Still outstanding before scratch enablement:** confirm the exact `DefaultAudioSink` lifecycle under partial writes, processor drain/back-pressure and format changes on the supported Media3 renderer configurations; account for playback-speed processing and the actual audible output clock; implement deterministic release/catch-up; then complete physical-device latency, reverse-audio, crackle, underrun and recovery validation.
