@@ -210,6 +210,7 @@ class Media3PlaybackService : MediaSessionService() {
         // live DSP meter registry empty until the service is rebuilt.
         DspEngineRegistry.setActiveDeck(activeDeckId)
         DspEngineSinkHook.activateDeck(activeDeckId)
+        cancelCrossfadeGainRestore()
         gainPolicy.resetDecks()
         applyDeckVolumes()
         crossfadeStatus = "idle"
