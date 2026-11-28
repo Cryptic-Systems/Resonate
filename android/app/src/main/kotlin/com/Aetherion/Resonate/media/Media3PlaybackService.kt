@@ -2,6 +2,10 @@ package com.Aetherion.Resonate.media
 
 import android.content.Context
 import android.net.Uri
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
@@ -22,6 +26,8 @@ import com.aetherion.resonate.dsp.DspEngineSinkHook
 import com.aetherion.resonate.dsp.DjScratchTimestampLedger
 import com.aetherion.resonate.dsp.DjScratchControlMailbox
 import com.aetherion.resonate.dsp.DjScratchSpeedMapping
+import com.aetherion.resonate.dsp.DjScratchOutputRouteGeneration
+import com.aetherion.resonate.dsp.DjScratchReleaseTailOwnership
 import com.aetherion.resonate.dsp.DspEngineRegistry
 import com.Aetherion.Resonate.R
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -99,6 +105,16 @@ class Media3PlaybackService : MediaSessionService() {
     // The sink playback-head clock is the only permitted source for a future
     // release-tail splice boundary; ExoPlayer currentPosition may be decoder-ahead.
     private val timestampedSinksByDeck = ConcurrentHashMap<String, TimestampedDjAudioSink>()
+    private val scratchOutputRouteGeneration = DjScratchOutputRouteGeneration()
+    private val scratchAudioDeviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+            scratchOutputRouteGeneration.onOutputDevicesChanged()
+        }
+
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+            scratchOutputRouteGeneration.onOutputDevicesChanged()
+        }
+    }
     private fun standbyDeckId(): String = if (activeDeckId == "A") "B" else "A"
     // ExoPlayer focus handling is opt-in at the migration boundary. The legacy
     // audio_session owner remains untouched until an explicit provider cutover.
@@ -133,6 +149,17 @@ class Media3PlaybackService : MediaSessionService() {
             "lastUnderrunBufferSizeMs" to lastUnderrunBufferSizeMs,
             "lastUnderrunElapsedSinceFeedMs" to lastUnderrunElapsedSinceFeedMs,
             "lastUnderrunElapsedRealtimeMs" to lastUnderrunElapsedRealtimeMs,
+            "scratchOutputRouteGeneration" to scratchOutputRouteGeneration.snapshot(),
+            "scratchOutputContractA" to scratchOutputContract("A")?.let { contract ->
+                mapOf("sampleRate" to contract.sampleRate, "channelCount" to contract.channelCount,
+                    "pcmEncoding" to contract.pcmEncoding, "audioSessionId" to contract.audioSessionId,
+                    "routeGeneration" to contract.routeGeneration, "processingChainId" to contract.processingChainId)
+            },
+            "scratchOutputContractB" to scratchOutputContract("B")?.let { contract ->
+                mapOf("sampleRate" to contract.sampleRate, "channelCount" to contract.channelCount,
+                    "pcmEncoding" to contract.pcmEncoding, "audioSessionId" to contract.audioSessionId,
+                    "routeGeneration" to contract.routeGeneration, "processingChainId" to contract.processingChainId)
+            },
             "scratchAudibleMediaTimeUsA" to scratchAudibleMediaPositionUs("A"),
             "scratchAudibleMediaTimeUsB" to scratchAudibleMediaPositionUs("B"),
             "scratchDeckA" to DspEngineSinkHook.scratchDiagnostics("A"),
@@ -147,6 +174,32 @@ class Media3PlaybackService : MediaSessionService() {
         } else {
             null
         }
+
+    /**
+     * Candidate contract for the post-DSP PCM handoff. Its PCM format describes
+     * the processor boundary; a renderer must still verify the actual AudioTrack
+     * output route/format before accepting the transferred tail.
+     */
+    internal fun scratchOutputContract(deckId: String): DjScratchReleaseTailOwnership.OutputContract? {
+        if (deckId != "A" && deckId != "B") return null
+        val player = when {
+            !::activePlayer.isInitialized -> null
+            deckId == activeDeckId -> activePlayer
+            deckId == standbyDeckId() -> standbyPlayer
+            else -> null
+        } ?: return null
+        val format = DspEngineSinkHook.releaseTailPcmFormat(deckId) ?: return null
+        val sessionId = player.audioSessionId
+        if (sessionId <= 0) return null
+        return DjScratchReleaseTailOwnership.OutputContract(
+            sampleRate = format.first,
+            channelCount = format.second,
+            pcmEncoding = C.ENCODING_PCM_16BIT,
+            audioSessionId = sessionId,
+            routeGeneration = scratchOutputRouteGeneration.snapshot(),
+            processingChainId = "resonate-post-dsp-pcm16-v1",
+        )
+    }
 
     private fun applyDeckVolumes() {
         if (!::activePlayer.isInitialized) return
@@ -940,6 +993,10 @@ class Media3PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioManager.registerAudioDeviceCallback(scratchAudioDeviceCallback, mainHandler)
+        }
         activePlayer = newPlayer(handleAudioFocus = media3AudioFocusEnabled, deckId = "A")
         activeDeckId = "A"
         DspEngineRegistry.setActiveDeck(activeDeckId)
@@ -2011,6 +2068,10 @@ class Media3PlaybackService : MediaSessionService() {
         // normal mode-exit command. This prevents stale overlays from leaking
         // into the next Media3 service instance or ordinary Player session.
         DspEngineRegistry.resetDjDeckOverlaysForServiceTeardown()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioManager.unregisterAudioDeviceCallback(scratchAudioDeviceCallback)
+        }
         timestampedSinksByDeck.clear()
         mediaSession?.release()
         mediaSession = null
