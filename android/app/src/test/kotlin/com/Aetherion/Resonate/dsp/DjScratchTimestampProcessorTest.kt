@@ -68,6 +68,7 @@ class DjScratchTimestampProcessorTest {
     @Test
     fun flushInvalidatesCapturedHistoryAndResetReleasesIt() {
         val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 48_000, channelCount = 2, encoderDelayFrames = 0)
         val processor = DjScratchTimestampProcessor(ledger)
         processor.configure(AudioProcessor.AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
         processor.flush()
