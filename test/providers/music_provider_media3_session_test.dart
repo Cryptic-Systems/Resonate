@@ -2496,6 +2496,7 @@ void main() {
         queue: <Song>[first, second],
       ), isTrue);
       await provider.setCrossfadeDuration(500);
+      session.playbackSpeedValue = 1.15;
 
       session.positionValue = const Duration(seconds: 178);
       session.states.add(_state(
@@ -2511,7 +2512,7 @@ void main() {
       expect(session.preloadedIndex, 1);
       expect(session.crossfadeDuration, isNotNull);
       expect(session.calls, contains('crossfade:500'));
-      expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+      expect(session.calls, contains('deckSpeeds:1.15:1.15'));
       expect(provider.currentSong?.id, 'fade-in');
       expect(provider.media3ProviderSessionActive, isTrue);
 
