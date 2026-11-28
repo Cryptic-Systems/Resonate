@@ -21,8 +21,10 @@ class CrossfadeRuntime {
   /// Queue-occurrence identity for the normal Media3 automatic preload.
   /// Media IDs alone are insufficient when the same recording occurs twice.
   int? preloadedNextQueueIndex;
+  String? preloadedNextPath;
   String? preloadedOutgoingSongId;
   int? preloadedOutgoingQueueIndex;
+  String? preloadedOutgoingPath;
 
   bool preloadInFlight = false;
 
@@ -65,8 +67,10 @@ class CrossfadeRuntime {
     completionObservedSongId = null;
     preloadedNextSongId = null;
     preloadedNextQueueIndex = null;
+    preloadedNextPath = null;
     preloadedOutgoingSongId = null;
     preloadedOutgoingQueueIndex = null;
+    preloadedOutgoingPath = null;
     preloadInFlight = false;
     if (clearRepeatSelf) {
       repeatSelfHandoffArmed = false;
