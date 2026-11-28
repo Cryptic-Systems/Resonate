@@ -155,6 +155,9 @@ class DjScratchTimestampProcessorTest {
             assertEquals(2, chain.size)
             assertTrue(chain[0] is DjScratchTimestampProcessor)
             assertTrue(chain[1] is DspEngineAudioProcessor)
+            val diagnostics = DspEngineSinkHook.scratchDiagnostics("A")
+            assertEquals(true, diagnostics["processorPresent"])
+            assertEquals(false, diagnostics["configured"])
         } finally {
             DspEngineSinkHook.forgetDeck("A")
         }
