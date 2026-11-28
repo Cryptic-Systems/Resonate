@@ -26,6 +26,72 @@ class Media3CrossfadeEnvelopeTest {
     }
 
     @Test
+    fun cancellationRestoresOutgoingGainContinuouslyAndMutesIncomingDeck() {
+        val startProgress = 0.5f
+        val startGains = Media3CrossfadeEnvelope.gains(startProgress)
+        val middleProgress = Media3CrossfadeEnvelope.restorationProgress(
+            startProgress = startProgress,
+            elapsedFraction = 0.5f,
+        )
+        val middleGains = Media3CrossfadeEnvelope.gains(middleProgress)
+        val endProgress = Media3CrossfadeEnvelope.restorationProgress(
+            startProgress = startProgress,
+            elapsedFraction = 1f,
+        )
+        val endGains = Media3CrossfadeEnvelope.gains(endProgress)
+
+        assertEquals(startGains.first, startGains.first, 0f)
+        assertTrue(middleGains.first > startGains.first)
+        assertTrue(endGains.first > middleGains.first)
+        assertEquals(1f, endGains.first, 0.0001f)
+        assertEquals(0f, endProgress, 0f)
+    }
+
+    @Test
+    fun staleOrInterruptedRampCannotAdvance() {
+        assertTrue(
+            Media3CrossfadeEnvelope.shouldAdvanceRamp(
+                generationMatches = true,
+                status = "fading",
+                activeIsPlaying = true,
+                incomingIsPlaying = true,
+            ),
+        )
+        assertFalse(
+            Media3CrossfadeEnvelope.shouldAdvanceRamp(
+                generationMatches = false,
+                status = "fading",
+                activeIsPlaying = true,
+                incomingIsPlaying = true,
+            ),
+        )
+        assertFalse(
+            Media3CrossfadeEnvelope.shouldAdvanceRamp(
+                generationMatches = true,
+                status = "cancelled",
+                activeIsPlaying = true,
+                incomingIsPlaying = true,
+            ),
+        )
+        assertFalse(
+            Media3CrossfadeEnvelope.shouldAdvanceRamp(
+                generationMatches = true,
+                status = "fading",
+                activeIsPlaying = false,
+                incomingIsPlaying = true,
+            ),
+        )
+        assertFalse(
+            Media3CrossfadeEnvelope.shouldAdvanceRamp(
+                generationMatches = true,
+                status = "fading",
+                activeIsPlaying = true,
+                incomingIsPlaying = false,
+            ),
+        )
+    }
+
+    @Test
     fun progressIsClampedAndNonFiniteValuesAreSafe() {
         assertEquals(
             Media3CrossfadeEnvelope.gains(0f),
