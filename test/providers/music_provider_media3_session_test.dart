@@ -2603,6 +2603,8 @@ void main() {
 
       // Prepare and settle the standby deck in the lead-in window before asking
       // the native crossfade command to report its simulated decode error.
+      final deckSpeedCallsBeforePreload =
+          session.calls.where((call) => call.startsWith('deckSpeeds:')).length;
       session.positionValue = const Duration(milliseconds: 170000);
       session.states.add(_state(
         song: outgoing,
@@ -2613,11 +2615,15 @@ void main() {
       ));
       for (var attempt = 0;
           attempt < 120 &&
-              !session.calls.any((call) => call.startsWith('deckSpeeds:'));
+              (session.preloadedSong?.id != incoming.id ||
+                  !session.calls.contains('preloadNext:settled') ||
+                  session.calls.where((call) => call.startsWith('deckSpeeds:')).length <=
+                      deckSpeedCallsBeforePreload);
           attempt++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
       expect(session.preloadedSong?.id, incoming.id);
+      expect(session.calls, contains('preloadNext:settled'));
       await Future<void>.delayed(const Duration(milliseconds: 40));
 
       session.positionValue = const Duration(seconds: 178);
