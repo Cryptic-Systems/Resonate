@@ -125,6 +125,40 @@ class DjScratchTimestampProcessorTest {
         assertEquals(1L, diagnostics["activeRenderFallbacks"])
     }
 
+
+    @Test
+    fun postDspCaptureTimestampFollowsScratchCursorInsteadOfDecoderAheadPts() {
+        val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 1_000, channelCount = 1, encoderDelayFrames = 0)
+        val mailbox = DjScratchControlMailbox()
+        val processor = DjScratchTimestampProcessor(
+            ledger = ledger,
+            controlMailbox = mailbox,
+            enableScratchRendering = true,
+        )
+        processor.configure(AudioProcessor.AudioFormat(1_000, 1, C.ENCODING_PCM_16BIT))
+        processor.flush()
+
+        val history = ByteBuffer.allocateDirect(10).order(ByteOrder.LITTLE_ENDIAN).apply {
+            listOf(100, 200, 300, 400, 500).forEach { putShort(it.toShort()) }
+            flip()
+        }
+        ledger.record(history, 10_000L)
+        processor.queueInput(history)
+
+        val active = ByteBuffer.allocateDirect(8).order(ByteOrder.LITTLE_ENDIAN).apply {
+            listOf(600, 700, 800, 900).forEach { putShort(it.toShort()) }
+            flip()
+        }
+        ledger.record(active, 15_000L)
+        assertTrue(mailbox.publish("track-1", true, 1.0, 12_000L))
+        processor.queueInput(active)
+
+        assertEquals(15_000L, processor.lastConsumedTimestampForTest()?.presentationTimeUs)
+        assertEquals(12_000L, processor.releaseTailTimestampUs())
+        assertEquals(12_000L, processor.diagnosticsSnapshot()["cursorMediaTimeUs"])
+    }
+
     @Test
     fun allocatesFourSecondsOfScratchHistoryPerDeck() {
         val processor = DjScratchTimestampProcessor(DjScratchTimestampLedger())
