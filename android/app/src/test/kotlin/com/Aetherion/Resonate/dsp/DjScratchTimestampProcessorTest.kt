@@ -27,6 +27,7 @@ class DjScratchTimestampProcessorTest {
     @Test
     fun capturesTimestampedPcmBeforeDspAndPassesOriginalAudioThrough() {
         val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 48_000, channelCount = 2, encoderDelayFrames = 0)
         val processor = DjScratchTimestampProcessor(ledger)
         processor.configure(AudioProcessor.AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
         processor.flush() // Activate the configured format before queueInput.
@@ -88,6 +89,7 @@ class DjScratchTimestampProcessorTest {
     @Test
     fun activeMailboxRemainsPassThroughWhileAudibleScratchGateIsClosed() {
         val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 1_000, channelCount = 1, encoderDelayFrames = 0)
         val mailbox = DjScratchControlMailbox()
         val processor = DjScratchTimestampProcessor(ledger, mailbox)
         processor.configure(AudioProcessor.AudioFormat(1_000, 1, C.ENCODING_PCM_16BIT))
