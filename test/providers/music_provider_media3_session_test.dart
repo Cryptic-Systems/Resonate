@@ -2446,7 +2446,7 @@ void main() {
       await session.states.close();
     });
 
-    test('native standby error preserves outgoing playback for canonical queue completion', () async {
+    test('native standby error preserves outgoing playback, selected speed and queue completion ownership', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'crossfade_enabled': true,
         'crossfade_duration': 500.0,
@@ -2463,6 +2463,7 @@ void main() {
       final crossfade = CrossfadeProvider(music: provider);
       await crossfade.ready;
       expect(provider.crossfadeEnabled, isTrue);
+      session.playbackSpeedValue = 1.15;
       // Preload belongs to the lead-in window, not the fade-arm window.
       // At 2.4s remaining the ordinary 500ms crossfade is already too late
       // to request a fresh preload, so first place playback 10s from the end.
@@ -2501,6 +2502,8 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
       expect(session.cancelledTransitionSpeedResetCount, 1);
+      expect(session.calls, contains('deckSpeeds:1.15:1.15'));
+      expect(session.deckSpeeds, (1.15, 1.15));
       expect(session.calls.where((call) => call == 'loadQueue').length, 1,
           reason: 'A failed native fade must not reload the incoming queue item.');
       expect(session.calls.where((call) => call == 'play').length, 1,
@@ -2509,6 +2512,22 @@ void main() {
       expect(session.queueIndexValue, 0);
       expect(session.positionValue, const Duration(milliseconds: 178000));
       expect(session.playingValue, isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      session.positionValue = const Duration(milliseconds: 178500);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+        crossfadeStatus: 'cancelled',
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(
+        session.calls.where((call) => call == 'crossfade:incoming_error').length,
+        1,
+        reason: 'The failed occurrence pair must remain deferred until canonical queue completion.',
+      );
       crossfade.dispose();
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
@@ -2579,120 +2598,6 @@ void main() {
       expect(provider.currentSong?.id, 'fade-in');
       expect(provider.media3ProviderSessionActive, isTrue);
 
-      provider.dispose();
-      await Future<void>.delayed(Duration.zero);
-      await session.audioSessions.close();
-      await session.states.close();
-    });
-
-    test('incoming deck error preserves outgoing playback and defers to queue completion', () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{
-        'crossfade_enabled': true,
-        'crossfade_duration': 500.0,
-      });
-      final session = _FakePlaybackSession()
-        ..emitIncomingErrorOnCrossfade = true;
-      final provider = MusicProvider(media3ProviderSession: session);
-      final outgoing = _song('incoming-error-outgoing');
-      final incoming = _song('incoming-error-incoming');
-      await provider.prepareMedia3ProviderSession();
-      expect(await provider.playSong(
-        outgoing,
-        queue: <Song>[outgoing, incoming],
-      ), isTrue);
-      final crossfade = CrossfadeProvider(music: provider);
-      await crossfade.ready;
-      expect(provider.crossfadeEnabled, isTrue);
-      await provider.setCrossfadeDuration(500);
-      // Simulate a user-selected playback rate; transition cleanup must restore
-      // this rate rather than hard-resetting the outgoing deck to 1.0x.
-      session.playbackSpeedValue = 1.15;
-
-      // Prepare and settle the standby deck in the lead-in window before asking
-      // the native crossfade command to report its simulated decode error.
-      final deckSpeedCallsBeforePreload =
-          session.calls.where((call) => call.startsWith('deckSpeeds:')).length;
-      session.positionValue = const Duration(milliseconds: 170000);
-      session.states.add(_state(
-        song: outgoing,
-        queueIndex: 0,
-        playing: true,
-        playWhenReady: true,
-        position: session.positionValue,
-      ));
-      provider.onCrossfadeSettingsRestored();
-      for (var attempt = 0;
-          attempt < 120 &&
-              (session.preloadedSong?.id != incoming.id ||
-                  !session.calls.contains('preloadNext:settled') ||
-                  session.calls.where((call) => call.startsWith('deckSpeeds:')).length <=
-                      deckSpeedCallsBeforePreload);
-          attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-      expect(session.preloadedSong?.id, incoming.id);
-      expect(session.calls, contains('preloadNext:settled'));
-      await Future<void>.delayed(const Duration(milliseconds: 40));
-
-      session.positionValue = const Duration(seconds: 178);
-      session.states.add(_state(
-        song: outgoing,
-        queueIndex: 0,
-        playing: true,
-        playWhenReady: true,
-        position: session.positionValue,
-      ));
-
-      for (var attempt = 0;
-          attempt < 120 &&
-              session.cancelledTransitionSpeedResetCount == 0;
-          attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-
-      expect(session.calls, contains('crossfade:incoming_error'));
-      expect(session.calls, contains('cancelCrossfade'));
-      expect(session.calls, contains('clearDeckEqOverlay:standby'));
-      expect(session.cancelledTransitionSpeedResetCount, 1);
-      expect(session.calls, contains('deckSpeeds:1.15:1.15'));
-      expect(session.deckSpeeds, (1.15, 1.15));
-      expect(
-        session.calls.where((call) => call == 'loadQueue').length,
-        1,
-        reason: 'A failed fade must not reload the incoming queue item from zero.',
-      );
-      expect(
-        session.calls.where((call) => call == 'play').length,
-        1,
-        reason: 'Recovery must not issue a second Play or restart either deck.',
-      );
-      expect(session.currentSongValue?.id, outgoing.id);
-      expect(session.queueIndexValue, 0);
-      expect(session.positionValue, const Duration(seconds: 178));
-      expect(session.playingValue, isTrue);
-      expect(provider.currentSong?.id, outgoing.id);
-      expect(provider.queueIndex, 0);
-      expect(provider.media3ProviderSessionActive, isTrue);
-      expect(provider.debugLegacyEngineConstructed, isFalse);
-      await Future<void>.delayed(const Duration(milliseconds: 30));
-
-      session.positionValue = const Duration(milliseconds: 178500);
-      session.states.add(_state(
-        song: outgoing,
-        queueIndex: 0,
-        playing: true,
-        playWhenReady: true,
-        position: session.positionValue,
-        crossfadeStatus: 'cancelled',
-      ));
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(
-        session.calls.where((call) => call == 'crossfade:incoming_error').length,
-        1,
-        reason: 'The failed outgoing/incoming occurrence pair must be deferred until the queue advances.',
-      );
-
-      crossfade.dispose();
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
       await session.audioSessions.close();
