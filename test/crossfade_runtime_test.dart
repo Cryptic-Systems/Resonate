@@ -129,6 +129,46 @@ void main() {
       expect(acknowledged({...base, 'currentPath': '/music/other.mp3'}), isFalse);
     });
 
+    test('maps native progress to effects time and clamps invalid values', () {
+      final runtime = CrossfadeRuntime();
+
+      expect(
+        runtime.elapsedMillisecondsForNativeProgress(
+          progress: 0.25,
+          durationMs: 8000,
+        ),
+        2000,
+      );
+      expect(
+        runtime.elapsedMillisecondsForNativeProgress(
+          progress: 1.0,
+          durationMs: 8000,
+        ),
+        8000,
+      );
+      expect(
+        runtime.elapsedMillisecondsForNativeProgress(
+          progress: 2.0,
+          durationMs: 8000,
+        ),
+        8000,
+      );
+      expect(
+        runtime.elapsedMillisecondsForNativeProgress(
+          progress: double.nan,
+          durationMs: 8000,
+        ),
+        0,
+      );
+      expect(
+        runtime.elapsedMillisecondsForNativeProgress(
+          progress: 0.5,
+          durationMs: 0,
+        ),
+        0,
+      );
+    });
+
     test('reports every automatic-work category until each is cleared', () {
       final runtime = CrossfadeRuntime();
 
