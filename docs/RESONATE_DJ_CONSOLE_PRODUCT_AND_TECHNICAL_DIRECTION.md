@@ -349,3 +349,16 @@ The next scratch foundation is now implemented as an isolated, testable native c
 - Tests cover stereo interleaving, wrap/overflow, per-frame PTS, discontinuous blocks, clear invalidation, cursor direction and bounds, and byte-exact processor pass-through.
 
 **Scope and safety:** no scratch gesture is exposed and no cursor is currently allowed to alter audible output. The ring is a bounded capture history only. The next pass must add the audio-thread control handoff and a deterministic render/read policy, then prove normal playback, flush/seek/format changes, pause/resume and cancellation before any scratch audio is enabled. Physical-device latency and sound-quality validation remain outstanding.
+
+
+### 2026-11-28 — scratch gate reassertion and Media3 1.5.1 source audit
+
+The previous scratch experiment had progressed beyond the documented gate: the platter was publishing native scratch commands and the timestamp processor could replace audible PCM, even though the release/catch-up contract and physical-device validation were not complete. This was premature and has been corrected.
+
+- The platter gesture is again a bounded one-shot seek preview committed once on release. Cancellation, pause, track replacement and transition do not commit a seek.
+- The native service rejects scratch commands while the feature gate is closed. The timestamp processor continues passive PCM capture but always passes the original PCM through unchanged. Renderer-policy unit tests remain algorithm tests; they are not evidence that audible scratching is enabled.
+- The DJ DefaultAudioSink now explicitly disables float output. In the pinned Media3 1.5.1 source, selecting float output constructs a pipeline containing only the float conversion processor and omits the configured user AudioProcessor chain. Resonate's native DSP and timestamp stages require the PCM16 user-processor path; relying on the renderer-factory float flag could therefore bypass both.
+- Source inspection also confirms that Media3's built-in trim, channel-map and PCM conversion processors run before the configured user processors, while silence skipping and Sonic speed adjustment run after them. The timestamp ledger currently records PTS at AudioSink.handleBuffer, before those transformations. Identity/FIFO association alone does not yet prove correct frame provenance through encoder-delay trimming, channel mapping, PCM conversion, processor drain/back-pressure or playback-speed changes.
+- The current release policy fades toward the live Media3 input, but Media3 continues decoding while scratch output is substituted. That is not a deterministic handoff to the scratch cursor's media position. Release must instead be coordinated with the actual audible output boundary and one controlled native seek/catch-up, without flushing the stream before the release envelope is heard.
+
+**Next implementation gate:** replace the one-buffer identity/FIFO assumption with a frame-span timeline that accounts for the configured PCM format, encoder-delay trimming, channel mapping, buffer conversion and retries; prove its association under the pinned 1.5.1 pipeline; then solve speed-stage placement and audible-boundary release/catch-up. Only after those tests pass may the scratch feature gate be opened. No physical-device validation is claimed by this source audit or by CI.
