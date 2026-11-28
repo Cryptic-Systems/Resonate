@@ -1,57 +1,220 @@
 package com.aetherion.resonate.dsp
 
 import java.nio.ByteBuffer
+import java.util.ArrayDeque
 import java.util.IdentityHashMap
+import kotlin.math.abs
 
 /**
- * Associates Media3 input-buffer identities with their media presentation
- * timestamps until the first PCM processor consumes those exact buffers.
- *
- * Identity, rather than ByteBuffer equality, is intentional: Media3 may retry
- * handleBuffer with the same object while back-pressured, and distinct buffers
- * can have equal contents/positions.
+ * Maps sink-submitted PCM frame spans to the PCM16 blocks delivered to the
+ * first user processor. DefaultAudioSink may trim encoder delay and remap
+ * channels before that processor, so matching ByteBuffer identity alone is
+ * insufficient. Spans are consumed in sink FIFO order and frame offsets are
+ * carried across buffer boundaries.
  */
 internal class DjScratchTimestampLedger {
-    private companion object { const val MAX_PENDING_BUFFERS = 64 }
-    private val timestamps = IdentityHashMap<ByteBuffer, Long>()
+    private companion object {
+        const val MAX_PENDING_BUFFERS = 64
+    }
+
+    private data class PendingSpan(
+        val buffer: ByteBuffer,
+        val presentationTimeUs: Long,
+        val sampleRate: Int,
+        val totalFrames: Int,
+        var consumedFrames: Int = 0,
+    )
+
+    private val byIdentity = IdentityHashMap<ByteBuffer, PendingSpan>()
+    private val pending = ArrayDeque<PendingSpan>()
+    private var configuredSampleRate = 0
+    private var configuredSourceChannels = 0
+    private var configuredSourceBytesPerFrame = 0
+    private var configuredEncoderDelayFrames = 0
+    private var trimFramesRemaining = 0
+    private var desynchronized = false
+
+    @Synchronized
+    fun configure(
+        sampleRate: Int,
+        channelCount: Int,
+        encoderDelayFrames: Int,
+        sourceBytesPerFrame: Int = channelCount * Short.SIZE_BYTES,
+    ) {
+        clearPending()
+        configuredSampleRate = sampleRate.takeIf { it > 0 } ?: 0
+        configuredSourceChannels = channelCount.takeIf { it > 0 } ?: 0
+        configuredSourceBytesPerFrame = sourceBytesPerFrame.takeIf { it > 0 } ?: 0
+        configuredEncoderDelayFrames = encoderDelayFrames.coerceAtLeast(0)
+        trimFramesRemaining = configuredEncoderDelayFrames
+        desynchronized = false
+    }
 
     @Synchronized
     fun record(buffer: ByteBuffer, presentationTimeUs: Long) {
-        if (presentationTimeUs < 0L || !buffer.hasRemaining()) return
-        // A retry of the same Media3 buffer must not replace its original PTS.
-        if (!timestamps.containsKey(buffer)) {
-            if (timestamps.size >= MAX_PENDING_BUFFERS) timestamps.clear()
-            timestamps[buffer] = presentationTimeUs
+        if (desynchronized || presentationTimeUs < 0L || !buffer.hasRemaining() ||
+            configuredSampleRate <= 0 || configuredSourceChannels <= 0 ||
+            configuredSourceBytesPerFrame <= 0
+        ) return
+
+        // handleBuffer may be retried with the same ByteBuffer while the sink
+        // is back-pressured. Retain the original PTS and original frame span.
+        if (byIdentity.containsKey(buffer)) return
+        val bytesPerFrame = configuredSourceBytesPerFrame
+        val byteCount = buffer.remaining()
+        if (byteCount <= 0 || byteCount % bytesPerFrame != 0) return
+
+        if (pending.size >= MAX_PENDING_BUFFERS) {
+            // Losing any span invalidates FIFO association. Fail closed rather
+            // than allowing later PCM to inherit an old timestamp.
+            invalidateTimeline()
+            return
         }
+        val span = PendingSpan(
+            buffer = buffer,
+            presentationTimeUs = presentationTimeUs,
+            sampleRate = configuredSampleRate,
+            totalFrames = byteCount / bytesPerFrame,
+        )
+        byIdentity[buffer] = span
+        pending.addLast(span)
     }
 
+    /**
+     * Consumes the next output frame range. Channel mapping preserves frame
+     * count; encoder delay is removed from the leading source spans. If the
+     * processor output crosses a PTS gap or an unsupported sample-rate change,
+     * the entire association is rejected.
+     */
     @Synchronized
     fun consume(
         buffer: ByteBuffer,
         sampleRate: Int,
         channelCount: Int,
     ): DjScratchPcmTimestamp? {
-        val presentationTimeUs = timestamps.remove(buffer) ?: return null
-        if (sampleRate <= 0 || channelCount !in 1..2) return null
         val bytesPerFrame = channelCount * Short.SIZE_BYTES
         val byteCount = buffer.remaining()
-        if (byteCount <= 0 || byteCount % bytesPerFrame != 0) return null
+        if (sampleRate <= 0 || channelCount !in 1..2 ||
+            byteCount <= 0 || byteCount % bytesPerFrame != 0
+        ) {
+            invalidateTimeline()
+            return null
+        }
+
+        var framesNeeded = byteCount / bytesPerFrame
+        val outputFrameCount = framesNeeded
+        var firstPresentationTimeUs: Long? = null
+        var framesFromFirst = 0
+        var contiguous = true
+        var expectedNextTimeUs = 0L
+
+        while (framesNeeded > 0) {
+            val span = pending.peekFirst() ?: run {
+                if (framesNeeded != outputFrameCount) invalidateTimeline()
+                return null
+            }
+
+            if (span.sampleRate != sampleRate || span.sampleRate != configuredSampleRate) {
+                invalidateTimeline()
+                return null
+            }
+
+            val spanRemaining = span.totalFrames - span.consumedFrames
+            if (spanRemaining <= 0) {
+                removeFirstSpan()
+                continue
+            }
+
+            if (trimFramesRemaining > 0) {
+                val skipped = minOf(trimFramesRemaining, spanRemaining)
+                span.consumedFrames += skipped
+                trimFramesRemaining -= skipped
+                if (span.consumedFrames == span.totalFrames) removeFirstSpan()
+                continue
+            }
+
+            val spanTimeUs = span.presentationTimeUs +
+                span.consumedFrames.toLong() * 1_000_000L / span.sampleRate
+            if (firstPresentationTimeUs == null) {
+                firstPresentationTimeUs = spanTimeUs
+            } else {
+                val toleranceUs = (1_000_000L / sampleRate).coerceAtLeast(1L)
+                if (abs(spanTimeUs - expectedNextTimeUs) > toleranceUs) {
+                    contiguous = false
+                }
+            }
+
+            val taken = minOf(framesNeeded, spanRemaining)
+            span.consumedFrames += taken
+            framesNeeded -= taken
+            framesFromFirst += taken
+            expectedNextTimeUs = checkNotNull(firstPresentationTimeUs) +
+                framesFromFirst.toLong() * 1_000_000L / sampleRate
+
+            if (span.consumedFrames == span.totalFrames) removeFirstSpan()
+        }
+
+        if (!contiguous || firstPresentationTimeUs == null) {
+            invalidateTimeline()
+            return null
+        }
         return DjScratchPcmTimestamp(
-            presentationTimeUs = presentationTimeUs,
-            frameCount = byteCount / bytesPerFrame,
+            presentationTimeUs = firstPresentationTimeUs,
+            frameCount = outputFrameCount,
             sampleRate = sampleRate,
             channelCount = channelCount,
             bytesPerFrame = bytesPerFrame,
         )
     }
 
+    /** A seek/discontinuity invalidates queued PTS but does not re-trim delay. */
     @Synchronized
-    fun clear() {
-        timestamps.clear()
+    fun handleDiscontinuity() {
+        clearPending()
+        trimFramesRemaining = 0
+        desynchronized = false
+    }
+
+    /** AudioSink.flush resets its trimming processor, so restore encoder delay. */
+    @Synchronized
+    fun resetForFlush() {
+        clearPending()
+        trimFramesRemaining = configuredEncoderDelayFrames
+        desynchronized = false
     }
 
     @Synchronized
-    internal fun pendingCountForTest(): Int = timestamps.size
+    fun clear() {
+        clearPending()
+        configuredSampleRate = 0
+        configuredSourceChannels = 0
+        configuredSourceBytesPerFrame = 0
+        configuredEncoderDelayFrames = 0
+        trimFramesRemaining = 0
+        desynchronized = false
+    }
+
+    private fun invalidateTimeline() {
+        clearPending()
+        trimFramesRemaining = 0
+        desynchronized = true
+    }
+
+    private fun removeFirstSpan() {
+        val removed = pending.pollFirst() ?: return
+        byIdentity.remove(removed.buffer)
+    }
+
+    private fun clearPending() {
+        byIdentity.clear()
+        pending.clear()
+    }
+
+    @Synchronized
+    internal fun pendingCountForTest(): Int = pending.size
+
+    @Synchronized
+    internal fun trimFramesRemainingForTest(): Int = trimFramesRemaining
 }
 
 internal data class DjScratchPcmTimestamp(

@@ -24,4 +24,10 @@ class RepeatModeTransitionPolicy {
     required bool media3HandoffPromoted,
   }) =>
       transitionActive && !repeatSelfFadeInProgress && !media3HandoffPromoted;
+
+  /// Same-track DJ-style replay is intentionally retired. Repeat One is a
+  /// normal single-source loop and must not promote the same track via A/B.
+  static bool shouldScheduleAutomaticSelfCrossfade({
+    required bool repeatOne,
+  }) => false;
 }

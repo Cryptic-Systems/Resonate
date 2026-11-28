@@ -88,6 +88,8 @@ class PlaybackSnapshot {
     this.deckB,
     this.audioUnderrunCountA = 0,
     this.audioUnderrunCountB = 0,
+    this.scratchDiagnosticsA = const <String, Object?>{},
+    this.scratchDiagnosticsB = const <String, Object?>{},
     this.lastUnderrunDeck,
     this.lastUnderrunBufferSizeFrames = 0,
     this.lastUnderrunBufferSizeMs = 0,
@@ -140,6 +142,8 @@ class PlaybackSnapshot {
   /// Cumulative native underruns attributed to physical A/B output decks.
   final int audioUnderrunCountA;
   final int audioUnderrunCountB;
+  final Map<String, Object?> scratchDiagnosticsA;
+  final Map<String, Object?> scratchDiagnosticsB;
   final String? lastUnderrunDeck;
   final int lastUnderrunBufferSizeFrames;
   final int lastUnderrunBufferSizeMs;

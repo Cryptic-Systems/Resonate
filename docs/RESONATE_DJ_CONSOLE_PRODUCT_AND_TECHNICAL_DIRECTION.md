@@ -349,3 +349,189 @@ The next scratch foundation is now implemented as an isolated, testable native c
 - Tests cover stereo interleaving, wrap/overflow, per-frame PTS, discontinuous blocks, clear invalidation, cursor direction and bounds, and byte-exact processor pass-through.
 
 **Scope and safety:** no scratch gesture is exposed and no cursor is currently allowed to alter audible output. The ring is a bounded capture history only. The next pass must add the audio-thread control handoff and a deterministic render/read policy, then prove normal playback, flush/seek/format changes, pause/resume and cancellation before any scratch audio is enabled. Physical-device latency and sound-quality validation remain outstanding.
+
+
+### 2026-11-28 — scratch gate reassertion and Media3 1.5.1 source audit
+
+The previous scratch experiment had progressed beyond the documented gate: the platter was publishing native scratch commands and the timestamp processor could replace audible PCM, even though the release/catch-up contract and physical-device validation were not complete. This was premature and has been corrected.
+
+- The platter gesture is again a bounded one-shot seek preview committed once on release. Cancellation, pause, track replacement and transition do not commit a seek.
+- The native service rejects scratch commands while the feature gate is closed. The timestamp processor continues passive PCM capture but always passes the original PCM through unchanged. Renderer-policy unit tests remain algorithm tests; they are not evidence that audible scratching is enabled.
+- The DJ DefaultAudioSink now explicitly disables float output. In the pinned Media3 1.5.1 source, selecting float output constructs a pipeline containing only the float conversion processor and omits the configured user AudioProcessor chain. Resonate's native DSP and timestamp stages require the PCM16 user-processor path; relying on the renderer-factory float flag could therefore bypass both.
+- Source inspection also confirms that Media3's built-in trim, channel-map and PCM conversion processors run before the configured user processors, while silence skipping and Sonic speed adjustment run after them. The timestamp ledger currently records PTS at AudioSink.handleBuffer, before those transformations. Identity/FIFO association alone does not yet prove correct frame provenance through encoder-delay trimming, channel mapping, PCM conversion, processor drain/back-pressure or playback-speed changes.
+- The current release policy fades toward the live Media3 input, but Media3 continues decoding while scratch output is substituted. That is not a deterministic handoff to the scratch cursor's media position. Release must instead be coordinated with the actual audible output boundary and one controlled native seek/catch-up, without flushing the stream before the release envelope is heard.
+
+**Next implementation gate:** replace the one-buffer identity/FIFO assumption with a frame-span timeline that accounts for the configured PCM format, encoder-delay trimming, channel mapping, buffer conversion and retries; prove its association under the pinned 1.5.1 pipeline; then solve speed-stage placement and audible-boundary release/catch-up. Only after those tests pass may the scratch feature gate be opened. No physical-device validation is claimed by this source audit or by CI.
+
+
+### 2026-11-28 — frame-span timestamp association foundation
+
+The sink timestamp ledger has been advanced from buffer-identity/FIFO lookup to a bounded FIFO frame-span timeline:
+
+- `TimestampedDjAudioSink.configure` captures the accepted raw PCM source sample rate, channel count, PCM frame size and encoder delay from the Media3 `Format`. Non-raw sink formats are not treated as PCM history.
+- Each sink input buffer contributes a frame span. Retry calls for the same `ByteBuffer` retain the original PTS and do not enqueue a duplicate span.
+- The first user processor consumes output frame counts from those spans in FIFO order. The timeline skips configured encoder-delay frames across input-buffer boundaries, tolerates channel remapping, and accounts for source sample-width conversion (including float-to-PCM16) without assuming source and processor bytes-per-frame are identical.
+- A processor output spanning a non-contiguous PTS range, an unsupported sample rate/layout, or a bounded-queue overflow invalidates the timeline. The ledger stays fail-closed until a new format, flush or explicit discontinuity; it never shifts later PCM onto stale metadata.
+- Sink flush restores the configured encoder-delay trim because Media3 flushes its trimming processor. Explicit discontinuity clears queued spans without reapplying the initial encoder delay.
+
+Regression coverage now includes contiguous multi-buffer spans, encoder delay crossing buffer boundaries, stereo-to-mono mapping, float-to-PCM16 frame-size conversion, retried input buffers, discontinuity, flush, non-contiguous PTS rejection and queue invalidation. These tests validate the ledger model; they do not yet prove every codec/renderer combination or enable audible scratch.
+
+**Still outstanding before scratch enablement:** confirm the exact `DefaultAudioSink` lifecycle under partial writes, processor drain/back-pressure and format changes on the supported Media3 renderer configurations; account for playback-speed processing and the actual audible output clock; implement deterministic release/catch-up; then complete physical-device latency, reverse-audio, crackle, underrun and recovery validation.
+
+
+### 2026-11-28 — scratch PCM history generation invalidation
+
+The per-deck scratch mailbox now carries an atomic generation alongside its latest control snapshot. A clear operation advances that generation and removes the old command in one compare-and-set state transition. This makes the invalidation boundary race-safe: a concurrent new publish is either retired before the clear or tagged with the new generation after it, never silently erased or attached to the previous timeline.
+
+At the first Resonate user-processor callback after a generation change, the audio thread clears that deck's PCM history and render cursor before appending the next timestamped PCM block. This retires buffered history on existing native clear boundaries, including seek, media-item/queue occurrence transition, manual physical-deck promotion and other explicit scratch cancellation paths. It also handles repeated queue occurrences that reuse the same media ID, because invalidation is generation-based rather than media-ID-based.
+
+Diagnostics now expose the observed mailbox generation and the number of history-generation resets. Tests cover generation advancement with and without a current command, replacement-track protection, and publishing into the new generation.
+
+**Scope and limits:** this hardens lifecycle invalidation; it does not solve the audible playback-speed clock or release/catch-up. Media3 Sonic/AudioTrack speed processing remains downstream of the current user-processor insertion point, so scratch rendering remains disabled. The next gate is to define and test the relationship between the cursor's media-time rate and downstream speed processing, then coordinate a release handoff at an actual audible output boundary. No physical-device validation or audible scratch enablement is claimed.
+
+
+### 2026-11-28 — downstream playback-speed compensation policy
+
+The scratch processor is positioned among Resonate's Media3 user processors, before Media3's downstream Sonic/AudioTrack playback-speed stage. A cursor rate sent directly from the platter would therefore be multiplied again by the user's normal playback speed. Added a bounded mapping policy:
+
+- Requested audible platter velocity is converted to pre-speed-stage cursor velocity by dividing by the current physical deck's PlaybackParameters.speed.
+- Reverse direction is preserved; unity speed is unchanged.
+- Invalid, non-positive or non-finite playback speeds are rejected.
+- A mapping that would exceed the bounded cursor velocity is rejected rather than clamped, so the requested platter rate is never silently altered.
+- The native service samples the selected physical deck's current speed when validating/publishing a scratch command. Inactive/release commands remain normalized and do not depend on the speed mapping.
+- Unit tests cover unity, faster/slower playback, reverse direction, invalid values and out-of-range compensation.
+
+The CI test fixture was also updated for the mailbox generation field introduced in the preceding lifecycle pass.
+
+**Scope and limits:** this is the rate-compensation contract for the current processor placement, not proof of audible scratch. It assumes the downstream stage's effective time scaling corresponds to the player's reported playback speed; device-specific AudioTrack behaviour, Sonic buffering/latency and playback-parameter changes during an active gesture still require validation. The feature gate remains closed. The next step is to coordinate playback-speed changes with an active cursor and define a release/catch-up handshake against the audible output boundary, then validate on physical devices.
+
+
+Playback-parameter changes during a published active scratch command now retire that command and advance the mailbox generation. The audio thread consequently discards the old cursor/history at its next processor block; the next platter update must be remapped using the new native playback-speed readback. This intentionally fails closed rather than allowing a stale cursor multiplier to continue through a changed Sonic/AudioTrack rate. The feature remains gated, and the callback-to-audible-boundary timing still needs physical-device verification.
+
+### 2026-11-28 — deterministic scratch release/catch-up protocol foundation
+
+Added a pure native release-handoff state machine with explicit phases: scratching, release requested, seek issued, waiting for aligned post-seek PCM, crossfade ready, complete, and aborted.
+
+The protocol freezes one cursor-derived media timestamp as the only permitted catch-up seek target. It permits that seek to be claimed once, rejects stale generation/media identities, and refuses to declare the release crossfade ready until a timestamped PCM block is within a bounded tolerance of the frozen target. Transport invalidation advances the generation and aborts the handoff.
+
+Regression tests cover one-shot seek claiming, stale decoder output rejection, alignment tolerance, completion ordering, invalid targets and stale-generation aborts.
+
+**Important integration boundary:** this is the deterministic protocol model, not yet wired to the Media3 service/audio thread. The existing render-policy fade toward the current live decoder stream is not a valid catch-up implementation because that stream may be ahead of the substituted scratch cursor. It must not be enabled. The next implementation stage must bridge the processor's cursor-derived media timestamp to a main-thread one-shot native seek, preserve a bounded scratch tail across Media3's seek/flush, detect the first matching post-seek PCM span, and only then crossfade. The scratch feature gate remains closed; no audible scratch or gapless release is claimed.
+
+### 2026-11-28 — cursor-to-media-clock release target
+
+The PCM ring now maps a fractional absolute cursor frame back to source media time, rejecting out-of-window frames, non-monotonic history and timestamp gaps. The render policy exposes the media timestamp immediately after the last rendered scratch frame. The timestamp processor publishes that value as a volatile diagnostic (`cursorMediaTimeUs`) and clears it on processor flush/reset or when the block is not rendered.
+
+Regression coverage verifies fractional frame-to-PTS mapping, discontinuity rejection, and the cursor's post-render timestamp. This is the correct media-clock source for a future release seek; `Player.currentPosition` is not interchangeable because Media3 may decode and queue PCM ahead of audible output.
+
+**Integration remains intentionally incomplete:** the service does not yet issue a seek from this diagnostic. A seek currently flushes the Media3 sink and processor history, so simply wiring a seek here would discard the outgoing scratch tail and create an uncontrolled gap. The next gate must establish a bounded release-tail/dual-output strategy and a generation-safe audio-thread-to-main-thread request/acknowledgement path before connecting the one-shot seek. Audible scratch remains disabled.
+
+### 2026-11-28 — bounded scratch release-tail capture
+
+Added a fixed-capacity PCM16 release-tail buffer sized for 250 ms by default (with a hard 500 ms maximum at 48 kHz). It retains the newest emitted scratch frames, performs no per-frame allocations, rejects malformed partial frames, and supports a one-way seal/drain ownership transfer for a future independent output renderer. Regression tests cover bounded retention, stereo ordering, partial drains, malformed input, sealing, and generation reset.
+
+This is currently an isolated, unit-tested buffer primitive; it is not yet wired into the timestamp processor or a production output path. That separation is intentional: simply retaining the buffer inside the processor is not sufficient, because a seek/flush and a subsequent mailbox-generation change can race the tail's ownership and lifetime. The audio-thread capture owner, flush-time seal, cross-thread transfer, and consumer drain must be designed as one explicit protocol before integration.
+
+**Important boundary:** audible scratch rendering is still compile-time disabled, and no secondary output renderer consumes this buffer. This is a bounded buffer component, not proof that PCM is audible across a seek, not a gapless handoff, and not permission to issue the catch-up seek. The next gate must add a separately owned renderer/output path with explicit audio-route, timestamp, gain, cancellation and drain-completion handling; it must not commandeer either A/B deck or reuse the main deck's sink. Physical-device validation remains mandatory.
+
+
+### 2026-11-28 — release-tail output ownership protocol
+
+Added a control-plane state machine for the ownership boundary between the scratch PCM capture buffer and a future independent release renderer:
+
+- Capture begins only for a fresh generation, a concrete media occurrence, and a fully specified output contract.
+- The capture owner must seal a non-empty tail before ownership can transfer.
+- Transfer is one-shot and binds the consumer to the exact PCM sample rate/channel layout, AudioSession ID, route generation and Resonate processing-chain identity. A consumer on a different route/session or a raw output path is rejected.
+- Only the named consumer can claim draining. Drain accounting accepts only positive frame counts within the retained remainder, and the lifecycle reaches `DRAINED` only when all frames have been accepted.
+- A transport, track, route or output interruption can abort the generation. Stale consumers and stale generation messages cannot resume or drain an aborted tail.
+
+Regression tests cover legal ownership progression, duplicate consumer rejection, route/session/format/processing-chain mismatch, stale generations, invalid drain counts, abort and fresh-generation restart.
+
+**Integration boundary:** this is a control-plane contract only. It does not create an AudioTrack, route audio, apply DSP/gain, transfer the PCM buffer across threads, issue the Media3 catch-up seek or enable audible scratch. The output contract deliberately requires the same Resonate processing-chain identity; a plain secondary AudioTrack that bypasses the DSP path cannot satisfy it. The next stage must identify or implement a genuinely independent output renderer that shares the app's DSP, gain, audio-session and route lifecycle, then connect buffer transfer and drain acknowledgements without blocking the audio callback. Until that path and physical-device validation exist, the scratch feature gate remains closed.
+
+
+### 2026-11-28 — post-DSP release-tail capture stage
+
+Added an opt-in DjScratchReleaseTailCaptureProcessor as the final stage in each Media3 A/B user-processor chain, after DspEngineAudioProcessor. It copies PCM16 into a bounded 250 ms per-deck tail while passing the original PCM unchanged to Media3. The retained samples are therefore already processed by the same native DSP engine as the audible deck; they must not be sent through DSP a second time.
+
+Capture is disabled by default. The processor prepares and seals buffers only on explicit control-plane calls. Sealing atomically detaches the active generation, waits on the control thread for any already-started bounded copy to finish, then publishes the immutable tail. The real-time callback does not wait for control operations, allocate a new PCM buffer, or change the output bytes. Format validation is limited to the supported PCM16 mono/stereo path.
+
+The sink hook now exposes per-physical-deck begin, seal and sealed-tail accessors. Regression tests verify exact pass-through output, opt-in capture, sealed-tail publication and frame counts.
+
+**Not yet the independent renderer:** this stage establishes a correctly processed PCM source, but it does not yet write the tail to an independent output device, share the active AudioSession/route, reproduce the deck's composed output gain, coordinate the Media3 catch-up seek, or verify audible alignment. The service does not arm capture or start a secondary output, and the compile-time scratch gate remains closed. No audible scratch claim is made.
+
+
+### 2026-11-28 — timestamped post-DSP release-tail frames
+
+The post-DSP tail capture now carries the source-media PTS from the preceding timestamp processor into the bounded PCM buffer. Each retained PCM frame stores its media timestamp at the configured sample rate, including correct timestamps when the ring overwrites older frames.
+
+The sealed tail exposes a deliberately strict splice-preparation operation:
+
+- discardBeforeMediaTimeUs is allowed only after sealing and only when every captured block had valid timestamp provenance.
+- It discards frames strictly earlier than a separately measured audible Media3 media-time boundary.
+- The next retained frame timestamp is observable for alignment checks.
+- If even one captured block lacks timestamp provenance, trimming fails closed and the tail cannot claim a valid timestamped handoff.
+
+The capture processor still passes every PCM byte unchanged to Media3 and remains opt-in. The timestamp is carried after native DSP; the PCM must not be processed through DSP again.
+
+**Important remaining boundary:** this does not itself measure the audible output clock. The renderer must not call the trim operation with Player.currentPosition or another decoder/queue position and assume it is audible. A reliable AudioTrack playback-head/media-time correlation is still required, along with session/route/gain parity, the independent output writer, one-shot catch-up seek, post-seek alignment and crossfade. No secondary renderer is active and scratch remains gated.
+
+
+### 2026-11-28 — Media3 audible output-clock access
+
+The timestamped sink wrapper now exposes the position reported by Media3's AudioSink playback-head tracker for each physical A/B deck. The service retains the corresponding sink wrapper and includes the nullable audible media-time values in its native audio diagnostics.
+
+- The value is read from AudioSink.getCurrentPositionUs(false), not ExoPlayer.currentPosition.
+- Unset, negative and released-sink values are reported as unavailable rather than guessed.
+- The wrapper marks itself unavailable on sink reset and becomes valid again only after a successful configure.
+- The service keeps the clock associated with the physical deck, so canonical-player promotion does not relabel A/B sink ownership.
+
+This supplies the clock source needed to calculate which timestamped release-tail frames are already behind the audible output boundary. It is not yet a complete clock-correlation proof: device/route changes, AudioTrack latency behaviour and exact frame alignment still require validation. The renderer, shared session/route contract, output gain parity, catch-up seek and crossfade are still outstanding. The feature gate remains closed.
+
+
+### 2026-11-28 — per-deck output contract and route generation
+
+The service now observes Android output-device topology with AudioManager.AudioDeviceCallback. Any output device add/remove event advances a monotonic route generation; the callback is registered with the service and unregistered during teardown. The generation is exposed in audio diagnostics.
+
+A per-physical-deck candidate release-output contract is now available when that deck has a configured post-DSP PCM stage and a live Media3 AudioSession ID. It binds:
+
+- Post-DSP PCM16 sample rate and channel count.
+- The physical deck's actual Media3 AudioSession ID.
+- Current output-device topology generation.
+- The named Resonate post-DSP processing-chain identity.
+
+The candidate contract is exposed separately for physical A and B in diagnostics. It resolves the player by physical deck identity rather than assuming the canonical active player is always deck A.
+
+**This is not yet renderer authorization.** The PCM format is measured at the post-DSP processor boundary, not asserted to be the final hardware AudioTrack format. Device add/remove notifications conservatively invalidate a route generation but do not independently identify the selected output device. Before transfer, the independent AudioTrack must be built with the exact deck session and audio attributes, verify its actual routed device/format, and reject a stale route generation. No independent AudioTrack is created by this stage; no release-tail transfer is active and manual scratch remains gated.
+
+
+### 2026-11-28 — fail-closed independent PCM release renderer
+
+Added the independent Android PCM release-renderer primitive. It builds a dedicated streaming `AudioTrack` using the exact Media3 deck AudioSession ID, media/music audio attributes, PCM16 sample format and caller-supplied output-device identity. It starts muted, requests that exact preferred device, and verifies the actual routed device plus route-generation stability before setting the deck gain or accepting PCM. A missing/mismatched route, stale route generation, invalid session, unsupported format, or failed route request releases the track without writing audio.
+
+The renderer drains only a sealed, timestamped release tail into a caller-owned direct buffer and handles partial blocking writes on its control thread. It never creates a Media3 player, never applies the DSP chain a second time, and never writes before route verification. The deck's effective output gain is supplied explicitly because the post-DSP PCM capture is upstream of Media3's AudioTrack volume. The renderer reports frames actually accepted by AudioTrack; ownership acknowledgement remains a separate control-plane action.
+
+This is deliberately not yet armed by `Media3PlaybackService`: the current Media3 sink wrapper does not expose its selected `AudioTrack.routedDevice`, so the service cannot yet supply a trustworthy matching route-device ID. The new renderer therefore cannot be started by production scratch flow until that missing Media3 route observation is implemented. Scratch remains gated. CI tests validate route mismatch, route-generation invalidation, muted-before-verification behavior, partial writes, and exact PCM/session contract handling; physical-device route and audible handoff validation remain required.
+
+
+### 2026-11-28 — actual Media3 AudioTrack route observation
+
+The per-deck Media3 sink now supplies a delegating `DefaultAudioSink.AudioTrackProvider` that uses Media3's own default provider to construct the platform `AudioTrack`, while retaining a reference to the exact track instance and its output configuration. The service can report the actual Android-routed output device ID, AudioSession ID, sample rate, channel count, PCM encoding, and whether the track is tunneling or offloaded. Route snapshots are withheld until the platform track is initialized, Android reports a selected routed device, and the observed session matches the requested session. The reference is invalidated on sink reconfiguration, flush, and reset.
+
+This removes the prior route-identity blind spot without replacing Media3's output path or creating a second track. It does not yet authorize release-tail transfer: the output contract still needs to bind the exact route-device ID, confirm the captured post-DSP format matches the actual platform output configuration, and coordinate route-generation invalidation through the transfer and drain lifecycle. Scratch remains gated; no renderer is armed and no claim of audible scratch is made. Unit tests cover the route-snapshot eligibility policy, including rejection of missing identity, non-PCM16 output, tunneling, and offload.
+
+
+### 2026-11-28 — route-bound release-tail ownership contract
+
+The release-tail ownership `OutputContract` now includes the exact Android routed-device ID, not only a route-generation counter. The service issues a candidate contract only when the active physical deck's Media3 AudioTrack has an initialized, resolved route; the observed AudioSession ID matches the player's session; the actual AudioTrack sample rate and channel count match the post-DSP capture processor; and the actual output is PCM16, non-tunneled and non-offloaded. The route device ID and current route generation are carried into the one-shot ownership transfer equality check. A missing route, format mismatch, session mismatch, or unsupported output mode returns no contract. Tests reject transfer to a different physical output device even when every other contract field matches, and reject contracts without a positive route-device ID.
+
+This stage still does not start the independent renderer or arm scratch. It closes the route identity gap in the ownership contract; audible alignment, route-change abort during drain, exact gain continuity and device validation remain outstanding.
+
+
+### 2026-11-28 — scratch-output timestamp provenance
+
+The post-DSP release-tail timestamp source now distinguishes the media time represented by the PCM emitted downstream from the decoder input PTS. For a rendered scratch block, the capture timestamp is the scratch cursor's media time at the beginning of that output block; for ordinary pass-through/fallback PCM, it remains the timestamp-ledger PTS. This prevents a future release-tail consumer from labelling reverse or repositioned scratch samples with the decoder-ahead input timestamp.
+
+The processor exposes this as a capture-only timestamp, resets it on configure/flush/reset, and keeps the existing diagnostic cursor as the post-block cursor position. A focused processor test enables rendering only in the test instance and verifies that a block anchored at 12 ms is labelled 12 ms even though its decoded input PTS is 15 ms and the cursor advances to 16 ms after four frames.
+
+**Boundary remains:** this fixes timestamp provenance for rendered PCM; it does not connect the live release-tail capture/renderer/seek sequence or prove output continuity. The production scratch-rendering and service command gates remain closed. The next gate is the generation-safe release coordinator integrated with the service's actual mute/seek/alignment lifecycle, followed by physical-device verification. CI green alone will not authorize enabling scratch.

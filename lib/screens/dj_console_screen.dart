@@ -13,8 +13,9 @@ import '../models/song.dart';
 import '../navigation/shell_nav.dart';
 import '../services/dj_waveform_range_reader.dart';
 import '../services/dj_cue_point_store.dart';
+import '../services/voice_cue_service.dart';
+import '../services/voice_cue_router.dart';
 import '../services/playback_snapshot.dart';
-import '../services/playback_engine_session.dart';
 import '../providers/dj_mode_provider.dart';
 import '../dj_engine/core/dj_types.dart';
 import '../ui/resonate_glass.dart';
@@ -30,8 +31,8 @@ import 'dj_waveform_viewport_policy.dart';
 /// Landscape-first visual foundation for the future performance console.
 ///
 /// The Console exposes only controls backed by the existing Media3 authority.
-/// Platter gestures publish bounded, coalesced scratch controls to the matching
-/// physical deck; waveform taps remain one-shot Media3 seeks.
+/// Platter gestures preview and commit one bounded Media3 seek on release.
+/// True bidirectional scratch remains gated until its native PCM handoff is validated.
 class DjConsoleScreen extends StatefulWidget {
   const DjConsoleScreen({super.key});
 
@@ -73,6 +74,12 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
     super.initState();
     SystemChrome.setPreferredOrientations(_landscape);
     unawaited(_loadCuePoints());
+    unawaited(VoiceCueService.instance.speak(
+      cueId: 'deck_console_workspace.console_console_open',
+      origin: VoiceCueOrigin.djManual,
+      eventId: 'manual_console_open_${DateTime.now().microsecondsSinceEpoch}',
+      confirmed: true,
+    ));
   }
 
   @override
@@ -562,19 +569,6 @@ class _DjConsoleScreenState extends State<DjConsoleScreen> {
                   position: target,
                   expectedMediaId: deck!.mediaId!,
                 ),
-                onScratchControl: (active, velocity, anchor) async {
-                  final session = music.media3PlaybackSession;
-                  if (session is! PlaybackDjScratchSession) {
-                    throw UnsupportedError('The active Media3 session does not support platter scratch.');
-                  }
-                  await (session as PlaybackDjScratchSession).setDjScratchControl(
-                    deckId: id,
-                    expectedMediaId: deck!.mediaId!,
-                    active: active,
-                    velocity: velocity,
-                    anchor: anchor,
-                  );
-                },
                 loopActive: deck?.loopActive == true,
                 loopStart: deck?.loopStart,
                 loopEnd: deck?.loopEnd,
@@ -742,7 +736,6 @@ class _ConsoleDeck extends StatefulWidget {
     required this.onFilterChanged,
     required this.jogSeekEnabled,
     required this.onJogSeek,
-    required this.onScratchControl,
     required this.loopActive,
     required this.loopStart,
     required this.loopEnd,
@@ -774,7 +767,6 @@ class _ConsoleDeck extends StatefulWidget {
   final double filterCutoffHz;
   final Future<void> Function(int type, double cutoffHz) onFilterChanged;
   final Future<void> Function(Duration position) onJogSeek;
-  final Future<void> Function(bool active, double velocity, Duration anchor) onScratchControl;
   final bool loopActive;
   final Duration? loopStart, loopEnd;
   final Future<void> Function(Duration start, Duration end)? onSetLoopRange;
@@ -813,12 +805,6 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
   Duration? _jogStartPosition;
   Duration? _jogPreviewPosition;
   String? _jogSongId;
-  int _jogLastUpdateUs = 0;
-  final Stopwatch _scratchClock = Stopwatch();
-  Timer? _scratchHoldTimer;
-  Timer? _scratchDispatchTimer;
-  bool _scratchDispatchInFlight = false;
-  ({bool active, double velocity, Duration anchor})? _pendingScratchControl;
   Duration? _loopInPreview;
   static const _viewportPolicy = DjWaveformViewportPolicy();
 
@@ -870,7 +856,7 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
             oldWidget.expectedSongId != widget.expectedSongId ||
             oldWidget.waveformSourceKey != widget.waveformSourceKey ||
             oldWidget.duration != widget.duration)) {
-      _abortJogScratch();
+      _abortJogGesture();
     }
     if (oldWidget.waveformRevision != widget.waveformRevision) {
       _requestedStartMs = null;
@@ -933,11 +919,6 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     _jogStartPosition = widget.position;
     _jogPreviewPosition = widget.position;
     _jogSongId = widget.expectedSongId;
-    _scratchClock
-      ..reset()
-      ..start();
-    _jogLastUpdateUs = 0;
-    _queueScratchControl(active: true, velocity: 0, anchor: widget.position);
     _platterRotation.stop();
     setState(() {});
   }
@@ -957,111 +938,30 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
     );
     _jogAccumulatedRadians += deltaRadians;
     _jogLastAngle = angle;
-    // One platter revolution represents 1.8 seconds at 33⅓ RPM. The
-    // resulting source/output ratio is the signed scratch velocity.
-    const platterRevolutionUs = 1800000.0;
-    final deltaMediaUs =
-        deltaRadians / (math.pi * 2) * platterRevolutionUs;
-    final elapsedUs = _scratchClock.elapsedMicroseconds;
-    final deltaUs = elapsedUs - _jogLastUpdateUs;
-    _jogLastUpdateUs = elapsedUs;
-    final velocity = deltaUs <= 0
-        ? 0.0
-        : (deltaMediaUs / deltaUs).clamp(-4.0, 4.0).toDouble();
-    final next = DjConsoleJogSeekPolicy.scratchAnchorPosition(
+    // One platter revolution previews a bounded 1.8-second seek adjustment.
+    // This remains a one-shot transport seek, not reverse PCM scratching.
+    final next = DjConsoleJogSeekPolicy.jogSeekPreviewPosition(
       start: start,
       accumulatedRadians: _jogAccumulatedRadians,
       duration: widget.duration,
     );
-    _queueScratchControl(active: true, velocity: velocity, anchor: next);
-    _scratchHoldTimer?.cancel();
-    _scratchHoldTimer = Timer(const Duration(milliseconds: 90), () {
-      if (_jogStartPosition != null && mounted) {
-        _queueScratchControl(
-          active: true,
-          velocity: 0,
-          anchor: _jogPreviewPosition ?? start,
-        );
-      }
-    });
     setState(() => _jogPreviewPosition = next);
-  }
-
-  void _queueScratchControl({
-    required bool active,
-    required double velocity,
-    required Duration anchor,
-  }) {
-    _pendingScratchControl = (
-      active: active,
-      velocity: velocity.clamp(-4.0, 4.0).toDouble(),
-      anchor: anchor,
-    );
-    if (_scratchDispatchInFlight || _scratchDispatchTimer?.isActive == true) return;
-    _scratchDispatchTimer = Timer(
-      const Duration(milliseconds: 32),
-      _flushScratchControl,
-    );
-  }
-
-  Future<void> _flushScratchControl() async {
-    _scratchDispatchTimer = null;
-    if (_scratchDispatchInFlight) return;
-    final command = _pendingScratchControl;
-    if (command == null) return;
-    _pendingScratchControl = null;
-    _scratchDispatchInFlight = true;
-    try {
-      await widget.onScratchControl(
-        command.active,
-        command.velocity,
-        command.anchor,
-      );
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Platter scratch was not applied: $error')),
-        );
-      }
-    } finally {
-      _scratchDispatchInFlight = false;
-      if (_pendingScratchControl != null && mounted) {
-        _scratchDispatchTimer = Timer(
-          const Duration(milliseconds: 8),
-          _flushScratchControl,
-        );
-      }
-    }
-  }
-
-  void _releaseJogScratch() {
-    final anchor = _jogPreviewPosition ?? _jogStartPosition ?? widget.position;
-    _scratchHoldTimer?.cancel();
-    _scratchClock.stop();
-    _queueScratchControl(active: false, velocity: 1, anchor: anchor);
   }
 
   void _cancelJog() {
     if (_jogStartPosition == null) return;
-    _releaseJogScratch();
     _clearJog();
     _syncPlatterMotion();
     if (mounted) setState(() {});
   }
 
-  void _abortJogScratch() {
-    // Pause, track replacement or transition invalidates the gesture. Drop
-    // debounced controls; native lifecycle/transition barriers retire the
-    // mailbox so a delayed active command cannot restart the old platter.
-    _scratchHoldTimer?.cancel();
-    _scratchDispatchTimer?.cancel();
-    _pendingScratchControl = null;
-    _scratchClock.stop();
+  void _abortJogGesture() {
+    // Pause, track replacement or transition invalidates the preview. Never
+    // commit a seek or leave a delayed platter command behind.
     _clearJog();
   }
 
   void _clearJog() {
-    _scratchHoldTimer?.cancel();
     _jogLastAngle = null;
     _jogAccumulatedRadians = 0;
     _jogStartPosition = null;
@@ -1071,10 +971,23 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
 
   Future<void> _finishJog() async {
     if (_jogStartPosition == null) return;
-    _releaseJogScratch();
+    final target = _jogPreviewPosition ?? _jogStartPosition!;
+    final expectedSongId = _jogSongId;
+    final stillEligible = widget.jogSeekEnabled && widget.isPlaying &&
+        widget.active && expectedSongId != null &&
+        expectedSongId == widget.expectedSongId;
     _clearJog();
     _syncPlatterMotion();
     if (mounted) setState(() {});
+    if (!stillEligible) return;
+    try {
+      await widget.onJogSeek(target);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Platter seek was not applied: $error')),
+      );
+    }
   }
 
   String _format(Duration value) {
@@ -1398,16 +1311,6 @@ class _ConsoleDeckState extends State<_ConsoleDeck>
 
   @override
   void dispose() {
-    _scratchHoldTimer?.cancel();
-    _scratchDispatchTimer?.cancel();
-    if (_jogStartPosition != null) {
-      unawaited(widget.onScratchControl(
-        false,
-        1,
-        _jogPreviewPosition ?? _jogStartPosition ?? widget.position,
-      ).catchError((Object _) {}));
-    }
-    _scratchClock.stop();
     _platterRotation.dispose();
     super.dispose();
   }

@@ -2,7 +2,7 @@ name: Resonate CI
 
 on:
   push:
-    branches: [Resonate-True-Apk]
+    branches: [Resonate-True-Apk, resonate-voice-audit]
   pull_request:
     branches: [Resonate-True-Apk]
   workflow_dispatch:

@@ -1,6 +1,6 @@
 # Resonate hardening and device validation
 
-Target branch: `Resonate-True-Apk`
+Target branch: `resonate-voice-audit`
 
 This is a release-readiness checklist, not a feature roadmap. Keep the current Resonate sound and controls intact. Prefer narrow fixes backed by a reproduced defect and regression test; do not retune DSP or rewrite playback ownership speculatively.
 
@@ -61,3 +61,58 @@ Run these against the release APK built from a green merge commit. Record pass/f
 3. Run the complete repository CI, including release-size gate.
 4. Keep device/listening results separate from CI claims.
 5. Avoid new features, generic preset cards, broad DSP retuning, or dependency additions during this pass.
+
+## 2026-11-27 — crossfade, transport and platter regression pass
+
+### Automatic incoming-track entry
+- [ ] Use tracks with a late breakdown/drop section and verify unreviewed automatic candidates never preload beyond the opening-entry policy (15% of duration, capped at 45 seconds).
+- [ ] Verify a late beat/phrase-alignment result falls back to the incoming beginning and does not retain the rejected tempo stretch.
+- [ ] Verify an explicitly reviewed pair preset can retain its approved later cue.
+- [ ] Read the native standby position before fade, during fade and after promotion; confirm the requested cue is not applied twice and the promoted deck advances only by elapsed fade playback.
+
+### Pause-state convergence
+- [ ] Select a track while playing, paused and during a transition; tap pause immediately and verify the control reflects the canonical Media3 pause after command acknowledgement.
+- [ ] Repeat with delayed native state publication and rapid play/pause commands; stale snapshots must not reverse the latest transport intent.
+- [ ] Repeat from Player, mini-player, notification and headset controls where available.
+
+### DJ platter scratch
+- [ ] Verify the Media3 processor factory installs timestamp capture/scratch rendering before native DSP on both physical decks.
+- [ ] Verify forward, reverse, hold, variable-speed strokes and release-to-live-audio are audible on each playing deck.
+- [ ] Verify seek, hot-cue, track replacement, pause, crossfade start and workspace teardown retire stale platter commands.
+- [ ] Confirm a rejected/late timestamp anchor fails closed to the untouched PCM block and never emits partial audio.
+- [ ] Confirm normal playback is byte-for-byte pass-through when scratch is inactive and DSP remains active.
+
+CI proves software contracts only. The audible scratch response, transition entry point and pause-control convergence require physical-device testing on more than one Android output/device configuration before release acceptance.
+
+
+### Queue completion during an interrupted crossfade
+- [ ] Complete the outgoing deck during a successful crossfade; verify exactly one incoming queue commit.
+- [ ] Force a crossfade timeout after the outgoing deck reports completion; verify the watchdog recovers to the next playable queue item.
+- [ ] Preempt a crossfade with manual Next/Previous after completion; verify the manual command wins and no watchdog double-advance occurs.
+- [ ] Exercise Repeat One, Repeat All, final queue item, and an unreadable incoming source.
+- [ ] Confirm a completion observation is retained for the expected song occurrence, but cannot advance after the current song/index has changed.
+- [ ] Confirm diagnostics show exactly one terminal outcome: committed, recovered, preempted, or exhausted.
+
+
+### Repeat One and automatic DJ replay separation
+- [ ] With Repeat One enabled and crossfade enabled, verify the current track loops on the same source without preloading/promoting the same track on the standby deck.
+- [ ] With Repeat Off, verify track completion does not restart the current item.
+- [ ] With Repeat All, verify the next distinct queue item starts and the queue wraps only at its end.
+- [ ] Verify ordinary automatic A-to-B crossfades between distinct queue items remain unchanged.
+- [ ] Verify manual DJ deck preparation/crossfade remains available and is not treated as automatic repeat-self.
+
+### Scratch timestamp and history hardening
+- [ ] Verify exact-buffer timestamp matching remains preferred and retries do not duplicate pending entries.
+- [ ] Verify a duplicate/sliced processor buffer consumes the oldest pending timestamp in FIFO order.
+- [ ] Verify the ring retains four seconds at 44.1/48 kHz within its bounded capacity.
+- [ ] On device, record timestamp match/miss counts, valid-anchor count, render count and fallback count while scratching each playing physical deck.
+- [ ] Verify audible forward, reverse, hold and release behavior; fail closed to live PCM on invalid anchors.
+
+
+### Silence-aware automatic transition cue
+- [ ] A trusted near-tail silence region becomes the outgoing transition cue and is not replaced by a generic earlier outro marker.
+- [ ] Mid-track silence, quiet breakdowns, short gaps, shallow RMS dips and low-confidence regions do not schedule a transition.
+- [ ] A silence cue already behind the current playhead is ignored.
+- [ ] Verify the planner runs early enough to preload the incoming deck before the cue.
+- [ ] Compare the measured cue timestamp with the actual native crossfade start and outgoing deck position.
+- [ ] Pause, seek, Next/Previous, track replacement and workspace transitions invalidate or preempt pending silence cues.

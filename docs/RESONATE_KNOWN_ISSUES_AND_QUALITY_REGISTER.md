@@ -1,8 +1,8 @@
 # Resonate — Known Issues and Quality Register
 
 **Status:** Active engineering register  
-**Target branch:** `dj-workspace-development`  
-**Last reviewed:** 2026-11-22
+**Target branch:** `resonate-voice-audit`  
+**Last reviewed:** 2026-11-27
 
 ## DJ Console — progressive waveform Phase A
 
@@ -42,7 +42,7 @@ Evidence labels:
 
 **Observed behavior**
 
-Audible crackling persists most noticeably during complex transitions, particularly phrase-aware and beat-match crossfades. The application otherwise performed well during the user's latest test session.
+Earlier device sessions reported audible crackling most noticeably during complex transitions, particularly phrase-aware and beat-match crossfades. On 2026-11-27 the user reported crackling is now almost impossible to hear after the DSP upgrade. Treat this as a substantial improvement, not closure: complex-transition stress and route/device coverage remain outstanding.
 
 **What diagnostics currently establish**
 
@@ -79,7 +79,7 @@ Reproducible transition tests show no processor lifecycle race; telemetry can id
 
 **Observed behavior**
 
-DSP intelligence can become overwhelmed, apply frequent or excessive ducking, and surprise the listener with audible changes or distortion risk.
+Earlier sessions reported frequent or excessive ducking. On 2026-11-27 the user reported no audible ducking during playback after the DSP upgrade. Preserve the current protection settings; do not weaken clipping safeguards or retune gain staging without new diagnostics showing a regression.
 
 **Code-level finding to validate**
 
@@ -121,8 +121,8 @@ A targeted native DSP change is now on the development branch: after the configu
 ## RQ-003 — Pause control briefly becomes stale after library track selection
 
 **Priority:** P2  
-**Status:** Open — reproduce and trace state synchronization  
-**Evidence:** User-observed; reported to self-correct without another action.
+**Status:** Targeted state-refresh fix implemented; exact-head CI passed; device validation pending  
+**Evidence:** User-observed; asynchronous state-projection race isolated and regression-tested.
 
 **Observed behavior**
 
@@ -148,8 +148,8 @@ A regression test covers library selection from playing and paused states, inclu
 ## RQ-004 — Silence-aware transition trigger is missing or unreliable
 
 **Priority:** P2  
-**Status:** Open — requirements and detection design  
-**Evidence:** User-observed.
+**Status:** Initial trusted tail-silence cue integration implemented; CI/device validation pending  
+**Evidence:** Existing measured PCM silence profiles and transition planner code path.
 
 **Observed behavior**
 
@@ -162,17 +162,30 @@ Resonate does not reliably recognize track silence and trigger an appropriate cr
 
 Silence alone must never be sufficient to start a transition. Quiet intros, breakdowns, pauses, sparse passages and intentionally silent sections must not cause premature track changes.
 
-**Required work**
+**Initial implementation**
 
-- Define a robust energy/RMS-based detector with configurable threshold, hold duration, hysteresis and confidence.
-- Use look-ahead or buffered analysis where available; do not block the audio thread.
-- Scope detection to the current media identity and reset it on seek, track change, route/session reset and ownership changes.
-- Gate automatic transitions through existing PlaybackControlArbiter and CrossfadeTransitionGuard contracts.
-- Add negative tests for quiet music, breakdowns, silence at the beginning, short gaps and user pause/seek.
+The PCM profile already contains measured DjSilenceRegion records. A new conservative planner policy now selects an outgoing silence cue only when the region is:
+
+- at least two seconds long,
+- measured at or below -48 dBFS,
+- confidence at least 0.78,
+- in the final 15% of the track and within 20 seconds of the tail,
+- ending within 1.5 seconds of the track end,
+- still ahead of playback and within a 45-second planner look-ahead.
+
+The selected cue becomes the outgoing transition anchor. Existing cue scheduling preloads before that point and starts the normal Media3 A/B transition when playback reaches it. It does not block or inspect PCM on the audio thread, and quiet breakdowns/mid-track gaps do not qualify.
+
+**Remaining work**
+
+- Verify profile identity/fingerprint and stale profile invalidation on seek, track change, route/session reset and workspace ownership changes.
+- Confirm the planner is invoked early enough for cue preload and that the scheduled transition actually starts at the measured silence boundary.
+- Keep all transitions gated by PlaybackControlArbiter and CrossfadeTransitionGuard; user transport must preempt.
+- Add device diagnostics correlating measured cue, actual outgoing position, preload time and native crossfade start.
+- Future enhancement: a live rolling RMS detector for material without a trusted precomputed profile. Do not add a second audio capture path or block the audio thread.
 
 **Exit criteria**
 
-Detection is identity-scoped and deterministic; only a separately validated safe-transition decision can request a crossfade; user transport always preempts it.
+Exact-head CI passes; deterministic tests reject quiet music, breakdowns, silence at the beginning, short gaps, past cues and low-confidence regions; device diagnostics confirm the real transition begins at the selected cue and user transport always wins.
 
 ---
 
@@ -256,12 +269,12 @@ Focused policy tests cover nearby beat timing, low-confidence suppression, inval
 
 ## DJ Console — gated parallel workstream
 
-The landscape DJ Console visual foundation may proceed in parallel with playback hardening. It must not create another player or output path. The initial visual shell is observational. Sampled PCM peak envelopes are now derived from the existing distributed decode windows, persisted as optional sparse segments, and rendered only against the verified active physical deck. Unanalysed gaps remain visibly empty; no full-track waveform is implied. Existing cached profiles without waveform segments are backfilled by the idle analysis scan, subject to its retry cooldown. Manual deck preparation, cueing, jog/scratch, channel gain and crossfader actions remain unavailable until their Media3/DSP command contracts, lease behavior, cancellation rules and regression tests are implemented.
+The landscape DJ Console visual foundation may proceed in parallel with playback hardening. It must not create another player or output path. The initial visual shell is observational. Sampled PCM peak envelopes are now derived from the existing distributed decode windows, persisted as optional sparse segments, and rendered only against the verified active physical deck. Unanalysed gaps remain visibly empty; no full-track waveform is implied. Existing cached profiles without waveform segments are backfilled by the idle analysis scan, subject to its retry cooldown. Manual deck preparation, cueing, jog/scratch, channel gain and crossfader now have Media3/DSP command contracts and regression coverage. Their physical-device behavior and interruption recovery remain unverified; do not claim release-ready functionality until those tests pass.
 
 ## Release discipline
 
-- All implementation commits target `dj-workspace-development`.
-- Keep PR #221 open; do not merge without explicit user approval.
+- All implementation commits for this hardening pass target `resonate-voice-audit`.
+- Keep PR #225 open; do not merge without explicit user approval.
 - Keep `Resonate-True-Apk` untouched.
 - CI success is not a substitute for physical-device listening and interaction tests.
 
@@ -299,3 +312,101 @@ The DJ Console platter presentation is being enlarged and given more visual prio
 - Exposed those values through the existing native DSP status map. Diagnostics now samples that map on its existing four-second heartbeat and records the per-physical-deck values; no PCM, audio-thread logging, blocking queue, or new player path is introduced.
 - The telemetry describes the latest processed block, not a historical peak window or a detector-confidence score. It is intended to show whether aggressive reductions come from the RMS target, configured max cut/gain budget, peak guard, or silence gate. It does not yet prove the audible cause.
 - Do not tune ducking or alter limiter behaviour until a new device report contains these fields and can be correlated with the reported passage.
+
+## 2026-11-27 — playback and DJ hardening scope
+
+This scope supersedes the 2026-11-22 temporary deferral of RQ-003 and authorizes targeted reliability fixes across crossfade, transport-state reconciliation and DJ performance. Preserve Media3 as the sole production playback authority. Do not merge PR #225 without explicit approval. CI success does not replace physical-device validation.
+
+### RQ-003 follow-up — stale pause display after selection
+
+**New code finding:** the Media3 pause path acknowledged the native pause, released audio focus, then immediately reconciled the UI from the session's cached state projection. The native command can complete before the next asynchronous state event reaches that projection, allowing the stale `isPlaying=true` value to overwrite the immediate pause intent. The runtime already exposes a revision-guarded `refreshState()` operation.
+
+**Targeted fix:** refresh the canonical Media3 snapshot after the pause and focus-release commands, before reconciling the provider/UI state. A regression test now simulates a stale cached playing snapshot after native pause and verifies the refresh resolves it. CI validation is pending; device reproduction remains required.
+
+### RQ-009 — Automatic DJ crossfade can enter too far into the incoming track
+
+**Priority:** P1  
+**Status:** Targeted planner guard implemented; exact-head CI passed; device validation pending  
+**Evidence:** User-observed; code path confirmed as a possible cause.
+
+The automatic candidate generator includes a `breakdownDrop` candidate whose incoming start is the breakdown section timestamp. The legacy beat-alignment fallback can also derive a later seek from phase alignment. Either can cause an automatic transition to begin well into the incoming song rather than near its opening.
+
+**Targeted fix:** automatic incoming entry points are constrained to the first 15% of the track, capped at 45 seconds. Late beat-alignment results are rejected to the start of the incoming track, and their associated tempo stretch is removed. Explicitly reviewed pair presets retain the ability to request a later cue. The candidate generator has regression coverage for rejecting an unreviewed mid-track breakdown entry while retaining the reviewed-preset override.
+
+**Exit criteria:** exact-head CI passes; device tests verify the incoming deck's actual native position before fade, during fade and after promotion across automatic, reviewed-preset and fallback transitions.
+
+### RQ-010 — DJ platter scratch does not audibly manipulate the deck
+
+**Priority:** P1  
+**Status:** Reopened after failed device test; timestamp mapping and history-window hardening implemented; CI/device validation pending  
+**Evidence:** User reports scratch still produces no audible platter manipulation on the latest test build.
+
+The native timestamped PCM scratch renderer was present in the Media3 audio-processor chain, but its successful render path read from a duplicate input buffer without advancing the original buffer. Media3's `AudioProcessor.queueInput` contract requires the supplied input buffer to be consumed. The existing scratch test covered pass-through consumption but did not assert consumption when rendering was active.
+
+**Previous targeted fix:** after a complete scratch block is rendered, advance the original input buffer to its limit. Regression coverage verifies active-render input consumption and processor ordering. The user's latest device test shows this was insufficient.
+
+**New code findings and hardening:**
+
+- The timestamp ledger originally required the exact `ByteBuffer` object recorded by the outer `AudioSink`. A sink that passes a duplicate/slice to its first processor would silently lose the PTS and force every scratch block to pass through. The ledger now keeps a bounded FIFO fallback for ordered PCM buffer views while retaining identity matching as its preferred path; a regression test covers the buffer-view case.
+- The scratch ring was allocated for only two seconds even though its declared maximum capacity supports four seconds. It now uses the full four-second per-deck window, with a regression test for allocation.
+- The successful PCM render still consumes the original input block; the fail-closed pass-through path remains unchanged.
+
+**Remaining investigation:** the physical-device scratch path still needs observable counters for timestamp matches/misses, valid anchors, active render blocks and render fallbacks. CI can validate these policies but cannot prove that the user's deck is producing audible scratch output.
+
+
+
+## RQ-011 — Queue can stall when completion occurs during a failed or stale crossfade
+
+**Priority:** P1  
+**Status:** Targeted watchdog recovery hardening implemented; exact-head CI validation pending  
+**Evidence:** Open repository issue #5; code-path review.
+
+The repository's open issue #5 documents a case where the outgoing player reports completion while a crossfade is in progress. The completion listener defers ordinary queue advancement because the transition owns the event. If the transition later times out or becomes stale, no second completion event is guaranteed.
+
+**Code review finding**
+
+The provider already has an end-of-track watchdog and records completion observed during a transition. However, the completion observation was not itself used as a durable recovery condition, and the completion event did not explicitly re-arm the watchdog. A final player-state snapshot that no longer reports completed could therefore make recovery depend on subsequent position events.
+
+**Targeted hardening**
+
+- Re-arm the end-of-track watchdog when a completion is observed during a crossfade.
+- Preserve the completed song occurrence identity and use that observation as a recovery condition after the transition grace period.
+- Keep queue exhaustion authoritative; do not advance when no next item/repeat target exists.
+- Keep normal end-of-track watchdog behavior unchanged.
+- Add a pure policy regression suite for observed completion, no premature advance, exhausted queue and ordinary end-of-track recovery.
+
+**Exit criteria**
+
+Exact-head CI passes; diagnostics demonstrate one terminal outcome for completion during successful, failed, timed-out and preempted transitions; device testing confirms no stalled queue or duplicate advancement.
+
+## 2026-11-27 device feedback and integration findings
+
+- The user reports that the DSP upgrade has made crackling almost impossible to hear and that DSP no longer audibly ducks during playback. These are positive listening observations; retain RQ-001 and RQ-002 as improved-but-open until complex transition, content-URI and route stress tests are completed.
+- The silence detector and PCM profile pipeline already generate and persist measured silence regions. The transition brain currently uses trusted silence as a candidate score/risk signal; there is no independent, playback-time silence trigger that is proven to start a transition when a safe silence window is reached. RQ-004 therefore remains an integration gap, not an absent detector.
+- Repository issue #5 is open and corresponds to the new RQ-011 recovery hardening.
+- Exact-head CI passed on c43f7b3 before the RQ-011 change. The RQ-011 commits require a fresh CI run before validation.
+
+
+## RQ-012 — Automatic DJ-style same-track replay is mistaken for playback restart
+
+**Priority:** P2  
+**Status:** Automatic repeat-self DJ crossfade execution path removed; exact-head CI and device validation pending  
+**Evidence:** Confirmed by provider code inspection and user-observed playback.
+
+The provider contained a dedicated `repeat-self` transition: when Repeat One was selected while crossfade was enabled, it analyzed the current track's outro, preloaded the same track on the standby deck, and crossfaded/promoted it back to the beginning or an analyzed intro cue. This was not an independent random scheduler; it was coupled to the Repeat One mode and could look like playback failed and restarted immediately after a crossfade.
+
+**Change:** automatic same-track DJ handoff is retired. Repeat One now uses the normal single-source loop policy and never schedules a same-track DJ crossfade. Ordinary automatic crossfades between different queue items, Repeat All queue wrapping, and explicit manual DJ deck operations remain separate.
+
+**Exit criteria:** CI passes; device tests confirm Repeat One repeats without a DJ crossfade, Repeat Off never restarts a completed track, Repeat All advances/wraps the queue once, and ordinary A-to-B crossfades continue to promote the next distinct queue item.
+
+
+## 2026-11-27 — scratch failure and repeat-self removal follow-up
+
+- The user reports the DJ platter scratch remains inaudible after the previous native PCM fix. RQ-010 is reopened; do not claim scratch is working based on unit tests.
+- The automatic repeat-self feature was confirmed to be a Repeat One + crossfade path, not a separate random-probability scheduler. Its execution branch has been removed. Repeat One is restored to a normal native/single-source loop.
+- A new timestamp-ledger FIFO fallback and four-second per-deck PCM history are implemented with native regression tests. Latest CI must validate these changes before a test build is issued.
+
+
+## 2026-11-27 — silence-aware transition cue integration
+
+A conservative planner integration now uses existing measured PCM silence regions as outgoing tail cues. The new policy requires sustained deep silence, confidence, a near-tail location, a cue still ahead of playback and a bounded look-ahead. The cue is consumed by the existing automatic crossfade scheduler; it does not create a separate playback or audio-capture path. Focused tests cover accepted tail silence, weak/mid-track silence and already-passed cues. This is initial integration, not proof of audible device behavior; actual cue-to-native-start timing remains a device validation item.

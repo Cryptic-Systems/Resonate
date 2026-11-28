@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../experience/experience_provider.dart';
+import '../services/workspace_lifecycle_coordinator.dart';
+import '../services/workspace_transition_controller.dart';
 import '../modes/integration/resonate_mode_ports.dart';
 import '../modes/models/resonate_mode.dart';
 import '../modes/providers/mode_provider.dart';
@@ -106,10 +108,54 @@ class ResonateMainDrawer extends StatelessWidget {
               title: const Text('Switch to Resonatix DJ'),
               subtitle: const Text('Open the manual performance workspace'),
               onTap: () async {
+                final transition = context.read<WorkspaceTransitionController>();
+                final experience = context.read<ExperienceProvider>();
+                final lifecycle = context.read<WorkspaceLifecycleCoordinator>();
+                final messenger = ScaffoldMessenger.of(context);
                 Navigator.of(context).pop();
-                await context.read<ExperienceProvider>().switchExperience(
-                  ResonateExperience.resonatixDj,
-                );
+                try {
+                  await transition.transitionTo(
+                    ResonateWorkspace.dj,
+                    performHandoff: () => experience.switchExperience(
+                      ResonateExperience.resonatixDj,
+                    ),
+                  );
+                } catch (error) {
+                  // If DJ mounted but could not initialize, restore Player
+                  // behind the same barrier instead of exposing a partial shell.
+                  if (experience.selected == ResonateExperience.resonatixDj &&
+                      lifecycle.activeWorkspace == ResonateWorkspace.player) {
+                    try {
+                      await transition.transitionTo(
+                        ResonateWorkspace.player,
+                        performHandoff: () async {
+                          await lifecycle.activate(ResonateWorkspace.player);
+                          await experience.switchExperience(
+                            ResonateExperience.player,
+                          );
+                        },
+                      );
+                    } catch (rollbackError) {
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'DJ startup failed and Player recovery failed: $rollbackError',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+                  }
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        lifecycle.activeWorkspace == ResonateWorkspace.dj
+                            ? 'DJ startup needs recovery. Use Retry return to Player on the recovery screen.'
+                            : 'Could not open Resonatix DJ: $error',
+                      ),
+                    ),
+                  );
+                }
               },
             ),
             ListTile(

@@ -73,6 +73,7 @@ class DspEngineAudioProcessorTest {
     fun setUp() {
         DspSessionGate.resetForTests()
         DspEngineRegistry.resetForTests()
+        DspEngineSinkHook.resetForTests()
         DspEngineRegistry.nativeApi = FakeRegistryApi()
         api = FakeProcessorApi()
         DspEngineAudioProcessor.nativeApi = api
@@ -81,6 +82,7 @@ class DspEngineAudioProcessorTest {
     @After
     fun tearDown() {
         DspEngineRegistry.resetForTests()
+        DspEngineSinkHook.resetForTests()
         DspSessionGate.resetForTests()
         DspEngineAudioProcessor.nativeApi = object : DspEngineAudioProcessor.NativeDspApi {
             override fun create(sampleRate: Double, channels: Int) =
@@ -122,6 +124,16 @@ class DspEngineAudioProcessorTest {
         val bytes = ByteArray(output.remaining())
         output.get(bytes)
         return bytes
+    }
+
+    @Test
+    fun legacy_just_audio_voice_path_does_not_attach_music_dsp() {
+        // Media3 is the only production music authority. The remaining
+        // just_audio player handles voice/SFX and must not inherit music DSP.
+        assertEquals(0, DspEngineSinkHook.createProcessors().size)
+        assertEquals(0, DspEngineSinkHook.createProcessors("legacy").size)
+        assertEquals(0, api.createCalls)
+        assertEquals(0, DspEngineRegistry.activeCount())
     }
 
     @Test
@@ -170,6 +182,32 @@ class DspEngineAudioProcessorTest {
 
         processor.setDeckActive(true)
         assertEquals(2, api.createCalls)
+        assertEquals(1, DspEngineRegistry.activeCount())
+    }
+
+    @Test
+    fun reconfigured_active_deck_rejoins_registry_after_media3_reset() {
+        val processor = DspEngineAudioProcessor("B")
+        processor.setNativeProcessEnabled(true)
+        processor.setDeckActive(false)
+        processor.configure(
+            AudioProcessor.AudioFormat(44100, 2, C.ENCODING_PCM_16BIT)
+        )
+
+        assertEquals(0, api.createCalls)
+        assertEquals(0, DspEngineRegistry.activeCount())
+
+        // Media3 may reset the processor while clearing the DJ deck queue.
+        // The same instance can be configured again for the restored queue.
+        processor.reset()
+        // The service restores Deck B while its processor is still absent.
+        // Media3 then reconfigures the same processor instance for the queue.
+        DspEngineSinkHook.activateDeck("B")
+        processor.configure(
+            AudioProcessor.AudioFormat(44100, 2, C.ENCODING_PCM_16BIT)
+        )
+
+        assertEquals(1, api.createCalls)
         assertEquals(1, DspEngineRegistry.activeCount())
     }
 

@@ -91,7 +91,10 @@ class Media3ProviderSession implements PlaybackEngineSession, PlaybackStandbyCue
   Media3ProviderState get current => _bridge.current;
 
   @override
-  Future<void> refreshState() => _runtime.refreshState();
+  Future<void> refreshState() async {
+    await _runtime.refreshState();
+    _bridge.refreshFromRuntime();
+  }
 
   // Synchronous reads are projections of the exact state stream that belongs
   // to this command session. MusicProvider can reconcile state without

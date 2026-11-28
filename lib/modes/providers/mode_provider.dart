@@ -27,6 +27,8 @@ import '../models/driving_intent.dart';
 import '../integration/mode_context_port.dart';
 import '../integration/mode_playback_port.dart';
 import '../integration/mode_motion_port.dart';
+import '../../services/voice_cue_service.dart';
+import '../../services/voice_cue_router.dart';
 
 /// Central Modes Engine. It emits policy and delegates playback/context work
 /// to adapters supplied by the main Resonate application.
@@ -443,6 +445,16 @@ class ModeProvider extends ChangeNotifier {
     if (mode == ResonateMode.work) _workCoordinator.setMode(mode);
     _onContextChanged();
     notifyListeners();
+    final modeCueId = 'mode_policy.voice_mode_${mode.id}';
+    unawaited(VoiceCueService.instance.speak(
+      cueId: modeCueId,
+      origin: VoiceCueOrigin.sharedSystem,
+      eventId: 'mode_change_${previous.id}_to_${mode.id}_${DateTime.now().microsecondsSinceEpoch}',
+      confirmed: true,
+      allowedOrigins: const <VoiceCueOrigin>[VoiceCueOrigin.sharedSystem],
+    ).then((started) {
+      debugPrint('Mode voice cue $modeCueId ${started ? "started" : "was not started"}');
+    }));
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_modeKey, mode.id);

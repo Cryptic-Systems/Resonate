@@ -5,17 +5,20 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'music_provider.dart';
-import '../services/playback_engine_session.dart';
 import '../services/loudness_service.dart';
+import '../services/workspace_lifecycle_coordinator.dart';
 
-class PlaybackFeaturesProvider extends ChangeNotifier {
+class PlaybackFeaturesProvider extends ChangeNotifier implements WorkspaceLifecycleParticipant {
   final MusicProvider music;
+  final WorkspaceLifecycleCoordinator? _workspaceLifecycle;
+  bool _workspaceActive = true;
   double speed = 1.0;
   double pitch = 1.0;
   bool normalizationEnabled = false;
   double targetLoudness = -14.0;
   int sleepRemainingSeconds = 0;
   String? normalizedSongId;
+  double? _normalizedTargetLoudness;
   double _normalizationGainDb = 0.0;
 
   double get _normalizationTrackLevel => normalizationEnabled
@@ -54,15 +57,19 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     return _sleepFadeOperations;
   }
 
-  PlaybackFeaturesProvider({required this.music}) {
+  PlaybackFeaturesProvider({
+    required this.music,
+    WorkspaceLifecycleCoordinator? workspaceLifecycle,
+  }) : _workspaceLifecycle = workspaceLifecycle {
     music.addListener(_syncEngineIfNeeded);
+    _workspaceLifecycle?.register(this);
     ready = _load();
   }
 
   bool get sleepTimerActive => sleepRemainingSeconds > 0;
 
   void _syncEngineIfNeeded() {
-    if (_disposed) return;
+    if (_disposed || !_workspaceActive) return;
     final songId = music.currentSong?.id;
     final engine = music.activeEngineLabel;
     if (songId == _lastSongId && engine == _lastEngine) return;
@@ -80,7 +87,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     // Media3 and the legacy engine share the same user-facing rate range.
     speed = value.clamp(0.5, 2.0).toDouble();
     try {
-      await music.setPlaybackSpeedForFeatures(speed);
+      if (_workspaceActive) await music.setPlaybackSpeedForFeatures(speed);
     } catch (e) {
       debugPrint('Playback speed failed: $e');
     }
@@ -91,7 +98,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   Future<void> setPitch(double value) async {
     pitch = value.clamp(0.5, 2.0).toDouble();
     try {
-      await music.setPlaybackPitchForFeatures(pitch);
+      if (_workspaceActive) await music.setPlaybackPitchForFeatures(pitch);
     } catch (e) {
       debugPrint('Playback pitch failed: $e');
     }
@@ -102,10 +109,13 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   Future<void> setNormalizationEnabled(bool value) async {
     normalizationEnabled = value;
     if (value) {
-      unawaited(_refreshNormalizationForCurrentSong());
+      if (_workspaceActive) {
+        unawaited(_refreshNormalizationForCurrentSong());
+      }
     } else {
       ++_normalizationGeneration;
       normalizedSongId = null;
+      _normalizedTargetLoudness = null;
       _normalizationGainDb = 0.0;
       await _applyNormalization();
     }
@@ -115,7 +125,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
 
   Future<void> setTargetLoudness(double value) async {
     targetLoudness = value.clamp(-20.0, -8.0).toDouble();
-    if (normalizationEnabled) {
+    if (normalizationEnabled && _workspaceActive) {
       unawaited(_refreshNormalizationForCurrentSong(force: true));
     }
     await _save();
@@ -123,30 +133,36 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   }
 
   Future<void> applyTrackGain(String songId, double gainDb) async {
+    if (!_workspaceActive) return;
     ++_normalizationGeneration;
     normalizedSongId = songId;
     _normalizationGainDb = gainDb.isFinite ? gainDb : 0.0;
     if (!normalizationEnabled) return;
+    _normalizedTargetLoudness = targetLoudness;
     await _applyNormalization();
     notifyListeners();
   }
 
   Future<void> _refreshNormalizationForCurrentSong({bool force = false}) async {
+    if (!_workspaceActive) return;
     final generation = ++_normalizationGeneration;
     final song = music.currentSong;
     if (!normalizationEnabled || song == null) {
       normalizedSongId = null;
+      _normalizedTargetLoudness = null;
       _normalizationGainDb = 0.0;
       await _applyNormalization();
       return;
     }
     bool cancelled() => _disposed ||
+        !_workspaceActive ||
         generation != _normalizationGeneration ||
         !normalizationEnabled ||
         music.currentSong?.id != song.id;
     // Never carry the previous track's trim into a newly selected track while
     // its own cache is being resolved or its analysis is running.
     normalizedSongId = null;
+    _normalizedTargetLoudness = null;
     _normalizationGainDb = 0.0;
     await _applyNormalization();
     if (cancelled()) return;
@@ -164,6 +180,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       }
       if (cancelled() || result == null) return;
       normalizedSongId = song.id;
+      _normalizedTargetLoudness = targetLoudness;
       _normalizationGainDb = result.gainDb;
       await _applyNormalization();
       if (!cancelled()) _notifyIfAlive();
@@ -175,6 +192,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   }
 
   Future<void> _applyNormalization() async {
+    if (!_workspaceActive) return;
     try {
       // MusicProvider selects the canonical backend. On Media3, normalization
       // is composed as attenuation-only track gain with the other gain factors.
@@ -189,7 +207,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   }
 
   Future<void> applyToActiveEngine() async {
-    if (_disposed) return;
+    if (_disposed || !_workspaceActive) return;
     try {
       await music.setPlaybackSpeedForFeatures(speed.clamp(0.5, 2.0).toDouble());
       await music.setPlaybackPitchForFeatures(pitch.clamp(0.5, 2.0).toDouble());
@@ -200,6 +218,32 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       );
     } catch (e) {
       debugPrint('Active playback feature sync failed: $e');
+    }
+  }
+
+  @override
+  Future<void> onWorkspaceChanged(ResonateWorkspace workspace) async {
+    final active = workspace == ResonateWorkspace.player;
+    if (_workspaceActive == active) return;
+    _workspaceActive = active;
+    if (!active) {
+      // Keep the shared sleep timer alive, but cancel Player-only loudness
+      // analysis and stop applying Player rate/normalization controls to DJ decks.
+      ++_normalizationGeneration;
+      return;
+    }
+    _lastSongId = music.currentSong?.id;
+    _lastEngine = music.activeEngineLabel;
+    await music.setPlaybackSpeedForFeatures(speed.clamp(0.5, 2.0).toDouble());
+    await music.setPlaybackPitchForFeatures(pitch.clamp(0.5, 2.0).toDouble());
+    final currentSongId = music.currentSong?.id;
+    final normalizationIsStale = normalizationEnabled &&
+        (normalizedSongId != currentSongId ||
+            _normalizedTargetLoudness != targetLoudness);
+    if (normalizationIsStale) {
+      await _refreshNormalizationForCurrentSong();
+    } else {
+      await _applyNormalization();
     }
   }
 
@@ -325,6 +369,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _workspaceLifecycle?.unregister(this);
     ++_normalizationGeneration;
     music.removeListener(_syncEngineIfNeeded);
     // Invalidate any asynchronous tick already in flight. Without advancing

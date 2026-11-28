@@ -37,6 +37,15 @@ flutter:
     - assets/branding/resonate_in_app_logo.png
     - assets/branding/resonate_app_icon.png
     - assets/sfx/
+    - assets/audio/resonate_voice/ask_resonate_companion/
+    - assets/audio/resonate_voice/deck_console_workspace/
+    - assets/audio/resonate_voice/dj_transition_performance/
+    - assets/audio/resonate_voice/hype_flavor_personality/
+    - assets/audio/resonate_voice/mode_policy/
+    - assets/audio/resonate_voice/risk_safety_intelligence/
+    - assets/audio/resonate_voice/system_consent_status/
+    - assets/audio/resonate_voice/utility_micro/
+    - assets/audio/resonate_voice/voice_manifest.json
     - assets/Normal_Mode.jpg
     - assets/Running_Mode.jpg
     - assets/Workout_Mode.jpg

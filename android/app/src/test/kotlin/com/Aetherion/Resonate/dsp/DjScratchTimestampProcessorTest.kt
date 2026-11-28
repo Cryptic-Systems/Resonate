@@ -27,6 +27,7 @@ class DjScratchTimestampProcessorTest {
     @Test
     fun capturesTimestampedPcmBeforeDspAndPassesOriginalAudioThrough() {
         val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 48_000, channelCount = 2, encoderDelayFrames = 0)
         val processor = DjScratchTimestampProcessor(ledger)
         processor.configure(AudioProcessor.AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
         processor.flush() // Activate the configured format before queueInput.
@@ -67,6 +68,7 @@ class DjScratchTimestampProcessorTest {
     @Test
     fun flushInvalidatesCapturedHistoryAndResetReleasesIt() {
         val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 48_000, channelCount = 2, encoderDelayFrames = 0)
         val processor = DjScratchTimestampProcessor(ledger)
         processor.configure(AudioProcessor.AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
         processor.flush()
@@ -86,30 +88,104 @@ class DjScratchTimestampProcessorTest {
     }
 
     @Test
-    fun activeDeckControlRendersAnchoredPcmInsideMedia3Processor() {
+    fun activeMailboxRemainsPassThroughWhileAudibleScratchGateIsClosed() {
         val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 1_000, channelCount = 1, encoderDelayFrames = 0)
         val mailbox = DjScratchControlMailbox()
         val processor = DjScratchTimestampProcessor(ledger, mailbox)
         processor.configure(AudioProcessor.AudioFormat(1_000, 1, C.ENCODING_PCM_16BIT))
         processor.flush()
-        val input = ByteBuffer.allocateDirect(8).order(ByteOrder.LITTLE_ENDIAN).apply {
-            putShort(0)
-            putShort(1_000)
-            putShort(2_000)
-            putShort(3_000)
+
+        val history = ByteBuffer.allocateDirect(10).order(ByteOrder.LITTLE_ENDIAN).apply {
+            listOf(0, 1_000, 2_000, 3_000, 4_000).forEach { putShort(it.toShort()) }
             flip()
         }
-        ledger.record(input, 10_000L)
-        assertTrue(mailbox.publish("track-1", true, 1.0, 10_000L))
+        val historyOriginal = bytes(history)
+        ledger.record(history, 10_000L)
+        processor.queueInput(history)
+        assertTrue(bytes(processor.output).contentEquals(historyOriginal))
 
-        processor.queueInput(input)
+        val activeInput = ByteBuffer.allocateDirect(8).order(ByteOrder.LITTLE_ENDIAN).apply {
+            listOf(5_000, 6_000, 7_000, 8_000).forEach { putShort(it.toShort()) }
+            flip()
+        }
+        val original = bytes(activeInput)
+        ledger.record(activeInput, 15_000L)
+        assertTrue(mailbox.publish("track-1", true, -1.0, 17_000L))
+        processor.queueInput(activeInput)
 
-        val rendered = processor.output.duplicate().order(ByteOrder.LITTLE_ENDIAN)
-        assertEquals(0, rendered.short.toInt())
-        assertEquals(1_000, rendered.short.toInt())
-        assertEquals(2_000, rendered.short.toInt())
-        assertEquals(3_000, rendered.short.toInt())
-        assertEquals(4, processor.pcmRingForTest()!!.availableFrames)
+        assertTrue(bytes(processor.output).contentEquals(original))
+        assertEquals(activeInput.limit(), activeInput.position())
+        assertEquals(9, processor.pcmRingForTest()!!.availableFrames)
+        val diagnostics = processor.diagnosticsSnapshot()
+        assertEquals(2L, diagnostics["timestampMatches"])
+        assertEquals(0L, diagnostics["timestampMisses"])
+        assertEquals(1L, diagnostics["activeControlBlocks"])
+        assertEquals(0L, diagnostics["renderedBlocks"])
+        assertEquals(1L, diagnostics["activeRenderFallbacks"])
+    }
+
+
+    @Test
+    fun postDspCaptureTimestampFollowsScratchCursorInsteadOfDecoderAheadPts() {
+        val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 1_000, channelCount = 1, encoderDelayFrames = 0)
+        val mailbox = DjScratchControlMailbox()
+        val processor = DjScratchTimestampProcessor(
+            ledger = ledger,
+            controlMailbox = mailbox,
+            enableScratchRendering = true,
+        )
+        processor.configure(AudioProcessor.AudioFormat(1_000, 1, C.ENCODING_PCM_16BIT))
+        processor.flush()
+
+        val history = ByteBuffer.allocateDirect(10).order(ByteOrder.LITTLE_ENDIAN).apply {
+            listOf(100, 200, 300, 400, 500).forEach { putShort(it.toShort()) }
+            flip()
+        }
+        ledger.record(history, 10_000L)
+        processor.queueInput(history)
+
+        val active = ByteBuffer.allocateDirect(8).order(ByteOrder.LITTLE_ENDIAN).apply {
+            listOf(600, 700, 800, 900).forEach { putShort(it.toShort()) }
+            flip()
+        }
+        ledger.record(active, 15_000L)
+        assertTrue(mailbox.publish("track-1", true, 1.0, 12_000L))
+        processor.queueInput(active)
+
+        assertEquals(15_000L, processor.lastConsumedTimestampForTest()?.presentationTimeUs)
+        assertEquals(12_000L, processor.releaseTailTimestampUs())
+        assertEquals(16_000L, processor.diagnosticsSnapshot()["cursorMediaTimeUs"])
+    }
+
+    @Test
+    fun allocatesFourSecondsOfScratchHistoryPerDeck() {
+        val processor = DjScratchTimestampProcessor(DjScratchTimestampLedger())
+        processor.configure(AudioProcessor.AudioFormat(1_000, 1, C.ENCODING_PCM_16BIT))
+        processor.flush()
+
+        assertEquals(4_000, processor.pcmRingForTest()?.capacityFrames)
+    }
+
+    @Test
+    fun media3FactoryInstallsTimestampScratchBeforeNativeDspAndReleaseCaptureAfterDsp() {
+        val chain = DspEngineSinkHook.createProcessors(
+            "A",
+            DjScratchTimestampLedger(),
+            DjScratchControlMailbox(),
+        )
+        try {
+            assertEquals(3, chain.size)
+            assertTrue(chain[0] is DjScratchTimestampProcessor)
+            assertTrue(chain[1] is DspEngineAudioProcessor)
+            assertTrue(chain[2] is DjScratchReleaseTailCaptureProcessor)
+            val diagnostics = DspEngineSinkHook.scratchDiagnostics("A")
+            assertEquals(true, diagnostics["processorPresent"])
+            assertEquals(false, diagnostics["configured"])
+        } finally {
+            DspEngineSinkHook.forgetDeck("A")
+        }
     }
 
     @Test

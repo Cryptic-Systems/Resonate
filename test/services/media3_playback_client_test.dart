@@ -142,6 +142,16 @@ void main() {
           'lastUnderrunBufferSizeMs': 84,
           'lastUnderrunElapsedSinceFeedMs': 126,
           'lastUnderrunElapsedRealtimeMs': 987654,
+          'scratchDeckA': <String, Object?>{
+            'processorPresent': true,
+            'timestampMatches': 500,
+            'timestampMisses': 2,
+            'renderedBlocks': 120,
+            'activeRenderFallbacks': 3,
+          },
+          'scratchDeckB': <String, Object?>{
+            'processorPresent': false,
+          },
         },
       });
 
@@ -152,6 +162,10 @@ void main() {
       expect(state.lastUnderrunBufferSizeMs, 84);
       expect(state.lastUnderrunElapsedSinceFeedMs, 126);
       expect(state.lastUnderrunElapsedRealtimeMs, 987654);
+      expect(state.scratchDiagnosticsA['processorPresent'], isTrue);
+      expect(state.scratchDiagnosticsA['timestampMatches'], 500);
+      expect(state.scratchDiagnosticsA['activeRenderFallbacks'], 3);
+      expect(state.scratchDiagnosticsB['processorPresent'], isFalse);
     });
 
     test('parses native standby invalidation reason and incoming identity', () {

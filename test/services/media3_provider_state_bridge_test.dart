@@ -43,6 +43,8 @@ PlaybackSnapshot _snapshot({
   int lastUnderrunBufferSizeMs = 0,
   int lastUnderrunElapsedSinceFeedMs = 0,
   int lastUnderrunElapsedRealtimeMs = 0,
+  Map<String, Object?> scratchDiagnosticsA = const <String, Object?>{},
+  Map<String, Object?> scratchDiagnosticsB = const <String, Object?>{},
   bool djDualDeckMode = false,
   double djCrossfaderPosition = 0.5,
   PlaybackDeckSnapshot? deckA,
@@ -86,6 +88,8 @@ PlaybackSnapshot _snapshot({
       lastUnderrunBufferSizeMs: lastUnderrunBufferSizeMs,
       lastUnderrunElapsedSinceFeedMs: lastUnderrunElapsedSinceFeedMs,
       lastUnderrunElapsedRealtimeMs: lastUnderrunElapsedRealtimeMs,
+      scratchDiagnosticsA: scratchDiagnosticsA,
+      scratchDiagnosticsB: scratchDiagnosticsB,
       repeatMode: repeatMode,
       shuffleModeEnabled: shuffleModeEnabled,
       hasError: false,
@@ -178,6 +182,30 @@ void main() {
       expect(bridge.current.incomingMediaId, 'incoming');
       expect(bridge.current.incomingReady, isTrue);
       expect(bridge.current.incomingPosition, const Duration(seconds: 12));
+    });
+
+    test('projects per-deck scratch diagnostics from the native snapshot', () async {
+      await runtime.loadQueue([_song('track-1')]);
+      // Queue loading replaces the backend's prior snapshot. Inject the
+      // diagnostic readback afterwards, then refresh the runtime projection.
+      backend.value = _snapshot(
+        mediaId: 'track-1',
+        scratchDiagnosticsA: const {
+          'processorPresent': true,
+          'timestampMatches': 100,
+          'renderedBlocks': 25,
+        },
+        scratchDiagnosticsB: const {
+          'processorPresent': false,
+        },
+      );
+      await runtime.refreshState();
+      await bridge.start();
+
+      expect(bridge.current.scratchDiagnosticsA['processorPresent'], isTrue);
+      expect(bridge.current.scratchDiagnosticsA['timestampMatches'], 100);
+      expect(bridge.current.scratchDiagnosticsA['renderedBlocks'], 25);
+      expect(bridge.current.scratchDiagnosticsB['processorPresent'], isFalse);
     });
 
     test('projects reconciled Media3 state without optimistic changes', () async {

@@ -17,6 +17,7 @@ import 'package:resonate/services/playback_backend.dart';
 import 'package:resonate/services/playback_engine_session.dart';
 import 'package:resonate/services/media3_provider_state_bridge.dart';
 import 'package:resonate/services/dj_analysis_service.dart';
+import 'package:resonate/services/voice_cue_service.dart';
 
 Song _song(String id) => Song(
       id: id,
@@ -72,7 +73,7 @@ Media3ProviderState _state({
       error: null,
     );
 
-class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueBackend, PlaybackDjDeckSession {
+class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueBackend, PlaybackDjDeckSession, PlaybackStateRefreshSession {
   _FakePlaybackSession({bool synchronousStates = false})
       : states = StreamController<Media3ProviderState>.broadcast(
           sync: synchronousStates,
@@ -105,6 +106,8 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   Completer<void>? djDeckCommandGate;
   bool throwOnPreloadNext = false;
   bool throwOnDeckSpeedOnce = false;
+  bool throwOnPromotedDeckSpeedResetOnce = false;
+  int cancelledTransitionSpeedResetCount = 0;
   bool throwOnClearDeckEqOverlay = false;
   bool throwOnClearDjDeckOnce = false;
   bool throwOnDisableDjModeOnce = false;
@@ -118,6 +121,8 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   Song? currentSongValue;
   int? queueIndexValue;
   bool playingValue = false;
+  bool stalePauseSnapshotOnPause = false;
+  bool? stalePauseReportedPlayingValue;
   bool readyValue = true;
   bool completedValue = false;
   String crossfadeStatusValue = 'idle';
@@ -136,7 +141,7 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   @override
   int? get queueIndex => queueIndexValue;
   @override
-  bool get isPlaying => playingValue;
+  bool get isPlaying => stalePauseReportedPlayingValue ?? playingValue;
   @override
   Duration get position => positionValue;
   @override
@@ -202,7 +207,7 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   }
 
   @override
-  Future<void> play() async { playingValue = true; completedValue = false; calls.add('play'); }
+  Future<void> play() async { playingValue = true; stalePauseReportedPlayingValue = null; completedValue = false; calls.add('play'); }
   @override
   Future<void> setPlaybackSpeed(double speed) async {
     playbackSpeedValue = speed;
@@ -217,10 +222,36 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
       calls.add('pause_waiting');
       await gate.future;
     }
+    final wasPlaying = playingValue;
     playingValue = false;
+    if (stalePauseSnapshotOnPause && wasPlaying) {
+      stalePauseReportedPlayingValue = true;
+    } else {
+      stalePauseReportedPlayingValue = null;
+    }
   }
   @override
-  Future<void> stop() async { playingValue = false; calls.add('stop'); }
+  Future<void> refreshState() async {
+    // Only the stale-snapshot scenario needs an explicit native refresh.
+    if (stalePauseReportedPlayingValue == null) return;
+    calls.add('refreshState');
+    stalePauseReportedPlayingValue = null;
+    final song = currentSongValue;
+    final index = queueIndexValue;
+    if (song != null && index != null) {
+      states.add(_state(
+        song: song,
+        queueIndex: index,
+        playing: playingValue,
+        position: positionValue,
+        playWhenReady: playingValue,
+        activeDeckId: activeDeckIdValue,
+        crossfadeStatus: crossfadeStatusValue,
+      ));
+    }
+  }
+  @override
+  Future<void> stop() async { playingValue = false; stalePauseReportedPlayingValue = null; calls.add('stop'); }
   @override
   Future<void> seek(Duration position) async { positionValue = position; calls.add('seek:${position.inMilliseconds}'); }
   @override
@@ -275,6 +306,15 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
     required double activeSpeed,
     required double standbySpeed,
   }) async {
+    if (throwOnPromotedDeckSpeedResetOnce &&
+        queueIndexValue == 1 &&
+        activeSpeed == 1.0 &&
+        standbySpeed == 1.0) {
+      throwOnPromotedDeckSpeedResetOnce = false;
+      positionValue = const Duration(seconds: 17);
+      calls.add('deckSpeeds:promoted_reset_failure');
+      throw StateError('simulated post-promotion deck reset failure');
+    }
     if (throwOnDeckSpeedOnce) {
       throwOnDeckSpeedOnce = false;
       // Simulate a native command that partially changes both deck rates
@@ -291,6 +331,11 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
       deckSpeedResetGate = null;
       calls.add('deckSpeeds:reset_waiting');
       await gate.future;
+    }
+    if (crossfadeStatusValue == 'cancelled' &&
+        activeSpeed == playbackSpeedValue &&
+        standbySpeed == playbackSpeedValue) {
+      cancelledTransitionSpeedResetCount++;
     }
     deckSpeeds = (activeSpeed, standbySpeed);
     calls.add('deckSpeeds:${activeSpeed}:${standbySpeed}');
@@ -370,6 +415,7 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
       playingValue = true;
       completedValue = false;
       durationValue = currentSongValue?.duration;
+      crossfadeStatusValue = 'completed';
       states.add(_state(
         song: currentSongValue!,
         queueIndex: index,
@@ -377,6 +423,7 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
         position: positionValue,
         playWhenReady: true,
         activeDeckId: activeDeckIdValue,
+        crossfadeStatus: crossfadeStatusValue,
       ));
     }
   }
@@ -402,6 +449,7 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   Future<void> cancelCrossfade() async {
     calls.add('cancelCrossfade');
     crossfadeCancelled = true;
+    crossfadeStatusValue = 'cancelled';
     final gate = cancelCrossfadeGate;
     if (gate != null) {
       calls.add('cancelCrossfade_waiting');
@@ -530,6 +578,10 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   SharedPreferences.setMockInitialValues(<String, Object>{});
+  // These provider tests exercise Media3 transport, not native just_audio
+  // output. Keep optional voice cues disabled so the test isolate does not
+  // attempt to initialize an Android audio plugin it does not register.
+  unawaited(VoiceCueService.instance.setEnabled(false));
 
   group('MusicProvider Media3 session preparation', () {
     setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
@@ -685,6 +737,27 @@ void main() {
       expect(session.calls, contains('gainFactors'));
       expect(provider.debugLegacyEngineConstructed, isFalse,
           reason: 'Feature changes must activate the injected session, not construct just_audio.');
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('pause refreshes Media3 state before reconciling the button state', () async {
+      final session = _FakePlaybackSession()
+        ..stalePauseSnapshotOnPause = true;
+      final provider = MusicProvider(media3ProviderSession: session);
+      await provider.prepareMedia3ProviderSession();
+      final song = _song('pause-state-refresh');
+      await provider.playSong(song, queue: <Song>[song]);
+      expect(provider.isPlaying, isTrue);
+
+      await provider.pause();
+
+      expect(session.calls, contains('refreshState'));
+      expect(session.isPlaying, isFalse);
+      expect(provider.isPlaying, isFalse);
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
@@ -2373,7 +2446,7 @@ void main() {
       await session.states.close();
     });
 
-    test('fails over immediately when the native standby deck reports an error', () async {
+    test('native standby error preserves outgoing playback, selected speed and queue completion ownership', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'crossfade_enabled': true,
         'crossfade_duration': 500.0,
@@ -2390,6 +2463,10 @@ void main() {
       final crossfade = CrossfadeProvider(music: provider);
       await crossfade.ready;
       expect(provider.crossfadeEnabled, isTrue);
+      await provider.setPlaybackSpeedForFeatures(1.15);
+      // Ignore the setup-time deck reset; this counter must observe the failed
+      // transition's own cancellation and speed restoration.
+      session.cancelledTransitionSpeedResetCount = 0;
       // Preload belongs to the lead-in window, not the fade-arm window.
       // At 2.4s remaining the ordinary 500ms crossfade is already too late
       // to request a fresh preload, so first place playback 10s from the end.
@@ -2423,13 +2500,37 @@ void main() {
       }
       expect(session.calls, contains('crossfade:incoming_error'));
       for (var attempt = 0;
-          attempt < 100 && session.loadedIndex != 1;
+          attempt < 100 && session.cancelledTransitionSpeedResetCount == 0;
           attempt++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
-      expect(session.loadedIndex, 1,
-          reason: 'A failed standby deck must fall back to the selected queue item without waiting for the transition timeout.');
-      expect(session.calls, contains('play'));
+      expect(session.cancelledTransitionSpeedResetCount, 1);
+      expect(session.deckSpeeds, (1.15, 1.15),
+          reason: 'Both native decks must return to the user-selected playback rate.');
+      expect(session.calls.where((call) => call == 'loadQueue').length, 1,
+          reason: 'A failed native fade must not reload the incoming queue item.');
+      expect(session.calls.where((call) => call == 'play').length, 1,
+          reason: 'Recovery must not restart either deck.');
+      expect(session.currentSongValue?.id, first.id);
+      expect(session.queueIndexValue, 0);
+      expect(session.positionValue, const Duration(milliseconds: 178000));
+      expect(session.playingValue, isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      session.positionValue = const Duration(milliseconds: 178500);
+      session.states.add(_state(
+        song: first,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+        crossfadeStatus: 'cancelled',
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(
+        session.calls.where((call) => call == 'crossfade:incoming_error').length,
+        1,
+        reason: 'The failed occurrence pair must remain deferred until canonical queue completion.',
+      );
       crossfade.dispose();
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
@@ -2479,6 +2580,7 @@ void main() {
         queue: <Song>[first, second],
       ), isTrue);
       await provider.setCrossfadeDuration(500);
+      session.playbackSpeedValue = 1.15;
 
       session.positionValue = const Duration(seconds: 178);
       session.states.add(_state(
@@ -2494,7 +2596,8 @@ void main() {
       expect(session.preloadedIndex, 1);
       expect(session.crossfadeDuration, isNotNull);
       expect(session.calls, contains('crossfade:500'));
-      expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+      expect(session.calls, contains('deckSpeeds:1.15:1.15'));
+      expect(session.deckSpeeds, (1.15, 1.15));
       expect(provider.currentSong?.id, 'fade-in');
       expect(provider.media3ProviderSessionActive, isTrue);
 
@@ -2504,16 +2607,15 @@ void main() {
       await session.states.close();
     });
 
-    test('incoming deck error recovers the selected track on the active Media3 deck', () async {
-      final session = _FakePlaybackSession()
-        ..emitIncomingErrorOnCrossfade = true;
+    test('automatic crossfade promotes the exact next queue occurrence when media IDs repeat', () async {
+      final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
-      final outgoing = _song('incoming-error-outgoing');
-      final incoming = _song('incoming-error-incoming');
+      final outgoing = _song('duplicate-occurrence-out');
+      final repeated = _song('duplicate-occurrence-in');
       await provider.prepareMedia3ProviderSession();
       expect(await provider.playSong(
         outgoing,
-        queue: <Song>[outgoing, incoming],
+        queue: <Song>[outgoing, repeated, repeated],
       ), isTrue);
       await provider.setCrossfadeDuration(500);
 
@@ -2527,30 +2629,80 @@ void main() {
       ));
 
       for (var attempt = 0;
-          attempt < 120 &&
-              session.calls.where((call) => call == 'loadQueue').length < 2;
+          attempt < 120 && provider.queueIndex != 1;
           attempt++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
 
-      expect(session.calls, contains('crossfade:incoming_error'));
-      expect(session.calls, contains('cancelCrossfade'));
-      expect(session.calls, contains('clearDeckEqOverlay:standby'));
-      expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+      expect(session.preloadedSong?.id, repeated.id);
+      expect(session.preloadedIndex, 1);
+      expect(provider.currentSong?.id, repeated.id);
+      expect(provider.queueIndex, 1);
+      expect(
+        session.calls.where((call) => call.startsWith('crossfade:')).length,
+        1,
+        reason: 'The first repeated media occurrence must be promoted once, not confused with the later entry.',
+      );
+
+      provider.dispose();
+      await Future<void>.delayed(Duration.zero);
+      await session.audioSessions.close();
+      await session.states.close();
+    });
+
+    test('post-promotion recovery preserves incoming position without reloading or replaying', () async {
+      final session = _FakePlaybackSession()
+        ..throwOnPromotedDeckSpeedResetOnce = true;
+      final provider = MusicProvider(media3ProviderSession: session);
+      final outgoing = _song('post-promotion-recovery-out');
+      final incoming = _song('post-promotion-recovery-in');
+      await provider.prepareMedia3ProviderSession();
+      expect(await provider.playSong(
+        outgoing,
+        queue: <Song>[outgoing, incoming],
+      ), isTrue);
+      await provider.setCrossfadeDuration(500);
+      final gainFactorCallsBeforeFade =
+          session.calls.where((call) => call == 'gainFactors').length;
+
+      session.positionValue = const Duration(seconds: 178);
+      session.states.add(_state(
+        song: outgoing,
+        queueIndex: 0,
+        playing: true,
+        playWhenReady: true,
+        position: session.positionValue,
+      ));
+
+      for (var attempt = 0;
+          attempt < 120 &&
+              !session.calls.contains('deckSpeeds:promoted_reset_failure');
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      for (var attempt = 0;
+          attempt < 120 &&
+              session.calls.where((call) => call == 'gainFactors').length <
+                  gainFactorCallsBeforeFade + 2;
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(session.currentSongValue?.id, incoming.id);
+      expect(session.queueIndexValue, 1);
+      expect(session.positionValue, const Duration(seconds: 17));
       expect(
         session.calls.where((call) => call == 'loadQueue').length,
-        greaterThanOrEqualTo(2),
-        reason: 'An incoming-deck failure must recover through the canonical Media3 queue.',
+        1,
+        reason: 'An already-promoted track must never be loaded again at position zero.',
       );
       expect(
         session.calls.where((call) => call == 'play').length,
-        greaterThanOrEqualTo(2),
-        reason: 'The same-session fallback must resume the selected incoming occurrence.',
+        1,
+        reason: 'Post-promotion recovery must not issue another Play.',
       );
-      expect(provider.currentSong?.id, incoming.id);
-      expect(provider.queueIndex, 1);
-      expect(provider.media3ProviderSessionActive, isTrue);
-      expect(provider.debugLegacyEngineConstructed, isFalse);
+      expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+      expect(session.calls, contains('volume:1.0'));
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
@@ -2731,8 +2883,16 @@ void main() {
         contains('deckSpeeds:1.0:1.0'),
         reason: 'A failed overlay clear must not strand a tempo-matched deck rate.',
       );
-      expect(session.calls, contains('loadQueue'),
-          reason: 'The selected queue fallback remains available after cleanup attempts.');
+      expect(
+        session.calls.where((call) => call == 'loadQueue').length,
+        1,
+        reason: 'Cleanup failure must not turn the failed fade into a queue reload.',
+      );
+      expect(
+        session.calls.where((call) => call == 'play').length,
+        1,
+        reason: 'Cleanup failure must not restart playback.',
+      );
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
@@ -2982,232 +3142,41 @@ void main() {
       await session.states.close();
     });
 
-    test('repeat-one hands off through the Media3 standby deck and returns to repeat-one', () async {
+    test('manual Repeat One remains enabled for both native DJ decks without automatic self-replay', () async {
       final session = _FakePlaybackSession();
       final provider = MusicProvider(media3ProviderSession: session);
-      final song = _song('repeat-one-deck');
-      await provider.prepareMedia3ProviderSession();
-      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
-      await provider.setRepeatMode(PlaybackRepeatMode.one);
-      await provider.setCrossfadeDuration(500);
+      try {
+        await provider.prepareMedia3ProviderSession();
+        await provider.enableDjDualDeckMode();
 
-      // Ignore the legitimate Repeat Off setup performed before Repeat One
-      // is selected; this assertion covers only the self-fade handoff window.
-      session.calls.clear();
-      session.positionValue = const Duration(seconds: 178);
-      session.states.add(_state(
-        song: song,
-        queueIndex: 0,
-        playing: true,
-        playWhenReady: true,
-        position: session.positionValue,
-        activeDeckId: 'A',
-        repeatMode: 'one',
-      ));
-      await Future<void>.delayed(const Duration(milliseconds: 240));
+        await provider.setRepeatMode(PlaybackRepeatMode.one);
 
-      expect(session.preloadedSong?.id, song.id);
-      expect(session.preloadedIndex, 0);
-      expect(session.preloadedStartPosition, Duration.zero);
-      expect(session.calls, isNot(contains('repeat:off')),
-          reason: 'Repeat One must remain active while the standby deck is promoted.');
-      expect(session.crossfadeDuration, const Duration(milliseconds: 1600));
-      expect(session.calls, contains('repeat:one'));
-      expect(session.repeatModeSet, PlaybackQueueRepeatMode.one);
-      expect(provider.activeEngineLabel, 'B');
-      expect(provider.currentSong?.id, song.id);
-      expect(provider.queueIndex, 0);
+        expect(session.djDualDeckModeValue, isTrue);
+        expect(provider.repeatMode, PlaybackRepeatMode.one);
+        expect(session.repeatModeSet, PlaybackQueueRepeatMode.one);
+        expect(session.calls, contains('repeat:one'),
+            reason: 'The manual Repeat One command must reach the native dual-deck session.');
+        expect(provider.canRepeatSelfHandoff, isFalse,
+            reason: 'Repeat One must not schedule the retired automatic DJ self-crossfade.');
+        expect(
+          session.calls.where((call) =>
+              call.startsWith('preloadNext:') || call.startsWith('crossfade:')),
+          isEmpty,
+          reason: 'Selecting Repeat One must not preload or crossfade the same track automatically.',
+        );
 
-      provider.dispose();
-      await Future<void>.delayed(Duration.zero);
-      await session.audioSessions.close();
-      await session.states.close();
-    });
-
-    test('repeat mode changed during self-fade finalization is serialized after native restore', () async {
-      final session = _FakePlaybackSession()
-        ..crossfadeGate = Completer<void>();
-      final provider = MusicProvider(media3ProviderSession: session);
-      final song = _song('repeat-one-finalization-race');
-      await provider.prepareMedia3ProviderSession();
-      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
-      await provider.setRepeatMode(PlaybackRepeatMode.one);
-      await provider.setCrossfadeDuration(500);
-
-      // Hold the audible fade. Turning Repeat One off here is deferred until
-      // the same-track deck promotion has completed.
-      final repeatGate = Completer<void>();
-      session.repeatModeGate = repeatGate;
-      final finalizationRepeatCall = session.repeatModeCallCount + 2;
-      session.repeatModeGateOnCall = finalizationRepeatCall;
-      session.positionValue = const Duration(seconds: 178);
-      session.states.add(_state(
-        song: song,
-        queueIndex: 0,
-        playing: true,
-        playWhenReady: true,
-        position: session.positionValue,
-        activeDeckId: 'A',
-        repeatMode: 'one',
-      ));
-      for (var attempt = 0;
-          attempt < 100 &&
-              !session.calls.any((call) => call.startsWith('crossfade:'));
-          attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
+        // Native Media3 applies the manual queue repeat mode to both physical
+        // deck players; this is independent of automatic mix scheduling.
+        await provider.setRepeatMode(PlaybackRepeatMode.off);
+        expect(session.repeatModeSet, PlaybackQueueRepeatMode.off);
+        expect(session.calls.lastWhere((call) => call.startsWith('repeat:')),
+            'repeat:off');
+      } finally {
+        provider.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await session.audioSessions.close();
+        await session.states.close();
       }
-      expect(session.calls.any((call) => call.startsWith('crossfade:')), isTrue);
-
-      await provider.setRepeatMode(PlaybackRepeatMode.off);
-      session.crossfadeGate!.complete();
-
-      // The final native restore is the second repeat write in this handoff:
-      // the first is the success-path restore, the second is finalization.
-      for (var attempt = 0;
-          attempt < 100 &&
-              session.repeatModeCallCount < finalizationRepeatCall;
-          attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-      expect(session.repeatModeCallCount, greaterThanOrEqualTo(finalizationRepeatCall),
-          reason: 'The finalization repeat write should reach the held test gate.');
-
-      // Re-enable Repeat One while the native Off write is blocked. This newer
-      // command must run after that write, not be swallowed by fade cleanup.
-      final reenable = provider.setRepeatMode(PlaybackRepeatMode.one);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      repeatGate.complete();
-      await reenable;
-
-      expect(provider.repeatMode, PlaybackRepeatMode.one);
-      expect(session.repeatModeSet, PlaybackQueueRepeatMode.one);
-      expect(
-        session.calls.lastWhere((call) => call.startsWith('repeat:')),
-        'repeat:one',
-        reason: 'The latest Repeat One selection must win native command ordering.',
-      );
-
-      provider.dispose();
-      await Future<void>.delayed(Duration.zero);
-      await session.audioSessions.close();
-      await session.states.close();
-    });
-
-    test('repeat-one preload failure restores a partially applied deck stretch', () async {
-      final session = _FakePlaybackSession();
-      final provider = MusicProvider(media3ProviderSession: session);
-      final song = _song('repeat-one-speed-recovery');
-      await provider.prepareMedia3ProviderSession();
-      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
-      await provider.setRepeatMode(PlaybackRepeatMode.one);
-      await provider.setCrossfadeDuration(500);
-
-      // Inject the failure only after initial transport setup, so it belongs
-      // to the repeat-self DJ preload's tempo-match command.
-      session.calls.clear();
-      session.throwOnDeckSpeedOnce = true;
-      session.positionValue = const Duration(seconds: 178);
-      session.states.add(_state(
-        song: song,
-        queueIndex: 0,
-        playing: true,
-        playWhenReady: true,
-        position: session.positionValue,
-        activeDeckId: 'A',
-        repeatMode: 'one',
-      ));
-
-      for (var attempt = 0;
-          attempt < 120 &&
-              !session.calls.contains('deckSpeeds:1.0:1.0');
-          attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-
-      expect(session.calls, contains('deckSpeeds:partial_failure'));
-      expect(session.calls, contains('cancelCrossfade'));
-      expect(
-        session.calls,
-        contains('deckSpeeds:1.0:1.0'),
-        reason: 'A partial repeat-one tempo-match failure must restore both deck rates.',
-      );
-      expect(session.deckSpeeds, (1.0, 1.0));
-
-      provider.dispose();
-      await Future<void>.delayed(Duration.zero);
-      await session.audioSessions.close();
-      await session.states.close();
-    });
-
-    test('turning Repeat One off during a running self fade completes the handoff', () async {
-      final session = _FakePlaybackSession()
-        ..crossfadeGate = Completer<void>();
-      final provider = MusicProvider(media3ProviderSession: session);
-      final song = _song('repeat-one-finish-before-disable');
-      await provider.prepareMedia3ProviderSession();
-      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
-      // Ignore transport cleanup from initial playSong setup. The assertion
-      // below must observe only calls made after the audible self fade starts.
-      session.calls.clear();
-      await provider.setRepeatMode(PlaybackRepeatMode.one);
-      await provider.setCrossfadeDuration(500);
-
-      session.positionValue = const Duration(seconds: 178);
-      session.states.add(_state(
-        song: song,
-        queueIndex: 0,
-        playing: true,
-        playWhenReady: true,
-        position: session.positionValue,
-        activeDeckId: 'A',
-        repeatMode: 'one',
-      ));
-      for (var attempt = 0;
-          attempt < 120 &&
-              !session.calls.any((call) => call.startsWith('crossfade:'));
-          attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-      expect(
-        session.calls.any((call) => call.startsWith('crossfade:')),
-        isTrue,
-        reason: 'The same-track standby fade must have started before changing repeat mode.',
-      );
-
-      final repeatOneWritesBeforeToggle =
-          session.calls.where((call) => call == 'repeat:one').length;
-      await provider.setRepeatMode(PlaybackRepeatMode.off);
-      expect(provider.repeatMode, PlaybackRepeatMode.off);
-      expect(session.repeatModeSet, PlaybackQueueRepeatMode.one,
-          reason: 'Repeat One must remain active until the prepared deck is promoted.');
-      expect(
-        session.calls,
-        isNot(contains('cancelCrossfade')),
-        reason: 'Changing repeat policy must not tear down an audible self fade.',
-      );
-
-      session.crossfadeGate!.complete();
-      for (var attempt = 0;
-          attempt < 120 && session.activeDeckIdValue != 'B';
-          attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 30));
-
-      expect(session.activeDeckIdValue, 'B');
-      expect(provider.currentSong?.id, song.id);
-      expect(provider.queueIndex, 0);
-      expect(session.repeatModeSet, PlaybackQueueRepeatMode.off);
-      expect(
-        session.calls.where((call) => call == 'repeat:one').length,
-        repeatOneWritesBeforeToggle,
-        reason: 'The completed handoff must not restore the stale Repeat One policy.',
-      );
-
-      provider.dispose();
-      await Future<void>.delayed(Duration.zero);
-      await session.audioSessions.close();
-      await session.states.close();
     });
 
     test('stale Media3 repeat snapshot cannot overwrite a pending local Repeat Off command', () async {
@@ -3305,237 +3274,6 @@ void main() {
         'repeat:one',
         reason: 'The last user selection must be the final native repeat command.',
       );
-
-      provider.dispose();
-      await Future<void>.delayed(Duration.zero);
-      await session.audioSessions.close();
-      await session.states.close();
-    });
-
-    test('latest Repeat One selection is applied after an active self fade', () async {
-      final session = _FakePlaybackSession()
-        ..crossfadeGate = Completer<void>();
-      final provider = MusicProvider(media3ProviderSession: session);
-      final song = _song('repeat-one-reenable-during-fade');
-      await provider.prepareMedia3ProviderSession();
-      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
-      session.calls.clear();
-      await provider.setRepeatMode(PlaybackRepeatMode.one);
-      await provider.setCrossfadeDuration(500);
-
-      session.positionValue = const Duration(seconds: 178);
-      session.states.add(_state(
-        song: song,
-        queueIndex: 0,
-        playing: true,
-        playWhenReady: true,
-        position: session.positionValue,
-        activeDeckId: 'A',
-        repeatMode: 'one',
-      ));
-      for (var attempt = 0;
-          attempt < 120 &&
-              !session.calls.any((call) => call.startsWith('crossfade:'));
-          attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-      expect(session.calls.any((call) => call.startsWith('crossfade:')), isTrue);
-
-      await provider.setRepeatMode(PlaybackRepeatMode.off);
-      await provider.setRepeatMode(PlaybackRepeatMode.one);
-      expect(provider.repeatMode, PlaybackRepeatMode.one);
-      expect(
-        session.calls,
-        isNot(contains('cancelCrossfade')),
-        reason: 'Changing the desired mode must not cancel an already audible self fade.',
-      );
-      expect(
-        session.calls.where((call) => call == 'repeat:one').length,
-        1,
-        reason: 'Repeat One must not be re-enabled on the outgoing deck mid-fade.',
-      );
-
-      session.crossfadeGate!.complete();
-      for (var attempt = 0;
-          attempt < 120 && session.activeDeckIdValue != 'B';
-          attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 30));
-
-      expect(session.activeDeckIdValue, 'B');
-      expect(provider.repeatMode, PlaybackRepeatMode.one);
-      expect(session.repeatModeSet, PlaybackQueueRepeatMode.one);
-      expect(session.calls.lastWhere((call) =>
-          call == 'repeat:off' || call == 'repeat:one'), 'repeat:one');
-
-      provider.dispose();
-      await Future<void>.delayed(Duration.zero);
-      await session.audioSessions.close();
-      await session.states.close();
-    });
-
-    test('manual Pause preempts a running Repeat One self fade without stale promotion', () async {
-      final fadeGate = Completer<void>();
-      final session = _FakePlaybackSession()..crossfadeGate = fadeGate;
-      final provider = MusicProvider(media3ProviderSession: session);
-      final song = _song('repeat-one-pause-preemption');
-      await provider.prepareMedia3ProviderSession();
-      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
-      session.calls.clear();
-      await provider.setRepeatMode(PlaybackRepeatMode.one);
-      await provider.setCrossfadeDuration(500);
-
-      session.positionValue = const Duration(seconds: 178);
-      session.states.add(_state(
-        song: song,
-        queueIndex: 0,
-        playing: true,
-        playWhenReady: true,
-        position: session.positionValue,
-        activeDeckId: 'A',
-        repeatMode: 'one',
-      ));
-      for (var attempt = 0;
-          attempt < 120 &&
-              !session.calls.any((call) => call.startsWith('crossfade:'));
-          attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-      expect(
-        session.calls.any((call) => call.startsWith('crossfade:')),
-        isTrue,
-        reason: 'The repeat-self fade must be running before Pause preempts it.',
-      );
-      expect(
-        provider.playbackControlArbiter.activeOwner,
-        'media3_repeat_self_fade',
-        reason: 'The audible Repeat One handoff must own live output control.',
-      );
-
-      final playCallsBeforePause =
-          session.calls.where((call) => call == 'play').length;
-      final cancelGate = Completer<void>();
-      session.cancelCrossfadeGate = cancelGate;
-      final pauseGate = Completer<void>();
-      session.pauseGate = pauseGate;
-      final pauseFuture = provider.pause();
-      for (var attempt = 0;
-          attempt < 100 &&
-              !session.calls.contains('cancelCrossfade_waiting');
-          attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 2));
-      }
-      expect(session.calls, contains('cancelCrossfade_waiting'));
-      expect(
-        provider.playbackControlArbiter.activeOwner,
-        isNull,
-        reason: 'The old lease must be invalidated while native cleanup is pending.',
-      );
-      expect(
-        session.calls,
-        isNot(contains('pause_waiting')),
-        reason: 'Manual transport must wait until revoked transition cleanup settles.',
-      );
-
-      cancelGate.complete();
-      for (var attempt = 0;
-          attempt < 100 && !session.calls.contains('pause_waiting');
-          attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 2));
-      }
-      expect(session.calls, contains('pause_waiting'));
-      expect(
-        provider.playbackControlArbiter.activeOwner,
-        'user_transport',
-        reason: 'Manual Pause receives the lease only after fade teardown completes.',
-      );
-      pauseGate.complete();
-      await pauseFuture;
-      final playCallsAfterPause =
-          session.calls.where((call) => call == 'play').length;
-      expect(session.calls, contains('cancelCrossfade'));
-      expect(session.playingValue, isFalse);
-      expect(provider.isPlaying, isFalse);
-
-      // Let the abandoned native fade future settle after Pause has taken
-      // transport ownership. Its continuation must not promote or restart.
-      fadeGate.complete();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-
-      expect(session.activeDeckIdValue, 'A');
-      expect(provider.currentSong?.id, song.id);
-      expect(provider.queueIndex, 0);
-      expect(session.playingValue, isFalse);
-      expect(
-        session.calls.where((call) => call == 'play').length,
-        playCallsAfterPause,
-        reason: 'The stale repeat-self continuation must not issue Play after Pause.',
-      );
-      expect(
-        playCallsAfterPause,
-        playCallsBeforePause,
-        reason: 'Pause must not be followed by an automatic restart.',
-      );
-      expect(provider.repeatMode, PlaybackRepeatMode.one);
-      expect(session.repeatModeSet, PlaybackQueueRepeatMode.one,
-          reason: 'Pausing playback must preserve the selected Repeat One policy.');
-
-      provider.dispose();
-      await Future<void>.delayed(Duration.zero);
-      await session.audioSessions.close();
-      await session.states.close();
-    });
-
-    test('turning Repeat One off invalidates a blocked same-track DJ preload', () async {
-      final session = _FakePlaybackSession()
-        ..preloadNextGate = Completer<void>();
-      final provider = MusicProvider(media3ProviderSession: session);
-      final song = _song('repeat-one-cancel-preload');
-      await provider.prepareMedia3ProviderSession();
-      expect(await provider.playSong(song, queue: <Song>[song]), isTrue);
-      await provider.setRepeatMode(PlaybackRepeatMode.one);
-      await provider.setCrossfadeDuration(500);
-
-      session.positionValue = const Duration(milliseconds: 178000);
-      session.states.add(_state(
-        song: song,
-        queueIndex: 0,
-        playing: true,
-        playWhenReady: true,
-        position: session.positionValue,
-        activeDeckId: 'A',
-        repeatMode: 'one',
-      ));
-      for (var attempt = 0;
-          attempt < 100 &&
-              !session.calls.any((call) =>
-                  call.startsWith('preloadNext:repeat-one-cancel-preload:'));
-          attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-      expect(
-        session.calls.any((call) =>
-            call.startsWith('preloadNext:repeat-one-cancel-preload:')),
-        isTrue,
-        reason: 'Repeat One should prepare the same-track standby deck before the loop.',
-      );
-
-      await provider.setRepeatMode(PlaybackRepeatMode.off);
-      expect(provider.repeatMode, PlaybackRepeatMode.off);
-      expect(session.repeatModeSet, PlaybackQueueRepeatMode.off);
-      expect(session.calls, contains('cancelCrossfade'));
-
-      session.preloadNextGate!.complete();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(
-        session.calls.where((call) => call.startsWith('crossfade:')),
-        isEmpty,
-        reason: 'A stale Repeat One preload must not start after Repeat Off.',
-      );
-      expect(session.repeatModeSet, PlaybackQueueRepeatMode.off);
-      expect(provider.currentSong?.id, song.id);
-      expect(provider.queueIndex, 0);
 
       provider.dispose();
       await Future<void>.delayed(Duration.zero);

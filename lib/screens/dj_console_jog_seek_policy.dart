@@ -1,17 +1,15 @@
 import 'dart:math' as math;
 
-/// Maps platter rotation to bounded seek previews and native scratch anchors.
-/// Seek previews retain their millisecond UI contract; scratch anchors preserve
-/// microsecond precision so frequent control updates do not quantize the audio cursor.
+/// Maps platter rotation to bounded, one-shot seek previews.
+/// The platter preview keeps microsecond precision until the single seek commit.
 class DjConsoleJogSeekPolicy {
   const DjConsoleJogSeekPolicy._();
 
   static const double millisecondsPerRevolution = 8000;
 
-  /// Maps the accumulated platter rotation to a track-time anchor without
-  /// millisecond quantization. One revolution represents 1.8 seconds at
-  /// 33⅓ RPM, matching the native scratch velocity mapping.
-  static Duration scratchAnchorPosition({
+  /// Maps accumulated platter rotation to a track-time seek target.
+  /// One revolution represents 1.8 seconds at 33⅓ RPM.
+  static Duration jogSeekPreviewPosition({
     required Duration start,
     required double accumulatedRadians,
     required Duration duration,

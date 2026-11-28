@@ -8,54 +8,125 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DjScratchTimestampLedgerTest {
+    private fun stereoFrames(count: Int): ByteBuffer =
+        ByteBuffer.allocateDirect(count * 2 * Short.SIZE_BYTES)
+
     @Test
-    fun recordsTimestampByBufferIdentityAndConsumesOnce() {
+    fun consumesSinkSpansInFifoOrderRatherThanBufferIdentityOrder() {
         val ledger = DjScratchTimestampLedger()
-        val first = ByteBuffer.allocateDirect(4096)
-        val equalButDistinct = ByteBuffer.allocateDirect(4096)
-
+        ledger.configure(sampleRate = 48_000, channelCount = 2, encoderDelayFrames = 0)
+        val first = stereoFrames(4)
+        val second = stereoFrames(4)
         ledger.record(first, 1_250_000L)
-        assertNull(ledger.consume(equalButDistinct, 48_000, 2))
+        ledger.record(second, 1_250_083L)
 
-        val block = ledger.consume(first, 48_000, 2)
-        assertEquals(1_250_000L, block?.presentationTimeUs)
-        assertEquals(1024, block?.frameCount)
-        assertEquals(48_000, block?.sampleRate)
-        assertEquals(2, block?.channelCount)
-        assertNull(ledger.consume(first, 48_000, 2))
+        // The downstream processor receives a new buffer spanning both source
+        // buffers after Media3's built-in processors have run.
+        val output = stereoFrames(8)
+        val timestamp = ledger.consume(output, 48_000, 2)
+
+        assertEquals(1_250_000L, timestamp?.presentationTimeUs)
+        assertEquals(8, timestamp?.frameCount)
+        assertEquals(0, ledger.pendingCountForTest())
     }
 
     @Test
-    fun retryDoesNotReplaceOriginalTimestamp() {
+    fun encoderDelayIsSkippedAcrossInputBufferBoundaries() {
         val ledger = DjScratchTimestampLedger()
-        val buffer = ByteBuffer.allocateDirect(2048)
+        ledger.configure(sampleRate = 1_000, channelCount = 2, encoderDelayFrames = 3)
+        ledger.record(stereoFrames(2), 10_000L)
+        ledger.record(stereoFrames(4), 12_000L)
+
+        val timestamp = ledger.consume(stereoFrames(3), 1_000, 2)
+
+        assertEquals(13_000L, timestamp?.presentationTimeUs)
+        assertEquals(3, timestamp?.frameCount)
+        assertEquals(0, ledger.trimFramesRemainingForTest())
+        assertEquals(0, ledger.pendingCountForTest())
+    }
+
+    @Test
+    fun channelRemappingPreservesFrameTimeline() {
+        val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 48_000, channelCount = 2, encoderDelayFrames = 0)
+        ledger.record(stereoFrames(2), 3_000_000L)
+
+        // Media3 may remap stereo input to mono before the user processor.
+        val monoOutput = ByteBuffer.allocateDirect(2 * Short.SIZE_BYTES)
+        val timestamp = ledger.consume(monoOutput, 48_000, 1)
+
+        assertEquals(3_000_000L, timestamp?.presentationTimeUs)
+        assertEquals(2, timestamp?.frameCount)
+        assertEquals(1, timestamp?.channelCount)
+    }
+
+    @Test
+    fun mapsFloatSourceFramesToPcm16ProcessorFrames() {
+        val ledger = DjScratchTimestampLedger()
+        // Stereo float input is 8 bytes per frame; the user processor receives
+        // PCM16 stereo (4 bytes per frame) after Media3's integer conversion.
+        ledger.configure(
+            sampleRate = 48_000,
+            channelCount = 2,
+            encoderDelayFrames = 0,
+            sourceBytesPerFrame = 8,
+        )
+        ledger.record(ByteBuffer.allocateDirect(16), 4_000_000L)
+
+        val timestamp = ledger.consume(stereoFrames(2), 48_000, 2)
+
+        assertEquals(4_000_000L, timestamp?.presentationTimeUs)
+        assertEquals(2, timestamp?.frameCount)
+    }
+
+    @Test
+    fun retriedSinkBufferKeepsOriginalPtsAndIsNotQueuedTwice() {
+        val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 44_100, channelCount = 2, encoderDelayFrames = 0)
+        val buffer = stereoFrames(256)
 
         ledger.record(buffer, 2_000_000L)
+        // Simulate Media3 advancing the input buffer before a back-pressure retry.
+        buffer.position(buffer.limit() / 2)
         ledger.record(buffer, 2_100_000L)
 
-        assertEquals(2_000_000L, ledger.consume(buffer, 44_100, 2)?.presentationTimeUs)
+        assertEquals(1, ledger.pendingCountForTest())
+        assertEquals(2_000_000L, ledger.consume(stereoFrames(256), 44_100, 2)?.presentationTimeUs)
     }
 
     @Test
-    fun rejectsInvalidFormatAndMisalignedPcmWithoutRetainingEntry() {
+    fun rejectsMisalignedAndUnsupportedPcmWithoutRetainingStaleSpans() {
         val ledger = DjScratchTimestampLedger()
-        val mono = ByteBuffer.allocateDirect(5)
-        ledger.record(mono, 100L)
-        assertNull(ledger.consume(mono, 48_000, 1))
+        ledger.configure(sampleRate = 48_000, channelCount = 1, encoderDelayFrames = 0)
+        val malformed = ByteBuffer.allocateDirect(5)
+        ledger.record(malformed, 100L)
         assertEquals(0, ledger.pendingCountForTest())
 
-        val unsupported = ByteBuffer.allocateDirect(8)
-        ledger.record(unsupported, 200L)
-        assertNull(ledger.consume(unsupported, 48_000, 6))
+        ledger.configure(sampleRate = 48_000, channelCount = 2, encoderDelayFrames = 0)
+        ledger.record(stereoFrames(2), 200L)
+        assertNull(ledger.consume(ByteBuffer.allocateDirect(24), 48_000, 6))
+        assertEquals(0, ledger.pendingCountForTest())
+    }
+
+    @Test
+    fun rejectsOutputThatCrossesNonContiguousPresentationTimeSpans() {
+        val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 1_000, channelCount = 2, encoderDelayFrames = 0)
+        ledger.record(stereoFrames(2), 1_000L)
+        ledger.record(stereoFrames(2), 9_000L)
+
+        val timestamp = ledger.consume(stereoFrames(4), 1_000, 2)
+
+        assertNull(timestamp)
         assertEquals(0, ledger.pendingCountForTest())
     }
 
     @Test
     fun mapsFrameOffsetsToMediaTimeAndRejectsOutOfRangeOffsets() {
         val ledger = DjScratchTimestampLedger()
-        val buffer = ByteBuffer.allocateDirect(800)
-        ledger.record(buffer, 1_000_000L)
-        val block = ledger.consume(buffer, 48_000, 2)!!
+        ledger.configure(sampleRate = 48_000, channelCount = 2, encoderDelayFrames = 0)
+        ledger.record(stereoFrames(200), 1_000_000L)
+        val block = ledger.consume(stereoFrames(200), 48_000, 2)!!
 
         assertEquals(1_000_000L, block.presentationTimeUsAtFrame(0))
         assertEquals(1_000_500L, block.presentationTimeUsAtFrame(24))
@@ -65,15 +136,58 @@ class DjScratchTimestampLedgerTest {
     }
 
     @Test
-    fun clearInvalidatesOutstandingBuffers() {
+    fun discontinuityInvalidatesOldSpansWithoutReapplyingEncoderDelay() {
         val ledger = DjScratchTimestampLedger()
-        val buffer = ByteBuffer.allocateDirect(64)
+        ledger.configure(sampleRate = 1_000, channelCount = 2, encoderDelayFrames = 2)
+        ledger.record(stereoFrames(4), 1_000L)
+
+        ledger.handleDiscontinuity()
+
+        assertEquals(0, ledger.pendingCountForTest())
+        assertEquals(0, ledger.trimFramesRemainingForTest())
+        ledger.record(stereoFrames(2), 20_000L)
+        assertEquals(20_000L, ledger.consume(stereoFrames(2), 1_000, 2)?.presentationTimeUs)
+    }
+
+    @Test
+    fun flushRestoresConfiguredEncoderDelay() {
+        val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 1_000, channelCount = 2, encoderDelayFrames = 2)
+        ledger.record(stereoFrames(4), 10_000L)
+        assertEquals(2, ledger.trimFramesRemainingForTest())
+
+        ledger.resetForFlush()
+
+        assertEquals(2, ledger.trimFramesRemainingForTest())
+        assertEquals(0, ledger.pendingCountForTest())
+        ledger.record(stereoFrames(4), 10_000L)
+        assertEquals(12_000L, ledger.consume(stereoFrames(2), 1_000, 2)?.presentationTimeUs)
+    }
+
+    @Test
+    fun formatReconfigurationInvalidatesOldSpansBeforeNewFormatFrames() {
+        val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 48_000, channelCount = 2, encoderDelayFrames = 0)
+        ledger.record(stereoFrames(4), 1_000L)
+
+        ledger.configure(sampleRate = 44_100, channelCount = 2, encoderDelayFrames = 0)
+        assertEquals(0, ledger.pendingCountForTest())
+        ledger.record(stereoFrames(2), 20_000L)
+
+        assertEquals(20_000L, ledger.consume(stereoFrames(2), 44_100, 2)?.presentationTimeUs)
+    }
+
+    @Test
+    fun clearInvalidatesOutstandingBuffersAndFormat() {
+        val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 48_000, channelCount = 2, encoderDelayFrames = 0)
+        val buffer = stereoFrames(8)
         ledger.record(buffer, 300L)
         assertEquals(1, ledger.pendingCountForTest())
 
         ledger.clear()
 
-        assertTrue(ledger.pendingCountForTest() == 0)
+        assertEquals(0, ledger.pendingCountForTest())
         assertFalse(ledger.consume(buffer, 48_000, 2) != null)
     }
 }

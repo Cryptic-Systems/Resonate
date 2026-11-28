@@ -1,0 +1,43 @@
+name: Extract and activate Resonate voice cues
+
+on:
+  push:
+    branches: [resonate-voice-audit]
+    paths:
+      - "assets/audio/resonate_voice/**/*.zip"
+      - "tool/extract_resonate_voice_assets.py"
+      - ".github/workflows/voice-cue-extract-assets.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: voice-cue-extraction
+  cancel-in-progress: false
+
+jobs:
+  extract-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout voice audit branch
+        uses: actions/checkout@v4
+        with:
+          ref: resonate-voice-audit
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract original MP3s and map manifest paths
+        run: python3 tool/extract_resonate_voice_assets.py
+
+      - name: Commit extracted assets
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/audio/resonate_voice pubspec.yaml
+          if git diff --cached --quiet; then
+            echo "No extraction changes to commit."
+            exit 0
+          fi
+          git commit -m "assets: extract and activate Resonate voice cues"
+          git push origin HEAD:resonate-voice-audit

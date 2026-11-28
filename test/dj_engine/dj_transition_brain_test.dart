@@ -41,6 +41,114 @@ void main() {
     );
   }
 
+  test('trusted near-tail PCM silence becomes the outgoing transition cue', () {
+    final outgoing = track(
+      id: 'outgoing-tail-silence',
+      silenceRegions: const [
+        DjSilenceRegion(
+          startMs: 225000,
+          endMs: 238500,
+          minimumDbfs: -62,
+          confidence: 0.91,
+        ),
+      ],
+    );
+    final incoming = track(id: 'incoming');
+    final candidates = engine.brain.generate(
+      outgoing: outgoing,
+      incoming: incoming,
+      outgoingPositionMs: 210000,
+    );
+
+    expect(candidates, isNotEmpty);
+    expect(candidates.every((candidate) => candidate.outgoingStartMs == 225000), isTrue);
+  });
+
+  test('mid-track or weak silence cannot pull the transition forward', () {
+    final outgoing = track(
+      id: 'outgoing-weak-silence',
+      silenceRegions: const [
+        DjSilenceRegion(
+          startMs: 180000,
+          endMs: 190000,
+          minimumDbfs: -62,
+          confidence: 0.95,
+        ),
+        DjSilenceRegion(
+          startMs: 225000,
+          endMs: 238500,
+          minimumDbfs: -62,
+          confidence: 0.50,
+        ),
+      ],
+    );
+    final candidates = engine.brain.generate(
+      outgoing: outgoing,
+      incoming: track(id: 'incoming'),
+      outgoingPositionMs: 210000,
+    );
+
+    expect(candidates, isNotEmpty);
+    expect(candidates.every((candidate) => candidate.outgoingStartMs == 220000), isTrue);
+  });
+
+  test('silence cue already passed cannot trigger a transition', () {
+    final outgoing = track(
+      id: 'outgoing-past-silence',
+      silenceRegions: const [
+        DjSilenceRegion(
+          startMs: 225000,
+          endMs: 238500,
+          minimumDbfs: -62,
+          confidence: 0.91,
+        ),
+      ],
+    );
+    final candidates = engine.brain.generate(
+      outgoing: outgoing,
+      incoming: track(id: 'incoming'),
+      outgoingPositionMs: 226000,
+    );
+
+    expect(candidates, isNotEmpty);
+    expect(candidates.every((candidate) => candidate.outgoingStartMs == 226000), isTrue);
+  });
+
+  test('automatic candidates never enter deep into the incoming track', () {
+    final outgoing = track(id: 'outgoing');
+    final incoming = DjTrackProfile(
+      songId: 'incoming-with-late-breakdown',
+      durationMs: 240000,
+      beatGrid: const DjBeatGrid(
+        bpm: 128, confidence: 0.95, firstBeatMs: 0,
+        beatMs: [0, 469, 938, 1406, 1875, 2344, 2813, 3281],
+        downbeatMs: [0, 1875], downbeatConfidence: 0.9,
+        barConfidence: 0.9, phraseConfidence: 0.9,
+      ),
+      sections: const [
+        DjSection(type: DjSectionType.breakdown, startMs: 90000, endMs: 120000, confidence: 0.95),
+        DjSection(type: DjSectionType.drop, startMs: 120000, endMs: 150000, confidence: 0.95),
+      ],
+      transitions: const DjTransitionMarkers(bestIntroMs: 0, bestOutroMs: 220000),
+      analysisConfidence: 0.95,
+    );
+
+    final automatic = engine.brain.generate(
+      outgoing: outgoing, incoming: incoming, outgoingPositionMs: 220000,
+    );
+    expect(automatic, isNotEmpty);
+    expect(automatic.every((candidate) => candidate.incomingStartMs <= 36000), isTrue);
+    expect(automatic.any((candidate) => candidate.kind == DjTransitionKind.breakdownDrop), isFalse);
+
+    final reviewed = engine.brain.generate(
+      outgoing: outgoing, incoming: incoming, outgoingPositionMs: 220000,
+      allowReviewedLateCue: true,
+    );
+    expect(reviewed.any((candidate) =>
+      candidate.kind == DjTransitionKind.breakdownDrop &&
+      candidate.incomingStartMs == 90000), isTrue);
+  });
+
   test('chooses a musical candidate instead of only safe crossfade', () {
     final plan = engine.planTransition(
       outgoing: track(id: 'a', energy: 0.65),

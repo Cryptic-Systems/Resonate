@@ -36,6 +36,8 @@ import 'playback/playback_control_arbiter.dart';
 import 'services/playback_diagnostics_observer.dart';
 import 'services/resonate_diagnostics.dart';
 import 'services/workspace_lifecycle_coordinator.dart';
+import 'services/workspace_transition_controller.dart';
+import 'services/voice_cue_service.dart';
 
 /// Brand spectrum from the Resonate mark: cyan-blue → violet → pink → orange.
 class ResonateBrand {
@@ -318,8 +320,13 @@ class ResonateApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => ExperienceProvider()),
-        ChangeNotifierProvider(create: (_) => WorkspaceLifecycleCoordinator()),
+        ChangeNotifierProvider(create: (_) {
+          final lifecycle = WorkspaceLifecycleCoordinator();
+          VoiceCueService.instance.attachWorkspaceLifecycle(lifecycle);
+          return lifecycle;
+        }),
         ChangeNotifierProvider(create: (_) => ShellNav()),
+        ChangeNotifierProvider(create: (_) => WorkspaceTransitionController()),
         ChangeNotifierProvider(create: (_) => AskResonateController()),
         ChangeNotifierProvider(
           create: (context) {
@@ -328,6 +335,8 @@ class ResonateApp extends StatelessWidget {
               playbackControlArbiter: context.read<PlaybackControlArbiter>(),
               deferMedia3UntilSettingsReady: true,
             );
+            // Voice cues duck the canonical music master without touching user gain settings.
+            VoiceCueService.instance.attachMusicDucking(provider.setVoiceCueDucking);
             // Media3 starts after persisted DSP and playback settings are restored.
             return provider;
           },
@@ -412,15 +421,16 @@ class ResonateApp extends StatelessWidget {
         ChangeNotifierProvider(
           lazy: false,
           create: (context) =>
-              PlaybackFeaturesProvider(music: context.read<MusicProvider>()),
+              PlaybackFeaturesProvider(
+                music: context.read<MusicProvider>(),
+                workspaceLifecycle: context.read<WorkspaceLifecycleCoordinator>(),
+              ),
         ),
         ChangeNotifierProvider(
           lazy: false,
           create: (context) {
             final music = context.read<MusicProvider>();
-            return AudioVisualizationProvider(
-              workspaceLifecycle: context.read<WorkspaceLifecycleCoordinator>(),
-            )
+            return AudioVisualizationProvider()
               ..bindPlayback(
                 listenable: music,
                 isPlaying: () => music.isPlaying,
@@ -550,7 +560,7 @@ class _LifecycleHomeState extends State<_LifecycleHome>
     _lastBluetoothSignature = signature;
     unawaited(ResonateDiagnostics.record('audio_route_state_changed', {
       'bluetoothConnected': bluetooth.bluetoothConnected,
-      'deviceNamePresent': (bluetooth.connectedDeviceName ?? '').isNotEmpty,
+      'deviceNamePresent': bluetooth.connectedDeviceName.isNotEmpty,
       'audioContext': bluetooth.audioContext.name,
     }));
     try {
@@ -632,21 +642,83 @@ class _LifecycleHomeState extends State<_LifecycleHome>
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ExperienceProvider>(
-      builder: (context, experience, _) {
-        if (!experience.isReady) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-        if (experience.needsInitialSelection) {
-          return const ExperienceSelectorScreen();
-        }
-        return switch (experience.selected!) {
-          ResonateExperience.player => const HomeScreen(),
-          ResonateExperience.resonatixDj => const DjExperienceShell(),
-        };
-      },
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Consumer<ExperienceProvider>(
+          builder: (context, experience, _) {
+            if (!experience.isReady) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (experience.needsInitialSelection) {
+              return const ExperienceSelectorScreen();
+            }
+            return switch (experience.selected!) {
+              ResonateExperience.player => const HomeScreen(),
+              ResonateExperience.resonatixDj => const DjExperienceShell(),
+            };
+          },
+        ),
+        Consumer<WorkspaceTransitionController>(
+          builder: (context, transition, _) {
+            final active = transition.isTransitioning;
+            final colors = Theme.of(context).colorScheme;
+            return Positioned.fill(
+              child: IgnorePointer(
+                ignoring: !active,
+                child: AnimatedOpacity(
+                  opacity: active ? 1 : 0,
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  child: Material(
+                    color: colors.surface,
+                    child: SafeArea(
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.graphic_eq_rounded,
+                                size: 58,
+                                color: colors.primary,
+                              ),
+                              const SizedBox(height: 24),
+                              Text(
+                                transition.title,
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.headlineSmall,
+                              ),
+                              const SizedBox(height: 14),
+                              SizedBox(
+                                width: 34,
+                                height: 34,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: colors.primary,
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              Text(
+                                'Getting your controls ready',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 }

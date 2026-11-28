@@ -17,6 +17,25 @@ class CrossfadeRuntime {
   int automaticTransitionGeneration = 0;
 
   String? preloadedNextSongId;
+
+  /// Queue-occurrence identity for the normal Media3 automatic preload.
+  /// Media IDs alone are insufficient when the same recording occurs twice.
+  int? preloadedNextQueueIndex;
+  String? preloadedNextPath;
+  String? preloadedOutgoingSongId;
+  int? preloadedOutgoingQueueIndex;
+  String? preloadedOutgoingPath;
+
+  /// A failed normal crossfade is not retried on every position tick. Keep the
+  /// exact outgoing/incoming occurrence pair deferred until the queue, track,
+  /// or user transport changes.
+  String? deferredOutgoingSongId;
+  int? deferredOutgoingQueueIndex;
+  String? deferredOutgoingPath;
+  String? deferredIncomingSongId;
+  int? deferredIncomingQueueIndex;
+  String? deferredIncomingPath;
+
   bool preloadInFlight = false;
 
   /// Repeat-one + crossfade: seamless loop via idle engine (no queue advance).
@@ -40,6 +59,100 @@ class CrossfadeRuntime {
   bool get hasAutomaticWork =>
       isLive || hasPreload || hasRepeatSelfHandoff;
 
+  bool get hasDeferredTransition =>
+      deferredOutgoingSongId != null ||
+      deferredOutgoingQueueIndex != null ||
+      deferredIncomingSongId != null ||
+      deferredIncomingQueueIndex != null;
+
+  bool defersTransition({
+    required String outgoingSongId,
+    required int outgoingQueueIndex,
+    required String outgoingPath,
+    required String incomingSongId,
+    required int incomingQueueIndex,
+    required String incomingPath,
+  }) =>
+      deferredOutgoingSongId == outgoingSongId &&
+      deferredOutgoingQueueIndex == outgoingQueueIndex &&
+      deferredOutgoingPath == outgoingPath &&
+      deferredIncomingSongId == incomingSongId &&
+      deferredIncomingQueueIndex == incomingQueueIndex &&
+      deferredIncomingPath == incomingPath;
+
+  void deferTransition({
+    required String outgoingSongId,
+    required int outgoingQueueIndex,
+    required String outgoingPath,
+    required String incomingSongId,
+    required int incomingQueueIndex,
+    required String incomingPath,
+  }) {
+    deferredOutgoingSongId = outgoingSongId;
+    deferredOutgoingQueueIndex = outgoingQueueIndex;
+    deferredOutgoingPath = outgoingPath;
+    deferredIncomingSongId = incomingSongId;
+    deferredIncomingQueueIndex = incomingQueueIndex;
+    deferredIncomingPath = incomingPath;
+  }
+
+  void clearDeferredTransition() {
+    deferredOutgoingSongId = null;
+    deferredOutgoingQueueIndex = null;
+    deferredOutgoingPath = null;
+    deferredIncomingSongId = null;
+    deferredIncomingQueueIndex = null;
+    deferredIncomingPath = null;
+  }
+
+  /// Native promotion is committed only when Media3 reports its terminal
+  /// completion state, the canonical physical deck has changed, and the exact
+  /// incoming queue occurrence is now active. A media ID alone is not enough:
+  /// duplicate playlist entries can share an ID or URI.
+  bool acknowledgesNativePromotion({
+    required String crossfadeStatus,
+    required String activeDeckId,
+    required String outgoingDeckId,
+    required String? currentSongId,
+    required String? currentPath,
+    required int currentQueueIndex,
+    required String incomingSongId,
+    required String incomingPath,
+    required int incomingQueueIndex,
+  }) =>
+      crossfadeStatus == 'completed' &&
+      activeDeckId != outgoingDeckId &&
+      currentSongId == incomingSongId &&
+      currentPath?.trim() == incomingPath.trim() &&
+      currentQueueIndex == incomingQueueIndex;
+
+  /// Convert the native Media3 envelope position into the shared
+  /// transition-effects timeline. Native progress pauses with the actual audio
+  /// ramp, unlike wall-clock elapsed time in Flutter.
+  /// Media3 position is media time, but the native fade clock runs in
+  /// wall time. Convert the remaining media window using the active deck rate.
+  int wallTimeRemainingMilliseconds({
+    required int mediaTimeRemainingMs,
+    required double playbackSpeed,
+  }) {
+    if (mediaTimeRemainingMs <= 0) return 0;
+    final speed = playbackSpeed.isFinite
+        ? playbackSpeed.clamp(0.5, 2.0).toDouble()
+        : 1.0;
+    return (mediaTimeRemainingMs / speed).floor();
+  }
+
+  int elapsedMillisecondsForNativeProgress({
+    required double progress,
+    required int durationMs,
+  }) {
+    if (durationMs <= 0) return 0;
+    final normalized = progress.isFinite
+        ? progress.clamp(0.0, 1.0).toDouble()
+        : 0.0;
+    return (normalized * durationMs).round().clamp(0, durationMs).toInt();
+  }
+
   int bumpAutomaticGeneration() => ++automaticTransitionGeneration;
 
   int bumpRepeatSelfGeneration() => ++repeatSelfGeneration;
@@ -57,6 +170,17 @@ class CrossfadeRuntime {
     completionObservedDuringCrossfade = false;
     completionObservedSongId = null;
     preloadedNextSongId = null;
+    preloadedNextQueueIndex = null;
+    preloadedNextPath = null;
+    preloadedOutgoingSongId = null;
+    preloadedOutgoingQueueIndex = null;
+    preloadedOutgoingPath = null;
+    deferredOutgoingSongId = null;
+    deferredOutgoingQueueIndex = null;
+    deferredOutgoingPath = null;
+    deferredIncomingSongId = null;
+    deferredIncomingQueueIndex = null;
+    deferredIncomingPath = null;
     preloadInFlight = false;
     if (clearRepeatSelf) {
       repeatSelfHandoffArmed = false;

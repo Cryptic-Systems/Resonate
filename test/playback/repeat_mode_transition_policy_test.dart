@@ -3,6 +3,24 @@ import 'package:resonate/playback/repeat_mode_transition_policy.dart';
 
 void main() {
   group('RepeatModeTransitionPolicy', () {
+    test('Repeat One does not schedule automatic DJ self-crossfade', () {
+      expect(
+        RepeatModeTransitionPolicy.shouldScheduleAutomaticSelfCrossfade(
+          repeatOne: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('Repeat Off and Repeat All do not schedule automatic self-crossfade', () {
+      expect(
+        RepeatModeTransitionPolicy.shouldScheduleAutomaticSelfCrossfade(
+          repeatOne: false,
+        ),
+        isFalse,
+      );
+    });
+
     test('does not cancel an already promoted Media3 crossfade', () {
       final promoted = RepeatModeTransitionPolicy.isMedia3HandoffPromoted(
         media3SessionActive: true,

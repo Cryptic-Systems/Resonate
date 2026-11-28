@@ -146,7 +146,11 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
     }
 
     private fun maybeCreateEngineLocked() {
-        if (!nativeProcessEnabled || !deckActive) return
+        // Deck-role reconciliation can happen before Media3 supplies the
+        // processor's first real format. Never create against constructor
+        // defaults (or stale pre-reset metadata); onConfigure marks the format
+        // valid before the first native allocation attempt.
+        if (!nativeProcessEnabled || !deckActive || !formatConfigured) return
         if (configuredChannels !in 1..MAX_SUPPORTED_CHANNELS) return
         if (!DspSessionGate.isNativeAllowed()) {
             nativeProcessEnabled = false
@@ -297,6 +301,9 @@ class DspEngineAudioProcessor(private val deckId: String = "A") : BaseAudioProce
         createAttempted = false
         createFailuresThisActivation = 0
         consecutiveProcessErrors = 0
+        // Media3 may reconfigure this instance for a different output format.
+        // Do not recreate native DSP from a stale pre-reset sample rate/channels.
+        formatConfigured = false
         DspEngineSinkHook.forgetProcessor(this)
     }
 

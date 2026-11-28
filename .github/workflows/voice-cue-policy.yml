@@ -1,0 +1,115 @@
+name: Voice Cue Policy CI
+
+on:
+  push:
+    branches: [resonate-voice-audit]
+    paths:
+      - "lib/services/voice_cue_router.dart"
+      - "test/services/voice_cue_router_test.dart"
+      - "test/services/voice_cue_manifest_test.dart"
+      - "test/services/voice_cue_integration_compile_test.dart"
+      - ".github/workflows/voice-cue-policy.yml"
+      - ".github/workflows/voice-cue-extract-assets.yml"
+      - "tool/extract_resonate_voice_assets.py"
+      - "pubspec.yaml"
+      - "assets/audio/resonate_voice/voice_manifest.json"
+      - "lib/screens/dj_console_screen.dart"
+      - "lib/providers/music_provider_crossfade.dart"
+      - "lib/providers/music_provider_media3.dart"
+      - "lib/services/companion_command_executor.dart"
+      - "lib/services/voice_cue_service.dart"
+      - "lib/screens/voice_feedback_settings_screen.dart"
+      - "lib/screens/settings_screen.dart"
+      - "lib/providers/music_provider_dj_handoff.dart"
+      - "lib/modes/providers/mode_provider.dart"
+      - "lib/services/workspace_lifecycle_coordinator.dart"
+      - "lib/providers/audio_visualization_provider.dart"
+      - "lib/providers/playback_features_provider.dart"
+      - "lib/main.dart"
+      - "lib/screens/home_screen.dart"
+      - "lib/screens/dj_experience_shell.dart"
+      - "test/services/workspace_lifecycle_coordinator_test.dart"
+  pull_request:
+    branches: [dj-workspace-development]
+    paths:
+      - "lib/services/voice_cue_router.dart"
+      - "test/services/voice_cue_router_test.dart"
+      - "test/services/voice_cue_manifest_test.dart"
+      - "test/services/voice_cue_integration_compile_test.dart"
+      - ".github/workflows/voice-cue-policy.yml"
+      - ".github/workflows/voice-cue-extract-assets.yml"
+      - "tool/extract_resonate_voice_assets.py"
+      - "pubspec.yaml"
+      - "assets/audio/resonate_voice/voice_manifest.json"
+      - "lib/screens/dj_console_screen.dart"
+      - "lib/providers/music_provider_crossfade.dart"
+      - "lib/providers/music_provider_media3.dart"
+      - "lib/services/companion_command_executor.dart"
+      - "lib/services/voice_cue_service.dart"
+      - "lib/screens/voice_feedback_settings_screen.dart"
+      - "lib/screens/settings_screen.dart"
+      - "lib/providers/music_provider_dj_handoff.dart"
+      - "lib/modes/providers/mode_provider.dart"
+      - "lib/services/workspace_lifecycle_coordinator.dart"
+      - "lib/providers/audio_visualization_provider.dart"
+      - "lib/providers/playback_features_provider.dart"
+      - "lib/main.dart"
+      - "lib/screens/home_screen.dart"
+      - "lib/screens/dj_experience_shell.dart"
+      - "test/services/workspace_lifecycle_coordinator_test.dart"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: voice-cue-policy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  voice-cue-policy:
+    name: Analyze and test voice cue and workspace lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.2"
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze voice and workspace lifecycle integration
+        run: >-
+          flutter analyze
+          lib/services/voice_cue_router.dart
+          lib/services/voice_cue_service.dart
+          lib/services/workspace_lifecycle_coordinator.dart
+          lib/providers/audio_visualization_provider.dart
+          lib/providers/playback_features_provider.dart
+          lib/main.dart
+          lib/screens/home_screen.dart
+          lib/screens/dj_experience_shell.dart
+          lib/screens/settings_screen.dart
+          lib/screens/voice_feedback_settings_screen.dart
+          lib/services/companion_command_executor.dart
+          test/services/voice_cue_router_test.dart
+          test/services/voice_cue_manifest_test.dart
+          test/services/voice_cue_integration_compile_test.dart
+          test/services/workspace_lifecycle_coordinator_test.dart
+
+      - name: Run voice and workspace lifecycle tests
+        run: >-
+          flutter test
+          test/services/voice_cue_router_test.dart
+          test/services/voice_cue_manifest_test.dart
+          test/services/voice_cue_integration_compile_test.dart
+          test/services/workspace_lifecycle_coordinator_test.dart
+          --reporter expanded

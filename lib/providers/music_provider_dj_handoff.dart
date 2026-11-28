@@ -854,6 +854,12 @@ extension MusicProviderDjHandoff on MusicProvider {
       );
       _publishServiceState();
       notifyListeners();
+      unawaited(VoiceCueService.instance.speak(
+        cueId: 'deck_console_workspace.console_standby_ready',
+        origin: VoiceCueOrigin.djManual,
+        eventId: 'manual_standby_ready_${incomingSong.id}_${incomingQueueIndex}_${DateTime.now().microsecondsSinceEpoch}',
+        confirmed: true,
+      ));
     } catch (error) {
       _manualDjPreparedDeck = null;
       _manualDjPreparedLease = null;
@@ -1651,77 +1657,6 @@ extension MusicProviderDjHandoff on MusicProvider {
   /// Builds a player-agnostic DJ handoff for the injected Media3 session.
   /// The incoming phrase offset and independent deck rates are applied during
   /// standby preload, before the native equal-power crossfade is armed.
-  Future<void> _prepareMedia3RepeatSelfDjTransition(
-    Song song,
-    int outgoingPositionMs,
-    int generation,
-  ) async {
-    final transportEpoch = _userTransportEpoch;
-    try {
-      final preparation = await _prepareMedia3DjHandoff(
-        outgoingSong: song,
-        incomingSong: song,
-        outgoingPositionMs: outgoingPositionMs,
-      );
-      if (_disposed ||
-          generation != _repeatSelfDjPlanGeneration ||
-          transportEpoch != _userTransportEpoch ||
-          _repeatMode != PlaybackRepeatMode.one ||
-          currentSong?.id != song.id ||
-          !_djHandoffsLive) {
-        return;
-      }
-
-      final profile = preparation.outgoingProfile;
-      final cueMs = preparation.outgoingStartPosition?.inMilliseconds;
-      final trackDurationMs =
-          profile?.durationMs ?? song.duration.inMilliseconds;
-      final fadeMs = preparation.transitionDurationMs ?? _crossfadeDurationMs;
-      final hasSafeOutro = profile != null &&
-          cueMs != null &&
-          cueMs >= outgoingPositionMs &&
-          cueMs <= trackDurationMs - 2000 &&
-          trackDurationMs - cueMs <= 30000 &&
-          trackDurationMs - cueMs >= fadeMs + 1200 &&
-          (profile.transitions.safeMixOuts.any(
-                (point) => point.timeMs == cueMs,
-              ) ||
-              profile.transitions.bestOutroMs == cueMs);
-      if (hasSafeOutro) {
-        _repeatSelfDjPreparation = preparation;
-        await ResonateDiagnostics.recordDj(
-          stage: 'repeat_self_dj_plan',
-          outcome: 'prepared',
-          reason: 'safe_outro_to_same_track_intro',
-          songId: song.id,
-          extra: {
-            'outgoingCueMs': cueMs,
-            'incomingCueMs': preparation.incomingStartPosition.inMilliseconds,
-            'durationMs': fadeMs,
-          },
-        );
-      } else {
-        await ResonateDiagnostics.recordDj(
-          stage: 'repeat_self_dj_plan',
-          outcome: 'safe_fallback',
-          reason: 'no_confident_outgoing_mix_point',
-          songId: song.id,
-        );
-      }
-    } catch (error) {
-      await ResonateDiagnostics.recordDj(
-        stage: 'repeat_self_dj_plan',
-        outcome: 'safe_fallback',
-        reason: 'planning_failed: $error',
-        songId: song.id,
-      );
-    } finally {
-      if (generation == _repeatSelfDjPlanGeneration) {
-        _repeatSelfDjPlanning = false;
-      }
-    }
-  }
-
   Future<Media3DjTransitionPreparation> _prepareMedia3DjHandoff({
     required Song outgoingSong,
     required Song incomingSong,
@@ -1798,6 +1733,7 @@ extension MusicProviderDjHandoff on MusicProvider {
                 maxDurationMs: presetUsable ? 15000 : 6500,
                 policy: _djPolicy,
                 preferredKind: presetUsable ? pairPreset?.preferredKind : null,
+                allowReviewedLateCue: presetUsable,
               );
         final execution = _djEngine.execution.plan(
           outgoing: profileA,
@@ -1999,15 +1935,18 @@ extension MusicProviderDjHandoff on MusicProvider {
                 );
           if (target != null) seekMs = target.inMilliseconds;
         }
-        final safeSeekMs = seekMs.clamp(
-          0,
-          incomingSong.duration.inMilliseconds > 0
+        final safeSeekMs = DjIncomingEntryPolicy.normalizeAutomaticEntryMs(
+          requestedMs: seekMs,
+          durationMs: incomingSong.duration.inMilliseconds > 0
               ? incomingSong.duration.inMilliseconds
-              : seekMs,
-        ).toInt();
+              : analysisB.durationMs,
+        );
+        final lateEntryRejected = safeSeekMs != seekMs;
         final stretch = plan.stretch;
-        final activeSpeed = stretch?.speedOutgoing ?? 1.0;
-        final standbySpeed = stretch?.speedIncoming ?? 1.0;
+        // A phase solution outside the incoming opening must not skip into
+        // the middle of the track. Drop the associated stretch with the seek.
+        final activeSpeed = lateEntryRejected ? 1.0 : (stretch?.speedOutgoing ?? 1.0);
+        final standbySpeed = lateEntryRejected ? 1.0 : (stretch?.speedIncoming ?? 1.0);
         _lastDjIncomingBeatMs = const <int>[];
         _lastDjIncomingBpm = plan.bpmB;
         _djStretchSpeedOut = activeSpeed;
@@ -2030,6 +1969,8 @@ extension MusicProviderDjHandoff on MusicProvider {
           extra: {
             ...plan.toDiagExtra(),
             'incomingStartMs': safeSeekMs,
+            'requestedIncomingStartMs': seekMs,
+            'lateIncomingCueRejected': lateEntryRejected,
             'activeSpeed': activeSpeed,
             'standbySpeed': standbySpeed,
           },

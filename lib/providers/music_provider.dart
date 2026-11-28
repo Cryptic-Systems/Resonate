@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io' show Platform;
-import 'dart:convert';
 import '../services/intelligence_seek_memory.dart';
 import 'dart:math' as math;
 import 'package:audio_service/audio_service.dart';
@@ -22,6 +21,7 @@ import '../services/dj_transition_memory.dart';
 import '../services/dj_transition_preset_store.dart';
 import '../dj_engine/dj_engine.dart';
 import '../dj_engine/core/dj_policy.dart';
+import '../dj_engine/core/dj_incoming_entry_policy.dart';
 import '../dj_engine/intelligence/dj_autopilot_planner.dart';
 import '../services/playback_authority.dart';
 import '../services/playback_intent_gate.dart';
@@ -51,6 +51,7 @@ import '../playback/crossfade_fallback_fade.dart';
 import '../playback/crossfade_settings.dart';
 import '../playback/transport_epoch.dart';
 import '../playback/completion_ownership_policy.dart';
+import '../playback/completion_recovery_policy.dart';
 import '../playback/engine_pair.dart';
 import '../playback/dj_handoff_state.dart';
 import '../playback/audio_leveling_settings.dart';
@@ -66,6 +67,8 @@ import '../playback/repeat_mode_transition_policy.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
+import '../services/voice_cue_service.dart';
+import '../services/voice_cue_router.dart';
 
 part 'music_provider_crossfade.dart';
 part 'music_provider_transport.dart';
@@ -317,8 +320,35 @@ class MusicProvider extends ChangeNotifier {
   int get _userTransportEpoch => _transportEpoch.epoch;
   set _userTransportEpoch(int value) => _transportEpoch.epoch = value;
   String? get _preloadedNextSongId => _crossfadeRuntime.preloadedNextSongId;
-  set _preloadedNextSongId(String? value) =>
-      _crossfadeRuntime.preloadedNextSongId = value;
+  set _preloadedNextSongId(String? value) {
+    _crossfadeRuntime.preloadedNextSongId = value;
+    // A song-ID assignment alone is not an occurrence lease. Normal Media3
+    // preload immediately fills these fields after assigning the ID; repeat-
+    // self and legacy paths intentionally leave them unset.
+    _crossfadeRuntime.preloadedNextQueueIndex = null;
+    _crossfadeRuntime.preloadedNextPath = null;
+    _crossfadeRuntime.preloadedOutgoingSongId = null;
+    _crossfadeRuntime.preloadedOutgoingQueueIndex = null;
+    _crossfadeRuntime.preloadedOutgoingPath = null;
+  }
+  int? get _preloadedNextQueueIndex =>
+      _crossfadeRuntime.preloadedNextQueueIndex;
+  set _preloadedNextQueueIndex(int? value) =>
+      _crossfadeRuntime.preloadedNextQueueIndex = value;
+  String? get _preloadedNextPath => _crossfadeRuntime.preloadedNextPath;
+  set _preloadedNextPath(String? value) =>
+      _crossfadeRuntime.preloadedNextPath = value;
+  String? get _preloadedOutgoingSongId =>
+      _crossfadeRuntime.preloadedOutgoingSongId;
+  set _preloadedOutgoingSongId(String? value) =>
+      _crossfadeRuntime.preloadedOutgoingSongId = value;
+  int? get _preloadedOutgoingQueueIndex =>
+      _crossfadeRuntime.preloadedOutgoingQueueIndex;
+  set _preloadedOutgoingQueueIndex(int? value) =>
+      _crossfadeRuntime.preloadedOutgoingQueueIndex = value;
+  String? get _preloadedOutgoingPath => _crossfadeRuntime.preloadedOutgoingPath;
+  set _preloadedOutgoingPath(String? value) =>
+      _crossfadeRuntime.preloadedOutgoingPath = value;
   bool get _crossfadePreloadInFlight => _crossfadeRuntime.preloadInFlight;
   set _crossfadePreloadInFlight(bool value) =>
       _crossfadeRuntime.preloadInFlight = value;
@@ -341,11 +371,8 @@ class MusicProvider extends ChangeNotifier {
   /// or clear a newer preload after manual transport takes ownership.
   int _media3PreloadGeneration = 0;
   Media3DjTransitionPreparation? _repeatSelfDjPreparation;
-  String? _repeatSelfDjPlanSongId;
-  bool _repeatSelfDjPlanAttempted = false;
   bool _repeatSelfDjPlanning = false;
   bool _repeatSelfDjPreloadInFlight = false;
-  int _repeatSelfDjPlanGeneration = 0;
   String? get _repeatSelfTargetSongId =>
       _crossfadeRuntime.repeatSelfTargetSongId;
   set _repeatSelfTargetSongId(String? value) =>
@@ -524,6 +551,8 @@ class MusicProvider extends ChangeNotifier {
   set _focusResumeGeneration(int value) =>
       _focusInterruption.resumeGeneration = value;
   int _volumeFadeGen = 0;
+  double _voiceCueDuckScale = 1.0;
+  int _voiceCueDuckGeneration = 0;
   static const double _duckLevel = FocusInterruptionRuntime.duckLevel;
   final AudioFocusSettings _audioFocusSettings = AudioFocusSettings();
   /// Compatibility aliases — focus prefs live in [_audioFocusSettings].
@@ -702,23 +731,9 @@ class MusicProvider extends ChangeNotifier {
     return false;
   }
 
-  /// Seamless loop: same song on the idle engine when repeat-one + crossfade.
-  bool get canRepeatSelfHandoff {
-    if (!effectiveCrossfadeEnabled) return false;
-    if (_repeatMode != PlaybackRepeatMode.one) return false;
-    if (_crossfadeInProgress ||
-        _automaticCrossfadeInFlight ||
-        _repeatSelfHandoffInFlight ||
-        _transportInFlight) {
-      return false;
-    }
-    if (currentSong == null || currentSong!.filePath.trim().isEmpty) return false;
-    final playing = _media3ProviderSession != null
-        ? _media3ProviderSession!.isPlaying
-        : audioPlayer.playing;
-    if (!playing && !_userWantsPlaying) return false;
-    return true;
-  }
+  /// Automatic DJ-style same-track replay is intentionally disabled.
+  /// Repeat One remains a normal single-deck loop controlled by the user.
+  bool get canRepeatSelfHandoff => false;
 
   Song? get _crossfadeTargetSong {
     if (_queue.isEmpty || _queueIndex < 0) return null;
@@ -1060,7 +1075,7 @@ class MusicProvider extends ChangeNotifier {
       trackLevel: _levelingRuntime.composeAdditionalTrackScale(_featureNormalizationScale),
       preamp: _eqPreampScale,
       sleepFade: _sleepFadeScale,
-      focusDuck: _isDucked ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel) : 1.0,
+      focusDuck: (_isDucked ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel) : 1.0) * _voiceCueDuckScale,
     );
     await _media3StateSub?.cancel();
     _media3StateSub = session.stateStream.listen((state) {
@@ -1254,9 +1269,6 @@ class MusicProvider extends ChangeNotifier {
         'positionMs': _media3ProviderSession?.position.inMilliseconds,
       }));
     }
-    _repeatSelfDjPlanGeneration++;
-    _repeatSelfDjPlanSongId = null;
-    _repeatSelfDjPlanAttempted = false;
     _repeatSelfDjPlanning = false;
     _repeatSelfDjPreloadInFlight = false;
     _repeatSelfDjPreparation = null;
@@ -1514,15 +1526,16 @@ class MusicProvider extends ChangeNotifier {
         !_automaticCrossfadeInFlight &&
         !_repeatSelfHandoffInFlight;
 
-    final activeLoop = effectiveCrossfadeEnabled
-        ? LoopMode.off
-        : switch (_repeatMode) {
-            PlaybackRepeatMode.one => LoopMode.one,
-            // Repeat-all advances the app queue; native LoopMode.all on a single
-            // source would repeat the current track instead of advancing.
-            PlaybackRepeatMode.all => LoopMode.off,
-            PlaybackRepeatMode.off => LoopMode.off,
-          };
+    // Repeat One is a user-requested loop, not an automatic DJ handoff.
+    // Keep it on the active source even when crossfade is enabled; the DJ
+    // repeat-self crossfade path is retired.
+    final activeLoop = switch (_repeatMode) {
+      PlaybackRepeatMode.one => LoopMode.one,
+      // Repeat-all advances the app queue; native LoopMode.all on a single
+      // source would repeat the current track instead of advancing.
+      PlaybackRepeatMode.all => LoopMode.off,
+      PlaybackRepeatMode.off => LoopMode.off,
+    };
     try { await idle.pause(); } catch (_) {}
     if (!ownsBoundary()) return;
     try { await idle.setVolume(0.0); } catch (_) {}
@@ -1879,9 +1892,9 @@ class MusicProvider extends ChangeNotifier {
             trackLevel: _levelingRuntime.composeAdditionalTrackScale(_featureNormalizationScale),
             preamp: _eqPreampUserScale,
             sleepFade: _sleepFadeScale,
-            focusDuck: _isDucked
+            focusDuck: (_isDucked
                 ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel)
-                : 1.0,
+                : 1.0) * _voiceCueDuckScale,
           );
           if (!stillOwnsRouteRecovery()) return;
           if (!session.isPlaying) {
@@ -1959,8 +1972,27 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
+  /// Temporarily attenuates music under Resonate voice feedback without
+  /// changing user volume, EQ, track trim, or sleep-timer state.
+  Future<void> setVoiceCueDucking(bool active) async {
+    final generation = ++_voiceCueDuckGeneration;
+    final start = _voiceCueDuckScale;
+    final target = active ? 0.68 : 1.0;
+    const steps = 5;
+    for (var step = 1; step <= steps; step++) {
+      if (_disposed || generation != _voiceCueDuckGeneration) return;
+      _voiceCueDuckScale =
+          start + (target - start) * (step / steps);
+      await _applyActiveMasterVolume();
+      if (step < steps) {
+        await Future<void>.delayed(const Duration(milliseconds: 24));
+      }
+    }
+  }
+
   double get _effectiveCrossfadeMaster {
-    final preamp = (_eqPreampScale * _sleepFadeScale).clamp(0.0, 1.0).toDouble();
+    final preamp = (_eqPreampScale * _sleepFadeScale * _voiceCueDuckScale)
+        .clamp(0.0, 1.0).toDouble();
     if (!_isDucked) return preamp;
     final duck = _audioFocusLevel == 1 ? 0.18 : _duckLevel;
     return (duck * preamp).clamp(0.0, 0.45).toDouble();
@@ -1981,9 +2013,9 @@ class MusicProvider extends ChangeNotifier {
           trackLevel: _levelingRuntime.composeAdditionalTrackScale(_featureNormalizationScale),
           preamp: _eqPreampUserScale,
           sleepFade: _sleepFadeScale,
-          focusDuck: _isDucked
+          focusDuck: (_isDucked
               ? (_audioFocusLevel == 1 ? 0.18 : _duckLevel)
-              : 1.0,
+              : 1.0) * _voiceCueDuckScale,
         );
       } catch (error) {
         debugPrint('Media3 gain-factor update failed: $error');
@@ -2093,7 +2125,7 @@ class MusicProvider extends ChangeNotifier {
         trackLevel: _levelingRuntime.composeAdditionalTrackScale(_featureNormalizationScale),
         preamp: _eqPreampUserScale,
         sleepFade: _sleepFadeScale,
-        focusDuck: 1.0,
+        focusDuck: _voiceCueDuckScale,
       );
       if (_focusInterruption.ownsFocusEventGeneration(focusGeneration)) {
         unawaited(ResonateDiagnostics.record('audio_focus_unduck', {
@@ -2436,6 +2468,16 @@ class MusicProvider extends ChangeNotifier {
           // handoff); for A→B we continue after commit without a second advance.
           _completionObservedDuringCrossfade = true;
           _completionObservedSongId = completedSongId;
+          // Completion may be emitted only once. Re-arm the watchdog from this
+          // confirmed event so a timed-out/stale fade cannot strand the queue
+          // merely because no further position tick arrives from the ended deck.
+          _armEndOfTrackWatchdog();
+          unawaited(ResonateDiagnostics.record('completion_transition_recovery_armed', {
+            'songId': completedSongId,
+            'queueIndex': _queueIndex,
+            'crossfadeInProgress': _crossfadeInProgress,
+            'automaticCrossfadeInFlight': _automaticCrossfadeInFlight,
+          }));
           if (_repeatMode == PlaybackRepeatMode.one ||
               _repeatSelfHandoffInFlight) {
             // Do not treat as "need to go to next queue item".
@@ -2582,139 +2624,39 @@ class MusicProvider extends ChangeNotifier {
     final remaining = duration - activePosition;
     if (remaining <= Duration.zero) return;
 
-    // Repeat-one + crossfade: use the same DJ mix-in/mix-out intelligence
-    // as song-to-song transitions whenever a trustworthy profile is available.
-    if (_repeatMode == PlaybackRepeatMode.one) {
-      if (_media3ProviderSessionActive) {
-        if (!effectiveCrossfadeEnabled ||
-            _repeatSelfHandoffInFlight ||
-            _transportInFlight ||
-            _crossfadeInProgress) {
-          return;
-        }
-        final song = currentSong;
-        if (song == null) return;
-        final positionMs = activePosition.inMilliseconds;
-        final remainingMs = remaining.inMilliseconds;
-        final loopMs = _crossfadeDurationMs.clamp(1600, 6500).toInt();
-        final triggerMs = (loopMs + 500).clamp(1500, 4500).toInt();
-
-        if (_djHandoffsLive && _djAnalysis != null) {
-          if (_repeatSelfDjPlanSongId != song.id) {
-            _repeatSelfDjPlanGeneration++;
-            _repeatSelfDjPlanSongId = song.id;
-            _repeatSelfDjPlanAttempted = false;
-            _repeatSelfDjPlanning = false;
-            _repeatSelfDjPreparation = null;
-          }
-          if (positionMs < 2000 &&
-              _repeatSelfDjPlanAttempted &&
-              !_repeatSelfHandoffInFlight) {
-            final staleRepeatStandby = _repeatSelfDjPreloadInFlight ||
-                _preloadedNextSongId == song.id;
-            _repeatSelfDjPlanGeneration++;
-            _repeatSelfDjPlanAttempted = false;
-            _repeatSelfDjPlanning = false;
-            _repeatSelfDjPreloadInFlight = false;
-            _repeatSelfDjPreparation = null;
-            if (staleRepeatStandby) {
-              final session = _media3ProviderSession;
-              if (session != null) {
-                unawaited(session.cancelCrossfade().catchError((Object _) {}));
-              }
-              if (_preloadedNextSongId == song.id) {
-                _preloadedNextSongId = null;
-              }
-              _media3DjTransitionPreparation = null;
-            }
-          }
-          if (!_repeatSelfDjPlanAttempted &&
-              !_repeatSelfDjPlanning &&
-              remainingMs <= 60000) {
-            _repeatSelfDjPlanAttempted = true;
-            _repeatSelfDjPlanning = true;
-            final planGeneration = ++_repeatSelfDjPlanGeneration;
-            unawaited(_prepareMedia3RepeatSelfDjTransition(
-              song,
-              positionMs,
-              planGeneration,
-            ));
-          }
-
-          final preparation = _repeatSelfDjPreparation;
-          final cueMs = preparation?.outgoingStartPosition?.inMilliseconds;
-          if (preparation != null && cueMs != null) {
-            if (positionMs < cueMs) {
-              if (CrossfadeOrchestrator.shouldPreloadForApprovedCue(
-                positionMs: positionMs,
-                cueMs: cueMs,
-              )) {
-                unawaited(_preloadMedia3RepeatSelfDjTransition(
-                  song,
-                  preparation,
-                  _repeatSelfDjPlanGeneration,
-                ));
-              }
-              return;
-            }
-            if (_repeatSelfDjPreloadInFlight || _repeatSelfHandoffInFlight) return;
-            _repeatSelfHandoffInFlight = true;
-            _automaticCrossfadeInFlight = true;
-            _transitionArmedAt = DateTime.now();
-            unawaited(_runMedia3RepeatSelfCrossfade(
-              loopMs: preparation.transitionDurationMs ?? loopMs,
-              remainingMs: remainingMs,
-              incomingStartPosition: preparation.incomingStartPosition,
-              standbyPreloaded: _preloadedNextSongId == song.id &&
-                  identical(_media3DjTransitionPreparation, preparation),
-            ));
-            return;
-          }
-          if (_repeatSelfDjPlanning && remainingMs <= triggerMs + 500) return;
-        } else if (_repeatSelfDjPlanSongId != null ||
-            _repeatSelfDjPreparation != null ||
-            _repeatSelfDjPlanning) {
-          _repeatSelfDjPlanGeneration++;
-          _repeatSelfDjPlanSongId = null;
-          _repeatSelfDjPlanAttempted = false;
-          _repeatSelfDjPlanning = false;
-          _repeatSelfDjPreloadInFlight = false;
-          _repeatSelfDjPreparation = null;
-        }
-
-        // If no trustworthy outgoing cue exists, retain the short native-safe
-        // repeat fallback rather than inventing a musical boundary.
-        if (remainingMs > triggerMs || remainingMs < 1200) return;
-        _repeatSelfHandoffInFlight = true;
-        _automaticCrossfadeInFlight = true;
-        _transitionArmedAt = DateTime.now();
-        unawaited(_runMedia3RepeatSelfCrossfade(
-          loopMs: loopMs,
-          remainingMs: remainingMs,
-        ));
-        return;
-      }
-      if (!effectiveCrossfadeEnabled ||
-          _repeatSelfHandoffInFlight ||
-          _transportInFlight ||
-          _crossfadeInProgress) {
-        return;
-      }
-      if (currentSong == null) return;
-      // Keep the blend short so we start near the true end (not mid-outro).
-      final loopMs = _crossfadeDurationMs.clamp(1600, 5500);
-      final triggerMs = (loopMs + 500).clamp(1500, 4500);
-      if (remaining > Duration(milliseconds: triggerMs)) return;
-      // Do not start if already past the end window.
-      if (remaining < const Duration(milliseconds: 400)) return;
-      _repeatSelfHandoffInFlight = true;
-      _automaticCrossfadeInFlight = true;
-      _transitionArmedAt = DateTime.now();
-      unawaited(_runRepeatSelfDualOrSoft(loopMs: loopMs));
+    // Automatic same-track DJ replay is retired. Repeat One is handled by
+    // the normal single-deck loop mode; it must never preload/promote the same
+    // track through a DJ crossfade, which can look like a failed restart.
+    if (_repeatMode == PlaybackRepeatMode.one &&
+        !RepeatModeTransitionPolicy.shouldScheduleAutomaticSelfCrossfade(
+          repeatOne: true,
+        )) {
       return;
     }
 
     if (!canCrossfadeNext) return;
+
+    // A native failure must not relaunch the same fade on every position
+    // callback. Defer only this exact queue-occurrence pair; a changed queue
+    // target or a user transport command naturally releases the deferral.
+    if (media3Session != null) {
+      final outgoing = currentSong;
+      final incoming = _crossfadeTargetSong;
+      if (outgoing != null && incoming != null) {
+        final deferred = _crossfadeRuntime.defersTransition(
+          outgoingSongId: outgoing.id,
+          outgoingQueueIndex: _queueIndex,
+          outgoingPath: outgoing.filePath.trim(),
+          incomingSongId: incoming.id,
+          incomingQueueIndex: _crossfadeTargetIndex,
+          incomingPath: incoming.filePath.trim(),
+        );
+        if (deferred) return;
+        if (_crossfadeRuntime.hasDeferredTransition) {
+          _crossfadeRuntime.clearDeferredTransition();
+        }
+      }
+    }
 
     // A reviewed Suggestion Mix or live DJ analysis can nominate an outgoing
     // mix point. Preload the standby deck ahead of that cue, then start the
@@ -2725,7 +2667,14 @@ class MusicProvider extends ChangeNotifier {
       final approved = outgoing != null && incoming != null
           ? peekApprovedDjTransition(outgoing.id, incoming.id)
           : null;
-      final prepared = incoming != null && _preloadedNextSongId == incoming.id
+      final prepared = incoming != null &&
+              outgoing != null &&
+              _preloadedNextSongId == incoming.id &&
+              _preloadedNextQueueIndex == _crossfadeTargetIndex &&
+              _preloadedNextPath == incoming.filePath.trim() &&
+              _preloadedOutgoingSongId == outgoing.id &&
+              _preloadedOutgoingQueueIndex == _queueIndex &&
+              _preloadedOutgoingPath == outgoing.filePath.trim()
           ? _media3DjTransitionPreparation
           : null;
       final plannedCueMs = approved != null && !approved.fallback
@@ -2770,526 +2719,6 @@ class MusicProvider extends ChangeNotifier {
     unawaited(this._runAutomaticCrossfade());
   }
 
-  Future<void> _preloadRepeatSelf(Song song) async {
-    if (_repeatSelfHandoffInFlight) return;
-    final incoming = inactivePlayer;
-    final incomingEq = inactiveEqualizer;
-    final incomingLoud = inactiveLoudnessEnhancer;
-    try {
-      await ResonateDiagnostics.record('repeat_self_arm', {
-        'songId': song.id,
-        'positionMs': currentPosition.inMilliseconds,
-        'xfMs': _crossfadeDurationMs,
-      });
-      try {
-        await incoming.stop();
-      } catch (_) {}
-      await _loadSingle(incoming, incomingEq, incomingLoud, song, start: false);
-      try {
-        await incoming.seek(Duration.zero);
-      } catch (_) {}
-      try {
-        await incoming.setVolume(0.0);
-      } catch (_) {}
-      _preloadedNextSongId = song.id;
-    } catch (e) {
-      debugPrint('repeat self preload failed: $e');
-      _repeatSelfHandoffArmed = false;
-      _repeatSelfTargetSongId = null;
-      unawaited(ResonateDiagnostics.record('repeat_self_cancel', {
-        'reason': 'preload_fail',
-        'error': '$e',
-      }));
-    }
-  }
-
-  /// Prefer dual-engine A→B self-crossfade; fall back to soft loop on timeout.
-  Future<void> _runRepeatSelfDualOrSoft({required int loopMs}) async {
-    final generation = _repeatSelfGeneration;
-    final song = currentSong;
-    if (song == null) {
-      _automaticCrossfadeInFlight = false;
-      _repeatSelfHandoffInFlight = false;
-      return;
-    }
-    final ms = loopMs.clamp(1200, 4000);
-    final ok = await _performRepeatSelfDual(
-      milliseconds: ms,
-      generation: generation,
-    ).timeout(
-      Duration(milliseconds: ms + 4500),
-      onTimeout: () {
-        debugPrint('repeat self dual timed out');
-        // Future.timeout does not cancel the underlying native operation.
-        // Invalidate it instead of starting a competing soft loop.
-        if (_repeatSelfGeneration == generation) {
-          _repeatSelfGeneration++;
-          _automaticCrossfadeInFlight = false;
-          _crossfadeInProgress = false;
-          _repeatSelfHandoffInFlight = false;
-          _repeatSelfHandoffArmed = false;
-          _repeatSelfTargetSongId = null;
-          unawaited(_recoverCancelledRepeatSelfEngine());
-        }
-        return false;
-      },
-    );
-    if (_repeatSelfGeneration != generation ||
-        !_repeatSelfHandoffInFlight ||
-        !effectiveCrossfadeEnabled ||
-        _repeatMode != PlaybackRepeatMode.one) {
-      return;
-    }
-    if (ok) {
-      _automaticCrossfadeInFlight = false;
-      _crossfadeInProgress = false;
-      _repeatSelfHandoffInFlight = false;
-      _repeatSelfHandoffArmed = false;
-      // Outgoing engine often hits completed mid-ramp. Do not advance to B.
-      _completionObservedDuringCrossfade = false;
-      if (song.id.isNotEmpty) {
-        _lastCompletionSongId = song.id;
-      }
-      return;
-    }
-    // Only genuine load/play failures may use the single-engine fallback.
-    // Cancellation or a changed mode/setting must never restart Track A.
-    if (_repeatSelfGeneration != generation ||
-        !_repeatSelfHandoffInFlight ||
-        !effectiveCrossfadeEnabled ||
-        _repeatMode != PlaybackRepeatMode.one) {
-      return;
-    }
-    unawaited(ResonateDiagnostics.record('repeat_self_fallback', {
-      'reason': 'dual_load_or_play_failed',
-      'songId': song.id,
-    }));
-    await _runRepeatSelfSoftLoop(
-      loopMs: math.min(ms, 2000),
-      generation: generation,
-    );
-  }
-
-  Future<bool> _performRepeatSelfDual({
-    required int milliseconds,
-    required int generation,
-  }) async {
-    final song = currentSong;
-    if (song == null || song.filePath.trim().isEmpty) return false;
-    if (!audioPlayer.playing && !_userWantsPlaying) return false;
-    _crossfadeInProgress = true;
-    final outgoing = audioPlayer;
-    final incoming = inactivePlayer;
-    final incomingEq = inactiveEqualizer;
-    final incomingLoud = inactiveLoudnessEnhancer;
-    final master = _effectiveCrossfadeMaster.clamp(0.05, 1.0).toDouble();
-    final ms = milliseconds.clamp(1200, 4000);
-    try {
-      try {
-        await incoming.stop();
-      } catch (_) {}
-      // Load with a hard timeout — same MediaStore URI can hang on some OEMs.
-      await _loadSingle(
-        incoming,
-        incomingEq,
-        incomingLoud,
-        song,
-        start: false,
-      ).timeout(const Duration(milliseconds: 2800));
-      if (!_repeatSelfTransitionCurrent(generation)) {
-        await _abortRepeatSelfEngine(incoming);
-        return false;
-      }
-      try {
-        await incoming.seek(Duration.zero);
-      } catch (_) {}
-      await incoming.setVolume(0.0);
-      if (!await _claimAudioFocus(reason: 'repeat_self_handoff')) {
-        await _abortRepeatSelfEngine(incoming);
-        return false;
-      }
-      try {
-        incoming.play();
-      } catch (_) {}
-      for (var i = 0; i < 8 && !incoming.playing; i++) {
-        await Future<void>.delayed(Duration(milliseconds: 30 + i * 25));
-        try {
-          incoming.play();
-        } catch (_) {}
-      }
-      if (!incoming.playing || !_repeatSelfTransitionCurrent(generation)) {
-        await _abortRepeatSelfEngine(incoming);
-        return false;
-      }
-
-      unawaited(ResonateDiagnostics.record('repeat_self_ramp', {
-        'mode': 'dual',
-        'songId': song.id,
-        'ms': ms,
-        'fromEngine': _activeIsA ? 'A' : 'B',
-        'toEngine': _activeIsA ? 'B' : 'A',
-      }));
-
-      final steps = (ms / 40).round().clamp(10, 60);
-      final stepMs = (ms / steps).round().clamp(20, 60);
-      final startOut = outgoing.volume.clamp(0.05, 1.0);
-      for (var i = 1; i <= steps; i++) {
-        if (!_repeatSelfTransitionCurrent(generation)) {
-          await _abortRepeatSelfEngine(incoming);
-          return false;
-        }
-        final t = i / steps;
-        final outT = math.pow(t, 1.28).toDouble().clamp(0.0, 1.0);
-        final inT = math.pow(t, 0.92).toDouble().clamp(0.0, 1.0);
-        try {
-          await outgoing.setVolume((startOut * math.cos(outT * (math.pi / 2.0))).clamp(0.0, 1.0));
-        } catch (_) {}
-        try {
-          await incoming.setVolume((master * math.sin(inT * (math.pi / 2.0))).clamp(0.0, 1.0));
-        } catch (_) {}
-        await Future<void>.delayed(Duration(milliseconds: stepMs));
-      }
-
-      if (!_repeatSelfTransitionCurrent(generation)) {
-        await _abortRepeatSelfEngine(incoming);
-        return false;
-      }
-      _activeIsA = !_activeIsA;
-      _lastCompletionSongId = null;
-      currentPosition = incoming.position;
-      currentDuration = song.duration;
-      isPlaying = incoming.playing || _userWantsPlaying;
-      _bindActivePlayerStreams();
-      _publishServiceState();
-      notifyListeners();
-
-      // A user command can arrive just after the engine swap. Do not let this
-      // old handoff's cleanup pause or retune an engine now owned by that command.
-      if (generation != _repeatSelfGeneration) return true;
-      try {
-        await outgoing.pause();
-      } catch (_) {}
-      if (generation != _repeatSelfGeneration) return true;
-      try {
-        await outgoing.setVolume(master);
-      } catch (_) {}
-      if (generation != _repeatSelfGeneration) return true;
-      try {
-        await outgoing.setSpeed(1.0);
-      } catch (_) {}
-      if (generation != _repeatSelfGeneration) return true;
-      try {
-        await incoming.setVolume(master);
-      } catch (_) {}
-
-      unawaited(ResonateDiagnostics.record('repeat_self_committed', {
-        'mode': 'dual',
-        'songId': song.id,
-        'activeEngine': _activeIsA ? 'A' : 'B',
-        'playing': incoming.playing,
-      }));
-      return true;
-    } catch (e, st) {
-      debugPrint('repeat dual failed: $e');
-      debugPrint('$st');
-      try { await incoming.pause(); } catch (_) {}
-      try { await incoming.setVolume(0.0); } catch (_) {}
-      if (_repeatSelfGeneration == generation &&
-          identical(outgoing, audioPlayer)) {
-        try { await outgoing.setVolume(master); } catch (_) {}
-      }
-      return false;
-    }
-  }
-
-  bool _repeatSelfTransitionCurrent(int generation) =>
-      generation == _repeatSelfGeneration &&
-      _repeatSelfHandoffInFlight &&
-      effectiveCrossfadeEnabled &&
-      _repeatMode == PlaybackRepeatMode.one &&
-      _userWantsPlaying;
-
-  Future<void> _abortRepeatSelfEngine(AudioPlayer incoming) async {
-    try { await incoming.pause(); } catch (_) {}
-    try { await incoming.setVolume(0.0); } catch (_) {}
-    // The cancellation owner restores the outgoing gain only when no newer
-    // transport command has taken ownership; stale work must not boost it.
-  }
-
-  Future<void> _recoverCancelledRepeatSelfEngine() async {
-    final active = audioPlayer;
-    final idle = inactivePlayer;
-    try { await idle.pause(); } catch (_) {}
-    try { await idle.setVolume(0.0); } catch (_) {}
-    try {
-      if (identical(active, audioPlayer)) {
-        await active.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
-      }
-    } catch (_) {}
-  }
-
-  /// Soft loop: fade out → this.seek(0) → fade in on the *active* engine only.
-  /// Avoids loading the same content:// URI on A and B (OEM hang / static).
-  Future<void> _runRepeatSelfSoftLoop({
-    required int loopMs,
-    required int generation,
-  }) async {
-    final song = currentSong;
-    if (!_repeatSelfTransitionCurrent(generation)) return;
-    if (song == null) {
-      _automaticCrossfadeInFlight = false;
-      _repeatSelfHandoffInFlight = false;
-      return;
-    }
-    final ms = loopMs.clamp(600, 4000);
-    final master = _eqPreampScale.clamp(0.05, 1.0);
-    final player = audioPlayer;
-    unawaited(ResonateDiagnostics.record('repeat_self_ramp', {
-      'mode': 'soft_single',
-      'songId': song.id,
-      'ms': ms,
-      'engine': _activeIsA ? 'A' : 'B',
-    }));
-    try {
-      // Keep inactive fully quiet so nothing bleeds.
-      try {
-        await inactivePlayer.setVolume(0.0);
-      } catch (_) {}
-      try {
-        await inactivePlayer.pause();
-      } catch (_) {}
-
-      final from = player.volume.clamp(0.0, 1.0);
-      await _fadePlayerVolume(player, from, 0.0, durationMs: ms ~/ 2);
-      if (!_repeatSelfTransitionCurrent(generation)) return;
-      if (!_userWantsPlaying) {
-        unawaited(ResonateDiagnostics.record('repeat_self_cancel', {
-          'reason': 'user_stopped',
-          'songId': song.id,
-        }));
-        return;
-      }
-      try {
-        await player.seek(Duration.zero);
-      } catch (e) {
-        debugPrint('soft loop seek: $e');
-      }
-      if (!_repeatSelfTransitionCurrent(generation)) return;
-      currentPosition = Duration.zero;
-      try {
-        player.play();
-      } catch (_) {}
-      for (var i = 0; i < 10 && !player.playing && _userWantsPlaying; i++) {
-        await Future<void>.delayed(Duration(milliseconds: 30 + i * 20));
-        try {
-          player.play();
-        } catch (_) {}
-      }
-      if (!_repeatSelfTransitionCurrent(generation)) return;
-      await _fadePlayerVolume(player, 0.0, master, durationMs: ms ~/ 2);
-      if (!_repeatSelfTransitionCurrent(generation)) return;
-      isPlaying = player.playing || _userWantsPlaying;
-      _lastCompletionSongId = null;
-      _publishServiceState();
-      notifyListeners();
-      unawaited(ResonateDiagnostics.record('repeat_self_committed', {
-        'mode': 'soft_single',
-        'songId': song.id,
-        'activeEngine': _activeIsA ? 'A' : 'B',
-        'playing': player.playing,
-      }));
-    } catch (e, st) {
-      debugPrint('soft loop failed: $e');
-      debugPrint('$st');
-      // Do not restart or rewind after a user/mode cancellation.
-      if (generation == _repeatSelfGeneration && _repeatSelfHandoffInFlight) {
-        try {
-          await player.seek(Duration.zero);
-          if (_userWantsPlaying) {
-            try { player.play(); } catch (_) {}
-            try { await player.setVolume(master); } catch (_) {}
-          }
-        } catch (_) {}
-        unawaited(ResonateDiagnostics.record('repeat_self_fallback', {
-          'reason': 'soft_loop_error',
-          'songId': song.id,
-          'error': '$e',
-        }));
-      }
-    } finally {
-      // A stale loop must not clear state owned by a newer transition.
-      if (generation == _repeatSelfGeneration) {
-        _automaticCrossfadeInFlight = false;
-        _crossfadeInProgress = false;
-        _repeatSelfHandoffInFlight = false;
-        _repeatSelfHandoffArmed = false;
-        _repeatSelfTargetSongId = null;
-      }
-    }
-  }
-
-  Future<void> _runRepeatSelfHandoff() async {
-    // Legacy entry — redirect to soft loop.
-    final loopMs = _crossfadeDurationMs.clamp(800, 3500);
-    await _runRepeatSelfSoftLoop(
-      loopMs: loopMs,
-      generation: _repeatSelfGeneration,
-    );
-  }
-
-  Future<bool> _performRepeatSelfHandoff({
-    required int milliseconds,
-    String fadeType = 'linear',
-  }) async {
-    final song = currentSong;
-    if (song == null || song.filePath.trim().isEmpty) return false;
-    if (!audioPlayer.playing && !_userWantsPlaying) return false;
-    _repeatSelfHandoffInFlight = true;
-    _crossfadeInProgress = true;
-    final outgoing = audioPlayer;
-    final incoming = inactivePlayer;
-    final incomingEq = inactiveEqualizer;
-    final incomingLoud = inactiveLoudnessEnhancer;
-    final master = _eqPreampScale.clamp(0.05, 1.0);
-    final ms = milliseconds.clamp(500, 12000);
-    try {
-      // No DJ stretch / SFX on self-loop — pure volume blend.
-      try {
-        await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
-      } catch (_) {}
-      try {
-        await outgoing.setLoopMode(LoopMode.off);
-      } catch (_) {}
-
-      final already = _preloadedNextSongId == song.id;
-      if (!already) {
-        try {
-          await incoming.stop();
-        } catch (_) {}
-        await _loadSingle(incoming, incomingEq, incomingLoud, song, start: false);
-      }
-      try {
-        await incoming.seek(Duration.zero);
-      } catch (_) {}
-      await incoming.setVolume(0.0);
-
-      if (!await _claimAudioFocus(reason: 'repeat_self_native_handoff')) {
-        _userWantsPlaying = false;
-        return false;
-      }
-
-      try {
-        await incoming.play();
-      } catch (_) {}
-
-      unawaited(ResonateDiagnostics.record('repeat_self_ramp', {
-        'songId': song.id,
-        'fromEngine': _activeIsA ? 'A' : 'B',
-        'toEngine': _activeIsA ? 'B' : 'A',
-        'ms': ms,
-      }));
-
-      final steps = (ms / 40).round().clamp(8, 80);
-      final stepMs = (ms / steps).round().clamp(20, 80);
-      for (var i = 1; i <= steps; i++) {
-        if (!_repeatSelfHandoffInFlight || !_userWantsPlaying) {
-          // Cancelled mid-ramp.
-          try {
-            await incoming.pause();
-          } catch (_) {}
-          try {
-            await incoming.setVolume(0.0);
-          } catch (_) {}
-          try {
-            await outgoing.setVolume(master);
-          } catch (_) {}
-          return false;
-        }
-        final t = i / steps;
-        double outV;
-        double inV;
-        switch (fadeType) {
-          case 'ease_in':
-            outV = master * (1.0 - t * t);
-            inV = master * (t * t);
-            break;
-          case 'ease_out':
-            final u = 1.0 - t;
-            outV = master * (u * u);
-            inV = master * (1.0 - u * u);
-            break;
-          case 'ease_in_out':
-            final s = t * t * (3.0 - 2.0 * t);
-            outV = master * (1.0 - s);
-            inV = master * s;
-            break;
-          default:
-            outV = master * (1.0 - t);
-            inV = master * t;
-        }
-        try {
-          await outgoing.setVolume(outV.clamp(0.0, 1.0));
-        } catch (_) {}
-        try {
-          await incoming.setVolume(inV.clamp(0.0, 1.0));
-        } catch (_) {}
-        await Future<void>.delayed(Duration(milliseconds: stepMs));
-      }
-
-      // Commit: swap engines, same song + index.
-      _activeIsA = !_activeIsA;
-      _lastCompletionSongId = null;
-      currentPosition = incoming.position;
-      currentDuration = song.duration;
-      isPlaying = incoming.playing || _userWantsPlaying;
-      _bindActivePlayerStreams();
-      _publishServiceState();
-      notifyListeners();
-
-      try {
-        await outgoing.pause();
-      } catch (_) {}
-      try {
-        await outgoing.setVolume(master);
-      } catch (_) {}
-      try {
-        await incoming.setVolume(master);
-      } catch (_) {}
-      _preloadedNextSongId = null;
-
-      await ResonateDiagnostics.record('repeat_self_committed', {
-        'songId': song.id,
-        'activeEngine': _activeIsA ? 'A' : 'B',
-        'queueIndex': _queueIndex,
-      });
-      return true;
-    } catch (e, st) {
-      debugPrint('repeat self handoff failed: $e');
-      debugPrint('$st');
-      try {
-        await incoming.pause();
-      } catch (_) {}
-      try {
-        await outgoing.setVolume(master);
-      } catch (_) {}
-      return false;
-    } finally {
-      _crossfadeInProgress = false;
-      _repeatSelfHandoffInFlight = false;
-      _repeatSelfHandoffArmed = false;
-      _repeatSelfTargetSongId = null;
-    }
-  }
-
-  
-
-  
-
-  /// Short equal-power out-only ramp so fallback never hard-cuts an audible track.
-  
-
-  /// Safety net: if the player sits at the end of a track without advancing,
-  /// force a completion advance after a short grace period.
   void _armEndOfTrackWatchdog() {
     _endOfTrackWatchdog?.cancel();
     final duration = currentDuration;
@@ -3330,6 +2759,9 @@ class MusicProvider extends ChangeNotifier {
       // Already moved on (successful crossfade or manual next).
       if (currentSong?.id != expectedSongId || _queueIndex != expectedIndex) return;
 
+      final completionObservedForExpectedSong =
+          _completionObservedDuringCrossfade &&
+          _completionObservedSongId == expectedSongId;
       if (_crossfadeInProgress ||
           _automaticCrossfadeInFlight ||
           _repeatSelfHandoffInFlight) {
@@ -3348,6 +2780,7 @@ class MusicProvider extends ChangeNotifier {
         _crossfadeInProgress = false;
         _automaticCrossfadeInFlight = false;
         _completionObservedDuringCrossfade = false;
+        _completionObservedSongId = null;
         _repeatSelfHandoffInFlight = false;
         _repeatSelfHandoffArmed = false;
         _repeatSelfTargetSongId = null;
@@ -3371,7 +2804,12 @@ class MusicProvider extends ChangeNotifier {
           audioPlayer.processingState == ProcessingState.completed;
       final canAdvance = _queueIndex < _queue.length - 1 ||
           _repeatMode != PlaybackRepeatMode.off;
-      if (atEnd && canAdvance) {
+      final shouldRecoverCompletion = CompletionRecoveryPolicy.shouldAdvance(
+        atEnd: atEnd,
+        canAdvance: canAdvance,
+        completionObservedDuringTransition: completionObservedForExpectedSong,
+      );
+      if (shouldRecoverCompletion) {
         unawaited(ResonateDiagnostics.record('end_of_track_watchdog_fired', {
           'songId': currentSong!.id,
           'queueIndex': _queueIndex,
@@ -4671,6 +4109,23 @@ class MusicProvider extends ChangeNotifier {
       'automaticCrossfadeInFlight': _automaticCrossfadeInFlight,
       'crossfadePreloadInFlight': _crossfadePreloadInFlight,
       'preloadedNextSongId': _preloadedNextSongId,
+      'preloadedNextQueueIndex': _preloadedNextQueueIndex,
+      'preloadedNextPath': _preloadedNextPath,
+      'preloadedOutgoingSongId': _preloadedOutgoingSongId,
+      'preloadedOutgoingQueueIndex': _preloadedOutgoingQueueIndex,
+      'preloadedOutgoingPath': _preloadedOutgoingPath,
+      'deferredCrossfadeOutgoingSongId':
+          _crossfadeRuntime.deferredOutgoingSongId,
+      'deferredCrossfadeOutgoingQueueIndex':
+          _crossfadeRuntime.deferredOutgoingQueueIndex,
+      'deferredCrossfadeIncomingSongId':
+          _crossfadeRuntime.deferredIncomingSongId,
+      'deferredCrossfadeIncomingQueueIndex':
+          _crossfadeRuntime.deferredIncomingQueueIndex,
+      'deferredCrossfadeOutgoingPath':
+          _crossfadeRuntime.deferredOutgoingPath,
+      'deferredCrossfadeIncomingPath':
+          _crossfadeRuntime.deferredIncomingPath,
       'repeatSelfHandoffArmed': _repeatSelfHandoffArmed,
       'repeatSelfHandoffInFlight': _repeatSelfHandoffInFlight,
       'activeDeckId': _media3ShadowState?.activeDeckId,
@@ -4709,9 +4164,6 @@ class MusicProvider extends ChangeNotifier {
     _repeatSelfHandoffInFlight = false;
     _repeatSelfFadeExecuting = false;
     _repeatSelfTargetSongId = null;
-    _repeatSelfDjPlanGeneration++;
-    _repeatSelfDjPlanSongId = null;
-    _repeatSelfDjPlanAttempted = false;
     _repeatSelfDjPlanning = false;
     _repeatSelfDjPreloadInFlight = false;
     _repeatSelfDjPreparation = null;

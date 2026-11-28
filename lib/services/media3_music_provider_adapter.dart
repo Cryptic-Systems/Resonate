@@ -486,6 +486,8 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
         deckB: _deckSnapshot(state.deckB),
         audioUnderrunCountA: state.audioUnderrunCountA,
         audioUnderrunCountB: state.audioUnderrunCountB,
+        scratchDiagnosticsA: state.scratchDiagnosticsA,
+        scratchDiagnosticsB: state.scratchDiagnosticsB,
         lastUnderrunDeck: state.lastUnderrunDeck,
         lastUnderrunBufferSizeFrames: state.lastUnderrunBufferSizeFrames,
         lastUnderrunBufferSizeMs: state.lastUnderrunBufferSizeMs,

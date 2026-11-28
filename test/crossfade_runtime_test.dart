@@ -22,6 +22,19 @@ void main() {
       runtime.automaticInFlight = true;
       runtime.preloadInFlight = true;
       runtime.preloadedNextSongId = 'next';
+      runtime.preloadedNextQueueIndex = 4;
+      runtime.preloadedNextPath = '/music/next.mp3';
+      runtime.preloadedOutgoingSongId = 'current';
+      runtime.preloadedOutgoingQueueIndex = 3;
+      runtime.preloadedOutgoingPath = '/music/current.mp3';
+      runtime.deferTransition(
+        outgoingSongId: 'failed-outgoing',
+        outgoingQueueIndex: 1,
+        outgoingPath: '/music/failed-outgoing.mp3',
+        incomingSongId: 'failed-incoming',
+        incomingQueueIndex: 2,
+        incomingPath: '/music/failed-incoming.mp3',
+      );
       runtime.repeatSelfHandoffArmed = true;
       runtime.repeatSelfHandoffInFlight = true;
       runtime.repeatSelfTargetSongId = 'current';
@@ -34,7 +47,166 @@ void main() {
       expect(runtime.hasRepeatSelfHandoff, isFalse);
       expect(runtime.hasAutomaticWork, isFalse);
       expect(runtime.preloadedNextSongId, isNull);
+      expect(runtime.preloadedNextQueueIndex, isNull);
+      expect(runtime.preloadedNextPath, isNull);
+      expect(runtime.preloadedOutgoingSongId, isNull);
+      expect(runtime.preloadedOutgoingQueueIndex, isNull);
+      expect(runtime.preloadedOutgoingPath, isNull);
+      expect(runtime.hasDeferredTransition, isFalse);
       expect(runtime.repeatSelfTargetSongId, isNull);
+    });
+
+    test('defers only the exact failed queue occurrence until cleared', () {
+      final runtime = CrossfadeRuntime();
+      runtime.deferTransition(
+        outgoingSongId: 'outgoing',
+        outgoingQueueIndex: 2,
+        outgoingPath: '/music/outgoing.mp3',
+        incomingSongId: 'incoming',
+        incomingQueueIndex: 3,
+        incomingPath: '/music/incoming.mp3',
+      );
+
+      expect(runtime.hasDeferredTransition, isTrue);
+      expect(
+        runtime.defersTransition(
+          outgoingSongId: 'outgoing',
+          outgoingQueueIndex: 2,
+          outgoingPath: '/music/outgoing.mp3',
+          incomingSongId: 'incoming',
+          incomingQueueIndex: 3,
+          incomingPath: '/music/incoming.mp3',
+        ),
+        isTrue,
+      );
+      expect(
+        runtime.defersTransition(
+          outgoingSongId: 'outgoing',
+          outgoingQueueIndex: 2,
+          outgoingPath: '/music/outgoing.mp3',
+          incomingSongId: 'incoming',
+          incomingQueueIndex: 4,
+          incomingPath: '/music/incoming.mp3',
+        ),
+        isFalse,
+      );
+
+      runtime.clearDeferredTransition();
+      expect(runtime.hasDeferredTransition, isFalse);
+    });
+
+    test('native promotion requires terminal acknowledgement and exact deck occurrence', () {
+      final runtime = CrossfadeRuntime();
+      final base = <String, Object?>{
+        'crossfadeStatus': 'completed',
+        'activeDeckId': 'B',
+        'outgoingDeckId': 'A',
+        'currentSongId': 'incoming',
+        'currentPath': '/music/incoming.mp3',
+        'currentQueueIndex': 4,
+        'incomingSongId': 'incoming',
+        'incomingPath': '/music/incoming.mp3',
+        'incomingQueueIndex': 4,
+      };
+
+      bool acknowledged(Map<String, Object?> values) =>
+          runtime.acknowledgesNativePromotion(
+            crossfadeStatus: values['crossfadeStatus']! as String,
+            activeDeckId: values['activeDeckId']! as String,
+            outgoingDeckId: values['outgoingDeckId']! as String,
+            currentSongId: values['currentSongId'] as String?,
+            currentPath: values['currentPath'] as String?,
+            currentQueueIndex: values['currentQueueIndex']! as int,
+            incomingSongId: values['incomingSongId']! as String,
+            incomingPath: values['incomingPath']! as String,
+            incomingQueueIndex: values['incomingQueueIndex']! as int,
+          );
+
+      expect(acknowledged(base), isTrue);
+      expect(acknowledged({...base, 'crossfadeStatus': 'fading'}), isFalse);
+      expect(acknowledged({...base, 'activeDeckId': 'A'}), isFalse);
+      expect(acknowledged({...base, 'currentQueueIndex': 3}), isFalse);
+      expect(acknowledged({...base, 'currentPath': '/music/other.mp3'}), isFalse);
+    });
+
+    test('converts remaining media time to wall time at the active playback speed', () {
+      final runtime = CrossfadeRuntime();
+
+      expect(
+        runtime.wallTimeRemainingMilliseconds(
+          mediaTimeRemainingMs: 3000,
+          playbackSpeed: 1.0,
+        ),
+        3000,
+      );
+      expect(
+        runtime.wallTimeRemainingMilliseconds(
+          mediaTimeRemainingMs: 3000,
+          playbackSpeed: 1.5,
+        ),
+        2000,
+      );
+      expect(
+        runtime.wallTimeRemainingMilliseconds(
+          mediaTimeRemainingMs: 3000,
+          playbackSpeed: 0.5,
+        ),
+        6000,
+      );
+      expect(
+        runtime.wallTimeRemainingMilliseconds(
+          mediaTimeRemainingMs: 3000,
+          playbackSpeed: 4.0,
+        ),
+        1500,
+      );
+      expect(
+        runtime.wallTimeRemainingMilliseconds(
+          mediaTimeRemainingMs: 3000,
+          playbackSpeed: double.nan,
+        ),
+        3000,
+      );
+    });
+
+    test('maps native progress to effects time and clamps invalid values', () {
+      final runtime = CrossfadeRuntime();
+
+      expect(
+        runtime.elapsedMillisecondsForNativeProgress(
+          progress: 0.25,
+          durationMs: 8000,
+        ),
+        2000,
+      );
+      expect(
+        runtime.elapsedMillisecondsForNativeProgress(
+          progress: 1.0,
+          durationMs: 8000,
+        ),
+        8000,
+      );
+      expect(
+        runtime.elapsedMillisecondsForNativeProgress(
+          progress: 2.0,
+          durationMs: 8000,
+        ),
+        8000,
+      );
+      expect(
+        runtime.elapsedMillisecondsForNativeProgress(
+          progress: double.nan,
+          durationMs: 8000,
+        ),
+        0,
+      );
+      expect(
+        runtime.elapsedMillisecondsForNativeProgress(
+          progress: 0.5,
+          durationMs: 0,
+        ),
+        0,
+      );
     });
 
     test('reports every automatic-work category until each is cleared', () {

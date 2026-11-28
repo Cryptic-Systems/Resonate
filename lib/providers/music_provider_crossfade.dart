@@ -1017,6 +1017,14 @@ Future<bool> _performTrueCrossfade({required int milliseconds, String fadeType =
         'intentToken': intentToken,
         'activeEngine': _activeIsA ? 'A' : 'B',
       });
+      // Speak only after the crossfade has committed, never for an aborted or
+      // preempted transition. Automatic DJ mixing remains Player-origin.
+      unawaited(VoiceCueService.instance.speak(
+        cueId: 'dj_transition_performance.voice_dj_nice_transition',
+        origin: VoiceCueOrigin.playerAuto,
+        eventId: 'auto_crossfade_commit_${intentToken}_${nextSong.id}',
+        confirmed: true,
+      ));
       return true;
     } catch (e, stack) {
       // Cancellation can race any awaited engine operation. If a user command
