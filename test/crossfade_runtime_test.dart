@@ -22,6 +22,9 @@ void main() {
       runtime.automaticInFlight = true;
       runtime.preloadInFlight = true;
       runtime.preloadedNextSongId = 'next';
+      runtime.preloadedNextQueueIndex = 4;
+      runtime.preloadedOutgoingSongId = 'current';
+      runtime.preloadedOutgoingQueueIndex = 3;
       runtime.repeatSelfHandoffArmed = true;
       runtime.repeatSelfHandoffInFlight = true;
       runtime.repeatSelfTargetSongId = 'current';
@@ -34,6 +37,9 @@ void main() {
       expect(runtime.hasRepeatSelfHandoff, isFalse);
       expect(runtime.hasAutomaticWork, isFalse);
       expect(runtime.preloadedNextSongId, isNull);
+      expect(runtime.preloadedNextQueueIndex, isNull);
+      expect(runtime.preloadedOutgoingSongId, isNull);
+      expect(runtime.preloadedOutgoingQueueIndex, isNull);
       expect(runtime.repeatSelfTargetSongId, isNull);
     });
 
