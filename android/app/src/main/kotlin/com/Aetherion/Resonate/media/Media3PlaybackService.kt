@@ -1380,12 +1380,9 @@ class Media3PlaybackService : MediaSessionService() {
                 if (progress >= 1f) {
                     val incomingPlayer = standbyPlayer ?: return
                     val oldPlayer = activePlayer
-                    // Close the outgoing output before changing the gain policy.
-                    // At the end of the ramp it is still playing; resetting the
-                    // equal-power gains first would briefly restore both decks
-                    // to full level. Muting is safe before the reference swap
-                    // because volume changes do not emit transport callbacks.
-                    oldPlayer.volume = 0f
+                    // The final envelope tick has already driven this output to
+                    // zero through Media3GainPolicy. Keep the composed gain owner
+                    // authoritative while swapping the canonical player reference.
                     val outgoingDeckId = activeDeckId
                     activePlayer = incomingPlayer
                     standbyPlayer = null
