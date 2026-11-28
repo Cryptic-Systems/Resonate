@@ -25,7 +25,6 @@ extension MusicProviderMedia3 on MusicProvider {
 
     final generation = _automaticTransitionGeneration;
     final transportEpoch = _userTransportEpoch;
-    final outgoingDeckId = _media3ShadowState?.activeDeckId ?? 'A';
     final preloadGeneration = ++_media3PreloadGeneration;
     bool stillOwnsPreload() =>
         preloadGeneration == _media3PreloadGeneration &&
@@ -188,6 +187,7 @@ extension MusicProviderMedia3 on MusicProvider {
     final generation = _authority.beginAutomatic('media3_automatic_crossfade');
     transitionGeneration = ++_automaticTransitionGeneration;
     final transportEpoch = _userTransportEpoch;
+    final outgoingDeckId = _media3ShadowState?.activeDeckId ?? 'A';
     bool stillOwnsTransition() =>
         controlLease.isCurrent &&
         _media3ProviderSessionActive &&
@@ -505,7 +505,7 @@ extension MusicProviderMedia3 on MusicProvider {
         outgoingDeckId: outgoingDeckId,
         currentSongId: session.currentSong?.id,
         currentPath: session.currentSong?.filePath,
-        currentQueueIndex: session.queueIndex,
+        currentQueueIndex: session.queueIndex ?? -1,
         incomingSongId: nextSong.id,
         incomingPath: nextSong.filePath,
         incomingQueueIndex: nextIndex,
