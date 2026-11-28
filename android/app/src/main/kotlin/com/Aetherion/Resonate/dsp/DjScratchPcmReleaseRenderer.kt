@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Build
+import android.os.SystemClock
 import java.nio.ByteBuffer
 
 /**
@@ -27,6 +28,7 @@ internal class DjScratchPcmReleaseRenderer(
         fun routedDeviceId(): Int?
         fun setVolume(volume: Float)
         fun write(buffer: ByteBuffer, sizeInBytes: Int): Int
+        fun playbackHeadPositionFrames(): Long
         fun stop()
         fun release()
     }
@@ -180,6 +182,39 @@ internal class DjScratchPcmReleaseRenderer(
         return true
     }
 
+    /**
+     * Waits on the control thread until every frame accepted by AudioTrack has
+     * actually passed its playback head. Closing immediately after write()
+     * would stop the track and can truncate its queued hardware buffer.
+     */
+    fun awaitPlaybackDrain(timeoutMs: Long? = null): Boolean {
+        val output = track ?: return false
+        val contract = openedContract ?: return false
+        val targetFrames = acceptedFrames
+        if (targetFrames <= 0L) return true
+        val calculatedTimeout = (targetFrames * 1_000L / contract.sampleRate) + 1_500L
+        val deadline = SystemClock.elapsedRealtime() + (timeoutMs ?: calculatedTimeout)
+        while (true) {
+            if (!routeStillMatches(output, contract)) {
+                close()
+                return false
+            }
+            val playedFrames = output.playbackHeadPositionFrames()
+            if (playedFrames >= targetFrames) return routeStillMatches(output, contract)
+            if (SystemClock.elapsedRealtime() >= deadline) {
+                close()
+                return false
+            }
+            try {
+                Thread.sleep(2L)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                close()
+                return false
+            }
+        }
+    }
+
     private fun routeStillMatches(output: Track, contract: Contract): Boolean =
         routeGeneration() == contract.routeGeneration &&
             output.routedDeviceId() == contract.routeDeviceId
@@ -247,6 +282,9 @@ internal class DjScratchPcmReleaseRenderer(
 
         override fun write(buffer: ByteBuffer, sizeInBytes: Int): Int =
             delegate.write(buffer, sizeInBytes, AudioTrack.WRITE_BLOCKING)
+
+        override fun playbackHeadPositionFrames(): Long =
+            delegate.playbackHeadPosition.toLong() and 0xffff_ffffL
 
         override fun stop() = delegate.stop()
 
