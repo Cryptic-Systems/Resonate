@@ -106,6 +106,7 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
   bool throwOnPreloadNext = false;
   bool throwOnDeckSpeedOnce = false;
   bool throwOnPromotedDeckSpeedResetOnce = false;
+  int cancelledTransitionSpeedResetCount = 0;
   bool throwOnClearDeckEqOverlay = false;
   bool throwOnClearDjDeckOnce = false;
   bool throwOnDisableDjModeOnce = false;
@@ -301,6 +302,11 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
       deckSpeedResetGate = null;
       calls.add('deckSpeeds:reset_waiting');
       await gate.future;
+    }
+    if (crossfadeStatusValue == 'cancelled' &&
+        activeSpeed == playbackSpeedValue &&
+        standbySpeed == playbackSpeedValue) {
+      cancelledTransitionSpeedResetCount++;
     }
     deckSpeeds = (activeSpeed, standbySpeed);
     calls.add('deckSpeeds:${activeSpeed}:${standbySpeed}');
@@ -2542,7 +2548,7 @@ void main() {
 
       for (var attempt = 0;
           attempt < 120 &&
-              !session.calls.contains('clearDeckEqOverlay:standby');
+              session.cancelledTransitionSpeedResetCount == 0;
           attempt++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
@@ -2550,6 +2556,7 @@ void main() {
       expect(session.calls, contains('crossfade:incoming_error'));
       expect(session.calls, contains('cancelCrossfade'));
       expect(session.calls, contains('clearDeckEqOverlay:standby'));
+      expect(session.cancelledTransitionSpeedResetCount, 1);
       expect(session.calls, contains('deckSpeeds:1.15:1.15'));
       expect(session.deckSpeeds, (1.15, 1.15));
       expect(
