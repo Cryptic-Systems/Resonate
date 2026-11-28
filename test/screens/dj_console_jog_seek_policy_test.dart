@@ -43,7 +43,7 @@ void main() {
     });
 
     test('scratch anchors preserve sub-millisecond platter movement', () {
-      final result = DjConsoleJogSeekPolicy.scratchAnchorPosition(
+      final result = DjConsoleJogSeekPolicy.jogSeekPreviewPosition(
         start: const Duration(seconds: 20),
         accumulatedRadians: math.pi / 180,
         duration: const Duration(minutes: 3),
