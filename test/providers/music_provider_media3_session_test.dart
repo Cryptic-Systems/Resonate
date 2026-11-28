@@ -2527,6 +2527,9 @@ void main() {
         queue: <Song>[outgoing, incoming],
       ), isTrue);
       await provider.setCrossfadeDuration(500);
+      // Simulate a user-selected playback rate; transition cleanup must restore
+      // this rate rather than hard-resetting the outgoing deck to 1.0x.
+      session.playbackSpeedValue = 1.15;
 
       session.positionValue = const Duration(seconds: 178);
       session.states.add(_state(
@@ -2547,7 +2550,8 @@ void main() {
       expect(session.calls, contains('crossfade:incoming_error'));
       expect(session.calls, contains('cancelCrossfade'));
       expect(session.calls, contains('clearDeckEqOverlay:standby'));
-      expect(session.calls, contains('deckSpeeds:1.0:1.0'));
+      expect(session.calls, contains('deckSpeeds:1.15:1.15'));
+      expect(session.deckSpeeds, (1.15, 1.15));
       expect(
         session.calls.where((call) => call == 'loadQueue').length,
         1,
