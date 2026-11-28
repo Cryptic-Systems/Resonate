@@ -1515,6 +1515,7 @@ extension MusicProviderMedia3 on MusicProvider {
         (standby
             ? _preloadedNextSongId == song.id &&
                 _preloadedNextQueueIndex == _crossfadeTargetIndex &&
+                _preloadedNextPath == song.filePath.trim() &&
                 (_media3ShadowState?.activeDeckId ?? 'A') != deckId
             : currentSong?.id == song.id &&
                 (_media3ShadowState?.activeDeckId ?? 'A') == deckId);
