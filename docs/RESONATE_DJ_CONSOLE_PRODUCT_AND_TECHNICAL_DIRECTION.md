@@ -459,3 +459,19 @@ Capture is disabled by default. The processor prepares and seals buffers only on
 The sink hook now exposes per-physical-deck begin, seal and sealed-tail accessors. Regression tests verify exact pass-through output, opt-in capture, sealed-tail publication and frame counts.
 
 **Not yet the independent renderer:** this stage establishes a correctly processed PCM source, but it does not yet write the tail to an independent output device, share the active AudioSession/route, reproduce the deck's composed output gain, coordinate the Media3 catch-up seek, or verify audible alignment. The service does not arm capture or start a secondary output, and the compile-time scratch gate remains closed. No audible scratch claim is made.
+
+
+### 2026-11-28 — timestamped post-DSP release-tail frames
+
+The post-DSP tail capture now carries the source-media PTS from the preceding timestamp processor into the bounded PCM buffer. Each retained PCM frame stores its media timestamp at the configured sample rate, including correct timestamps when the ring overwrites older frames.
+
+The sealed tail exposes a deliberately strict splice-preparation operation:
+
+- discardBeforeMediaTimeUs is allowed only after sealing and only when every captured block had valid timestamp provenance.
+- It discards frames strictly earlier than a separately measured audible Media3 media-time boundary.
+- The next retained frame timestamp is observable for alignment checks.
+- If even one captured block lacks timestamp provenance, trimming fails closed and the tail cannot claim a valid timestamped handoff.
+
+The capture processor still passes every PCM byte unchanged to Media3 and remains opt-in. The timestamp is carried after native DSP; the PCM must not be processed through DSP again.
+
+**Important remaining boundary:** this does not itself measure the audible output clock. The renderer must not call the trim operation with Player.currentPosition or another decoder/queue position and assume it is audible. A reliable AudioTrack playback-head/media-time correlation is still required, along with session/route/gain parity, the independent output writer, one-shot catch-up seek, post-seek alignment and crossfade. No secondary renderer is active and scratch remains gated.
