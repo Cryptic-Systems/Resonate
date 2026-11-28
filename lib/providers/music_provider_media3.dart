@@ -268,6 +268,14 @@ extension MusicProviderMedia3 on MusicProvider {
           standbySpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
         );
         if (!stillOwnsTransition()) return;
+        _crossfadeRuntime.deferTransition(
+          outgoingSongId: outgoingSong.id,
+          outgoingQueueIndex: outgoingIndex,
+          outgoingPath: outgoingSong.filePath.trim(),
+          incomingSongId: nextSong.id,
+          incomingQueueIndex: nextIndex,
+          incomingPath: nextSong.filePath.trim(),
+        );
         _preloadedNextSongId = null;
         _media3DjTransitionPreparation = null;
         await ResonateDiagnostics.recordDj(
@@ -374,6 +382,14 @@ extension MusicProviderMedia3 on MusicProvider {
           standbySpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
         );
         if (!stillOwnsTransition()) return;
+        _crossfadeRuntime.deferTransition(
+          outgoingSongId: outgoingSong.id,
+          outgoingQueueIndex: outgoingIndex,
+          outgoingPath: outgoingSong.filePath.trim(),
+          incomingSongId: nextSong.id,
+          incomingQueueIndex: nextIndex,
+          incomingPath: nextSong.filePath.trim(),
+        );
         _preloadedNextSongId = null;
         _media3DjTransitionPreparation = null;
         await ResonateDiagnostics.recordDj(
