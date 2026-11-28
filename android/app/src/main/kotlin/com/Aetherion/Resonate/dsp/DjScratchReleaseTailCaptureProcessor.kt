@@ -8,13 +8,14 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Captures a bounded copy of the PCM after the native DSP processor.
+ * Captures a bounded copy of PCM after native DSP, preserving the source-media
+ * timestamp supplied by the preceding timestamp processor.
  *
- * Capture is opt-in and never changes the PCM delivered to Media3. The active
- * buffer is detached before sealing; an in-flight audio callback is allowed
- * to finish before the sealed buffer is published to the control plane.
+ * Capture is opt-in and never changes the PCM delivered to Media3.
  */
-internal class DjScratchReleaseTailCaptureProcessor : BaseAudioProcessor() {
+internal class DjScratchReleaseTailCaptureProcessor(
+    private val timestampProvider: () -> Long? = { null },
+) : BaseAudioProcessor() {
     private val activeBuffer = AtomicReference<DjScratchReleaseTailBuffer?>(null)
     private val sealedBuffer = AtomicReference<DjScratchReleaseTailBuffer?>(null)
     private val writers = AtomicInteger(0)
@@ -68,9 +69,9 @@ internal class DjScratchReleaseTailCaptureProcessor : BaseAudioProcessor() {
         if (capture != null) {
             writers.incrementAndGet()
             try {
-                // Recheck after claiming the writer slot. If the control thread
-                // detached this generation, do not append into a sealed tail.
-                if (activeBuffer.get() === capture) capture.append(inputBuffer)
+                if (activeBuffer.get() === capture) {
+                    capture.append(inputBuffer, timestampProvider(), configuredSampleRate)
+                }
             } finally {
                 writers.decrementAndGet()
             }
