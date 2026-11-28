@@ -417,3 +417,11 @@ The protocol freezes one cursor-derived media timestamp as the only permitted ca
 Regression tests cover one-shot seek claiming, stale decoder output rejection, alignment tolerance, completion ordering, invalid targets and stale-generation aborts.
 
 **Important integration boundary:** this is the deterministic protocol model, not yet wired to the Media3 service/audio thread. The existing render-policy fade toward the current live decoder stream is not a valid catch-up implementation because that stream may be ahead of the substituted scratch cursor. It must not be enabled. The next implementation stage must bridge the processor's cursor-derived media timestamp to a main-thread one-shot native seek, preserve a bounded scratch tail across Media3's seek/flush, detect the first matching post-seek PCM span, and only then crossfade. The scratch feature gate remains closed; no audible scratch or gapless release is claimed.
+
+### 2026-11-28 — cursor-to-media-clock release target
+
+The PCM ring now maps a fractional absolute cursor frame back to source media time, rejecting out-of-window frames, non-monotonic history and timestamp gaps. The render policy exposes the media timestamp immediately after the last rendered scratch frame. The timestamp processor publishes that value as a volatile diagnostic (`cursorMediaTimeUs`) and clears it on processor flush/reset or when the block is not rendered.
+
+Regression coverage verifies fractional frame-to-PTS mapping, discontinuity rejection, and the cursor's post-render timestamp. This is the correct media-clock source for a future release seek; `Player.currentPosition` is not interchangeable because Media3 may decode and queue PCM ahead of audible output.
+
+**Integration remains intentionally incomplete:** the service does not yet issue a seek from this diagnostic. A seek currently flushes the Media3 sink and processor history, so simply wiring a seek here would discard the outgoing scratch tail and create an uncontrolled gap. The next gate must establish a bounded release-tail/dual-output strategy and a generation-safe audio-thread-to-main-thread request/acknowledgement path before connecting the one-shot seek. Audible scratch remains disabled.
