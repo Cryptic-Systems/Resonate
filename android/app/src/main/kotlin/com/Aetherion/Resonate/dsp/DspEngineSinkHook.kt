@@ -67,14 +67,21 @@ object DspEngineSinkHook {
         timestampLedger: DjScratchTimestampLedger,
         controlMailbox: DjScratchControlMailbox,
     ): Array<AudioProcessor> {
-        return try {
-            val timestampProcessor = DjScratchTimestampProcessor(timestampLedger, controlMailbox, deckId)
-            val dspProcessor = createDspProcessor(deckId)
-            arrayOf(timestampProcessor, dspProcessor)
+        val timestampProcessor = DjScratchTimestampProcessor(timestampLedger, controlMailbox, deckId)
+        // Register at construction time, not only from onConfigure(). This
+        // distinguishes "factory never installed the chain" from "Media3 has
+        // not configured/started PCM yet" in the live scratch diagnostics.
+        trackScratchProcessor(timestampProcessor, deckId)
+        val chain = ArrayList<AudioProcessor>(2)
+        chain.add(timestampProcessor)
+        try {
+            chain.add(createDspProcessor(deckId))
         } catch (t: Throwable) {
-            Log.e(TAG, "Failed to create timestamp-aware DJ processor chain", t)
-            emptyArray()
+            // Scratch must remain in the sink even if optional native DSP
+            // initialization fails; DSP failure must not silently disable DJ.
+            Log.e(TAG, "Native DSP processor unavailable; retaining scratch stage for deck=$deckId", t)
         }
+        return chain.toTypedArray()
     }
 
     private fun createDspProcessors(deckId: String): Array<AudioProcessor> = try {
