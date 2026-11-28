@@ -75,6 +75,28 @@ class Media3CrossfadeEnvelopeTest {
     }
 
     @Test
+    fun cancellationGainRestoreRejectsStaleGenerationAndDeckIdentity() {
+        assertTrue(
+            Media3CrossfadeEnvelope.shouldRestoreCancelledGain(
+                generationMatches = true,
+                canonicalDeckMatches = true,
+            ),
+        )
+        assertFalse(
+            Media3CrossfadeEnvelope.shouldRestoreCancelledGain(
+                generationMatches = false,
+                canonicalDeckMatches = true,
+            ),
+        )
+        assertFalse(
+            Media3CrossfadeEnvelope.shouldRestoreCancelledGain(
+                generationMatches = true,
+                canonicalDeckMatches = false,
+            ),
+        )
+    }
+
+    @Test
     fun progressIsClampedAndNonFiniteValuesAreSafe() {
         assertEquals(
             Media3CrossfadeEnvelope.gains(0f),
