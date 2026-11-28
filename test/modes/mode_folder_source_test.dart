@@ -53,10 +53,12 @@ void main() {
     await modes.setMode(ResonateMode.audiobook);
     await modes.addMediaFolder(MediaType.audiobook, folder);
 
+    print('MODE_FOLDER_DIAG folders=${modes.foldersFor(MediaType.audiobook)} count=${modes.folderSongCountFor(MediaType.audiobook)} songs=${modes.folderSongsFor(<MediaType>[MediaType.audiobook]).map((s) => s.id).toList()} errors=${modes.folderScanErrorFor(MediaType.audiobook)}');
     expect(
       modes.folderSongsFor(<MediaType>[MediaType.audiobook]).map((s) => s.id),
       <String>[song.id],
     );
+    print('MODE_FOLDER_DIAG mediaType=${modes.mediaTypeFor(ModeMediaItem(id: song.id, filePath: song.filePath, title: song.title, album: song.album, artist: song.artist))} folderSong=${modes.isModeFolderSong(song.id)}');
     expect(
       modes.mediaTypeFor(ModeMediaItem(
         id: song.id,
