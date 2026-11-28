@@ -136,6 +136,15 @@ class DjScratchReleaseTransferCoordinatorTest {
     }
 
     @Test
+    fun externalTransportAbortClosesRendererAndInvalidatesGeneration() {
+        val f = fixture()
+        assertTrue(f.coordinator.abort(2L))
+        assertTrue(f.renderer.closed)
+        assertEquals(DjScratchReleaseTailOwnership.Phase.ABORTED, f.ownership.snapshot().phase)
+        assertEquals(2L, f.ownership.snapshot().generation)
+    }
+
+    @Test
     fun rejectsRouteOrFormatMismatchWithoutTransferring() {
         val f = fixture()
         val wrongRoute = f.output.copy(routeDeviceId = 10)
