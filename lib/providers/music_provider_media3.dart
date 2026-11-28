@@ -16,8 +16,10 @@ extension MusicProviderMedia3 on MusicProvider {
     final alreadyPreparedForOccurrence =
         _preloadedNextSongId == next?.id &&
         _preloadedNextQueueIndex == nextIndex &&
+        _preloadedNextPath == next?.filePath.trim() &&
         _preloadedOutgoingSongId == outgoing?.id &&
-        _preloadedOutgoingQueueIndex == outgoingIndex;
+        _preloadedOutgoingQueueIndex == outgoingIndex &&
+        _preloadedOutgoingPath == outgoing?.filePath.trim();
     if (next == null || outgoing == null || nextIndex < 0 ||
         alreadyPreparedForOccurrence) return;
 
@@ -85,8 +87,10 @@ extension MusicProviderMedia3 on MusicProvider {
       _media3DjTransitionPreparation = preparation;
       _preloadedNextSongId = next.id;
       _preloadedNextQueueIndex = nextIndex;
+      _preloadedNextPath = next.filePath.trim();
       _preloadedOutgoingSongId = outgoing.id;
       _preloadedOutgoingQueueIndex = outgoingIndex;
+      _preloadedOutgoingPath = outgoing.filePath.trim();
       final activeDeckId = _media3ShadowState?.activeDeckId ?? 'A';
       final standbyDeckId = activeDeckId == 'A' ? 'B' : 'A';
       unawaited(_applyMedia3DspAnalysisHint(
@@ -207,8 +211,10 @@ extension MusicProviderMedia3 on MusicProvider {
     bool preloadMatchesTargetOccurrence() =>
         _preloadedNextSongId == nextSong.id &&
         _preloadedNextQueueIndex == nextIndex &&
+        _preloadedNextPath == nextSong.filePath.trim() &&
         _preloadedOutgoingSongId == outgoingSong.id &&
-        _preloadedOutgoingQueueIndex == outgoingIndex;
+        _preloadedOutgoingQueueIndex == outgoingIndex &&
+        _preloadedOutgoingPath == outgoingSong.filePath.trim();
 
     _crossfadeInProgress = true;
     _transitionArmedAt = DateTime.now();
