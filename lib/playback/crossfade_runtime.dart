@@ -129,6 +129,19 @@ class CrossfadeRuntime {
   /// Convert the native Media3 envelope position into the shared
   /// transition-effects timeline. Native progress pauses with the actual audio
   /// ramp, unlike wall-clock elapsed time in Flutter.
+  /// Media3 position is media time, but the native fade clock runs in
+  /// wall time. Convert the remaining media window using the active deck rate.
+  int wallTimeRemainingMilliseconds({
+    required int mediaTimeRemainingMs,
+    required double playbackSpeed,
+  }) {
+    if (mediaTimeRemainingMs <= 0) return 0;
+    final speed = playbackSpeed.isFinite
+        ? playbackSpeed.clamp(0.5, 2.0).toDouble()
+        : 1.0;
+    return (mediaTimeRemainingMs / speed).floor();
+  }
+
   int elapsedMillisecondsForNativeProgress({
     required double progress,
     required int durationMs,
