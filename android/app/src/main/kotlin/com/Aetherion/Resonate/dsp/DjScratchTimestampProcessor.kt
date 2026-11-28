@@ -91,6 +91,7 @@ internal class DjScratchTimestampProcessor(
         // Timestamp mapping is valid only for the PCM16 path used by the native
         // DSP processor. Other formats are passed through without metadata.
         lastConsumedTimestamp = null
+        lastOutputMediaTimeUs = null
         configured = true
         DspEngineSinkHook.trackScratchProcessor(this, deckId)
         pcmRing = if (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT &&
