@@ -475,3 +475,15 @@ The sealed tail exposes a deliberately strict splice-preparation operation:
 The capture processor still passes every PCM byte unchanged to Media3 and remains opt-in. The timestamp is carried after native DSP; the PCM must not be processed through DSP again.
 
 **Important remaining boundary:** this does not itself measure the audible output clock. The renderer must not call the trim operation with Player.currentPosition or another decoder/queue position and assume it is audible. A reliable AudioTrack playback-head/media-time correlation is still required, along with session/route/gain parity, the independent output writer, one-shot catch-up seek, post-seek alignment and crossfade. No secondary renderer is active and scratch remains gated.
+
+
+### 2026-11-28 — Media3 audible output-clock access
+
+The timestamped sink wrapper now exposes the position reported by Media3's AudioSink playback-head tracker for each physical A/B deck. The service retains the corresponding sink wrapper and includes the nullable audible media-time values in its native audio diagnostics.
+
+- The value is read from AudioSink.getCurrentPositionUs(false), not ExoPlayer.currentPosition.
+- Unset, negative and released-sink values are reported as unavailable rather than guessed.
+- The wrapper marks itself unavailable on sink reset and becomes valid again only after a successful configure.
+- The service keeps the clock associated with the physical deck, so canonical-player promotion does not relabel A/B sink ownership.
+
+This supplies the clock source needed to calculate which timestamped release-tail frames are already behind the audible output boundary. It is not yet a complete clock-correlation proof: device/route changes, AudioTrack latency behaviour and exact frame alignment still require validation. The renderer, shared session/route contract, output gain parity, catch-up seek and crossfade are still outstanding. The feature gate remains closed.
