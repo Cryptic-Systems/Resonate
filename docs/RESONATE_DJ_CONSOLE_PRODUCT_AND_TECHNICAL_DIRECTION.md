@@ -433,3 +433,18 @@ Added a fixed-capacity PCM16 release-tail buffer sized for 250 ms by default (wi
 This is currently an isolated, unit-tested buffer primitive; it is not yet wired into the timestamp processor or a production output path. That separation is intentional: simply retaining the buffer inside the processor is not sufficient, because a seek/flush and a subsequent mailbox-generation change can race the tail's ownership and lifetime. The audio-thread capture owner, flush-time seal, cross-thread transfer, and consumer drain must be designed as one explicit protocol before integration.
 
 **Important boundary:** audible scratch rendering is still compile-time disabled, and no secondary output renderer consumes this buffer. This is a bounded buffer component, not proof that PCM is audible across a seek, not a gapless handoff, and not permission to issue the catch-up seek. The next gate must add a separately owned renderer/output path with explicit audio-route, timestamp, gain, cancellation and drain-completion handling; it must not commandeer either A/B deck or reuse the main deck's sink. Physical-device validation remains mandatory.
+
+
+### 2026-11-28 — release-tail output ownership protocol
+
+Added a control-plane state machine for the ownership boundary between the scratch PCM capture buffer and a future independent release renderer:
+
+- Capture begins only for a fresh generation, a concrete media occurrence, and a fully specified output contract.
+- The capture owner must seal a non-empty tail before ownership can transfer.
+- Transfer is one-shot and binds the consumer to the exact PCM sample rate/channel layout, AudioSession ID, route generation and Resonate processing-chain identity. A consumer on a different route/session or a raw output path is rejected.
+- Only the named consumer can claim draining. Drain accounting accepts only positive frame counts within the retained remainder, and the lifecycle reaches `DRAINED` only when all frames have been accepted.
+- A transport, track, route or output interruption can abort the generation. Stale consumers and stale generation messages cannot resume or drain an aborted tail.
+
+Regression tests cover legal ownership progression, duplicate consumer rejection, route/session/format/processing-chain mismatch, stale generations, invalid drain counts, abort and fresh-generation restart.
+
+**Integration boundary:** this is a control-plane contract only. It does not create an AudioTrack, route audio, apply DSP/gain, transfer the PCM buffer across threads, issue the Media3 catch-up seek or enable audible scratch. The output contract deliberately requires the same Resonate processing-chain identity; a plain secondary AudioTrack that bypasses the DSP path cannot satisfy it. The next stage must identify or implement a genuinely independent output renderer that shares the app's DSP, gain, audio-session and route lifecycle, then connect buffer transfer and drain acknowledgements without blocking the audio callback. Until that path and physical-device validation exist, the scratch feature gate remains closed.
