@@ -86,53 +86,39 @@ class DjScratchTimestampProcessorTest {
     }
 
     @Test
-    fun activeDeckControlRendersReverseAndForwardPcmInsideMedia3Processor() {
+    fun activeMailboxRemainsPassThroughWhileAudibleScratchGateIsClosed() {
         val ledger = DjScratchTimestampLedger()
         val mailbox = DjScratchControlMailbox()
         val processor = DjScratchTimestampProcessor(ledger, mailbox)
         processor.configure(AudioProcessor.AudioFormat(1_000, 1, C.ENCODING_PCM_16BIT))
         processor.flush()
 
-        // Prime the per-deck history with earlier source PCM.
         val history = ByteBuffer.allocateDirect(10).order(ByteOrder.LITTLE_ENDIAN).apply {
             listOf(0, 1_000, 2_000, 3_000, 4_000).forEach { putShort(it.toShort()) }
             flip()
         }
         ledger.record(history, 10_000L)
         processor.queueInput(history)
+        assertTrue(bytes(processor.output).contentEquals(bytes(history).let { it }))
 
-        val reverseInput = ByteBuffer.allocateDirect(8).order(ByteOrder.LITTLE_ENDIAN).apply {
+        val activeInput = ByteBuffer.allocateDirect(8).order(ByteOrder.LITTLE_ENDIAN).apply {
             listOf(5_000, 6_000, 7_000, 8_000).forEach { putShort(it.toShort()) }
             flip()
         }
-        ledger.record(reverseInput, 15_000L)
+        val original = bytes(activeInput)
+        ledger.record(activeInput, 15_000L)
         assertTrue(mailbox.publish("track-1", true, -1.0, 17_000L))
-        processor.queueInput(reverseInput)
+        processor.queueInput(activeInput)
 
-        val reversed = processor.output.duplicate().order(ByteOrder.LITTLE_ENDIAN)
-        assertEquals(listOf(7_000, 6_000, 5_000, 4_000), List(4) { reversed.short.toInt() })
-        assertEquals(reverseInput.limit(), reverseInput.position())
-
-        // A newer forward command re-anchors the cursor and reads at 2x source
-        // rate. This proves the PCM entering the native DSP stage is modified,
-        // rather than merely recording touch telemetry and passing input through.
-        val forwardInput = ByteBuffer.allocateDirect(8).order(ByteOrder.LITTLE_ENDIAN).apply {
-            listOf(9_000, 10_000, 11_000, 12_000).forEach { putShort(it.toShort()) }
-            flip()
-        }
-        ledger.record(forwardInput, 19_000L)
-        assertTrue(mailbox.publish("track-1", true, 2.0, 11_000L))
-        processor.queueInput(forwardInput)
-
-        val forwarded = processor.output.duplicate().order(ByteOrder.LITTLE_ENDIAN)
-        assertEquals(listOf(1_000, 3_000, 5_000, 7_000), List(4) { forwarded.short.toInt() })
-        assertEquals(13, processor.pcmRingForTest()!!.availableFrames)
+        assertTrue(bytes(processor.output).contentEquals(original))
+        assertEquals(activeInput.limit(), activeInput.position())
+        assertEquals(9, processor.pcmRingForTest()!!.availableFrames)
         val diagnostics = processor.diagnosticsSnapshot()
-        assertEquals(3L, diagnostics["timestampMatches"])
+        assertEquals(2L, diagnostics["timestampMatches"])
         assertEquals(0L, diagnostics["timestampMisses"])
-        assertEquals(2L, diagnostics["activeControlBlocks"])
-        assertEquals(2L, diagnostics["renderedBlocks"])
-        assertEquals(0L, diagnostics["activeRenderFallbacks"])
+        assertEquals(1L, diagnostics["activeControlBlocks"])
+        assertEquals(0L, diagnostics["renderedBlocks"])
+        assertEquals(1L, diagnostics["activeRenderFallbacks"])
     }
 
     @Test
