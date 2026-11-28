@@ -2566,6 +2566,7 @@ void main() {
       expect(provider.queueIndex, 0);
       expect(provider.media3ProviderSessionActive, isTrue);
       expect(provider.debugLegacyEngineConstructed, isFalse);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
 
       session.positionValue = const Duration(milliseconds: 178500);
       session.states.add(_state(
