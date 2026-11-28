@@ -56,6 +56,7 @@ class Media3PlaybackService : MediaSessionService() {
     private var previewGeneration = 0
     private var fadeRunnable: Runnable? = null
     private var fadeGeneration = 0
+    private var crossfadeResumePending = false
     // A cancelled audible fade restores outgoing gain through a guarded envelope.
     private var cancelRestoreRunnable: Runnable? = null
     private var cancelRestoreGeneration = 0
@@ -1172,6 +1173,16 @@ class Media3PlaybackService : MediaSessionService() {
                         if (duration != null && activePlayer.isPlaying) {
                             startCrossfadeRamp(duration, fadeGeneration)
                         }
+                    } else if (isPlaying && crossfadeStatus == "fading" &&
+                        crossfadeResumePending
+                    ) {
+                        // Resume the clock only when the incoming output is
+                        // audible again; buffering after a pause cannot consume
+                        // the remaining transition duration.
+                        crossfadeResumePending = false
+                        if (crossfadeClock.resume(android.os.SystemClock.elapsedRealtime())) {
+                            fadeRunnable?.let(mainHandler::post)
+                        }
                     }
                     return
                 }
@@ -1388,6 +1399,7 @@ class Media3PlaybackService : MediaSessionService() {
         ) return
         startingCrossfadeDurationMs = null
         crossfadeClock.start(durationMs, android.os.SystemClock.elapsedRealtime())
+        crossfadeResumePending = false
         crossfadeStatus = "fading"
         val task = object : Runnable {
             override fun run() {
@@ -1487,6 +1499,7 @@ class Media3PlaybackService : MediaSessionService() {
         }
         if (crossfadeStatus != "fading") return false
         recordCrossfadeInterruption("transport_pause")
+        crossfadeResumePending = false
         if (!crossfadeClock.pause(android.os.SystemClock.elapsedRealtime())) return false
         fadeRunnable?.let(mainHandler::removeCallbacks)
         standbyPlayer?.pause()
@@ -1513,10 +1526,17 @@ class Media3PlaybackService : MediaSessionService() {
     fun resumeCrossfade(): Boolean {
         val standby = standbyPlayer ?: return false
         if (crossfadeStatus != "fading" || fadeRunnable == null) return false
-        if (!crossfadeClock.resume(android.os.SystemClock.elapsedRealtime())) return false
         DspEngineSinkHook.activateDeck(standbyDeckId())
+        crossfadeResumePending = true
         standby.play()
-        mainHandler.post(fadeRunnable!!)
+        // Local sources may resume synchronously. Otherwise the standby
+        // isPlaying listener resumes the clock when audio output is ready.
+        if (standby.isPlaying && crossfadeResumePending) {
+            crossfadeResumePending = false
+            if (crossfadeClock.resume(android.os.SystemClock.elapsedRealtime())) {
+                mainHandler.post(fadeRunnable!!)
+            }
+        }
         return true
     }
 
@@ -1764,6 +1784,7 @@ class Media3PlaybackService : MediaSessionService() {
         reason: String = "explicit_cancel",
     ): Boolean {
         val wasAudibleFade = crossfadeStatus == "fading"
+        crossfadeResumePending = false
         val interruptedProgress = if (wasAudibleFade) {
             crossfadeClock.progress(android.os.SystemClock.elapsedRealtime())
         } else {
@@ -1822,6 +1843,7 @@ class Media3PlaybackService : MediaSessionService() {
         "lastInterruptionActivePositionMs" to lastCrossfadeInterruptionActivePositionMs,
         "lastInterruptionIncomingPositionMs" to lastCrossfadeInterruptionIncomingPositionMs,
         "gainRestoreInProgress" to (cancelRestoreRunnable != null),
+        "resumePending" to crossfadeResumePending,
         "progress" to when (crossfadeStatus) {
             "fading" -> crossfadeClock.progress(android.os.SystemClock.elapsedRealtime())
             "completed" -> 1f
