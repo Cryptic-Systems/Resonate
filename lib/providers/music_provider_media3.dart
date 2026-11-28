@@ -526,6 +526,7 @@ extension MusicProviderMedia3 on MusicProvider {
       ));
       _preloadedNextSongId = null;
       _media3DjTransitionPreparation = null;
+      _crossfadeRuntime.clearDeferredTransition();
       _repeatSelfDjPreparation = null;
       _repeatSelfDjPlanSongId = null;
       _repeatSelfDjPlanAttempted = false;
@@ -674,6 +675,7 @@ extension MusicProviderMedia3 on MusicProvider {
             _reconcileMedia3ProviderSession();
             _preloadedNextSongId = null;
             _media3DjTransitionPreparation = null;
+            _crossfadeRuntime.clearDeferredTransition();
             _repeatSelfDjPreparation = null;
             _repeatSelfDjPlanSongId = null;
             _repeatSelfDjPlanAttempted = false;
@@ -703,6 +705,14 @@ extension MusicProviderMedia3 on MusicProvider {
             final outgoingStillActive =
                 session.currentSong?.id == outgoingSong.id &&
                 session.queueIndex == outgoingIndex;
+            _crossfadeRuntime.deferTransition(
+              outgoingSongId: outgoingSong.id,
+              outgoingQueueIndex: outgoingIndex,
+              outgoingPath: outgoingSong.filePath.trim(),
+              incomingSongId: nextSong.id,
+              incomingQueueIndex: nextIndex,
+              incomingPath: nextSong.filePath.trim(),
+            );
             _preloadedNextSongId = null;
             _media3DjTransitionPreparation = null;
             _crossfadeInProgress = false;
