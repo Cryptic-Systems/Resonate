@@ -1133,6 +1133,23 @@ class Media3PlaybackService : MediaSessionService() {
                 }
             }
 
+            override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
+                // The cursor rate is compensated against the playback speed
+                // sampled when the platter command is published. Retire any
+                // active command on a speed change; the next platter update
+                // will be remapped against the new native speed readback.
+                val physicalDeckId = when {
+                    deck === activePlayer -> activeDeckId
+                    deck === standbyPlayer -> standbyDeckId()
+                    else -> null
+                }
+                if (physicalDeckId != null &&
+                    djScratchMailboxes[physicalDeckId]?.snapshot()?.active == true
+                ) {
+                    djScratchMailboxes[physicalDeckId]?.clear()
+                }
+            }
+
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 // MediaSession/headset commands can bypass the Flutter bridge.
                 // A canonical pause must also silence the separate DJ sample
