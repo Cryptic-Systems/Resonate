@@ -126,7 +126,7 @@ class DjScratchTimestampProcessorTest {
 
         val forwarded = processor.output.duplicate().order(ByteOrder.LITTLE_ENDIAN)
         assertEquals(listOf(1_000, 3_000, 5_000, 7_000), List(4) { forwarded.short.toInt() })
-        assertEquals(4, processor.pcmRingForTest()!!.availableFrames.let { it - 0 })
+        assertEquals(13, processor.pcmRingForTest()!!.availableFrames)
         val diagnostics = processor.diagnosticsSnapshot()
         assertEquals(3L, diagnostics["timestampMatches"])
         assertEquals(0L, diagnostics["timestampMisses"])
