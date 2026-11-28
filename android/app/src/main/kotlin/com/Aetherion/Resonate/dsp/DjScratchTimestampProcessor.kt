@@ -33,6 +33,12 @@ internal class DjScratchTimestampProcessor(
     @Volatile private var ringCapacityFrames = 0
     @Volatile private var configured = false
     @Volatile private var ringAvailableFrames = 0
+    // Keep audible scratch disabled until timestamp provenance, speed mapping,
+    // and release-to-Media3 catch-up are validated end to end on devices.
+    private companion object {
+        const val ENABLE_SCRATCH_RENDERING = false
+    }
+
     private val renderPolicy = DjScratchRenderPolicy()
     private val pcmBlocks = AtomicLong()
     private val timestampMatches = AtomicLong()
@@ -109,7 +115,7 @@ internal class DjScratchTimestampProcessor(
         }
         val output = replaceOutputBuffer(inputBuffer.remaining())
         val ring = pcmRing
-        val rendered = timestamp != null && ring != null &&
+        val rendered = ENABLE_SCRATCH_RENDERING && timestamp != null && ring != null &&
             renderPolicy.render(inputBuffer, output, ring, latestControlSnapshot)
         ringAvailableFrames = ring?.availableFrames ?: 0
         if (rendered) {
