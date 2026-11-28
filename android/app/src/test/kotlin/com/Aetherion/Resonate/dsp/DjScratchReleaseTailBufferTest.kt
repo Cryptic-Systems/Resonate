@@ -32,13 +32,14 @@ class DjScratchReleaseTailBufferTest {
         assertEquals(4, tail.append(input))
         tail.seal()
 
-        val first = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
+        // One stereo frame is two PCM16 samples (four bytes).
+        val first = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN)
         assertEquals(1, tail.drainTo(first))
         first.flip()
         assertEquals(1, first.short.toInt())
         assertEquals(2, first.short.toInt())
 
-        val second = ByteBuffer.allocate(24).order(ByteOrder.LITTLE_ENDIAN)
+        val second = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN)
         assertEquals(3, tail.drainTo(second))
         second.flip()
         val expected = shortArrayOf(3, 4, 5, 6, 7, 8)
@@ -62,7 +63,6 @@ class DjScratchReleaseTailBufferTest {
         assertEquals(0, tail.availableFrames)
         assertEquals(2, tail.append(block))
     }
-
 
     @Test
     fun overflowRetainsNewestFramesInChronologicalOrder() {
