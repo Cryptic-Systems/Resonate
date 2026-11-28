@@ -139,4 +139,10 @@ class DjScratchRenderPolicyTest {
         assertFalse(policy.isScratchActiveForTest())
         assertEquals(listOf(0, 1_000), samples(input))
     }
+    @Test
+    fun defaultReleaseEnvelopeIsLongEnoughToAvoidAnAbruptPlatterCut() {
+        assertEquals(20, DjScratchRenderPolicy.DEFAULT_RELEASE_FADE_MS)
+        assertEquals(20, DjScratchRenderPolicy().releaseFadeMsForTest())
+    }
+
 }
