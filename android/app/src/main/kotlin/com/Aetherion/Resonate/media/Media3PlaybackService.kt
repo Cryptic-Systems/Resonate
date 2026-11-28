@@ -30,6 +30,7 @@ import androidx.media3.session.MediaSessionService
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+import java.util.concurrent.ConcurrentHashMap
 
 // Manual scratch must remain unavailable until the PCM/media-clock handoff is complete.
 private const val ENABLE_DJ_SCRATCH_AUDIO = false
@@ -95,6 +96,9 @@ class Media3PlaybackService : MediaSessionService() {
         "A" to DjScratchControlMailbox(),
         "B" to DjScratchControlMailbox(),
     )
+    // The sink playback-head clock is the only permitted source for a future
+    // release-tail splice boundary; ExoPlayer currentPosition may be decoder-ahead.
+    private val timestampedSinksByDeck = ConcurrentHashMap<String, TimestampedDjAudioSink>()
     private fun standbyDeckId(): String = if (activeDeckId == "A") "B" else "A"
     // ExoPlayer focus handling is opt-in at the migration boundary. The legacy
     // audio_session owner remains untouched until an explicit provider cutover.
@@ -129,10 +133,20 @@ class Media3PlaybackService : MediaSessionService() {
             "lastUnderrunBufferSizeMs" to lastUnderrunBufferSizeMs,
             "lastUnderrunElapsedSinceFeedMs" to lastUnderrunElapsedSinceFeedMs,
             "lastUnderrunElapsedRealtimeMs" to lastUnderrunElapsedRealtimeMs,
+            "scratchAudibleMediaTimeUsA" to scratchAudibleMediaPositionUs("A"),
+            "scratchAudibleMediaTimeUsB" to scratchAudibleMediaPositionUs("B"),
             "scratchDeckA" to DspEngineSinkHook.scratchDiagnostics("A"),
             "scratchDeckB" to DspEngineSinkHook.scratchDiagnostics("B"),
         )
     }
+
+    /** Media3 playback-head media time for a physical deck; null until the sink clock is valid. */
+    internal fun scratchAudibleMediaPositionUs(deckId: String): Long? =
+        if (deckId == "A" || deckId == "B") {
+            timestampedSinksByDeck[deckId]?.audibleMediaPositionUs()
+        } else {
+            null
+        }
 
     private fun applyDeckVolumes() {
         if (!::activePlayer.isInitialized) return
@@ -964,7 +978,7 @@ class Media3PlaybackService : MediaSessionService() {
                     .setEnableFloatOutput(false)
                     .setEnableAudioTrackPlaybackParams(enableAudioOutputPlaybackParams)
                     .build()
-                return TimestampedDjAudioSink(delegate, timestampLedger)
+                return TimestampedDjAudioSink(delegate, timestampLedger).also { timestampedSinksByDeck[deckId] = it }
             }
         },
     ).build().apply {
@@ -1997,6 +2011,7 @@ class Media3PlaybackService : MediaSessionService() {
         // normal mode-exit command. This prevents stale overlays from leaking
         // into the next Media3 service instance or ordinary Player session.
         DspEngineRegistry.resetDjDeckOverlaysForServiceTeardown()
+        timestampedSinksByDeck.clear()
         mediaSession?.release()
         mediaSession = null
         DspEngineSinkHook.suspendDeck("A")
