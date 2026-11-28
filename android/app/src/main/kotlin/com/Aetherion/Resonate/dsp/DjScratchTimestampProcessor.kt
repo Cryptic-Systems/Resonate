@@ -7,11 +7,11 @@ import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * First processor in the DJ sink chain. It binds each PCM block to the PTS
- * recorded by TimestampedDjAudioSink, captures bounded per-deck PCM history,
- * and applies scratch rendering only while a valid deck control is active.
- * Normal playback remains byte-for-byte pass-through; invalid scratch state
- * fails closed to the untouched Media3 input block.
+ * First Resonate user processor (after Media3 PCM conversion/trimming/channel
+ * mapping). It binds each PCM block to the PTS recorded by TimestampedDjAudioSink,
+ * captures bounded per-deck PCM history, and applies scratch rendering only
+ * while a valid deck control is active. Normal playback remains byte-for-byte
+ * pass-through; invalid scratch state fails closed to the untouched input block.
  */
 internal class DjScratchTimestampProcessor(
     private val ledger: DjScratchTimestampLedger,
@@ -24,6 +24,7 @@ internal class DjScratchTimestampProcessor(
     // Immutable control snapshot sampled once per input block on the audio thread.
     @Volatile
     private var latestControlSnapshot: DjScratchControlMailbox.Snapshot? = null
+    private var lastMailboxGeneration = Long.MIN_VALUE
 
     internal fun latestControlSnapshotForTest(): DjScratchControlMailbox.Snapshot? =
         latestControlSnapshot
@@ -46,6 +47,7 @@ internal class DjScratchTimestampProcessor(
     private val activeControlBlocks = AtomicLong()
     private val renderedBlocks = AtomicLong()
     private val activeRenderFallbacks = AtomicLong()
+    private val historyGenerationResets = AtomicLong()
 
     internal fun diagnosticsSnapshot(): Map<String, Any?> {
         val control = latestControlSnapshot
@@ -59,11 +61,13 @@ internal class DjScratchTimestampProcessor(
             "activeControlBlocks" to activeControlBlocks.get(),
             "renderedBlocks" to renderedBlocks.get(),
             "activeRenderFallbacks" to activeRenderFallbacks.get(),
+            "historyGenerationResets" to historyGenerationResets.get(),
             "ringCapacityFrames" to ringCapacityFrames,
             "ringAvailableFrames" to ringAvailableFrames,
             "lastControlActive" to (control?.active == true),
             "lastControlVelocity" to control?.velocity,
             "lastControlAnchorMediaTimeUs" to control?.anchorMediaTimeUs,
+            "mailboxGeneration" to lastMailboxGeneration,
         )
     }
 
@@ -93,14 +97,28 @@ internal class DjScratchTimestampProcessor(
         }
         ringCapacityFrames = pcmRing?.capacityFrames ?: 0
         ringAvailableFrames = 0
+        lastMailboxGeneration = controlMailbox.state().generation
         return inputAudioFormat
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
         pcmBlocks.incrementAndGet()
-        latestControlSnapshot = controlMailbox.snapshot()
+
+        // clear() advances the mailbox generation atomically with removing its
+        // command. The audio thread observes that boundary and retires all
+        // pre-seek/pre-transition PCM before accepting another frame.
+        val mailboxState = controlMailbox.state()
+        if (mailboxState.generation != lastMailboxGeneration) {
+            pcmRing?.clear()
+            renderPolicy.reset()
+            latestControlSnapshot = null
+            lastMailboxGeneration = mailboxState.generation
+            historyGenerationResets.incrementAndGet()
+        }
+        latestControlSnapshot = mailboxState.snapshot
         if (latestControlSnapshot?.active == true) activeControlBlocks.incrementAndGet()
+
         val timestamp = ledger.consume(
             inputBuffer,
             inputAudioFormat.sampleRate,
@@ -137,6 +155,7 @@ internal class DjScratchTimestampProcessor(
         latestControlSnapshot = null
         pcmRing?.clear()
         ringAvailableFrames = 0
+        lastMailboxGeneration = controlMailbox.state().generation
         renderPolicy.reset()
     }
 
@@ -149,6 +168,7 @@ internal class DjScratchTimestampProcessor(
         ringCapacityFrames = 0
         ringAvailableFrames = 0
         configured = false
+        lastMailboxGeneration = controlMailbox.state().generation
         renderPolicy.reset()
         ledger.clear()
     }
