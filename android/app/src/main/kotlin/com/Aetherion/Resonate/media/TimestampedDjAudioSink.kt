@@ -1,5 +1,6 @@
 package com.Aetherion.Resonate.media
 
+import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.Util
@@ -17,6 +18,14 @@ internal class TimestampedDjAudioSink(
     private val delegate: AudioSink,
     private val ledger: DjScratchTimestampLedger,
 ) : AudioSink by delegate {
+    @Volatile private var resetForRelease = false
+
+    /** Media-time position reported by Media3's AudioTrack playback-head tracker. */
+    fun audibleMediaPositionUs(): Long? {
+        if (resetForRelease) return null
+        val positionUs = delegate.getCurrentPositionUs(false)
+        return positionUs.takeIf { it != C.TIME_UNSET && it >= 0L }
+    }
     override fun configure(
         inputFormat: Format,
         specifiedBufferSize: Int,
@@ -25,6 +34,7 @@ internal class TimestampedDjAudioSink(
         // Let Media3 validate/configure first. If it rejects this format, the
         // current timestamp timeline must remain untouched.
         delegate.configure(inputFormat, specifiedBufferSize, outputChannels)
+        resetForRelease = false
         ledger.configure(
             sampleRate = inputFormat.sampleRate,
             channelCount = inputFormat.channelCount,
@@ -57,6 +67,7 @@ internal class TimestampedDjAudioSink(
     }
 
     override fun reset() {
+        resetForRelease = true
         ledger.clear()
         delegate.reset()
     }
