@@ -82,6 +82,37 @@ class DjScratchReleaseTailBufferTest {
     }
 
     @Test
+    fun discardBeforeAudibleMediaTimeDropsOnlyAlreadyPlayedFrames() {
+        val tail = DjScratchReleaseTailBuffer(channelCount = 1, capacityFrames = 4)
+        val input = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
+            .putShort(10).putShort(20).putShort(30).putShort(40)
+        input.flip()
+        assertEquals(4, tail.append(input, presentationTimeUs = 1_000_000L, sampleRate = 1_000))
+        tail.seal()
+
+        assertEquals(2, tail.discardBeforeMediaTimeUs(1_002_000L))
+        assertEquals(1_002_000L, tail.nextFrameMediaTimeUs())
+        val output = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN)
+        assertEquals(2, tail.drainTo(output))
+        output.flip()
+        assertEquals(30, output.short.toInt())
+        assertEquals(40, output.short.toInt())
+    }
+
+    @Test
+    fun timestampTrimFailsClosedWhenAnyCapturedBlockLacksTimestamp() {
+        val tail = DjScratchReleaseTailBuffer(channelCount = 1, capacityFrames = 4)
+        val input = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putShort(1).putShort(2)
+        input.flip()
+        tail.append(input, presentationTimeUs = 1_000_000L, sampleRate = 1_000)
+        tail.append(input)
+        tail.seal()
+
+        assertEquals(0, tail.discardBeforeMediaTimeUs(1_001_000L))
+        assertEquals(null, tail.nextFrameMediaTimeUs())
+    }
+
+    @Test
     fun malformedPartialFrameIsRejected() {
         val tail = DjScratchReleaseTailBuffer(channelCount = 2, capacityFrames = 8)
         assertEquals(0, tail.append(ByteBuffer.allocate(6)))
