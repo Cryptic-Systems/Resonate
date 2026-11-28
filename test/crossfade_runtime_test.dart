@@ -23,8 +23,10 @@ void main() {
       runtime.preloadInFlight = true;
       runtime.preloadedNextSongId = 'next';
       runtime.preloadedNextQueueIndex = 4;
+      runtime.preloadedNextPath = '/music/next.mp3';
       runtime.preloadedOutgoingSongId = 'current';
       runtime.preloadedOutgoingQueueIndex = 3;
+      runtime.preloadedOutgoingPath = '/music/current.mp3';
       runtime.repeatSelfHandoffArmed = true;
       runtime.repeatSelfHandoffInFlight = true;
       runtime.repeatSelfTargetSongId = 'current';
@@ -38,8 +40,10 @@ void main() {
       expect(runtime.hasAutomaticWork, isFalse);
       expect(runtime.preloadedNextSongId, isNull);
       expect(runtime.preloadedNextQueueIndex, isNull);
+      expect(runtime.preloadedNextPath, isNull);
       expect(runtime.preloadedOutgoingSongId, isNull);
       expect(runtime.preloadedOutgoingQueueIndex, isNull);
+      expect(runtime.preloadedOutgoingPath, isNull);
       expect(runtime.repeatSelfTargetSongId, isNull);
     });
 
