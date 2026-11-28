@@ -425,3 +425,11 @@ The PCM ring now maps a fractional absolute cursor frame back to source media ti
 Regression coverage verifies fractional frame-to-PTS mapping, discontinuity rejection, and the cursor's post-render timestamp. This is the correct media-clock source for a future release seek; `Player.currentPosition` is not interchangeable because Media3 may decode and queue PCM ahead of audible output.
 
 **Integration remains intentionally incomplete:** the service does not yet issue a seek from this diagnostic. A seek currently flushes the Media3 sink and processor history, so simply wiring a seek here would discard the outgoing scratch tail and create an uncontrolled gap. The next gate must establish a bounded release-tail/dual-output strategy and a generation-safe audio-thread-to-main-thread request/acknowledgement path before connecting the one-shot seek. Audible scratch remains disabled.
+
+### 2026-11-28 — bounded scratch release-tail capture
+
+Added a fixed-capacity PCM16 release-tail buffer sized for 250 ms by default (with a hard 500 ms maximum at 48 kHz). It retains the newest emitted scratch frames, performs no per-frame allocations, rejects malformed partial frames, and supports a one-way seal/drain ownership transfer for a future independent output renderer. Regression tests cover bounded retention, stereo ordering, partial drains, malformed input, sealing, and generation reset.
+
+The timestamp processor now copies only successfully rendered scratch output into this bounded tail. The tail is deliberately not cleared by the processor's ordinary `onFlush`, because a Media3 seek flush is the event across which a release tail must eventually survive. It is cleared on a new mailbox generation or processor reset. Diagnostics expose retained tail frame count.
+
+**Important boundary:** audible scratch rendering is still compile-time disabled, and no secondary output renderer consumes this buffer yet. This is a bounded capture primitive, not proof that PCM is audible across a seek, not a gapless handoff, and not permission to issue the catch-up seek. The next gate must add a separately owned renderer/output path with explicit audio-route, timestamp, gain, cancellation and drain-completion handling; it must not commandeer either A/B deck or reuse the main deck's sink. Physical-device validation remains mandatory.
