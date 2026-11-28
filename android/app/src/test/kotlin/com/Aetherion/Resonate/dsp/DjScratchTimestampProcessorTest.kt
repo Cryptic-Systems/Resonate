@@ -97,9 +97,10 @@ class DjScratchTimestampProcessorTest {
             listOf(0, 1_000, 2_000, 3_000, 4_000).forEach { putShort(it.toShort()) }
             flip()
         }
+        val historyOriginal = bytes(history)
         ledger.record(history, 10_000L)
         processor.queueInput(history)
-        assertTrue(bytes(processor.output).contentEquals(bytes(history).let { it }))
+        assertTrue(bytes(processor.output).contentEquals(historyOriginal))
 
         val activeInput = ByteBuffer.allocateDirect(8).order(ByteOrder.LITTLE_ENDIAN).apply {
             listOf(5_000, 6_000, 7_000, 8_000).forEach { putShort(it.toShort()) }
