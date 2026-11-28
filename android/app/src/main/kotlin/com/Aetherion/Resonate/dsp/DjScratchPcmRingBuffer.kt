@@ -160,6 +160,29 @@ internal class DjScratchPcmRingBuffer(
         return lowerFrame.toDouble() + fraction.coerceIn(0.0, 1.0)
     }
 
+    /** Resolves a fractional retained frame to source media time without allocating. */
+    fun mediaTimeUsAtFramePosition(framePosition: Double): Long? {
+        if (!framePosition.isFinite() || !mediaTimesMonotonic ||
+            nextWriteFrame <= oldestFrame
+        ) return null
+        val lower = kotlin.math.floor(framePosition).toLong()
+        val fraction = framePosition - lower
+        val upper = if (fraction == 0.0) lower else lower + 1L
+        if (lower !in oldestFrame until nextWriteFrame ||
+            upper !in oldestFrame until nextWriteFrame
+        ) return null
+        val lowerPts = mediaTimeUsAtFrame(lower) ?: return null
+        if (upper == lower) return lowerPts
+        val upperPts = mediaTimeUsAtFrame(upper) ?: return null
+        val intervalUs = upperPts - lowerPts
+        val expectedIntervalUs = 1_000_000.0 / sampleRate
+        if (intervalUs <= 0L || kotlin.math.abs(intervalUs - expectedIntervalUs) > 1.5) {
+            return null
+        }
+        return (lowerPts.toDouble() + intervalUs.toDouble() * fraction)
+            .toLong().takeIf { it >= 0L }
+    }
+
     /**
      * Linearly interpolates a fractional source-frame position into [destination].
      * Interpolation is rejected across a media-time discontinuity, so a scratch
