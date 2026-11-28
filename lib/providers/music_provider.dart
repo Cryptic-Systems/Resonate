@@ -319,11 +319,12 @@ class MusicProvider extends ChangeNotifier {
   String? get _preloadedNextSongId => _crossfadeRuntime.preloadedNextSongId;
   set _preloadedNextSongId(String? value) {
     _crossfadeRuntime.preloadedNextSongId = value;
-    if (value == null) {
-      _crossfadeRuntime.preloadedNextQueueIndex = null;
-      _crossfadeRuntime.preloadedOutgoingSongId = null;
-      _crossfadeRuntime.preloadedOutgoingQueueIndex = null;
-    }
+    // A song-ID assignment alone is not an occurrence lease. Normal Media3
+    // preload immediately fills these fields after assigning the ID; repeat-
+    // self and legacy paths intentionally leave them unset.
+    _crossfadeRuntime.preloadedNextQueueIndex = null;
+    _crossfadeRuntime.preloadedOutgoingSongId = null;
+    _crossfadeRuntime.preloadedOutgoingQueueIndex = null;
   }
   int? get _preloadedNextQueueIndex =>
       _crossfadeRuntime.preloadedNextQueueIndex;
