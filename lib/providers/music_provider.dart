@@ -323,13 +323,18 @@ class MusicProvider extends ChangeNotifier {
     // preload immediately fills these fields after assigning the ID; repeat-
     // self and legacy paths intentionally leave them unset.
     _crossfadeRuntime.preloadedNextQueueIndex = null;
+    _crossfadeRuntime.preloadedNextPath = null;
     _crossfadeRuntime.preloadedOutgoingSongId = null;
     _crossfadeRuntime.preloadedOutgoingQueueIndex = null;
+    _crossfadeRuntime.preloadedOutgoingPath = null;
   }
   int? get _preloadedNextQueueIndex =>
       _crossfadeRuntime.preloadedNextQueueIndex;
   set _preloadedNextQueueIndex(int? value) =>
       _crossfadeRuntime.preloadedNextQueueIndex = value;
+  String? get _preloadedNextPath => _crossfadeRuntime.preloadedNextPath;
+  set _preloadedNextPath(String? value) =>
+      _crossfadeRuntime.preloadedNextPath = value;
   String? get _preloadedOutgoingSongId =>
       _crossfadeRuntime.preloadedOutgoingSongId;
   set _preloadedOutgoingSongId(String? value) =>
@@ -338,6 +343,9 @@ class MusicProvider extends ChangeNotifier {
       _crossfadeRuntime.preloadedOutgoingQueueIndex;
   set _preloadedOutgoingQueueIndex(int? value) =>
       _crossfadeRuntime.preloadedOutgoingQueueIndex = value;
+  String? get _preloadedOutgoingPath => _crossfadeRuntime.preloadedOutgoingPath;
+  set _preloadedOutgoingPath(String? value) =>
+      _crossfadeRuntime.preloadedOutgoingPath = value;
   bool get _crossfadePreloadInFlight => _crossfadeRuntime.preloadInFlight;
   set _crossfadePreloadInFlight(bool value) =>
       _crossfadeRuntime.preloadInFlight = value;
@@ -4696,8 +4704,10 @@ class MusicProvider extends ChangeNotifier {
       'crossfadePreloadInFlight': _crossfadePreloadInFlight,
       'preloadedNextSongId': _preloadedNextSongId,
       'preloadedNextQueueIndex': _preloadedNextQueueIndex,
+      'preloadedNextPath': _preloadedNextPath,
       'preloadedOutgoingSongId': _preloadedOutgoingSongId,
       'preloadedOutgoingQueueIndex': _preloadedOutgoingQueueIndex,
+      'preloadedOutgoingPath': _preloadedOutgoingPath,
       'repeatSelfHandoffArmed': _repeatSelfHandoffArmed,
       'repeatSelfHandoffInFlight': _repeatSelfHandoffInFlight,
       'activeDeckId': _media3ShadowState?.activeDeckId,
