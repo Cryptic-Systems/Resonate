@@ -437,6 +437,17 @@ extension MusicProviderMedia3 on MusicProvider {
       }
       if (!stillOwnsTransition()) return;
       if (!targetOccurrenceIsCurrent() || !preloadMatchesTargetOccurrence()) {
+        await session.cancelCrossfade();
+        if (!stillOwnsTransition()) return;
+        await session.clearDeckEqOverlay(deck: 'standby');
+        if (!stillOwnsTransition()) return;
+        await session.setDeckPlaybackSpeeds(
+          activeSpeed: 1.0,
+          standbySpeed: 1.0,
+        );
+        if (!stillOwnsTransition()) return;
+        _preloadedNextSongId = null;
+        _media3DjTransitionPreparation = null;
         await ResonateDiagnostics.record('media3_crossfade_target_rejected', {
           'outgoingSongId': outgoingSong.id,
           'outgoingQueueIndex': outgoingIndex,
