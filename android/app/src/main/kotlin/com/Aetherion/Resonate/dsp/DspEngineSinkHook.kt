@@ -72,7 +72,7 @@ object DspEngineSinkHook {
         }
         // Capture processed PCM only; never bypass or double-run the engine.
         val releaseTail = DjScratchReleaseTailCaptureProcessor {
-            timestampProcessor.lastConsumedTimestampForTest()?.presentationTimeUs
+            timestampProcessor.releaseTailTimestampUs()
         }
         releaseTailProcessorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(releaseTail)
         chain.add(releaseTail)
