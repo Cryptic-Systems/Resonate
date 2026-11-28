@@ -29,6 +29,8 @@ object DspEngineSinkHook {
     private val processorsByDeck = ConcurrentHashMap<String, CopyOnWriteArraySet<DspEngineAudioProcessor>>()
     private val scratchProcessorsByDeck =
         ConcurrentHashMap<String, CopyOnWriteArraySet<DjScratchTimestampProcessor>>()
+    private val releaseTailProcessorsByDeck =
+        ConcurrentHashMap<String, CopyOnWriteArraySet<DjScratchReleaseTailCaptureProcessor>>()
     // Tracks the service's physical active/fading roles, not only the single
     // canonical MediaSession deck. A fading incoming deck must remain active.
     private val activeDecks = CopyOnWriteArraySet<String>().apply {
@@ -42,6 +44,7 @@ object DspEngineSinkHook {
     internal fun resetForTests() {
         processorsByDeck.clear()
         scratchProcessorsByDeck.clear()
+        releaseTailProcessorsByDeck.clear()
         activeDecks.clear()
         activeDecks.add("A")
         activeDecks.add("legacy")
@@ -72,7 +75,7 @@ object DspEngineSinkHook {
         // distinguishes "factory never installed the chain" from "Media3 has
         // not configured/started PCM yet" in the live scratch diagnostics.
         trackScratchProcessor(timestampProcessor, deckId)
-        val chain = ArrayList<AudioProcessor>(2)
+        val chain = ArrayList<AudioProcessor>(3)
         chain.add(timestampProcessor)
         try {
             chain.add(createDspProcessor(deckId))
@@ -81,6 +84,11 @@ object DspEngineSinkHook {
             // initialization fails; DSP failure must not silently disable DJ.
             Log.e(TAG, "Native DSP processor unavailable; retaining scratch stage for deck=$deckId", t)
         }
+        // This stage is deliberately after native DSP: the retained tail is
+        // already processed PCM and must never bypass or double-run the engine.
+        val releaseTail = DjScratchReleaseTailCaptureProcessor()
+        releaseTailProcessorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(releaseTail)
+        chain.add(releaseTail)
         return chain.toTypedArray()
     }
 
@@ -123,6 +131,21 @@ object DspEngineSinkHook {
         scratchProcessorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(processor)
     }
 
+    /** Start a bounded post-DSP PCM capture on the selected physical deck. */
+    @JvmStatic
+    fun beginReleaseTailCapture(deckId: String): Boolean =
+        releaseTailProcessorsByDeck[deckId]?.lastOrNull()?.beginCapture() == true
+
+    /** Seal the current post-DSP tail after its in-flight audio callback exits. */
+    @JvmStatic
+    fun sealReleaseTailCapture(deckId: String): DjScratchReleaseTailBuffer? =
+        releaseTailProcessorsByDeck[deckId]?.lastOrNull()?.sealCapture()
+
+    /** Latest immutable post-DSP tail for transfer to the independent renderer. */
+    @JvmStatic
+    fun sealedReleaseTail(deckId: String): DjScratchReleaseTailBuffer? =
+        releaseTailProcessorsByDeck[deckId]?.lastOrNull()?.sealedTail()
+
     /** Latest scratch pipeline counters; no PCM data is exposed or retained here. */
     @JvmStatic
     fun scratchDiagnostics(deckId: String): Map<String, Any?> {
@@ -138,6 +161,7 @@ object DspEngineSinkHook {
     fun forgetDeck(deckId: String) {
         processorsByDeck.remove(deckId)
         scratchProcessorsByDeck.remove(deckId)
+        releaseTailProcessorsByDeck.remove(deckId)
     }
 
     /** Removes released processor instances so a stale deck cannot be reactivated. */

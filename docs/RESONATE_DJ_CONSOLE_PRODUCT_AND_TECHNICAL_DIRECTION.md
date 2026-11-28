@@ -448,3 +448,14 @@ Added a control-plane state machine for the ownership boundary between the scrat
 Regression tests cover legal ownership progression, duplicate consumer rejection, route/session/format/processing-chain mismatch, stale generations, invalid drain counts, abort and fresh-generation restart.
 
 **Integration boundary:** this is a control-plane contract only. It does not create an AudioTrack, route audio, apply DSP/gain, transfer the PCM buffer across threads, issue the Media3 catch-up seek or enable audible scratch. The output contract deliberately requires the same Resonate processing-chain identity; a plain secondary AudioTrack that bypasses the DSP path cannot satisfy it. The next stage must identify or implement a genuinely independent output renderer that shares the app's DSP, gain, audio-session and route lifecycle, then connect buffer transfer and drain acknowledgements without blocking the audio callback. Until that path and physical-device validation exist, the scratch feature gate remains closed.
+
+
+### 2026-11-28 — post-DSP release-tail capture stage
+
+Added an opt-in DjScratchReleaseTailCaptureProcessor as the final stage in each Media3 A/B user-processor chain, after DspEngineAudioProcessor. It copies PCM16 into a bounded 250 ms per-deck tail while passing the original PCM unchanged to Media3. The retained samples are therefore already processed by the same native DSP engine as the audible deck; they must not be sent through DSP a second time.
+
+Capture is disabled by default. The processor prepares and seals buffers only on explicit control-plane calls. Sealing atomically detaches the active generation, waits on the control thread for any already-started bounded copy to finish, then publishes the immutable tail. The real-time callback does not wait for control operations, allocate a new PCM buffer, or change the output bytes. Format validation is limited to the supported PCM16 mono/stereo path.
+
+The sink hook now exposes per-physical-deck begin, seal and sealed-tail accessors. Regression tests verify exact pass-through output, opt-in capture, sealed-tail publication and frame counts.
+
+**Not yet the independent renderer:** this stage establishes a correctly processed PCM source, but it does not yet write the tail to an independent output device, share the active AudioSession/route, reproduce the deck's composed output gain, coordinate the Media3 catch-up seek, or verify audible alignment. The service does not arm capture or start a secondary output, and the compile-time scratch gate remains closed. No audible scratch claim is made.
