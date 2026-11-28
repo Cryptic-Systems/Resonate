@@ -1080,12 +1080,12 @@ class Media3PlaybackService : MediaSessionService() {
                 lastMediaTransitionReason = reason
                 lastMediaTransitionElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime()
                 if (physicalDeckId != null) {
-                    val scratchMailbox = djScratchMailboxes[physicalDeckId]
-                    scratchMailbox?.snapshot()?.let { snapshot ->
-                        if (snapshot.mediaId != mediaItem?.mediaId) {
-                            scratchMailbox.clear(snapshot.mediaId)
-                        }
-                    }
+                    // A MediaItem transition retires platter ownership even when
+                    // the next queue occurrence has the same mediaId (Repeat One,
+                    // duplicate playlist entries, or a repeated URI). Media ID alone
+                    // is not an occurrence identity, so never carry scratch velocity
+                    // or its PCM cursor across this boundary.
+                    djScratchMailboxes[physicalDeckId]?.clear()
                     val loop = djLoops[physicalDeckId]
                     if (loop != null && loop.expectedMediaId != mediaItem?.mediaId) {
                         clearDjDeckLoopInternal(physicalDeckId)
