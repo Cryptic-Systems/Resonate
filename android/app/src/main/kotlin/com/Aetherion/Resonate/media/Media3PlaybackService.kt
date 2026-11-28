@@ -1218,7 +1218,6 @@ class Media3PlaybackService : MediaSessionService() {
         cancelCrossfade()
         val standby = standbyPlayer ?: newPlayer(handleAudioFocus = false, deckId = standbyDeckId())
             .also { standbyPlayer = it }
-        standby.volume = 0f
         gainPolicy.setCrossfadeGains(active = 1f, standby = 0f)
         applyDeckVolumes()
         // Construct the second physical deck only when a preload is requested.
