@@ -2743,7 +2743,12 @@ class MusicProvider extends ChangeNotifier {
       final approved = outgoing != null && incoming != null
           ? peekApprovedDjTransition(outgoing.id, incoming.id)
           : null;
-      final prepared = incoming != null && _preloadedNextSongId == incoming.id
+      final prepared = incoming != null &&
+              outgoing != null &&
+              _preloadedNextSongId == incoming.id &&
+              _preloadedNextQueueIndex == _crossfadeTargetIndex &&
+              _preloadedOutgoingSongId == outgoing.id &&
+              _preloadedOutgoingQueueIndex == _queueIndex
           ? _media3DjTransitionPreparation
           : null;
       final plannedCueMs = approved != null && !approved.fallback
