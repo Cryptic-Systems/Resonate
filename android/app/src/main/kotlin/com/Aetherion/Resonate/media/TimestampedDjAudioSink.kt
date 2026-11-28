@@ -17,6 +17,7 @@ import java.nio.ByteBuffer
 internal class TimestampedDjAudioSink(
     private val delegate: AudioSink,
     private val ledger: DjScratchTimestampLedger,
+    private val outputRoute: DjScratchAudioTrackRoute,
 ) : AudioSink by delegate {
     @Volatile private var resetForRelease = false
 
@@ -34,6 +35,7 @@ internal class TimestampedDjAudioSink(
         // Let Media3 validate/configure first. If it rejects this format, the
         // current timestamp timeline must remain untouched.
         delegate.configure(inputFormat, specifiedBufferSize, outputChannels)
+        outputRoute.clear()
         resetForRelease = false
         ledger.configure(
             sampleRate = inputFormat.sampleRate,
@@ -62,12 +64,17 @@ internal class TimestampedDjAudioSink(
     }
 
     override fun flush() {
+        outputRoute.clear()
         ledger.resetForFlush()
         delegate.flush()
     }
 
+    /** Exact selected platform route for the current Media3 AudioTrack, when resolved. */
+    fun actualOutputRoute(): DjScratchAudioTrackRoute.Snapshot? = outputRoute.snapshot()
+
     override fun reset() {
         resetForRelease = true
+        outputRoute.clear()
         ledger.clear()
         delegate.reset()
     }
