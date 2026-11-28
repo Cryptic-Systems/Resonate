@@ -19,7 +19,7 @@ internal class DjScratchReleaseTailBuffer(
     private var nextWriteFrame = 0L
     private var oldestFrame = 0L
     private var readFrame = 0L
-    private var sealed = false
+    @Volatile private var sealed = false
 
     val availableFrames: Int
         get() = (nextWriteFrame - oldestFrame).toInt()
