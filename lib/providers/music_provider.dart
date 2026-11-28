@@ -4740,6 +4740,10 @@ class MusicProvider extends ChangeNotifier {
           _crossfadeRuntime.deferredIncomingSongId,
       'deferredCrossfadeIncomingQueueIndex':
           _crossfadeRuntime.deferredIncomingQueueIndex,
+      'deferredCrossfadeOutgoingPath':
+          _crossfadeRuntime.deferredOutgoingPath,
+      'deferredCrossfadeIncomingPath':
+          _crossfadeRuntime.deferredIncomingPath,
       'repeatSelfHandoffArmed': _repeatSelfHandoffArmed,
       'repeatSelfHandoffInFlight': _repeatSelfHandoffInFlight,
       'activeDeckId': _media3ShadowState?.activeDeckId,
