@@ -34,6 +34,7 @@ internal class DjScratchTimestampProcessor(
     @Volatile private var ringCapacityFrames = 0
     @Volatile private var configured = false
     @Volatile private var ringAvailableFrames = 0
+    @Volatile private var cursorMediaTimeUs: Long? = null
     // Keep audible scratch disabled until timestamp provenance, speed mapping,
     // and release-to-Media3 catch-up are validated end to end on devices.
     private companion object {
@@ -64,6 +65,7 @@ internal class DjScratchTimestampProcessor(
             "historyGenerationResets" to historyGenerationResets.get(),
             "ringCapacityFrames" to ringCapacityFrames,
             "ringAvailableFrames" to ringAvailableFrames,
+            "cursorMediaTimeUs" to cursorMediaTimeUs,
             "lastControlActive" to (control?.active == true),
             "lastControlVelocity" to control?.velocity,
             "lastControlAnchorMediaTimeUs" to control?.anchorMediaTimeUs,
@@ -136,6 +138,11 @@ internal class DjScratchTimestampProcessor(
         val rendered = ENABLE_SCRATCH_RENDERING && timestamp != null && ring != null &&
             renderPolicy.render(inputBuffer, output, ring, latestControlSnapshot)
         ringAvailableFrames = ring?.availableFrames ?: 0
+        cursorMediaTimeUs = if (rendered && ring != null) {
+            renderPolicy.cursorMediaTimeUs(ring)
+        } else {
+            null
+        }
         if (rendered) {
             renderedBlocks.incrementAndGet()
             // AudioProcessor.queueInput must consume its input even when the
@@ -155,6 +162,7 @@ internal class DjScratchTimestampProcessor(
         latestControlSnapshot = null
         pcmRing?.clear()
         ringAvailableFrames = 0
+        cursorMediaTimeUs = null
         lastMailboxGeneration = controlMailbox.state().generation
         renderPolicy.reset()
     }
@@ -167,6 +175,7 @@ internal class DjScratchTimestampProcessor(
         pcmRing = null
         ringCapacityFrames = 0
         ringAvailableFrames = 0
+        cursorMediaTimeUs = null
         configured = false
         lastMailboxGeneration = controlMailbox.state().generation
         renderPolicy.reset()
