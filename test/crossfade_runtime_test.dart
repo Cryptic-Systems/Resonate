@@ -95,6 +95,40 @@ void main() {
       expect(runtime.hasDeferredTransition, isFalse);
     });
 
+    test('native promotion requires terminal acknowledgement and exact deck occurrence', () {
+      final runtime = CrossfadeRuntime();
+      final base = <String, Object?>{
+        'crossfadeStatus': 'completed',
+        'activeDeckId': 'B',
+        'outgoingDeckId': 'A',
+        'currentSongId': 'incoming',
+        'currentPath': '/music/incoming.mp3',
+        'currentQueueIndex': 4,
+        'incomingSongId': 'incoming',
+        'incomingPath': '/music/incoming.mp3',
+        'incomingQueueIndex': 4,
+      };
+
+      bool acknowledged(Map<String, Object?> values) =>
+          runtime.acknowledgesNativePromotion(
+            crossfadeStatus: values['crossfadeStatus']! as String,
+            activeDeckId: values['activeDeckId']! as String,
+            outgoingDeckId: values['outgoingDeckId']! as String,
+            currentSongId: values['currentSongId'] as String?,
+            currentPath: values['currentPath'] as String?,
+            currentQueueIndex: values['currentQueueIndex']! as int,
+            incomingSongId: values['incomingSongId']! as String,
+            incomingPath: values['incomingPath']! as String,
+            incomingQueueIndex: values['incomingQueueIndex']! as int,
+          );
+
+      expect(acknowledged(base), isTrue);
+      expect(acknowledged({...base, 'crossfadeStatus': 'fading'}), isFalse);
+      expect(acknowledged({...base, 'activeDeckId': 'A'}), isFalse);
+      expect(acknowledged({...base, 'currentQueueIndex': 3}), isFalse);
+      expect(acknowledged({...base, 'currentPath': '/music/other.mp3'}), isFalse);
+    });
+
     test('reports every automatic-work category until each is cleared', () {
       final runtime = CrossfadeRuntime();
 
