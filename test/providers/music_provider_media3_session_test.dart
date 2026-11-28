@@ -2502,8 +2502,8 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
       expect(session.cancelledTransitionSpeedResetCount, 1);
-      expect(session.calls, contains('deckSpeeds:1.15:1.15'));
-      expect(session.deckSpeeds, (1.15, 1.15));
+      expect(session.deckSpeeds, (1.15, 1.15),
+          reason: 'Both native decks must return to the user-selected playback rate.');
       expect(session.calls.where((call) => call == 'loadQueue').length, 1,
           reason: 'A failed native fade must not reload the incoming queue item.');
       expect(session.calls.where((call) => call == 'play').length, 1,
