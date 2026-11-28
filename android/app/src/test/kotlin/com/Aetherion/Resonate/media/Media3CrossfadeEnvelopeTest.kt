@@ -53,40 +53,18 @@ class Media3CrossfadeEnvelopeTest {
             Media3CrossfadeEnvelope.shouldAdvanceRamp(
                 generationMatches = true,
                 status = "fading",
-                activeIsPlaying = true,
-                incomingIsPlaying = true,
             ),
         )
         assertFalse(
             Media3CrossfadeEnvelope.shouldAdvanceRamp(
                 generationMatches = false,
                 status = "fading",
-                activeIsPlaying = true,
-                incomingIsPlaying = true,
             ),
         )
         assertFalse(
             Media3CrossfadeEnvelope.shouldAdvanceRamp(
                 generationMatches = true,
                 status = "cancelled",
-                activeIsPlaying = true,
-                incomingIsPlaying = true,
-            ),
-        )
-        assertFalse(
-            Media3CrossfadeEnvelope.shouldAdvanceRamp(
-                generationMatches = true,
-                status = "fading",
-                activeIsPlaying = false,
-                incomingIsPlaying = true,
-            ),
-        )
-        assertFalse(
-            Media3CrossfadeEnvelope.shouldAdvanceRamp(
-                generationMatches = true,
-                status = "fading",
-                activeIsPlaying = true,
-                incomingIsPlaying = false,
             ),
         )
     }
