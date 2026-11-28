@@ -56,6 +56,14 @@ class Media3PlaybackService : MediaSessionService() {
     private var previewGeneration = 0
     private var fadeRunnable: Runnable? = null
     private var fadeGeneration = 0
+    // A cancelled audible fade restores outgoing gain through a guarded envelope.
+    private var cancelRestoreRunnable: Runnable? = null
+    private var cancelRestoreGeneration = 0
+    private var lastCrossfadeInterruptionReason: String? = null
+    private var lastCrossfadeInterruptionProgress: Float? = null
+    private var lastCrossfadeInterruptionElapsedRealtimeMs: Long = 0L
+    private var lastCrossfadeInterruptionActivePositionMs: Long = 0L
+    private var lastCrossfadeInterruptionIncomingPositionMs: Long = 0L
     private val crossfadeClock = Media3CrossfadeClock()
     private var crossfadeStatus = "idle"
     private var pendingCrossfadeDurationMs: Long? = null
@@ -1005,6 +1013,15 @@ class Media3PlaybackService : MediaSessionService() {
                     }
                     return
                 }
+                // An incoming deck that reaches EOS during an audible fade
+                // cannot be promoted. Invalidate the scheduled ramp immediately.
+                if (deck === standbyPlayer &&
+                    playbackState == Player.STATE_ENDED &&
+                    crossfadeStatus in setOf("starting", "fading")
+                ) {
+                    abortIncomingCrossfade("incoming_ended_during_fade")
+                    return
+                }
                 // The standby deck identity changes after promotion. Attach
                 // readiness handling to both physical players so later preloads
                 // receive the same deferred-start behavior.
@@ -1033,9 +1050,7 @@ class Media3PlaybackService : MediaSessionService() {
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 if (deck === standbyPlayer) {
-                    pendingCrossfadeDurationMs = null
-                    startingCrossfadeDurationMs = null
-                    crossfadeStatus = "incoming_error"
+                    abortIncomingCrossfade("incoming_player_error")
                 }
             }
 
@@ -1218,7 +1233,8 @@ class Media3PlaybackService : MediaSessionService() {
         cancelCrossfade()
         val standby = standbyPlayer ?: newPlayer(handleAudioFocus = false, deckId = standbyDeckId())
             .also { standbyPlayer = it }
-        gainPolicy.setCrossfadeGains(active = 1f, standby = 0f)
+        // cancelCrossfade may be completing a short outgoing-gain recovery
+        // ramp. Preserve that live envelope when a rapid preload replaces standby.
         applyDeckVolumes()
         // Construct the second physical deck only when a preload is requested.
         // The full incoming queue and active transport parameters are copied
@@ -1322,7 +1338,14 @@ class Media3PlaybackService : MediaSessionService() {
             standby.playbackState != Player.STATE_READY
         ) return false
         pendingCrossfadeDurationMs = null
-        cancelCrossfade(clearOverlays = false, resetStandbySpeed = false)
+        cancelCrossfade(
+            clearOverlays = false,
+            resetStandbySpeed = false,
+            reason = "new_crossfade",
+        )
+        cancelCrossfadeGainRestore()
+        gainPolicy.resetDecks()
+        applyDeckVolumes()
         // A crossfade owns both outputs; release active platters through
         // their short native fade before either deck enters the transition.
         for (deckId in listOf("A", "B")) {
@@ -1368,7 +1391,11 @@ class Media3PlaybackService : MediaSessionService() {
         crossfadeStatus = "fading"
         val task = object : Runnable {
             override fun run() {
-                if (generation != fadeGeneration || isDestroyed) return
+                if (isDestroyed || !Media3CrossfadeEnvelope.shouldAdvanceRamp(
+                        generationMatches = generation == fadeGeneration,
+                        status = crossfadeStatus,
+                    )
+                ) return
                 val progress = crossfadeClock.progress(android.os.SystemClock.elapsedRealtime())
                 val (activeGain, standbyGain) = Media3CrossfadeEnvelope.gains(progress)
                 gainPolicy.setCrossfadeGains(
@@ -1442,6 +1469,7 @@ class Media3PlaybackService : MediaSessionService() {
      */
     fun pauseCrossfade(): Boolean {
         if (crossfadeStatus == "starting") {
+            recordCrossfadeInterruption("transport_pause")
             pendingCrossfadeDurationMs = startingCrossfadeDurationMs
             startingCrossfadeDurationMs = null
             standbyPlayer?.pause()
@@ -1458,6 +1486,7 @@ class Media3PlaybackService : MediaSessionService() {
             return true
         }
         if (crossfadeStatus != "fading") return false
+        recordCrossfadeInterruption("transport_pause")
         if (!crossfadeClock.pause(android.os.SystemClock.elapsedRealtime())) return false
         fadeRunnable?.let(mainHandler::removeCallbacks)
         standbyPlayer?.pause()
@@ -1527,7 +1556,7 @@ class Media3PlaybackService : MediaSessionService() {
         lastPreloadInvalidationElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime()
         preloadInvalidationCount++
         pendingCrossfadeDurationMs = null
-        cancelCrossfade()
+        cancelCrossfade(reason = reason)
         val standby = standbyPlayer
         if (standby != null) {
             val retiringDeckId = standbyDeckId()
@@ -1659,10 +1688,90 @@ class Media3PlaybackService : MediaSessionService() {
         return true
     }
 
+    private fun recordCrossfadeInterruption(reason: String, progress: Float? = null) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        lastCrossfadeInterruptionReason = reason
+        lastCrossfadeInterruptionProgress = progress ?: if (crossfadeStatus == "fading") {
+            crossfadeClock.progress(now)
+        } else {
+            0f
+        }
+        lastCrossfadeInterruptionElapsedRealtimeMs = now
+        lastCrossfadeInterruptionActivePositionMs =
+            if (::activePlayer.isInitialized) activePlayer.currentPosition.coerceAtLeast(0L) else 0L
+        lastCrossfadeInterruptionIncomingPositionMs =
+            standbyPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
+    }
+
+    private fun cancelCrossfadeGainRestore() {
+        cancelRestoreGeneration++
+        cancelRestoreRunnable?.let(mainHandler::removeCallbacks)
+        cancelRestoreRunnable = null
+    }
+
+    private fun restoreOutgoingGainAfterCancellation(
+        startProgress: Float,
+        expectedPlayer: ExoPlayer,
+        expectedDeckId: String,
+    ) {
+        cancelCrossfadeGainRestore()
+        val generation = cancelRestoreGeneration
+        val startedAt = android.os.SystemClock.elapsedRealtime()
+        val durationMs = 72L
+        val task = object : Runnable {
+            override fun run() {
+                if (generation != cancelRestoreGeneration || isDestroyed) return
+                // Never apply an old deck's recovery gain to a newly promoted
+                // or newly selected canonical player.
+                if (activePlayer !== expectedPlayer || activeDeckId != expectedDeckId) {
+                    cancelCrossfadeGainRestore()
+                    gainPolicy.resetDecks()
+                    applyDeckVolumes()
+                    return
+                }
+                val elapsed = (android.os.SystemClock.elapsedRealtime() - startedAt)
+                    .coerceAtLeast(0L)
+                val fraction = (elapsed.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+                val progress = Media3CrossfadeEnvelope.restorationProgress(
+                    startProgress = startProgress,
+                    elapsedFraction = fraction,
+                )
+                val (activeGain, _) = Media3CrossfadeEnvelope.gains(progress)
+                gainPolicy.setCrossfadeGains(active = activeGain, standby = 0f)
+                applyDeckVolumes()
+                if (fraction >= 1f) {
+                    cancelRestoreRunnable = null
+                    gainPolicy.resetDecks()
+                    applyDeckVolumes()
+                } else {
+                    mainHandler.postDelayed(this, 16L)
+                }
+            }
+        }
+        cancelRestoreRunnable = task
+        mainHandler.post(task)
+    }
+
+    private fun abortIncomingCrossfade(reason: String) {
+        cancelCrossfade(reason = reason)
+        // Keep the terminal failure visible to the provider recovery loop.
+        crossfadeStatus = "incoming_error"
+    }
+
     fun cancelCrossfade(
         clearOverlays: Boolean = true,
         resetStandbySpeed: Boolean = true,
+        reason: String = "explicit_cancel",
     ): Boolean {
+        val wasAudibleFade = crossfadeStatus == "fading"
+        val interruptedProgress = if (wasAudibleFade) {
+            crossfadeClock.progress(android.os.SystemClock.elapsedRealtime())
+        } else {
+            0f
+        }
+        val restorePlayer = if (wasAudibleFade && !djDualDeckMode) activePlayer else null
+        val restoreDeckId = if (restorePlayer != null) activeDeckId else null
+        if (wasAudibleFade) recordCrossfadeInterruption(reason, interruptedProgress)
         stopTransitionPreview()
         pendingCrossfadeDurationMs = null
         startingCrossfadeDurationMs = null
@@ -1672,9 +1781,8 @@ class Media3PlaybackService : MediaSessionService() {
         fadeRunnable = null
         crossfadeClock.reset()
         if (::activePlayer.isInitialized) {
-            // Cancellation preserves the current deck and silences any temporary incoming deck.
-            gainPolicy.resetDecks()
-            applyDeckVolumes()
+            // Silence the incoming output first. During an audible fade, retain
+            // the exact outgoing gain and restore it smoothly instead of jumping.
             standbyPlayer?.let {
                 it.pause()
                 DspEngineSinkHook.suspendDeck(standbyDeckId())
@@ -1688,14 +1796,32 @@ class Media3PlaybackService : MediaSessionService() {
             crossfadeStatus = "cancelled"
         }
         if (::activePlayer.isInitialized) {
-            gainPolicy.resetDecks()
-            applyDeckVolumes()
+            if (wasAudibleFade && restorePlayer != null && restoreDeckId != null) {
+                val (outgoingGain, _) = Media3CrossfadeEnvelope.gains(interruptedProgress)
+                gainPolicy.setCrossfadeGains(active = outgoingGain, standby = 0f)
+                applyDeckVolumes()
+                restoreOutgoingGainAfterCancellation(
+                    startProgress = interruptedProgress,
+                    expectedPlayer = restorePlayer,
+                    expectedDeckId = restoreDeckId,
+                )
+            } else if (cancelRestoreRunnable == null) {
+                gainPolicy.resetDecks()
+                applyDeckVolumes()
+            }
         }
         return true
     }
 
     fun crossfadeState(): Map<String, Any?> = mapOf(
         "status" to crossfadeStatus,
+        "generation" to fadeGeneration,
+        "lastInterruptionReason" to lastCrossfadeInterruptionReason,
+        "lastInterruptionProgress" to lastCrossfadeInterruptionProgress,
+        "lastInterruptionElapsedRealtimeMs" to lastCrossfadeInterruptionElapsedRealtimeMs,
+        "lastInterruptionActivePositionMs" to lastCrossfadeInterruptionActivePositionMs,
+        "lastInterruptionIncomingPositionMs" to lastCrossfadeInterruptionIncomingPositionMs,
+        "gainRestoreInProgress" to (cancelRestoreRunnable != null),
         "progress" to when (crossfadeStatus) {
             "fading" -> crossfadeClock.progress(android.os.SystemClock.elapsedRealtime())
             "completed" -> 1f
