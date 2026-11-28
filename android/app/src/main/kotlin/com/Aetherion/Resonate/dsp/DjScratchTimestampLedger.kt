@@ -21,7 +21,6 @@ internal class DjScratchTimestampLedger {
         val buffer: ByteBuffer,
         val presentationTimeUs: Long,
         val sampleRate: Int,
-        val sourceChannelCount: Int,
         val totalFrames: Int,
         var consumedFrames: Int = 0,
     )
@@ -30,15 +29,22 @@ internal class DjScratchTimestampLedger {
     private val pending = ArrayDeque<PendingSpan>()
     private var configuredSampleRate = 0
     private var configuredSourceChannels = 0
+    private var configuredSourceBytesPerFrame = 0
     private var configuredEncoderDelayFrames = 0
     private var trimFramesRemaining = 0
     private var desynchronized = false
 
     @Synchronized
-    fun configure(sampleRate: Int, channelCount: Int, encoderDelayFrames: Int) {
+    fun configure(
+        sampleRate: Int,
+        channelCount: Int,
+        encoderDelayFrames: Int,
+        sourceBytesPerFrame: Int = channelCount * Short.SIZE_BYTES,
+    ) {
         clearPending()
         configuredSampleRate = sampleRate.takeIf { it > 0 } ?: 0
         configuredSourceChannels = channelCount.takeIf { it > 0 } ?: 0
+        configuredSourceBytesPerFrame = sourceBytesPerFrame.takeIf { it > 0 } ?: 0
         configuredEncoderDelayFrames = encoderDelayFrames.coerceAtLeast(0)
         trimFramesRemaining = configuredEncoderDelayFrames
         desynchronized = false
@@ -47,13 +53,14 @@ internal class DjScratchTimestampLedger {
     @Synchronized
     fun record(buffer: ByteBuffer, presentationTimeUs: Long) {
         if (desynchronized || presentationTimeUs < 0L || !buffer.hasRemaining() ||
-            configuredSampleRate <= 0 || configuredSourceChannels <= 0
+            configuredSampleRate <= 0 || configuredSourceChannels <= 0 ||
+            configuredSourceBytesPerFrame <= 0
         ) return
 
         // handleBuffer may be retried with the same ByteBuffer while the sink
         // is back-pressured. Retain the original PTS and original frame span.
         if (byIdentity.containsKey(buffer)) return
-        val bytesPerFrame = configuredSourceChannels * Short.SIZE_BYTES
+        val bytesPerFrame = configuredSourceBytesPerFrame
         val byteCount = buffer.remaining()
         if (byteCount <= 0 || byteCount % bytesPerFrame != 0) return
 
@@ -67,7 +74,6 @@ internal class DjScratchTimestampLedger {
             buffer = buffer,
             presentationTimeUs = presentationTimeUs,
             sampleRate = configuredSampleRate,
-            sourceChannelCount = configuredSourceChannels,
             totalFrames = byteCount / bytesPerFrame,
         )
         byIdentity[buffer] = span
@@ -182,6 +188,7 @@ internal class DjScratchTimestampLedger {
         clearPending()
         configuredSampleRate = 0
         configuredSourceChannels = 0
+        configuredSourceBytesPerFrame = 0
         configuredEncoderDelayFrames = 0
         trimFramesRemaining = 0
         desynchronized = false
