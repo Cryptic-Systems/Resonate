@@ -191,7 +191,7 @@ internal class DjScratchPcmReleaseRenderer(
         val output = track ?: return false
         val contract = openedContract ?: return false
         val targetFrames = acceptedFrames
-        if (targetFrames <= 0L) return true
+        if (targetFrames <= 0L) return routeStillMatches(output, contract)
         val calculatedTimeout = (targetFrames * 1_000L / contract.sampleRate) + 1_500L
         val deadline = SystemClock.elapsedRealtime() + (timeoutMs ?: calculatedTimeout)
         while (true) {
@@ -200,7 +200,13 @@ internal class DjScratchPcmReleaseRenderer(
                 return false
             }
             val playedFrames = output.playbackHeadPositionFrames()
-            if (playedFrames >= targetFrames) return routeStillMatches(output, contract)
+            if (playedFrames >= targetFrames) {
+                if (!routeStillMatches(output, contract)) {
+                    close()
+                    return false
+                }
+                return true
+            }
             if (SystemClock.elapsedRealtime() >= deadline) {
                 close()
                 return false
