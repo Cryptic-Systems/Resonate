@@ -21,6 +21,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.aetherion.resonate.dsp.DspEngineSinkHook
 import com.aetherion.resonate.dsp.DjScratchTimestampLedger
 import com.aetherion.resonate.dsp.DjScratchControlMailbox
+import com.aetherion.resonate.dsp.DjScratchSpeedMapping
 import com.aetherion.resonate.dsp.DspEngineRegistry
 import com.Aetherion.Resonate.R
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -469,10 +470,21 @@ class Media3PlaybackService : MediaSessionService() {
             !player.isPlaying || anchorMediaTimeUs < 0L
         ) return false
         val mailbox = djScratchMailboxes[deckId] ?: return false
+        // This processor runs before Media3's Sonic/AudioTrack speed stage.
+        // Compensate the cursor rate so downstream playback speed does not
+        // multiply the operator's requested audible platter rate a second time.
+        val cursorVelocity = if (active) {
+            DjScratchSpeedMapping.cursorVelocity(
+                platterVelocity = velocity,
+                downstreamPlaybackSpeed = player.playbackParameters.speed,
+            ) ?: return false
+        } else {
+            1.0
+        }
         return mailbox.publish(
             mediaId = expectedMediaId,
             active = active,
-            velocity = velocity,
+            velocity = cursorVelocity,
             anchorMediaTimeUs = anchorMediaTimeUs,
         )
     }
