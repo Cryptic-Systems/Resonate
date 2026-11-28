@@ -370,7 +370,13 @@ extension MusicProviderMedia3 on MusicProvider {
       if (remainingMs == null) {
         throw StateError('Media3 crossfade trigger has no validated duration.');
       }
-      if (remainingMs < 1200) {
+      // The native fade clock runs in wall time, while Media3 position is
+      // media time. Convert the remaining window using the active deck speed
+      // so a fast-tempo track cannot end before the crossfade finishes.
+      final activePlaybackSpeed =
+          session.playbackSpeed.clamp(0.5, 2.0).toDouble();
+      final remainingPlaybackMs = (remainingMs / activePlaybackSpeed).floor();
+      if (remainingPlaybackMs < 1200) {
         // A standby deck that finishes preparing too close to the outgoing
         // track's end must not force a queue reload. Let the canonical Media3
         // queue completion path advance naturally; tear down only the unused
@@ -401,12 +407,14 @@ extension MusicProviderMedia3 on MusicProvider {
           songId: nextSong.id,
           extra: {
             'remainingMs': remainingMs,
+            'remainingPlaybackMs': remainingPlaybackMs,
+            'activePlaybackSpeed': activePlaybackSpeed,
             'minimumFadeWindowMs': 1200,
           },
         );
         return;
       }
-      if (!hasPlannedCue && remainingMs > configuredDurationMs + 4500) {
+      if (!hasPlannedCue && remainingPlaybackMs > configuredDurationMs + 4500) {
         if (plannedCueMs != null) {
           // A reviewed cue that is stale or not yet reached must never turn
           // into an immediate queue advance. Leave the outgoing deck playing
@@ -429,8 +437,8 @@ extension MusicProviderMedia3 on MusicProvider {
       // Never let the outgoing deck reach ENDED before the native fade can
       // promote the prepared deck. Keep the small tail guard used by the
       // previous provider-owned crossfade implementation.
-      final durationMs = remainingMs < configuredDurationMs
-          ? (remainingMs - 150).clamp(500, configuredDurationMs).toInt()
+      final durationMs = remainingPlaybackMs < configuredDurationMs
+          ? (remainingPlaybackMs - 150).clamp(500, configuredDurationMs).toInt()
           : configuredDurationMs;
 
       // Media3GainPolicy is the only output-gain owner for this session.
