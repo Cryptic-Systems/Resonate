@@ -1755,10 +1755,18 @@ class Media3PlaybackService : MediaSessionService() {
                 if (generation != cancelRestoreGeneration || isDestroyed) return
                 // Never apply an old deck's recovery gain to a newly promoted
                 // or newly selected canonical player.
-                if (activePlayer !== expectedPlayer || activeDeckId != expectedDeckId) {
-                    cancelCrossfadeGainRestore()
-                    gainPolicy.resetDecks()
-                    applyDeckVolumes()
+                val ownsCanonicalDeck =
+                    activePlayer === expectedPlayer && activeDeckId == expectedDeckId
+                if (!Media3CrossfadeEnvelope.shouldRestoreCancelledGain(
+                        generationMatches = generation == cancelRestoreGeneration,
+                        canonicalDeckMatches = ownsCanonicalDeck,
+                    )
+                ) {
+                    if (generation == cancelRestoreGeneration) {
+                        cancelCrossfadeGainRestore()
+                        gainPolicy.resetDecks()
+                        applyDeckVolumes()
+                    }
                     return
                 }
                 val elapsed = (android.os.SystemClock.elapsedRealtime() - startedAt)
