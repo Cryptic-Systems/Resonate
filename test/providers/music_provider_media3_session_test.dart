@@ -415,6 +415,7 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
       playingValue = true;
       completedValue = false;
       durationValue = currentSongValue?.duration;
+      crossfadeStatusValue = 'completed';
       states.add(_state(
         song: currentSongValue!,
         queueIndex: index,
@@ -422,6 +423,7 @@ class _FakePlaybackSession implements PlaybackEngineSession, PlaybackStandbyCueB
         position: positionValue,
         playWhenReady: true,
         activeDeckId: activeDeckIdValue,
+        crossfadeStatus: crossfadeStatusValue,
       ));
     }
   }
@@ -2712,6 +2714,8 @@ void main() {
         queue: <Song>[outgoing, incoming],
       ), isTrue);
       await provider.setCrossfadeDuration(500);
+      final gainFactorCallsBeforeFade =
+          session.calls.where((call) => call == 'gainFactors').length;
 
       session.positionValue = const Duration(seconds: 178);
       session.states.add(_state(
@@ -2730,7 +2734,8 @@ void main() {
       }
       for (var attempt = 0;
           attempt < 120 &&
-              session.calls.where((call) => call == 'volume:1.0').length < 3;
+              session.calls.where((call) => call == 'gainFactors').length <
+                  gainFactorCallsBeforeFade + 3;
           attempt++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
