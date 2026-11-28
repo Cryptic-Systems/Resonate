@@ -129,6 +129,46 @@ void main() {
       expect(acknowledged({...base, 'currentPath': '/music/other.mp3'}), isFalse);
     });
 
+    test('converts remaining media time to wall time at the active playback speed', () {
+      final runtime = CrossfadeRuntime();
+
+      expect(
+        runtime.wallTimeRemainingMilliseconds(
+          mediaTimeRemainingMs: 3000,
+          playbackSpeed: 1.0,
+        ),
+        3000,
+      );
+      expect(
+        runtime.wallTimeRemainingMilliseconds(
+          mediaTimeRemainingMs: 3000,
+          playbackSpeed: 1.5,
+        ),
+        2000,
+      );
+      expect(
+        runtime.wallTimeRemainingMilliseconds(
+          mediaTimeRemainingMs: 3000,
+          playbackSpeed: 0.5,
+        ),
+        6000,
+      );
+      expect(
+        runtime.wallTimeRemainingMilliseconds(
+          mediaTimeRemainingMs: 3000,
+          playbackSpeed: 4.0,
+        ),
+        1500,
+      );
+      expect(
+        runtime.wallTimeRemainingMilliseconds(
+          mediaTimeRemainingMs: 3000,
+          playbackSpeed: double.nan,
+        ),
+        3000,
+      );
+    });
+
     test('maps native progress to effects time and clamps invalid values', () {
       final runtime = CrossfadeRuntime();
 
