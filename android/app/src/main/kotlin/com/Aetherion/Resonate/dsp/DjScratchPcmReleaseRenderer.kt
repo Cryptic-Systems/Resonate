@@ -7,7 +7,6 @@ import android.media.AudioManager
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Build
-import androidx.media3.common.C
 import java.nio.ByteBuffer
 
 /**
@@ -177,6 +176,10 @@ internal class DjScratchPcmReleaseRenderer(
         }
         return true
     }
+
+    private fun routeStillMatches(output: Track, contract: Contract): Boolean =
+        routeGeneration() == contract.routeGeneration &&
+            output.routedDeviceId() == contract.routeDeviceId
 
     fun close() {
         val current = track ?: return
