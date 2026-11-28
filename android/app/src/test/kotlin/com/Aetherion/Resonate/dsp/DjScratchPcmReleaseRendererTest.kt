@@ -15,6 +15,7 @@ class DjScratchPcmReleaseRendererTest {
         var released = false
         var played = false
         var onPlay: () -> Unit = {}
+        var framesWritten = 0L
         override fun preferDevice(deviceId: Int) = deviceId == 7
         override fun play() { played = true; onPlay() }
         override fun routedDeviceId() = actualRouteId
@@ -24,8 +25,10 @@ class DjScratchPcmReleaseRendererTest {
             val bytes = ByteArray(count)
             buffer.get(bytes)
             writes.add(bytes)
+            framesWritten += count / 4
             return count
         }
+        override fun playbackHeadPositionFrames() = framesWritten
         override fun stop() = Unit
         override fun release() { released = true }
     }
@@ -84,6 +87,27 @@ class DjScratchPcmReleaseRendererTest {
         )
         assertFalse(renderer.open(contract(), media3OutputSilenced = true))
         assertEquals(0f, fake.currentVolume)
+        assertTrue(fake.released)
+    }
+
+    @Test fun rendererWaitsForAllAcceptedFramesToPassPlaybackHead() {
+        val writes = mutableListOf<ByteArray>()
+        val fake = FakeTrack(actualRouteId = 7, writes = writes)
+        val renderer = DjScratchPcmReleaseRenderer(
+            trackFactory = { fake },
+            routeGeneration = { 4L },
+        )
+        assertTrue(renderer.open(contract(), media3OutputSilenced = true))
+        val tail = DjScratchReleaseTailBuffer(2, 8, 48_000)
+        val pcm = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(4) { pcm.putShort((it + 1).toShort()); pcm.putShort((it + 11).toShort()) }
+        pcm.flip()
+        tail.append(pcm, presentationTimeUs = 1_000_000L, sampleRate = 48_000)
+        tail.seal()
+        assertTrue(renderer.renderSealedTail(tail, ByteBuffer.allocateDirect(16)))
+        assertEquals(4L, renderer.framesAcceptedByOutput)
+        assertTrue(renderer.awaitPlaybackDrain(timeoutMs = 100L))
+        renderer.close()
         assertTrue(fake.released)
     }
 
