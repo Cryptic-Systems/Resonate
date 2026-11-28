@@ -487,3 +487,19 @@ The timestamped sink wrapper now exposes the position reported by Media3's Audio
 - The service keeps the clock associated with the physical deck, so canonical-player promotion does not relabel A/B sink ownership.
 
 This supplies the clock source needed to calculate which timestamped release-tail frames are already behind the audible output boundary. It is not yet a complete clock-correlation proof: device/route changes, AudioTrack latency behaviour and exact frame alignment still require validation. The renderer, shared session/route contract, output gain parity, catch-up seek and crossfade are still outstanding. The feature gate remains closed.
+
+
+### 2026-11-28 — per-deck output contract and route generation
+
+The service now observes Android output-device topology with AudioManager.AudioDeviceCallback. Any output device add/remove event advances a monotonic route generation; the callback is registered with the service and unregistered during teardown. The generation is exposed in audio diagnostics.
+
+A per-physical-deck candidate release-output contract is now available when that deck has a configured post-DSP PCM stage and a live Media3 AudioSession ID. It binds:
+
+- Post-DSP PCM16 sample rate and channel count.
+- The physical deck's actual Media3 AudioSession ID.
+- Current output-device topology generation.
+- The named Resonate post-DSP processing-chain identity.
+
+The candidate contract is exposed separately for physical A and B in diagnostics. It resolves the player by physical deck identity rather than assuming the canonical active player is always deck A.
+
+**This is not yet renderer authorization.** The PCM format is measured at the post-DSP processor boundary, not asserted to be the final hardware AudioTrack format. Device add/remove notifications conservatively invalidate a route generation but do not independently identify the selected output device. Before transfer, the independent AudioTrack must be built with the exact deck session and audio attributes, verify its actual routed device/format, and reject a stale route generation. No independent AudioTrack is created by this stage; no release-tail transfer is active and manual scratch remains gated.
