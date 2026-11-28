@@ -1052,7 +1052,13 @@ class Media3PlaybackService : MediaSessionService() {
             }
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                if (deck === standbyPlayer) {
+                if (deck === standbyPlayer &&
+                    crossfadeStatus in setOf(
+                        "preparing", "waiting_ready", "ready", "starting", "fading",
+                    )
+                ) {
+                    // Ignore late errors from a retired standby after promotion
+                    // or cancellation; they no longer own the active transition.
                     abortIncomingCrossfade("incoming_player_error")
                 }
             }
