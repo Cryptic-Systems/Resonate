@@ -27,6 +27,14 @@ void main() {
       runtime.preloadedOutgoingSongId = 'current';
       runtime.preloadedOutgoingQueueIndex = 3;
       runtime.preloadedOutgoingPath = '/music/current.mp3';
+      runtime.deferTransition(
+        outgoingSongId: 'failed-outgoing',
+        outgoingQueueIndex: 1,
+        outgoingPath: '/music/failed-outgoing.mp3',
+        incomingSongId: 'failed-incoming',
+        incomingQueueIndex: 2,
+        incomingPath: '/music/failed-incoming.mp3',
+      );
       runtime.repeatSelfHandoffArmed = true;
       runtime.repeatSelfHandoffInFlight = true;
       runtime.repeatSelfTargetSongId = 'current';
@@ -44,6 +52,7 @@ void main() {
       expect(runtime.preloadedOutgoingSongId, isNull);
       expect(runtime.preloadedOutgoingQueueIndex, isNull);
       expect(runtime.preloadedOutgoingPath, isNull);
+      expect(runtime.hasDeferredTransition, isFalse);
       expect(runtime.repeatSelfTargetSongId, isNull);
     });
 
