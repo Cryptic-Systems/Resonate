@@ -317,8 +317,26 @@ class MusicProvider extends ChangeNotifier {
   int get _userTransportEpoch => _transportEpoch.epoch;
   set _userTransportEpoch(int value) => _transportEpoch.epoch = value;
   String? get _preloadedNextSongId => _crossfadeRuntime.preloadedNextSongId;
-  set _preloadedNextSongId(String? value) =>
-      _crossfadeRuntime.preloadedNextSongId = value;
+  set _preloadedNextSongId(String? value) {
+    _crossfadeRuntime.preloadedNextSongId = value;
+    if (value == null) {
+      _crossfadeRuntime.preloadedNextQueueIndex = null;
+      _crossfadeRuntime.preloadedOutgoingSongId = null;
+      _crossfadeRuntime.preloadedOutgoingQueueIndex = null;
+    }
+  }
+  int? get _preloadedNextQueueIndex =>
+      _crossfadeRuntime.preloadedNextQueueIndex;
+  set _preloadedNextQueueIndex(int? value) =>
+      _crossfadeRuntime.preloadedNextQueueIndex = value;
+  String? get _preloadedOutgoingSongId =>
+      _crossfadeRuntime.preloadedOutgoingSongId;
+  set _preloadedOutgoingSongId(String? value) =>
+      _crossfadeRuntime.preloadedOutgoingSongId = value;
+  int? get _preloadedOutgoingQueueIndex =>
+      _crossfadeRuntime.preloadedOutgoingQueueIndex;
+  set _preloadedOutgoingQueueIndex(int? value) =>
+      _crossfadeRuntime.preloadedOutgoingQueueIndex = value;
   bool get _crossfadePreloadInFlight => _crossfadeRuntime.preloadInFlight;
   set _crossfadePreloadInFlight(bool value) =>
       _crossfadeRuntime.preloadInFlight = value;
