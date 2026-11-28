@@ -124,8 +124,8 @@ extension MusicProviderMedia3 on MusicProvider {
         if (stillOwnsPreload()) {
           try {
             await session.setDeckPlaybackSpeeds(
-              activeSpeed: 1.0,
-              standbySpeed: 1.0,
+              activeSpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
+              standbySpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
             );
           } catch (cleanupError) {
             cleanupErrors.add('reset_deck_speeds: $cleanupError');
@@ -264,8 +264,8 @@ extension MusicProviderMedia3 on MusicProvider {
         await session.clearDeckEqOverlay(deck: 'standby');
         if (!stillOwnsTransition()) return;
         await session.setDeckPlaybackSpeeds(
-          activeSpeed: 1.0,
-          standbySpeed: 1.0,
+          activeSpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
+          standbySpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
         );
         if (!stillOwnsTransition()) return;
         _preloadedNextSongId = null;
@@ -370,8 +370,8 @@ extension MusicProviderMedia3 on MusicProvider {
         await session.clearDeckEqOverlay(deck: 'standby');
         if (!stillOwnsTransition()) return;
         await session.setDeckPlaybackSpeeds(
-          activeSpeed: 1.0,
-          standbySpeed: 1.0,
+          activeSpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
+          standbySpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
         );
         if (!stillOwnsTransition()) return;
         _preloadedNextSongId = null;
@@ -442,8 +442,8 @@ extension MusicProviderMedia3 on MusicProvider {
         await session.clearDeckEqOverlay(deck: 'standby');
         if (!stillOwnsTransition()) return;
         await session.setDeckPlaybackSpeeds(
-          activeSpeed: 1.0,
-          standbySpeed: 1.0,
+          activeSpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
+          standbySpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
         );
         if (!stillOwnsTransition()) return;
         _preloadedNextSongId = null;
@@ -521,8 +521,8 @@ extension MusicProviderMedia3 on MusicProvider {
           !stillOwnsTransition()) return;
 
       await session.setDeckPlaybackSpeeds(
-        activeSpeed: 1.0,
-        standbySpeed: 1.0,
+        activeSpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
+        standbySpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
       );
       if (!stillOwnsTransition()) return;
       await session.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
@@ -635,8 +635,8 @@ extension MusicProviderMedia3 on MusicProvider {
           await bestEffortCleanup(
             'reset_deck_speeds',
             () => session.setDeckPlaybackSpeeds(
-              activeSpeed: 1.0,
-              standbySpeed: 1.0,
+              activeSpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
+              standbySpeed: session.playbackSpeed.clamp(0.5, 2.0).toDouble(),
             ),
           );
           if (!stillOwnsTransition()) {
