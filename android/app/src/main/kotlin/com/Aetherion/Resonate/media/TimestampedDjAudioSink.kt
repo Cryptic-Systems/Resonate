@@ -20,12 +20,14 @@ internal class TimestampedDjAudioSink(
         specifiedBufferSize: Int,
         outputChannels: IntArray?,
     ) {
+        // Let Media3 validate/configure first. If it rejects this format, the
+        // current timestamp timeline must remain untouched.
+        delegate.configure(inputFormat, specifiedBufferSize, outputChannels)
         ledger.configure(
             sampleRate = inputFormat.sampleRate,
             channelCount = inputFormat.channelCount,
             encoderDelayFrames = inputFormat.encoderDelay,
         )
-        delegate.configure(inputFormat, specifiedBufferSize, outputChannels)
     }
 
     override fun handleBuffer(
