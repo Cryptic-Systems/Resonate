@@ -1,6 +1,7 @@
 package com.aetherion.resonate.media
 
 import androidx.media3.common.Format
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.Util
 import androidx.media3.exoplayer.audio.AudioSink
 import com.aetherion.resonate.dsp.DjScratchTimestampLedger
@@ -28,10 +29,11 @@ internal class TimestampedDjAudioSink(
             sampleRate = inputFormat.sampleRate,
             channelCount = inputFormat.channelCount,
             encoderDelayFrames = inputFormat.encoderDelay,
-            sourceBytesPerFrame = Util.getPcmFrameSize(
-                inputFormat.pcmEncoding,
-                inputFormat.channelCount,
-            ),
+            sourceBytesPerFrame = if (inputFormat.sampleMimeType == MimeTypes.AUDIO_RAW) {
+                Util.getPcmFrameSize(inputFormat.pcmEncoding, inputFormat.channelCount)
+            } else {
+                0
+            },
         )
     }
 
