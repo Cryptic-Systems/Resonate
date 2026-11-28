@@ -10,14 +10,14 @@ class DjScratchPcmReleaseRendererTest {
         private val actualRouteId: Int,
         private val writes: MutableList<ByteArray>,
     ) : DjScratchPcmReleaseRenderer.Track {
-        var volume = -1f
+        var currentVolume = -1f
         var released = false
         var played = false
         var onPlay: () -> Unit = {}
         override fun preferDevice(deviceId: Int) = deviceId == 7
         override fun play() { played = true; onPlay() }
         override fun routedDeviceId() = actualRouteId
-        override fun setVolume(volume: Float) { this.volume = volume }
+        override fun setVolume(volume: Float) { this.currentVolume = volume }
         override fun write(buffer: ByteBuffer, sizeInBytes: Int): Int {
             val count = minOf(sizeInBytes, 4)
             val bytes = ByteArray(count)
@@ -48,7 +48,7 @@ class DjScratchPcmReleaseRendererTest {
             routeGeneration = { 4L },
         )
         assertFalse(renderer.open(contract()))
-        assertEquals(0f, fake.volume)
+        assertEquals(0f, fake.currentVolume)
         assertTrue(fake.released)
         assertTrue(writes.isEmpty())
         assertFalse(renderer.renderSealedTail(
@@ -67,7 +67,7 @@ class DjScratchPcmReleaseRendererTest {
             routeGeneration = { generation },
         )
         assertFalse(renderer.open(contract()))
-        assertEquals(0f, fake.volume)
+        assertEquals(0f, fake.currentVolume)
         assertTrue(fake.released)
     }
 
@@ -79,14 +79,14 @@ class DjScratchPcmReleaseRendererTest {
                 assertEquals(31, config.audioSessionId)
                 assertEquals(48_000, config.sampleRate)
                 assertEquals(7, config.routeDeviceId)
-                assertEquals(0f, fake.volume)
+                assertEquals(0f, fake.currentVolume)
                 fake
             },
             routeGeneration = { 4L },
         )
         assertTrue(renderer.open(contract()))
         assertTrue(fake.played)
-        assertEquals(0.65f, fake.volume)
+        assertEquals(0.65f, fake.currentVolume)
 
         val tail = DjScratchReleaseTailBuffer(2, 16, 48_000)
         val pcm = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
