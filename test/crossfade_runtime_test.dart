@@ -47,6 +47,45 @@ void main() {
       expect(runtime.repeatSelfTargetSongId, isNull);
     });
 
+    test('defers only the exact failed queue occurrence until cleared', () {
+      final runtime = CrossfadeRuntime();
+      runtime.deferTransition(
+        outgoingSongId: 'outgoing',
+        outgoingQueueIndex: 2,
+        outgoingPath: '/music/outgoing.mp3',
+        incomingSongId: 'incoming',
+        incomingQueueIndex: 3,
+        incomingPath: '/music/incoming.mp3',
+      );
+
+      expect(runtime.hasDeferredTransition, isTrue);
+      expect(
+        runtime.defersTransition(
+          outgoingSongId: 'outgoing',
+          outgoingQueueIndex: 2,
+          outgoingPath: '/music/outgoing.mp3',
+          incomingSongId: 'incoming',
+          incomingQueueIndex: 3,
+          incomingPath: '/music/incoming.mp3',
+        ),
+        isTrue,
+      );
+      expect(
+        runtime.defersTransition(
+          outgoingSongId: 'outgoing',
+          outgoingQueueIndex: 2,
+          outgoingPath: '/music/outgoing.mp3',
+          incomingSongId: 'incoming',
+          incomingQueueIndex: 4,
+          incomingPath: '/music/incoming.mp3',
+        ),
+        isFalse,
+      );
+
+      runtime.clearDeferredTransition();
+      expect(runtime.hasDeferredTransition, isFalse);
+    });
+
     test('reports every automatic-work category until each is cleared', () {
       final runtime = CrossfadeRuntime();
 
