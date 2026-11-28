@@ -88,6 +88,19 @@ class DjScratchTimestampLedgerTest {
     }
 
     @Test
+    fun rejectsOutputThatCrossesNonContiguousPresentationTimeSpans() {
+        val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 1_000, channelCount = 2, encoderDelayFrames = 0)
+        ledger.record(stereoFrames(2), 1_000L)
+        ledger.record(stereoFrames(2), 9_000L)
+
+        val timestamp = ledger.consume(stereoFrames(4), 1_000, 2)
+
+        assertNull(timestamp)
+        assertEquals(0, ledger.pendingCountForTest())
+    }
+
+    @Test
     fun mapsFrameOffsetsToMediaTimeAndRejectsOutOfRangeOffsets() {
         val ledger = DjScratchTimestampLedger()
         ledger.configure(sampleRate = 48_000, channelCount = 2, encoderDelayFrames = 0)
