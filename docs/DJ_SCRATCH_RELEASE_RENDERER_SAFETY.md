@@ -6,7 +6,7 @@ The independent PCM release renderer is a candidate handoff endpoint, not an act
 production output path. It must not be connected to the deck until the Media3
 scratch cursor, audible clock, and release handoff are integrated.
 
-Opening the renderer now requires an explicit `media3OutputSilenced` confirmation.
+Opening the renderer requires an explicit `media3OutputSilenced` confirmation.
 A false value rejects the open before an AudioTrack is created. The caller must
 establish that the canonical Media3 output for the same deck has been silenced
 as part of the release protocol; merely reaching a cursor timestamp or observing
@@ -20,16 +20,24 @@ After the barrier is satisfied, the renderer still requires:
 - route revalidation before and during every output write;
 - the effective deck gain, applied only after route validation.
 
-The sealed tail remains one-shot and generation-owned. Route changes, deck
-promotion, pause/interruption, media replacement, or transport preemption must
-abort the ownership generation and close the renderer. A renderer failure must
-not fall back to unverified concurrent output.
+## One-shot transfer coordinator
+
+`DjScratchReleaseTransferCoordinator` owns the control-plane sequence for a
+sealed tail: validate the exact capture and renderer contracts, require the
+Media3-silence barrier, claim ownership once, open the renderer, drain the tail,
+wait for the hardware playback head, and mark ownership drained. It rejects
+mismatched media, generation, route, session, format, chain, timestamp state,
+or non-direct scratch buffers before opening output.
+
+Any open, render, accounting, or hardware-drain failure closes the renderer and
+aborts the ownership generation. A successful transfer is terminal and cannot
+be claimed a second time. Unit tests cover successful one-shot transfer,
+Media3-silence rejection, route mismatch, and hardware-drain failure.
 
 ## Current implementation boundary
 
-The renderer API and JVM tests enforce the explicit Media3-silence barrier.
-The service does not yet invoke this renderer, and the scratch feature gate
-remains closed. Production integration still requires a single control-plane
-owner that proves Media3 silence, validates the exact route/clock contract,
-transfers the sealed tail once, and coordinates the aligned return to Media3.
-Physical-device testing is required before enabling manual scratch.
+The coordinator and its tests are implemented, but the Media3 service does not
+yet invoke the coordinator. The caller must still establish and verify actual
+Media3 silence, connect the route/clock contract and capture lifecycle, and
+coordinate the aligned return to Media3. The scratch feature gate remains
+closed. Physical-device testing is required before enabling manual scratch.
