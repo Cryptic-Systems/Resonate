@@ -30,6 +30,9 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
+// Manual scratch must remain unavailable until the PCM/media-clock handoff is complete.
+private const val ENABLE_DJ_SCRATCH_AUDIO = false
+
 /**
  * Media3 playback service with active/standby decks. The provider owns the
  * production handoff while this service owns native transport, MediaSession,
@@ -456,6 +459,7 @@ class Media3PlaybackService : MediaSessionService() {
         velocity: Double,
         anchorMediaTimeUs: Long,
     ): Boolean {
+        if (!ENABLE_DJ_SCRATCH_AUDIO) return false
         if (!djDualDeckMode || deckId !in setOf("A", "B") ||
             expectedMediaId.isBlank() || crossfadeStatus in setOf("starting", "fading")
         ) return false
