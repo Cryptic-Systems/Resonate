@@ -35,6 +35,22 @@ class DjScratchReleaseTailCaptureProcessorTest {
     }
 
     @Test
+    fun captureCarriesTimestampFromPrecedingScratchProcessor() {
+        val processor = DjScratchReleaseTailCaptureProcessor { 2_000_000L }
+        processor.configure(AudioProcessor.AudioFormat(1_000, 1, C.ENCODING_PCM_16BIT))
+        processor.flush()
+        assertTrue(processor.beginCapture())
+        val input = ByteBuffer.allocateDirect(4).order(ByteOrder.LITTLE_ENDIAN)
+        input.putShort(7).putShort(8).flip()
+        processor.queueInput(input)
+
+        val tail = processor.sealCapture()
+        assertNotNull(tail)
+        assertTrue(tail!!.hasValidTimestamps)
+        assertEquals(2_000_000L, tail.nextFrameMediaTimeUs())
+    }
+
+    @Test
     fun captureIsOptInAndSealDetachesCurrentGeneration() {
         val processor = DjScratchReleaseTailCaptureProcessor()
         processor.configure(AudioProcessor.AudioFormat(44_100, 1, C.ENCODING_PCM_16BIT))
