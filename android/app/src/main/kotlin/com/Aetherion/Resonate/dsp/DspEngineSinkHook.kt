@@ -71,7 +71,9 @@ object DspEngineSinkHook {
             Log.e(TAG, "Native DSP processor unavailable; retaining scratch stage for deck=$deckId", t)
         }
         // Capture processed PCM only; never bypass or double-run the engine.
-        val releaseTail = DjScratchReleaseTailCaptureProcessor {\n            timestampProcessor.lastConsumedTimestampForTest()?.presentationTimeUs\n        }
+        val releaseTail = DjScratchReleaseTailCaptureProcessor {
+            timestampProcessor.lastConsumedTimestampForTest()?.presentationTimeUs
+        }
         releaseTailProcessorsByDeck.computeIfAbsent(deckId) { CopyOnWriteArraySet() }.add(releaseTail)
         chain.add(releaseTail)
         return chain.toTypedArray()
