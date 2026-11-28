@@ -153,7 +153,8 @@ class Media3PlaybackService : MediaSessionService() {
             "scratchOutputContractA" to scratchOutputContract("A")?.let { contract ->
                 mapOf("sampleRate" to contract.sampleRate, "channelCount" to contract.channelCount,
                     "pcmEncoding" to contract.pcmEncoding, "audioSessionId" to contract.audioSessionId,
-                    "routeGeneration" to contract.routeGeneration, "processingChainId" to contract.processingChainId)
+                    "routeDeviceId" to contract.routeDeviceId, "routeGeneration" to contract.routeGeneration,
+                    "processingChainId" to contract.processingChainId)
             },
             "scratchOutputContractB" to scratchOutputContract("B")?.let { contract ->
                 mapOf("sampleRate" to contract.sampleRate, "channelCount" to contract.channelCount,
@@ -190,9 +191,9 @@ class Media3PlaybackService : MediaSessionService() {
         }
 
     /**
-     * Candidate contract for the post-DSP PCM handoff. Its PCM format describes
-     * the processor boundary; a renderer must still verify the actual AudioTrack
-     * output route/format before accepting the transferred tail.
+     * Exact handoff contract. Capture format must match the initialized Media3
+     * AudioTrack and Android's currently selected route; unresolved or changing
+     * output routes are not eligible for ownership transfer.
      */
     internal fun scratchOutputContract(deckId: String): DjScratchReleaseTailOwnership.OutputContract? {
         if (deckId != "A" && deckId != "B") return null
@@ -202,15 +203,23 @@ class Media3PlaybackService : MediaSessionService() {
             deckId == standbyDeckId() -> standbyPlayer
             else -> null
         } ?: return null
-        val format = DspEngineSinkHook.releaseTailPcmFormat(deckId) ?: return null
+        val captureFormat = DspEngineSinkHook.releaseTailPcmFormat(deckId) ?: return null
+        val route = scratchActualOutputRoute(deckId) ?: return null
         val sessionId = player.audioSessionId
-        if (sessionId <= 0) return null
+        val routeGeneration = scratchOutputRouteGeneration.snapshot()
+        if (sessionId <= 0 || route.audioSessionId != sessionId ||
+            route.routeDeviceId <= 0 || route.sampleRate != captureFormat.first ||
+            route.channelCount != captureFormat.second ||
+            route.pcmEncoding != C.ENCODING_PCM_16BIT ||
+            route.tunneling || route.offload
+        ) return null
         return DjScratchReleaseTailOwnership.OutputContract(
-            sampleRate = format.first,
-            channelCount = format.second,
+            sampleRate = captureFormat.first,
+            channelCount = captureFormat.second,
             pcmEncoding = C.ENCODING_PCM_16BIT,
             audioSessionId = sessionId,
-            routeGeneration = scratchOutputRouteGeneration.snapshot(),
+            routeDeviceId = route.routeDeviceId,
+            routeGeneration = routeGeneration,
             processingChainId = "resonate-post-dsp-pcm16-v1",
         )
     }
