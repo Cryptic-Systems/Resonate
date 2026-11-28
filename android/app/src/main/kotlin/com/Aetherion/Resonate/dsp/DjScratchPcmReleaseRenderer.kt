@@ -226,12 +226,17 @@ internal class DjScratchPcmReleaseRenderer(
             output.routedDeviceId() == contract.routeDeviceId
 
     fun close() {
-        val current = track ?: return
+        val current = track
         track = null
         openedContract = null
-        runCatching { current.setVolume(0f) }
-        runCatching { current.stop() }
-        runCatching { current.release() }
+        // A later one-shot transfer gets a fresh AudioTrack playback-head epoch.
+        // Never carry accepted-frame totals across AudioTrack instances.
+        acceptedFrames = 0L
+        if (current != null) {
+            runCatching { current.setVolume(0f) }
+            runCatching { current.stop() }
+            runCatching { current.release() }
+        }
     }
 
     internal class AndroidTrackFactory(context: Context) : TrackFactory {
