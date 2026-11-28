@@ -29,6 +29,7 @@ internal class DjScratchReleaseTailOwnership {
         val channelCount: Int,
         val pcmEncoding: Int,
         val audioSessionId: Int,
+        val routeDeviceId: Int,
         val routeGeneration: Long,
         val processingChainId: String,
     ) {
@@ -36,6 +37,7 @@ internal class DjScratchReleaseTailOwnership {
             sampleRate > 0 &&
                 channelCount in 1..2 &&
                 audioSessionId > 0 &&
+                routeDeviceId > 0 &&
                 routeGeneration >= 0L &&
                 processingChainId.isNotBlank()
     }
@@ -105,7 +107,7 @@ internal class DjScratchReleaseTailOwnership {
 
     /**
      * Transfer ownership once, and only to a consumer with the identical
-     * sample format, AudioSession, route generation and processing chain.
+     * sample format, AudioSession, exact routed device, route generation and processing chain.
      */
     @Synchronized
     fun transfer(
