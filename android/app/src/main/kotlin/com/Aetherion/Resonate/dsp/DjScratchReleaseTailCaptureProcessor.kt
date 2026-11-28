@@ -35,6 +35,13 @@ internal class DjScratchReleaseTailCaptureProcessor(
         return inputAudioFormat
     }
 
+    /** PCM format at this post-DSP processor boundary; not a hardware-route claim. */
+    fun configuredPcmFormat(): Pair<Int, Int>? {
+        val rate = configuredSampleRate
+        val channels = configuredChannels
+        return if (rate > 0 && channels in 1..2) rate to channels else null
+    }
+
     /** Prepare a fresh 250 ms capture window. Call from the control thread. */
     fun beginCapture(): Boolean {
         val channels = configuredChannels
