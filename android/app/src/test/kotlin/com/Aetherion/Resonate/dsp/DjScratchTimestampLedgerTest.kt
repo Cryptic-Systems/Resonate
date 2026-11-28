@@ -86,6 +86,8 @@ class DjScratchTimestampLedgerTest {
         val buffer = stereoFrames(256)
 
         ledger.record(buffer, 2_000_000L)
+        // Simulate Media3 advancing the input buffer before a back-pressure retry.
+        buffer.position(buffer.limit() / 2)
         ledger.record(buffer, 2_100_000L)
 
         assertEquals(1, ledger.pendingCountForTest())
@@ -160,6 +162,19 @@ class DjScratchTimestampLedgerTest {
         assertEquals(0, ledger.pendingCountForTest())
         ledger.record(stereoFrames(4), 10_000L)
         assertEquals(12_000L, ledger.consume(stereoFrames(2), 1_000, 2)?.presentationTimeUs)
+    }
+
+    @Test
+    fun formatReconfigurationInvalidatesOldSpansBeforeNewFormatFrames() {
+        val ledger = DjScratchTimestampLedger()
+        ledger.configure(sampleRate = 48_000, channelCount = 2, encoderDelayFrames = 0)
+        ledger.record(stereoFrames(4), 1_000L)
+
+        ledger.configure(sampleRate = 44_100, channelCount = 2, encoderDelayFrames = 0)
+        assertEquals(0, ledger.pendingCountForTest())
+        ledger.record(stereoFrames(2), 20_000L)
+
+        assertEquals(20_000L, ledger.consume(stereoFrames(2), 44_100, 2)?.presentationTimeUs)
     }
 
     @Test
