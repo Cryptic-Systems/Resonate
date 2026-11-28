@@ -61,6 +61,25 @@ class DjScratchTimestampLedgerTest {
     }
 
     @Test
+    fun mapsFloatSourceFramesToPcm16ProcessorFrames() {
+        val ledger = DjScratchTimestampLedger()
+        // Stereo float input is 8 bytes per frame; the user processor receives
+        // PCM16 stereo (4 bytes per frame) after Media3's integer conversion.
+        ledger.configure(
+            sampleRate = 48_000,
+            channelCount = 2,
+            encoderDelayFrames = 0,
+            sourceBytesPerFrame = 8,
+        )
+        ledger.record(ByteBuffer.allocateDirect(16), 4_000_000L)
+
+        val timestamp = ledger.consume(stereoFrames(2), 48_000, 2)
+
+        assertEquals(4_000_000L, timestamp?.presentationTimeUs)
+        assertEquals(2, timestamp?.frameCount)
+    }
+
+    @Test
     fun retriedSinkBufferKeepsOriginalPtsAndIsNotQueuedTwice() {
         val ledger = DjScratchTimestampLedger()
         ledger.configure(sampleRate = 44_100, channelCount = 2, encoderDelayFrames = 0)
