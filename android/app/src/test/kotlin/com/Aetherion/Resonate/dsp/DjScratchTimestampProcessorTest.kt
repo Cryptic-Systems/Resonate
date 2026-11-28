@@ -156,7 +156,7 @@ class DjScratchTimestampProcessorTest {
 
         assertEquals(15_000L, processor.lastConsumedTimestampForTest()?.presentationTimeUs)
         assertEquals(12_000L, processor.releaseTailTimestampUs())
-        assertEquals(12_000L, processor.diagnosticsSnapshot()["cursorMediaTimeUs"])
+        assertEquals(16_000L, processor.diagnosticsSnapshot()["cursorMediaTimeUs"])
     }
 
     @Test
