@@ -2756,8 +2756,10 @@ class MusicProvider extends ChangeNotifier {
               outgoing != null &&
               _preloadedNextSongId == incoming.id &&
               _preloadedNextQueueIndex == _crossfadeTargetIndex &&
+              _preloadedNextPath == incoming.filePath.trim() &&
               _preloadedOutgoingSongId == outgoing.id &&
-              _preloadedOutgoingQueueIndex == _queueIndex
+              _preloadedOutgoingQueueIndex == _queueIndex &&
+              _preloadedOutgoingPath == outgoing.filePath.trim()
           ? _media3DjTransitionPreparation
           : null;
       final plannedCueMs = approved != null && !approved.fallback
