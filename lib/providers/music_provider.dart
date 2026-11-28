@@ -320,8 +320,35 @@ class MusicProvider extends ChangeNotifier {
   int get _userTransportEpoch => _transportEpoch.epoch;
   set _userTransportEpoch(int value) => _transportEpoch.epoch = value;
   String? get _preloadedNextSongId => _crossfadeRuntime.preloadedNextSongId;
-  set _preloadedNextSongId(String? value) =>
-      _crossfadeRuntime.preloadedNextSongId = value;
+  set _preloadedNextSongId(String? value) {
+    _crossfadeRuntime.preloadedNextSongId = value;
+    // A song-ID assignment alone is not an occurrence lease. Normal Media3
+    // preload immediately fills these fields after assigning the ID; repeat-
+    // self and legacy paths intentionally leave them unset.
+    _crossfadeRuntime.preloadedNextQueueIndex = null;
+    _crossfadeRuntime.preloadedNextPath = null;
+    _crossfadeRuntime.preloadedOutgoingSongId = null;
+    _crossfadeRuntime.preloadedOutgoingQueueIndex = null;
+    _crossfadeRuntime.preloadedOutgoingPath = null;
+  }
+  int? get _preloadedNextQueueIndex =>
+      _crossfadeRuntime.preloadedNextQueueIndex;
+  set _preloadedNextQueueIndex(int? value) =>
+      _crossfadeRuntime.preloadedNextQueueIndex = value;
+  String? get _preloadedNextPath => _crossfadeRuntime.preloadedNextPath;
+  set _preloadedNextPath(String? value) =>
+      _crossfadeRuntime.preloadedNextPath = value;
+  String? get _preloadedOutgoingSongId =>
+      _crossfadeRuntime.preloadedOutgoingSongId;
+  set _preloadedOutgoingSongId(String? value) =>
+      _crossfadeRuntime.preloadedOutgoingSongId = value;
+  int? get _preloadedOutgoingQueueIndex =>
+      _crossfadeRuntime.preloadedOutgoingQueueIndex;
+  set _preloadedOutgoingQueueIndex(int? value) =>
+      _crossfadeRuntime.preloadedOutgoingQueueIndex = value;
+  String? get _preloadedOutgoingPath => _crossfadeRuntime.preloadedOutgoingPath;
+  set _preloadedOutgoingPath(String? value) =>
+      _crossfadeRuntime.preloadedOutgoingPath = value;
   bool get _crossfadePreloadInFlight => _crossfadeRuntime.preloadInFlight;
   set _crossfadePreloadInFlight(bool value) =>
       _crossfadeRuntime.preloadInFlight = value;
@@ -2609,6 +2636,28 @@ class MusicProvider extends ChangeNotifier {
 
     if (!canCrossfadeNext) return;
 
+    // A native failure must not relaunch the same fade on every position
+    // callback. Defer only this exact queue-occurrence pair; a changed queue
+    // target or a user transport command naturally releases the deferral.
+    if (media3Session != null) {
+      final outgoing = currentSong;
+      final incoming = _crossfadeTargetSong;
+      if (outgoing != null && incoming != null) {
+        final deferred = _crossfadeRuntime.defersTransition(
+          outgoingSongId: outgoing.id,
+          outgoingQueueIndex: _queueIndex,
+          outgoingPath: outgoing.filePath.trim(),
+          incomingSongId: incoming.id,
+          incomingQueueIndex: _crossfadeTargetIndex,
+          incomingPath: incoming.filePath.trim(),
+        );
+        if (deferred) return;
+        if (_crossfadeRuntime.hasDeferredTransition) {
+          _crossfadeRuntime.clearDeferredTransition();
+        }
+      }
+    }
+
     // A reviewed Suggestion Mix or live DJ analysis can nominate an outgoing
     // mix point. Preload the standby deck ahead of that cue, then start the
     // native fade at the selected musical boundary.
@@ -2618,7 +2667,14 @@ class MusicProvider extends ChangeNotifier {
       final approved = outgoing != null && incoming != null
           ? peekApprovedDjTransition(outgoing.id, incoming.id)
           : null;
-      final prepared = incoming != null && _preloadedNextSongId == incoming.id
+      final prepared = incoming != null &&
+              outgoing != null &&
+              _preloadedNextSongId == incoming.id &&
+              _preloadedNextQueueIndex == _crossfadeTargetIndex &&
+              _preloadedNextPath == incoming.filePath.trim() &&
+              _preloadedOutgoingSongId == outgoing.id &&
+              _preloadedOutgoingQueueIndex == _queueIndex &&
+              _preloadedOutgoingPath == outgoing.filePath.trim()
           ? _media3DjTransitionPreparation
           : null;
       final plannedCueMs = approved != null && !approved.fallback
@@ -4053,6 +4109,23 @@ class MusicProvider extends ChangeNotifier {
       'automaticCrossfadeInFlight': _automaticCrossfadeInFlight,
       'crossfadePreloadInFlight': _crossfadePreloadInFlight,
       'preloadedNextSongId': _preloadedNextSongId,
+      'preloadedNextQueueIndex': _preloadedNextQueueIndex,
+      'preloadedNextPath': _preloadedNextPath,
+      'preloadedOutgoingSongId': _preloadedOutgoingSongId,
+      'preloadedOutgoingQueueIndex': _preloadedOutgoingQueueIndex,
+      'preloadedOutgoingPath': _preloadedOutgoingPath,
+      'deferredCrossfadeOutgoingSongId':
+          _crossfadeRuntime.deferredOutgoingSongId,
+      'deferredCrossfadeOutgoingQueueIndex':
+          _crossfadeRuntime.deferredOutgoingQueueIndex,
+      'deferredCrossfadeIncomingSongId':
+          _crossfadeRuntime.deferredIncomingSongId,
+      'deferredCrossfadeIncomingQueueIndex':
+          _crossfadeRuntime.deferredIncomingQueueIndex,
+      'deferredCrossfadeOutgoingPath':
+          _crossfadeRuntime.deferredOutgoingPath,
+      'deferredCrossfadeIncomingPath':
+          _crossfadeRuntime.deferredIncomingPath,
       'repeatSelfHandoffArmed': _repeatSelfHandoffArmed,
       'repeatSelfHandoffInFlight': _repeatSelfHandoffInFlight,
       'activeDeckId': _media3ShadowState?.activeDeckId,

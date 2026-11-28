@@ -22,6 +22,19 @@ void main() {
       runtime.automaticInFlight = true;
       runtime.preloadInFlight = true;
       runtime.preloadedNextSongId = 'next';
+      runtime.preloadedNextQueueIndex = 4;
+      runtime.preloadedNextPath = '/music/next.mp3';
+      runtime.preloadedOutgoingSongId = 'current';
+      runtime.preloadedOutgoingQueueIndex = 3;
+      runtime.preloadedOutgoingPath = '/music/current.mp3';
+      runtime.deferTransition(
+        outgoingSongId: 'failed-outgoing',
+        outgoingQueueIndex: 1,
+        outgoingPath: '/music/failed-outgoing.mp3',
+        incomingSongId: 'failed-incoming',
+        incomingQueueIndex: 2,
+        incomingPath: '/music/failed-incoming.mp3',
+      );
       runtime.repeatSelfHandoffArmed = true;
       runtime.repeatSelfHandoffInFlight = true;
       runtime.repeatSelfTargetSongId = 'current';
@@ -34,7 +47,52 @@ void main() {
       expect(runtime.hasRepeatSelfHandoff, isFalse);
       expect(runtime.hasAutomaticWork, isFalse);
       expect(runtime.preloadedNextSongId, isNull);
+      expect(runtime.preloadedNextQueueIndex, isNull);
+      expect(runtime.preloadedNextPath, isNull);
+      expect(runtime.preloadedOutgoingSongId, isNull);
+      expect(runtime.preloadedOutgoingQueueIndex, isNull);
+      expect(runtime.preloadedOutgoingPath, isNull);
+      expect(runtime.hasDeferredTransition, isFalse);
       expect(runtime.repeatSelfTargetSongId, isNull);
+    });
+
+    test('defers only the exact failed queue occurrence until cleared', () {
+      final runtime = CrossfadeRuntime();
+      runtime.deferTransition(
+        outgoingSongId: 'outgoing',
+        outgoingQueueIndex: 2,
+        outgoingPath: '/music/outgoing.mp3',
+        incomingSongId: 'incoming',
+        incomingQueueIndex: 3,
+        incomingPath: '/music/incoming.mp3',
+      );
+
+      expect(runtime.hasDeferredTransition, isTrue);
+      expect(
+        runtime.defersTransition(
+          outgoingSongId: 'outgoing',
+          outgoingQueueIndex: 2,
+          outgoingPath: '/music/outgoing.mp3',
+          incomingSongId: 'incoming',
+          incomingQueueIndex: 3,
+          incomingPath: '/music/incoming.mp3',
+        ),
+        isTrue,
+      );
+      expect(
+        runtime.defersTransition(
+          outgoingSongId: 'outgoing',
+          outgoingQueueIndex: 2,
+          outgoingPath: '/music/outgoing.mp3',
+          incomingSongId: 'incoming',
+          incomingQueueIndex: 4,
+          incomingPath: '/music/incoming.mp3',
+        ),
+        isFalse,
+      );
+
+      runtime.clearDeferredTransition();
+      expect(runtime.hasDeferredTransition, isFalse);
     });
 
     test('reports every automatic-work category until each is cleared', () {

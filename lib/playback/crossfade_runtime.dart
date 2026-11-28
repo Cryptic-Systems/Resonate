@@ -17,6 +17,25 @@ class CrossfadeRuntime {
   int automaticTransitionGeneration = 0;
 
   String? preloadedNextSongId;
+
+  /// Queue-occurrence identity for the normal Media3 automatic preload.
+  /// Media IDs alone are insufficient when the same recording occurs twice.
+  int? preloadedNextQueueIndex;
+  String? preloadedNextPath;
+  String? preloadedOutgoingSongId;
+  int? preloadedOutgoingQueueIndex;
+  String? preloadedOutgoingPath;
+
+  /// A failed normal crossfade is not retried on every position tick. Keep the
+  /// exact outgoing/incoming occurrence pair deferred until the queue, track,
+  /// or user transport changes.
+  String? deferredOutgoingSongId;
+  int? deferredOutgoingQueueIndex;
+  String? deferredOutgoingPath;
+  String? deferredIncomingSongId;
+  int? deferredIncomingQueueIndex;
+  String? deferredIncomingPath;
+
   bool preloadInFlight = false;
 
   /// Repeat-one + crossfade: seamless loop via idle engine (no queue advance).
@@ -40,6 +59,52 @@ class CrossfadeRuntime {
   bool get hasAutomaticWork =>
       isLive || hasPreload || hasRepeatSelfHandoff;
 
+  bool get hasDeferredTransition =>
+      deferredOutgoingSongId != null ||
+      deferredOutgoingQueueIndex != null ||
+      deferredIncomingSongId != null ||
+      deferredIncomingQueueIndex != null;
+
+  bool defersTransition({
+    required String outgoingSongId,
+    required int outgoingQueueIndex,
+    required String outgoingPath,
+    required String incomingSongId,
+    required int incomingQueueIndex,
+    required String incomingPath,
+  }) =>
+      deferredOutgoingSongId == outgoingSongId &&
+      deferredOutgoingQueueIndex == outgoingQueueIndex &&
+      deferredOutgoingPath == outgoingPath &&
+      deferredIncomingSongId == incomingSongId &&
+      deferredIncomingQueueIndex == incomingQueueIndex &&
+      deferredIncomingPath == incomingPath;
+
+  void deferTransition({
+    required String outgoingSongId,
+    required int outgoingQueueIndex,
+    required String outgoingPath,
+    required String incomingSongId,
+    required int incomingQueueIndex,
+    required String incomingPath,
+  }) {
+    deferredOutgoingSongId = outgoingSongId;
+    deferredOutgoingQueueIndex = outgoingQueueIndex;
+    deferredOutgoingPath = outgoingPath;
+    deferredIncomingSongId = incomingSongId;
+    deferredIncomingQueueIndex = incomingQueueIndex;
+    deferredIncomingPath = incomingPath;
+  }
+
+  void clearDeferredTransition() {
+    deferredOutgoingSongId = null;
+    deferredOutgoingQueueIndex = null;
+    deferredOutgoingPath = null;
+    deferredIncomingSongId = null;
+    deferredIncomingQueueIndex = null;
+    deferredIncomingPath = null;
+  }
+
   int bumpAutomaticGeneration() => ++automaticTransitionGeneration;
 
   int bumpRepeatSelfGeneration() => ++repeatSelfGeneration;
@@ -57,6 +122,17 @@ class CrossfadeRuntime {
     completionObservedDuringCrossfade = false;
     completionObservedSongId = null;
     preloadedNextSongId = null;
+    preloadedNextQueueIndex = null;
+    preloadedNextPath = null;
+    preloadedOutgoingSongId = null;
+    preloadedOutgoingQueueIndex = null;
+    preloadedOutgoingPath = null;
+    deferredOutgoingSongId = null;
+    deferredOutgoingQueueIndex = null;
+    deferredOutgoingPath = null;
+    deferredIncomingSongId = null;
+    deferredIncomingQueueIndex = null;
+    deferredIncomingPath = null;
     preloadInFlight = false;
     if (clearRepeatSelf) {
       repeatSelfHandoffArmed = false;
