@@ -388,3 +388,19 @@ At the first Resonate user-processor callback after a generation change, the aud
 Diagnostics now expose the observed mailbox generation and the number of history-generation resets. Tests cover generation advancement with and without a current command, replacement-track protection, and publishing into the new generation.
 
 **Scope and limits:** this hardens lifecycle invalidation; it does not solve the audible playback-speed clock or release/catch-up. Media3 Sonic/AudioTrack speed processing remains downstream of the current user-processor insertion point, so scratch rendering remains disabled. The next gate is to define and test the relationship between the cursor's media-time rate and downstream speed processing, then coordinate a release handoff at an actual audible output boundary. No physical-device validation or audible scratch enablement is claimed.
+
+
+### 2026-11-28 — downstream playback-speed compensation policy
+
+The scratch processor is positioned among Resonate's Media3 user processors, before Media3's downstream Sonic/AudioTrack playback-speed stage. A cursor rate sent directly from the platter would therefore be multiplied again by the user's normal playback speed. Added a bounded mapping policy:
+
+- Requested audible platter velocity is converted to pre-speed-stage cursor velocity by dividing by the current physical deck's PlaybackParameters.speed.
+- Reverse direction is preserved; unity speed is unchanged.
+- Invalid, non-positive or non-finite playback speeds are rejected.
+- A mapping that would exceed the bounded cursor velocity is rejected rather than clamped, so the requested platter rate is never silently altered.
+- The native service samples the selected physical deck's current speed when validating/publishing a scratch command. Inactive/release commands remain normalized and do not depend on the speed mapping.
+- Unit tests cover unity, faster/slower playback, reverse direction, invalid values and out-of-range compensation.
+
+The CI test fixture was also updated for the mailbox generation field introduced in the preceding lifecycle pass.
+
+**Scope and limits:** this is the rate-compensation contract for the current processor placement, not proof of audible scratch. It assumes the downstream stage's effective time scaling corresponds to the player's reported playback speed; device-specific AudioTrack behaviour, Sonic buffering/latency and playback-parameter changes during an active gesture still require validation. The feature gate remains closed. The next step is to coordinate playback-speed changes with an active cursor and define a release/catch-up handshake against the audible output boundary, then validate on physical devices.
