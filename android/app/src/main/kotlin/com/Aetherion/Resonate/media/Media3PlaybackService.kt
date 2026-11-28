@@ -1174,7 +1174,7 @@ class Media3PlaybackService : MediaSessionService() {
                         if (duration != null && activePlayer.isPlaying) {
                             startCrossfadeRamp(duration, fadeGeneration)
                         }
-                    } else if (isPlaying && crossfadeStatus == "fading" &&
+                    } else if (crossfadeStatus == "fading" && isPlaying &&
                         crossfadeResumePending
                     ) {
                         // Resume the clock only when the incoming output is
@@ -1183,6 +1183,17 @@ class Media3PlaybackService : MediaSessionService() {
                         crossfadeResumePending = false
                         if (crossfadeClock.resume(android.os.SystemClock.elapsedRealtime())) {
                             fadeRunnable?.let(mainHandler::post)
+                        }
+                    } else if (crossfadeStatus == "fading" && !isPlaying &&
+                        !crossfadeResumePending
+                    ) {
+                        // If only the incoming decoder buffers, freeze the
+                        // envelope at its exact position until that output is
+                        // audible again. The outgoing deck remains canonical.
+                        recordCrossfadeInterruption("incoming_output_interrupted")
+                        if (crossfadeClock.pause(android.os.SystemClock.elapsedRealtime())) {
+                            crossfadeResumePending = true
+                            fadeRunnable?.let(mainHandler::removeCallbacks)
                         }
                     }
                     return
