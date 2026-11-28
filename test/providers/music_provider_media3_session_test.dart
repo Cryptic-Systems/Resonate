@@ -2513,6 +2513,7 @@ void main() {
       expect(session.crossfadeDuration, isNotNull);
       expect(session.calls, contains('crossfade:500'));
       expect(session.calls, contains('deckSpeeds:1.15:1.15'));
+      expect(session.deckSpeeds, (1.15, 1.15));
       expect(provider.currentSong?.id, 'fade-in');
       expect(provider.media3ProviderSessionActive, isTrue);
 
