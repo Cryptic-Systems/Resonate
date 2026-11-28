@@ -2586,6 +2586,10 @@ void main() {
     });
 
     test('incoming deck error preserves outgoing playback and defers to queue completion', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'crossfade_enabled': true,
+        'crossfade_duration': 500.0,
+      });
       final session = _FakePlaybackSession()
         ..emitIncomingErrorOnCrossfade = true;
       final provider = MusicProvider(media3ProviderSession: session);
@@ -2596,6 +2600,9 @@ void main() {
         outgoing,
         queue: <Song>[outgoing, incoming],
       ), isTrue);
+      final crossfade = CrossfadeProvider(music: provider);
+      await crossfade.ready;
+      expect(provider.crossfadeEnabled, isTrue);
       await provider.setCrossfadeDuration(500);
       // Simulate a user-selected playback rate; transition cleanup must restore
       // this rate rather than hard-resetting the outgoing deck to 1.0x.
@@ -2613,6 +2620,7 @@ void main() {
         playWhenReady: true,
         position: session.positionValue,
       ));
+      provider.onCrossfadeSettingsRestored();
       for (var attempt = 0;
           attempt < 120 &&
               (session.preloadedSong?.id != incoming.id ||
@@ -2684,6 +2692,7 @@ void main() {
         reason: 'The failed outgoing/incoming occurrence pair must be deferred until the queue advances.',
       );
 
+      crossfade.dispose();
       provider.dispose();
       await Future<void>.delayed(Duration.zero);
       await session.audioSessions.close();
