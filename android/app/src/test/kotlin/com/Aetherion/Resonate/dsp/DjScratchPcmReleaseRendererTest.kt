@@ -41,6 +41,21 @@ class DjScratchPcmReleaseRendererTest {
             processingChainId = DjScratchPcmReleaseRenderer.POST_DSP_PCM16_CHAIN_ID,
         )
 
+    @Test fun rendererCannotOpenWhileMedia3OutputMayStillBeAudible() {
+        val writes = mutableListOf<ByteArray>()
+        var factoryCalls = 0
+        val fake = FakeTrack(actualRouteId = 7, writes = writes)
+        val renderer = DjScratchPcmReleaseRenderer(
+            trackFactory = { factoryCalls++; fake },
+            routeGeneration = { 4L },
+        )
+        assertFalse(renderer.open(contract(), media3OutputSilenced = false))
+        assertEquals(0, factoryCalls)
+        assertEquals(-1f, fake.currentVolume)
+        assertFalse(fake.played)
+        assertTrue(writes.isEmpty())
+    }
+
     @Test fun routeMismatchNeverUnmutesOrRetainsTrack() {
         val writes = mutableListOf<ByteArray>()
         val fake = FakeTrack(actualRouteId = 8, writes = writes)
@@ -48,7 +63,7 @@ class DjScratchPcmReleaseRendererTest {
             trackFactory = { fake },
             routeGeneration = { 4L },
         )
-        assertFalse(renderer.open(contract()))
+        assertFalse(renderer.open(contract(), media3OutputSilenced = true))
         assertEquals(0f, fake.currentVolume)
         assertTrue(fake.released)
         assertTrue(writes.isEmpty())
@@ -67,7 +82,7 @@ class DjScratchPcmReleaseRendererTest {
             trackFactory = { fake },
             routeGeneration = { generation },
         )
-        assertFalse(renderer.open(contract()))
+        assertFalse(renderer.open(contract(), media3OutputSilenced = true))
         assertEquals(0f, fake.currentVolume)
         assertTrue(fake.released)
     }
@@ -84,7 +99,7 @@ class DjScratchPcmReleaseRendererTest {
             },
             routeGeneration = { 4L },
         )
-        assertTrue(renderer.open(contract()))
+        assertTrue(renderer.open(contract(), media3OutputSilenced = true))
         assertTrue(fake.played)
         assertEquals(0.65f, fake.currentVolume)
         assertEquals(listOf(0f, 0.65f), fake.volumeHistory)
