@@ -1,19 +1,33 @@
-package com.Aetherion.Resonate.media
+package com.aetherion.resonate.media
 
+import androidx.media3.common.Format
 import androidx.media3.exoplayer.audio.AudioSink
 import com.aetherion.resonate.dsp.DjScratchTimestampLedger
 import java.nio.ByteBuffer
 
 /**
- * Captures the exact Media3 input-buffer PTS before DefaultAudioSink forwards
- * that buffer through its processor pipeline. Delegation preserves every
- * other AudioSink contract unchanged.
+ * Captures the source PCM format and input PTS before DefaultAudioSink applies
+ * encoder-delay trimming and channel mapping. Delegation preserves the sink
+ * transport contract; the ledger performs frame-span association downstream.
  */
 @androidx.media3.common.util.UnstableApi
 internal class TimestampedDjAudioSink(
     private val delegate: AudioSink,
     private val ledger: DjScratchTimestampLedger,
 ) : AudioSink by delegate {
+    override fun configure(
+        inputFormat: Format,
+        specifiedBufferSize: Int,
+        outputChannels: IntArray?,
+    ) {
+        ledger.configure(
+            sampleRate = inputFormat.sampleRate,
+            channelCount = inputFormat.channelCount,
+            encoderDelayFrames = inputFormat.encoderDelay,
+        )
+        delegate.configure(inputFormat, specifiedBufferSize, outputChannels)
+    }
+
     override fun handleBuffer(
         buffer: ByteBuffer,
         presentationTimeUs: Long,
@@ -23,8 +37,13 @@ internal class TimestampedDjAudioSink(
         return delegate.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
     }
 
+    override fun handleDiscontinuity() {
+        ledger.handleDiscontinuity()
+        delegate.handleDiscontinuity()
+    }
+
     override fun flush() {
-        ledger.clear()
+        ledger.resetForFlush()
         delegate.flush()
     }
 
