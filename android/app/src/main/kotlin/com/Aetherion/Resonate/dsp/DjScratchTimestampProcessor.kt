@@ -17,9 +17,14 @@ internal class DjScratchTimestampProcessor(
     private val ledger: DjScratchTimestampLedger,
     private val controlMailbox: DjScratchControlMailbox = DjScratchControlMailbox(),
     private val deckId: String = "A",
+    private val enableScratchRendering: Boolean = ENABLE_SCRATCH_RENDERING,
 ) : BaseAudioProcessor() {
     @Volatile
     private var lastConsumedTimestamp: DjScratchPcmTimestamp? = null
+    // Source-media time represented by the PCM most recently emitted downstream.
+    // During scratch this follows the platter cursor, not decoder-ahead input PTS.
+    @Volatile
+    private var lastOutputMediaTimeUs: Long? = null
 
     // Immutable control snapshot sampled once per input block on the audio thread.
     @Volatile
@@ -75,6 +80,10 @@ internal class DjScratchTimestampProcessor(
 
     internal fun lastConsumedTimestampForTest(): DjScratchPcmTimestamp? =
         lastConsumedTimestamp
+
+    /** Timestamp for post-DSP capture: cursor time for rendered scratch PCM, source PTS otherwise. */
+    internal fun releaseTailTimestampUs(): Long? =
+        lastOutputMediaTimeUs ?: lastConsumedTimestamp?.presentationTimeUs
 
     internal fun pcmRingForTest(): DjScratchPcmRingBuffer? = pcmRing
 
@@ -135,8 +144,18 @@ internal class DjScratchTimestampProcessor(
         }
         val output = replaceOutputBuffer(inputBuffer.remaining())
         val ring = pcmRing
-        val rendered = ENABLE_SCRATCH_RENDERING && timestamp != null && ring != null &&
+        val scratchBlockStartMediaTimeUs = if (ring != null) {
+            if (latestControlSnapshot?.active == true) {
+                renderPolicy.cursorMediaTimeUs(ring) ?: latestControlSnapshot?.anchorMediaTimeUs
+            } else {
+                renderPolicy.cursorMediaTimeUs(ring)
+            }
+        } else {
+            null
+        }
+        val rendered = enableScratchRendering && timestamp != null && ring != null &&
             renderPolicy.render(inputBuffer, output, ring, latestControlSnapshot)
+        lastOutputMediaTimeUs = if (rendered) scratchBlockStartMediaTimeUs else timestamp?.presentationTimeUs
         ringAvailableFrames = ring?.availableFrames ?: 0
         cursorMediaTimeUs = if (rendered && ring != null) {
             renderPolicy.cursorMediaTimeUs(ring)
@@ -159,6 +178,7 @@ internal class DjScratchTimestampProcessor(
 
     override fun onFlush() {
         lastConsumedTimestamp = null
+        lastOutputMediaTimeUs = null
         latestControlSnapshot = null
         pcmRing?.clear()
         ringAvailableFrames = 0
@@ -170,6 +190,7 @@ internal class DjScratchTimestampProcessor(
     override fun onReset() {
         DspEngineSinkHook.forgetScratchProcessor(this)
         lastConsumedTimestamp = null
+        lastOutputMediaTimeUs = null
         latestControlSnapshot = null
         pcmRing?.clear()
         pcmRing = null
