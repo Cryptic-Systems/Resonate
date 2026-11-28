@@ -99,6 +99,24 @@ class DjScratchPcmRingBufferTest {
     }
 
     @Test
+    fun mapsFractionalCursorFrameBackToMediaTime() {
+        val ring = DjScratchPcmRingBuffer(1_000, 1, 8)
+        ring.append(pcm16(0, 1_000, 2_000, 3_000), 10_000L)
+        assertEquals(11_500L, ring.mediaTimeUsAtFramePosition(1.5))
+        assertEquals(13_000L, ring.mediaTimeUsAtFramePosition(3.0))
+        assertNull(ring.mediaTimeUsAtFramePosition(-0.1))
+        assertNull(ring.mediaTimeUsAtFramePosition(3.1))
+    }
+
+    @Test
+    fun rejectsCursorMediaTimeMappingAcrossTimestampGaps() {
+        val ring = DjScratchPcmRingBuffer(1_000, 1, 8)
+        ring.append(pcm16(0, 1_000), 10_000L)
+        ring.append(pcm16(2_000, 3_000), 90_000L)
+        assertNull(ring.mediaTimeUsAtFramePosition(1.5))
+    }
+
+    @Test
     fun rejectsMediaTimeAnchorsThatWouldCrossTimestampGaps() {
         val ring = DjScratchPcmRingBuffer(1_000, 1, 8)
         ring.append(pcm16(0, 1_000, 2_000), 10_000L)
